@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "rust-skills": {
+      "source": "leonardomso/rust-skills",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "9251cf53b34b0921f8216cf444ffaf714096aaa1dce17ba438f8e7421485d8e8"
+    },
+    "simplify-codebase": {
+      "source": "tt-a1i/simplify-codebase",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "058e7ccda6f653efb732088fd87843fe4c9f1876426e79fc152e16dc41791367"
+    }
+  }
+}
