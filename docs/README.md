@@ -18,6 +18,7 @@
 | Worker/Executor、内部 control/state HTTP、locks/CAS、恢复与备份 | [spec 0010](specs/0010-lifecycle-worker-and-http-state-backend.md)；理由见 [ADR-0014](ard/0014-run-lifecycle-workers-with-a-database-http-state-backend.md) |
 | 已实现、未接线、未验证与迁移缺口 | [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) |
 | OIDC 部署操作 | [oidc-deployment.md](oidc-deployment.md) |
+| Nix 开发、打包、NixOS 部署与 VM 测试 | [nix.md](nix.md) |
 
 ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec 中维护。已 superseded 的 ARD 不是当前实现选项。通用规则由所属 spec 定义，平台文档只增加差异和验收，不维护另一套通用状态机。
 

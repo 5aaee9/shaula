@@ -1,0 +1,2 @@
+# Names injected by the NixOS test driver; keep undefined-name checks enabled.
+builtins = ["machine", "client", "start_all", "subtest"]

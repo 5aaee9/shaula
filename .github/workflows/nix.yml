@@ -1,0 +1,38 @@
+name: Nix
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Package, lint and NixOS E2E
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Require hardware virtualization
+        run: |
+          test -c /dev/kvm
+          sudo chmod 0666 /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - uses: cachix/install-nix-action@b85815f71a6de0ddee80b8a80a98d43f4bcc66c7 # v31
+        with:
+          extra_nix_config: |
+            extra-experimental-features = nix-command flakes
+            system-features = nixos-test benchmark big-parallel kvm
+            max-jobs = 2
+            cores = 2
+      - name: Check formatting, Rust package, module and VMs
+        run: nix flake check --print-build-logs

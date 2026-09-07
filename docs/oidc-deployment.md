@@ -3,7 +3,10 @@
 This guide covers the management listener (UI/API/health). The target internal
 worker/state listener in [spec 0010](specs/0010-lifecycle-worker-and-http-state-backend.md)
 uses separate Generation-scoped capabilities and must not be exposed by this
-reverse proxy. It is not yet implemented; see [implementation status](IMPLEMENTATION_STATUS.md).
+reverse proxy. The state adapter exists but is not wired into `serve`; worker
+control remains unimplemented. See [implementation status](IMPLEMENTATION_STATUS.md).
+For the credential-aware NixOS service module and VM acceptance, see
+[Nix deployment](nix.md).
 
 Shaula requires one OIDC Provider at startup. Register a confidential web client
 supporting Authorization Code, PKCE S256, `openid`, RS256 and

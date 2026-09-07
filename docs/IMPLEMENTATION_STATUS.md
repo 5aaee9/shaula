@@ -2,15 +2,16 @@
 
 Status: Partial implementation; HTTP state backend and explicit Runtime adapter implemented,
 production lifecycle-worker integration and migration pending.
-Evidence baseline: `461859f` plus the HTTP-backend implementation increment of 2026-09-07;
-historical local review reports dated 2026-09-06.
+Evidence baseline: `b007fbc` (HTTP-backend increment) plus the Nix packaging and
+NixOS deployment increment of 2026-09-07; historical review reports dated 2026-09-06.
 
 This is the sole implementation-progress record. [The documentation index](README.md)
 separates accepted contracts, open decisions and release gates. A specification or
 accepted ADR is not proof that its implementation or external acceptance is complete.
-The earlier documentation-only pass could not run Cargo. The subsequent implementation
-pass uses an owner-approved temporary Nix Rust environment; current verification
-and remaining integration boundaries are recorded below.
+The earlier documentation-only pass could not run Cargo. The HTTP-backend pass
+used an owner-approved temporary Nix Rust environment. The repository now provides
+a locked flake development/build environment; verification and remaining
+integration boundaries are recorded below.
 
 ## Existing implementation and local test coverage
 
@@ -177,6 +178,35 @@ empty-state verification with builtin `terraform_data`; raw state persisted in
 SQLite and the password was absent from cached backend config. This is protocol
 acceptance, **not** a Runner Profile/GitHub/Kubernetes/Docker conformance attestation.
 
+## Nix packaging and NixOS deployment increment (2026-09-07)
+
+- `flake.nix` delegates to `nix/flake-module.nix`: flake-parts composes packages,
+  a fenix Rust development shell, treefmt-nix and checks for x86_64/aarch64 Linux.
+  `flake.lock`, `Cargo.lock` and the fixed-output npm cache pin build inputs.
+  `nix/packages/shaula.nix` builds the release executable and embedded Vite UI
+  offline, checks TypeScript, runs debug all-target Clippy/nextest, and enables
+  the actual Terraform HTTP-backend probe. Compiler paths are remapped to avoid
+  retaining the build toolchain in the executable's runtime closure.
+- `nix/packages/terraform.nix` packages the exact vendor Terraform 1.9.8 binary,
+  verified against published ZIP hashes, without stripping or rewriting it.
+  BUSL-1.1 is explicitly separate from Shaula's Apache-2.0 license. This pin is
+  protocol-test evidence, not bundled Profile conformance or a completed R1 tuple.
+- `nix/modules/shaula.nix` exports `services.shaula`: systemd credentials, private
+  bootstrap generation, persistent bindings key, DynamicUser/private state, a
+  loopback listener and SIGINT/control-group shutdown. It neither opens a public
+  firewall port nor enables the unintegrated worker/state control plane.
+- `nix/tests/` evaluates module defaults/rejected secret settings and boots two
+  NixOS VMs using the real release package. HTTPS OIDC/PKCE and JWT/scope checks,
+  embedded assets, conditional/idempotent Profile persistence, redaction, CSRF,
+  logout/session invalidation, restart/reboot persistence and missing-credential /
+  unavailable-issuer startup refusal are tested. The issuer and PKI are isolated
+  test fixtures; HTTP session coverage is not JavaScript browser rendering.
+- `.github/workflows/nix.yml` runs the flake checks on a KVM-enabled x86_64 Linux
+  runner with read-only repository permissions, pinned actions and no production
+  secrets. A remote workflow result is not implied by local verification.
+
+Commands, service configuration and acceptance boundaries are in [the Nix guide](nix.md).
+
 ## Staged (next phases; not yet wired or externally validated)
 
 - `shaula job`, exec Driver, protected launch handoff, worker control capability /
@@ -295,6 +325,29 @@ The two default-ignored cases are the
 explicit Terraform probe (run separately) and the Playwright/OIDC browser suite
 (not rerun here). Windows-only engine tests, real Runner Platforms, actual GitHub
 and registered OIDC Provider acceptance are not established by this Linux increment.
+
+## Nix verification (2026-09-07)
+
+Verified locally on x86_64 Linux with Nix 2.35.1, sandboxed builds, KVM and the
+locked fenix stable Rust 1.98.1 toolchain:
+
+| Command / check | Result |
+| --- | --- |
+| `nix fmt -- --clear-cache --fail-on-change` | Passed; no formatting changes, including actionlint and static lints |
+| `nix flake check --print-build-logs` | Passed: release package/Rust tests, treefmt, module evaluation and both NixOS VMs |
+| `nix flake check --all-systems --no-build` | Passed evaluation for x86_64/aarch64 Linux; not an aarch64 build/run |
+| `cargo fmt --all`, `cargo fmt --all --check`, `cargo clippy` and all-target Clippy with `-D warnings`, inside `nix develop` | Passed |
+| Required filtered / additional unfiltered workspace nextest, inside `nix develop` | 218 passed / 260 passed, respectively; same 44 / 2 skipped cases as above |
+| Terraform HTTP-backend probe in the Nix package check | 2 passed, including actual Terraform 1.9.8 |
+| Installed binary / runtime closure | `shaula 0.1.0`; about 59 MiB, without Node or the Rust toolchain |
+| Packaged Terraform bytes | Identical to the independently checksum-verified vendor 1.9.8 binary |
+
+The VM suite was rerun with the final release package after compiler-path
+remapping. Formatting runs put auto-fix linters before whitespace formatters;
+cache-cleared repeated runs and the sandboxed diff check pass. No Rust source or
+web source was changed for this Nix increment. aarch64 native execution and a
+pushed GitHub workflow run have **not** been observed. None of these checks closes
+the real-Provider, GitHub, Runner Platform or worker-integration gates above.
 
 ## Known accepted limitations (per ADR)
 

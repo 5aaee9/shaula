@@ -7,3 +7,5 @@ web/playwright-report/
 web/.env.local
 web/.env.*.local
 .playwright-mcp/
+/result
+/result-*
