@@ -148,7 +148,11 @@ verification evidence belong in [implementation status](IMPLEMENTATION_STATUS.md
 
 The [GitHub workflow](../.github/workflows/nix.yml) runs the same flake checks on a
 KVM-enabled x86_64 Linux runner, with read-only repository permissions and pinned
-third-party actions. It uses
+third-party actions. Hosted private-repo runners only guarantee a small root
+disk, so before installing Nix the workflow moves the store onto the larger
+resource disk when one is attached, deletes unused preinstalled toolchains, and
+points `build-dir` at `/nix/build`; VM build scratch therefore shares the same
+device as the store. It uses
 ordinary `pull_request` events, not privileged `pull_request_target` execution,
 and needs no production credentials. Remote CI success must be observed on an
 actual pushed workflow run; local Nix checks alone are not that evidence.
