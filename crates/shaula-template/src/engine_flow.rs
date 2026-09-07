@@ -24,9 +24,27 @@ impl TerraformFlow {
     }
 
     pub async fn init(&self, cwd: &Path, env: &[(String, String)]) -> CoreResult<ProcessOutput> {
-        let args = vec![
+        self.initialize(cwd, env, false).await
+    }
+
+    /// Only the explicitly configured worker runtime enables the HTTP backend;
+    /// profile validation and legacy local-state lifecycles retain their mode.
+    pub async fn init_http(
+        &self,
+        cwd: &Path,
+        env: &[(String, String)],
+    ) -> CoreResult<ProcessOutput> {
+        self.initialize(cwd, env, true).await
+    }
+
+    async fn initialize(
+        &self,
+        cwd: &Path,
+        env: &[(String, String)],
+        backend: bool,
+    ) -> CoreResult<ProcessOutput> {
+        let mut args = vec![
             "init".to_string(),
-            "-backend=false".to_string(),
             "-input=false".to_string(),
             // R9-06 (spec 0004 §5): the published lock file IS the
             // attested provider-set authority — init must never modify
@@ -34,6 +52,9 @@ impl TerraformFlow {
             // upgraded into the workspace.
             "-lockfile=readonly".to_string(),
         ];
+        if !backend {
+            args.push("-backend=false".to_string());
+        }
         let output = run_engine(&self.executable, cwd, &args, env, self.timeout).await?;
         self.require_success(output, "init")
     }
@@ -124,7 +145,8 @@ impl TerraformFlow {
             // against the stable "no state" phrase, never guessed from
             // unrelated errors.
             let stderr = output.stderr.to_lowercase();
-            if stderr.contains("no state") || stderr.contains("empty") {
+            let http_backend = env.iter().any(|(name, _)| name == "TF_HTTP_ADDRESS");
+            if !http_backend && (stderr.contains("no state") || stderr.contains("empty")) {
                 return Ok(Vec::new());
             }
             return Err(err(

@@ -36,9 +36,11 @@ impl Store {
         now: i64,
     ) -> StoreResult<()> {
         let key = &insert.key;
-        let existing = github_auth_profiles::Entity::find_by_id(key.to_string())
-            .one(tx)
-            .await?;
+        // Acquire SQLite's writer with the revision INSERT before reading the
+        // head. A deferred SELECT first permits two snapshots of r1; the loser
+        // cannot upgrade its stale snapshot and returns SQLITE_BUSY (HTTP 500)
+        // instead of the domain conflict (412). The unique revision constraint
+        // serializes contenders before the read without a separate lock table.
         let row = github_auth_profile_revisions::ActiveModel {
             id: Default::default(),
             profile_key: Set(key.to_string()),
@@ -66,6 +68,9 @@ impl Store {
                 }
             })?;
 
+        let existing = github_auth_profiles::Entity::find_by_id(key.to_string())
+            .one(tx)
+            .await?;
         match existing {
             None => {
                 let profile = github_auth_profiles::ActiveModel {

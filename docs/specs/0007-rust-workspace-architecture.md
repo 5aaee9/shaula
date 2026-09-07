@@ -12,11 +12,11 @@
 - Production Go dependency: none
 - Scale Set compatibility oracle: pinned `github.com/actions/scaleset` Go SDK and `internal/testserver`
 
-This specification maps Shaula's accepted domain and Module boundaries onto a Rust Cargo workspace. It extends the [Multi-Fleet Runner Scale Set Controller Specification](0001-shaula-runner-scale-set.md), [ADR-0010](../ard/0010-build-a-pure-rust-multi-crate-daemon-and-use-scaleset-as-an-oracle.md), and [ADR-0013](../ard/0013-require-openid-connect-for-all-http-access.md). [Spec 0009](0009-mandatory-openid-connect.md) defines mandatory inbound OIDC. This specification describes package ownership and dependency rules, not implementation code.
+This specification maps Shaula's accepted domain and Module boundaries onto a Rust Cargo workspace. It extends the [Multi-Fleet Runner Scale Set Controller Specification](0001-shaula-runner-scale-set.md), [ADR-0010](../ard/0010-build-a-pure-rust-multi-crate-daemon-and-use-scaleset-as-an-oracle.md), and [ADR-0013](../ard/0013-require-openid-connect-for-all-http-access.md). [Spec 0009](0009-mandatory-openid-connect.md) defines management OIDC; [spec 0010](0010-lifecycle-worker-and-http-state-backend.md) / [ADR-0014](../ard/0014-run-lifecycle-workers-with-a-database-http-state-backend.md) define the worker/internal-HTTP revision. This specification describes package ownership and dependency rules, not implementation code.
 
 ## 1. Outcome
 
-Shaula ships one Rust binary, `shaula`. One Tokio runtime supervises the Axum server, Profile workers, per-Fleet listeners/reconcilers, global operation scheduler, subprocesses and bounded OpenTelemetry export. Blocking or externally mutable work never runs inside an Axum request transaction.
+Shaula ships one Rust binary with two execution roles: `serve` owns management/GitHub/SQLite and supervision; the exec Driver starts one `job` process per Generation, with its own Tokio runtime and sequential lifecycle. A waiting worker is not an occupied Terraform command-budget slot. Blocking/external work never runs inside an Axum/SQLite transaction, and the daemon does not mirror each worker command as a durable operation.
 
 The Cargo workspace contains deep crates with one-way dependencies. A crate exists only when it hides a substantial policy or external mechanism；shared `utils`, transport-shaped domain types and one-type crates are rejected.
 
@@ -24,12 +24,12 @@ The Cargo workspace contains deep crates with one-way dependencies. A crate exis
 crates/
   shaula/                    # binary composition root; clap + startup/shutdown
   shaula-core/               # domain model, invariants, state machines and ports
-  shaula-daemon/             # use cases, supervisors, reconcile and scheduling
-  shaula-http/               # axum adapter and strict HTTP DTOs
+  shaula-daemon/             # serve/job use cases, supervision, exec Driver, gates
+  shaula-http/               # management OIDC + separate private worker/state HTTP
   shaula-store/              # SeaORM SQLite adapter; entities stay private
   shaula-store-migration/    # bundled forward migrations and schema checks
   shaula-scaleset/           # reqwest GitHub/Actions Service adapter + listener
-  shaula-template/           # artifact/workspace and Terraform subprocess runtime
+  shaula-template/           # worker's CoW/copy Workspace, Terraform/backend client setup
   shaula-observability/      # OTel/tracing setup, exporters and redaction policy
 ```
 
@@ -72,7 +72,9 @@ CI inspects `cargo metadata` and `cargo tree -p shaula --edges normal,build` to 
 
 The binary crate is intentionally shallow. It uses clap derive for `shaula serve`, loads and validates daemon bootstrap configuration and required OIDC Provider/client settings from CLI/env, initializes local structured logging and OpenTelemetry before migrations or remote effects, constructs concrete adapters, acquires the data-directory ownership lock, starts the daemon, handles signals and enforces bounded shutdown ordering. It awaits the HTTP Adapter's OIDC discovery/JWKS initialization before binding the listener or starting resource workers; missing/invalid settings or initialization failure exit nonzero.
 
-It contains no Fleet reconciliation, SQL, HTTP handler, GitHub protocol or Terraform plan logic. v1 has no local Create/Destroy/Update command；future management subcommands are HTTP clients only.
+The internal `shaula job` command receives a protected Generation/Claim handoff and wires worker use cases to the Template Runtime and private control client. It does not load OIDC/GitHub credentials, open SQLite, own the daemon data directory or accept arbitrary template/argv inputs. Direct invocation without valid daemon authority fails closed. `serve` initializes management OIDC and internal backend before launching jobs.
+
+The binary contains no reconciliation, SQL, handler, wire or plan logic. `job` is not an operator Create/Destroy/Update command; future management subcommands remain HTTP clients only.
 
 ### 3.2 `shaula-core`
 
@@ -82,21 +84,25 @@ Serde is permitted only on deliberately versioned domain/durable envelopes. Secr
 
 ### 3.3 `shaula-daemon`
 
-This crate owns Fleet and Profile application services, one supervisor task per active Fleet, Auth rollout, listener ingestion, level-triggered reconcile, the fair global Create/Destroy scheduler, operation leases, reaper/recovery scans and graceful shutdown. It depends on core ports, not concrete adapters.
+This crate owns Fleet/Profile use cases, Fleet supervisors, Auth rollout, listener ingestion, capacity, worker/command budgets, reaper/recovery and shutdown. Its job-side module sequences one Generation through core Template/control ports without raw GitHub/SQLite access. Daemon-side worker/state services authorize claims, GitHub requests and atomic completion through Store ports; no per-Terraform-command ledger is required.
+
+The small `exec` Driver may live in a cohesive internal executor module here, hiding Tokio/OS launch, protected handoff and descendant fencing behind the core Executor Interface. It does not choose a Template Platform or interpret Terraform. No new one-type driver/backend crate is required. Exact module names are implementation details; no platform client or remote Driver is added to v1.
 
 Tokio tasks are supervised；detached fire-and-forget tasks are forbidden. Every loop has cancellation, bounded backoff/jitter and a persisted retry/checkpoint when correctness depends on future execution. A panic or failure in one Fleet task is classified and restarted without terminating healthy Fleet tasks.
 
 ### 3.4 `shaula-http`
 
-This crate owns the loopback-only Axum listener, Router, extractors, mandatory OIDC discovery/token verification, login/callback/session/CSRF/logout, authorization middleware, request limits, ETag/idempotency handling, strict Serde DTOs, pagination and conversion between domain errors and sanitized HTTP problem responses. OIDC implementation stays in cohesive internal modules using established Rust protocol/crypto libraries; no new crate is required solely for a wrapper. It calls only inbound core/application ports and never receives a SeaORM connection. A configured non-loopback address fails startup; native inbound TLS/mTLS remains outside v1, while OIDC verification is mandatory.
+This crate owns the loopback-only management Axum listener, Router, extractors, mandatory OIDC discovery/token verification, login/callback/session/CSRF/logout, authorization middleware, request limits, ETag/idempotency handling, strict Serde DTOs, pagination and conversion between domain errors and sanitized HTTP problem responses. OIDC implementation stays in cohesive internal modules using established Rust protocol/crypto libraries; no new crate is required solely for a wrapper. It calls only inbound core/application ports and never receives a SeaORM connection. A configured non-loopback address fails startup; native inbound TLS/mTLS remains outside v1, while OIDC verification is mandatory.
 
 Mutation DTOs reject unknown fields. A default authentication guard protects UI documents, embedded assets, all API/health routes and fallback before resource/cache handling; only exact login/callback GET routes are anonymous. The Adapter maps verified `(iss, sub)` and server-authorized scopes into core actor facts. Legacy backend tokens and identity/scopes headers cannot establish identity; debug/development uses the same contract. Request bodies, Authorization, cookies, login codes, CSRF, OIDC tokens/client secrets and idempotency keys are excluded from tracing middleware. Route templates rather than raw paths identify OTel server spans. Session stores are bounded and in-memory; their loss requires reauthentication, without altering durable Fleet/Profile state.
+
+A separate private listener implements spec 0010's capability-authenticated worker control and standard Terraform state/LOCK/UNLOCK wire protocol. It calls core application ports, not SeaORM or GitHub directly. Its bounded private control client is wired only into `job`; Basic state credentials and control bearer tokens are not management identities or OIDC exceptions on the public Router. Default-deny, body/response redaction and route separation are independently tested.
 
 ### 3.5 `shaula-store` and `shaula-store-migration`
 
 `shaula-store` is the sole SeaORM boundary. It hides entities, relations, SQLite pragmas, transaction retry, lease queries, canonical encodings and plaintext credential/sensitive-binding columns behind typed core repositories/unit-of-work ports. No `DatabaseConnection`, entity or ORM error escapes the crate.
 
-One daemon owns the database and one logical writer path serializes mutations. WAL, foreign keys, busy timeout, durability settings and backup consistency are explicit startup checks. Transactions atomically commit revision/change/audit/outbox/idempotency facts before external effects.
+One daemon owns the database and one logical writer path serializes mutations. WAL, foreign keys, busy timeout, durability settings and backup consistency are explicit startup checks. Transactions atomically commit revision/change/audit/outbox/idempotency facts before external effects. The same writer discipline owns Generation/Claim/state/lock facts: LOCK uniqueness, owner/epoch/ID checks, versioned state writes, UNLOCK and terminal seal must be atomic. There is no check-lock-then-write gap and no expiry-based worker takeover. Claim recovery and local-state migration follow spec 0010.
 
 `shaula-store-migration` contains bundled forward migrations and schema-version probes. Because migration failure or process loss must not leave a partly accepted control plane, every migration is restart-tested on SQLite and startup fails closed until its pre/postconditions are satisfied. The binary does not expose a second standalone schema authority.
 
@@ -119,7 +125,7 @@ Installing/replacing a session takes the exclusive side of a per-Fleet session-e
 
 ### 3.7 `shaula-template`
 
-This crate owns content-addressed artifact validation/materialization, isolated per-Generation Workspace/state, environment allowlists, Tokio child-process supervision, exact engine-binary hashing, Terraform initialization, saved-plan JSON policy, apply/destroy classification, fixed `shaula`/`shaula_result` protocol, protected files and state-empty proof.
+This crate owns artifact validation, CoW/copy materialization, exclusive Workspaces, protected inputs/emergency state, child env/supervision, exact engine hashing, Terraform initialization, saved-plan policy, output classification and state-empty proof. For Generation lifecycles it runs inside `job`; Profile static validation may still call its isolated, non-mutating validation Interface from the daemon. Authoritative state is not its local file store: Terraform uses spec 0010's HTTP backend, configured through a fixed worker-owned backend file and minimal `TF_HTTP_*` env.
 
 It has no Kubernetes/Docker client or platform dispatch. The artifact manifest is the sole authority for the bounded opaque `platform` and `bindings_contract` labels；resource type strings are used only for policy equality/cardinality. Platform artifacts and external conformance harnesses own actual object semantics. Every Template activation requires a durable conformance attestation bound to the exact artifact digest, dependency lock, IaC engine binary/provider, protected `bindings_digest`, runtime/trust policy including accepted limitations, Runner image, manifest contracts and suite version；static validation alone only reaches `Ready`.
 
@@ -162,7 +168,7 @@ Implementation is incomplete until：
 
 1. `cargo tree` proves the production binary is Rust-only and contains no Go bridge/FFI, Kubernetes client or Docker client.
 2. Architecture tests reject forbidden adapter-to-adapter and framework-to-core dependencies.
-3. clap exposes `shaula serve` and no local Runner mutation primitive.
+3. clap exposes `serve` and authenticated internal `job`; an arbitrary manual `job` invocation cannot bypass Fleet/Claim admission or obtain material/credentials.
 4. Axum mutation handlers make no GitHub/Terraform call before the SeaORM transaction commits.
 5. SQLite transaction/crash tests cover revision, Change, audit, outbox, idempotency, leases, migration interruption and credential-bearing DB/WAL/SHM/copy/backup handling.
 6. Strict Serde and redaction tests cover every HTTP, persistence, Scale Set and Template envelope, including unknown fields, PAT/App keys, schema-sensitive bindings and malicious secret-shaped values.
@@ -170,7 +176,7 @@ Implementation is incomplete until：
 8. The complete pinned Go-oracle differential suite passes, and intentional differences are reviewed fixtures.
 9. The real `github.com` App/PAT × organization/repository lifecycle matrix passes against the same Rust adapter.
 10. Persist-before-ACK, duplicate delivery, truncated/missing events, `202` polls, acquire uncertainty and session restart all converge without event counting.
-11. Tokio task, subprocess and exporter failure injection proves Fleet isolation and bounded shutdown.
+11. Tokio task, exec worker/descendant, backend outage and exporter failure injection proves Fleet isolation and spec 0010's fencing/state/lock/recovery/shutdown contract; worker exit alone never releases capacity.
 12. In-memory OTel tests observe HTTP, SQL/use-case boundaries, Scale Set, reconcile and Template lifecycle without secrets or unbounded labels.
 13. A Template Profile cannot become Active unless every required external safety claim has a current conformance attestation for its exact immutable compatibility tuple.
 14. Axum startup rejects every non-loopback bind and missing/invalid CLI/env OIDC configuration or failed discovery initialization. Tests enforce spec 0009 across proxied/direct requests, UI/assets/API/health/fallback, CSRF, session expiry, token/key validation and forged legacy headers. The production binary must include OIDC verification and must not expose native inbound HTTP TLS/mTLS serving.
@@ -181,17 +187,12 @@ Implementation is incomplete until：
 2. Establish Cargo workspace, architecture tests, common redaction fixtures and in-memory OTel test pipeline.
 3. Implement core/domain plus SeaORM repositories/migrations and Axum desired-state APIs.
 4. Implement `shaula-scaleset` bottom-up against oracle tests, then pass real GitHub auth/scope tests.
-5. Implement Template Runtime and generic lifecycle recovery, then bundled Profile conformance.
+5. Implement exec `job`, private control/state HTTP, atomic backend CAS and worker-owned Runtime/recovery/migration, then bundled Profile conformance.
 6. Run multi-Fleet, crash, backup/restore, exporter outage and complete end-to-end gates.
 
 ## 8. Open decisions
 
-1. Which exact stable Rust toolchain/MSRV and dependency versions/features form the first compatibility pin?
-2. Which audited crates implement GitHub App RS256/PEM handling and in-memory secret wrappers/zeroization?
-3. Is SeaORM's SQLx SQLite backend or its rusqlite backend the supported v1 path after WAL/concurrency/crash tests?
-4. Is the upstream oracle stored as a checksummed source archive, Git submodule or CI-fetched immutable commit?
-5. Are platform conformance tools separate test workspace members or external harnesses with no Cargo dependency edge?
-6. Which authority may submit a Template Conformance Attestation, and what canonical signed or equivalently integrity-protected envelope represents its subject and evidence?
+The [central decision register](../README.md#仍需决定或冻结) owns R1/R2 (release toolchain/features, source pins and oracle/harness acceptance). Current build selections live in Cargo.toml/Cargo.lock; a manifest choice is not crash/compatibility proof. Conformance harnesses stay outside the production dependency closure. The attestation authority and protected submission contract are normative in spec 0005 §5.1, not an additional signing-PKI workstream.
 
 ## 9. References
 

@@ -16,6 +16,13 @@ impl Store {
         &self,
         record: shaula_core::registry::GenerationRecord,
     ) -> StoreResult<()> {
+        Self::generation_insert_on(self.connection(), record).await
+    }
+
+    pub(crate) async fn generation_insert_on<C: sea_orm::ConnectionTrait>(
+        connection: &C,
+        record: shaula_core::registry::GenerationRecord,
+    ) -> StoreResult<()> {
         let (
             id,
             fleet_key,
@@ -63,7 +70,7 @@ impl Store {
             updated_at: Set(now),
         };
         runner_generations::Entity::insert(row)
-            .exec(self.connection())
+            .exec(connection)
             .await?;
         Ok(())
     }

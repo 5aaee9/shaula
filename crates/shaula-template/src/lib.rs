@@ -2,6 +2,7 @@
 
 pub mod artifact;
 pub mod engine;
+pub mod http_backend;
 pub mod manifest;
 pub mod runtime;
 pub mod workspace;

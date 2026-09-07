@@ -60,11 +60,29 @@ pub(crate) fn materialize_into_workspace(
 #[derive(Clone)]
 pub struct TemplateRuntime {
     engine_executable: PathBuf,
+    http_backend: Option<crate::http_backend::HttpBackendConfig>,
 }
 
 impl TemplateRuntime {
+    /// Legacy local-state / static-validation mode. Never implicitly migrate
+    /// an existing Generation when the new worker backend is available.
     pub fn new(engine_executable: PathBuf) -> Self {
-        Self { engine_executable }
+        Self {
+            engine_executable,
+            http_backend: None,
+        }
+    }
+
+    /// New, explicitly admitted HTTP-state Generation only. The caller owns
+    /// worker/GitHub gates and must select the corresponding runtime attestation.
+    pub fn with_http_backend(
+        engine_executable: PathBuf,
+        backend: crate::http_backend::HttpBackendConfig,
+    ) -> Self {
+        Self {
+            engine_executable,
+            http_backend: Some(backend),
+        }
     }
 
     async fn open_flow(&self, timeout: Duration) -> Result<TerraformFlow, TemplateOutcomeError> {
@@ -89,27 +107,18 @@ impl TemplateRuntimePort for TemplateRuntime {
         artifact_digest: &str,
         timeout: Duration,
     ) -> Result<(), TemplateOutcomeError> {
-        let expected = crate::artifact_integrity::material_digest(artifact_dir, artifact_digest)
-            .map_err(|_| state_err("create.materialize"))?;
-        materialize_into_workspace(&artifact_dir.to_path_buf(), &workspace.to_path_buf())
-            .map_err(|_| state_err("create.materialize"))?;
-        if crate::workspace::template_files_digest(workspace)
-            .map_err(|_| state_err("create.materialize"))?
-            != expected
-        {
-            return Err(state_err("create.materialize"));
-        }
-        let flow = self.open_flow(timeout).await?;
-        flow.init(workspace, &[])
+        self.prepare_create_flow(workspace, artifact_dir, artifact_digest, timeout)
             .await
-            .map_err(|_| exec_err("create.init"))?;
-        Ok(())
     }
 
     async fn create(
         &self,
-        request: TemplateCreateRequest,
+        mut request: TemplateCreateRequest,
     ) -> Result<TemplateCreateResult, TemplateOutcomeError> {
+        if self.http_backend.is_some() && request.apply_intent_sink.is_none() {
+            return Err(state_err("create.authorization"));
+        }
+        self.configure_environment(&request.input.generation.id, &mut request.environment)?;
         let workspace = &request.workspace_path;
         let expected_material = crate::artifact_integrity::material_digest(
             &request.artifact_dir,
@@ -123,11 +132,19 @@ impl TemplateRuntimePort for TemplateRuntime {
         // materialize + init here.
         let prepared = workspace.join(".terraform").is_dir();
         if !prepared {
+            self.require_fresh_http_workspace(workspace)?;
             materialize_into_workspace(&request.artifact_dir, workspace)
                 .map_err(|_| state_err("create.materialize"))?;
+            if let Some(backend) = &self.http_backend {
+                backend
+                    .install(workspace)
+                    .map_err(|_| state_err("create.backend"))?;
+            }
         }
+        self.verify_http_workspace(workspace, prepared)?;
 
-        if crate::workspace::template_files_digest(workspace)
+        if self
+            .workspace_digest(workspace)
             .map_err(|_| state_err("create.materialize"))?
             != expected_material
         {
@@ -135,9 +152,8 @@ impl TemplateRuntimePort for TemplateRuntime {
         }
         let flow = self.open_flow(request.timeout).await?;
         if !prepared {
-            flow.init(workspace, &request.environment)
-                .await
-                .map_err(|_| exec_err("create.init"))?;
+            self.initialize_workspace(&flow, workspace, &request.environment)
+                .await?;
         }
 
         let input_digest = write_protected_input(workspace, &request.input)
@@ -168,7 +184,8 @@ impl TemplateRuntimePort for TemplateRuntime {
         // the ATTESTED artifact the Generation froze — replacement of the
         // artifact after activation can never become the trusted
         // baseline.
-        let workspace_template_digest = crate::workspace::template_files_digest(workspace)
+        let workspace_template_digest = self
+            .workspace_digest(workspace)
             .map_err(|_| state_err("create.plan"))?;
         if workspace_template_digest != expected_material {
             return Err(state_err("create.plan"));
@@ -223,7 +240,8 @@ impl TemplateRuntimePort for TemplateRuntime {
         if digest_of(&input_now) != provenance.protected_input_digest {
             return Err(exec_err("create.apply"));
         }
-        if crate::workspace::template_files_digest(workspace)
+        if self
+            .workspace_digest(workspace)
             .map_err(|_| state_err("create.apply"))?
             != provenance.template_material_digest
         {
@@ -249,6 +267,7 @@ impl TemplateRuntimePort for TemplateRuntime {
         // waiting DELETE/PUT for the whole apply). From this point the
         // running child is owned by its fence and the workspace, not by
         // the admission gate.
+        self.verify_http_workspace(workspace, true)?;
         let apply_spawn = flow
             .start_apply_saved_plan(workspace, &request.environment)
             .await
@@ -260,6 +279,7 @@ impl TemplateRuntimePort for TemplateRuntime {
             .and_then(|output| flow.require_success(output, "apply"))
             .map_err(|_| exec_err("create.apply"))?;
 
+        self.verify_http_workspace(workspace, true)?;
         let outputs = flow
             .output_json(workspace, &request.environment)
             .await
@@ -303,6 +323,8 @@ impl TemplateRuntimePort for TemplateRuntime {
         self.destroy_flow(request).await
     }
 }
+#[path = "runtime_backend.rs"]
+mod backend;
 #[path = "runtime_destroy.rs"]
 mod destroy_flow;
 

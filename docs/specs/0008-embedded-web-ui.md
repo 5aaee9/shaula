@@ -42,6 +42,6 @@ The UI is an API client, not a second source of Fleet/Profile desired state.
   remains authoritative.
 
 See [web development and deployment](../../web/README.md) for commands and scope.
-The README describes the current implementation; its legacy proxy setup is not
-an alternative to spec 0009. OIDC implementation remains pending as recorded in
-[implementation status](../IMPLEMENTATION_STATUS.md).
+The README describes development/deployment commands, not a second authentication
+contract. Current implementation coverage and outstanding real-Provider acceptance
+are recorded only in [implementation status](../IMPLEMENTATION_STATUS.md).

@@ -1,6 +1,6 @@
 # Shaula
 
-Shaula 管理多个 GitHub Actions Runner Scale Set 的容量，并通过基础设施模板创建和销毁短生命周期 Runner。本词汇表统一规划、实现和运维中使用的领域语言。
+Shaula 管理多个 GitHub Actions Runner Scale Set 的容量，并通过基础设施模板创建和销毁短生命周期 Runner。本词汇表统一规划、实现和运维中使用的领域语言；协议、决定和实现进度的权威位置见 [文档索引](docs/README.md)。
 
 ## Language
 
@@ -96,13 +96,29 @@ _Avoid_: VM, Pod, container
 一次不可变 Runner 创建尝试所产生的身份；更换模板或输入会产生新的 Generation，而不是更新原 Generation。
 _Avoid_: Version, revision
 
+**Lifecycle Worker**:
+由 `shaula job` 承载、负责一个 Generation 从 materialization/Create 到等待安全清退、Destroy 和清理的顺序执行者；它向 daemon 请求 GitHub 安全授权，不持有 GitHub Control-Plane Credential。
+_Avoid_: GitHub workflow job, Runner.Listener, one Terraform command
+
+**Executor Driver**:
+启动、观察并停止/fence Lifecycle Worker 及其 descendants 的执行 Adapter；v1 只有本地 `exec`，未来 Kubernetes Job 是另一种 Driver，不是 Runner Resource。
+_Avoid_: Template Platform, Terraform provider, Runner executor
+
+**Worker Claim**:
+一个 Generation 当前唯一被准许执行的 Lifecycle Worker 归属；worker epoch 标识新旧 attempt，恢复必须先证明旧执行者不再能产生副作用。
+_Avoid_: Terraform lock ID, session epoch, heartbeat alone
+
 **Runner Registration**:
 Runner 在 GitHub Actions Service 中的身份及其一次性 JIT bootstrap payload。
 _Avoid_: Runner Resource, JIT token
 
 **Runner Workspace**:
-一个 Runner Generation 从创建到销毁所独占的基础设施状态归属单元。
-_Avoid_: Terraform named workspace, shared workspace
+一个 Generation 的 Lifecycle Worker 独占的本地执行目录，包含 CoW/copy 的 Template、受保护输入和运行证据；authoritative Terraform state 在数据库 HTTP backend，未上传的 emergency state 仍须在此保留。
+_Avoid_: Terraform named workspace, shared workspace, sole authoritative state store
+
+**Terraform State Backend**:
+daemon 提供的内部 Generation-scoped HTTP 存储边界；通过数据库事务保存 Terraform state、验证 current Worker Claim/lock 并处理 LOCK/UNLOCK。其 state lock 不证明 provider 已停止。
+_Avoid_: Runner platform, general-purpose remote backend, infrastructure fence
 
 **Runner Resource**:
 Template Platform 中承载一个 Runner 的 generation-scoped 资源集合，不限定为 VM、Pod、container 或其他具体资源类型。
@@ -121,8 +137,8 @@ _Avoid_: Compose project, Swarm service, host daemon
 _Avoid_: Kubernetes UID, metadata.uid, reusable name, proof against out-of-band replacement
 
 **Runner Operation**:
-作用于一个 Runner Generation 的持久化生命周期意图，类型只能是 Create 或 Destroy。
-_Avoid_: Update, action, task
+作用于一个 Generation 的 Create 或 Destroy 生命周期行为；必要的外部副作用意图/结果持久化，但不是由 daemon 逐 Terraform 命令派发的 durable task。
+_Avoid_: Update, worker process, one Terraform command
 
 **Quarantine**:
 Shaula 无法证明某个 Runner Generation 的资源身份、状态归属或安全销毁条件时进入的持久化隔离状态；该 Generation 继续占用容量，直到显式、可审计的恢复流程解决。
@@ -173,9 +189,9 @@ _Avoid_: Credential hash, plaintext checksum, secret verifier
 _Avoid_: Static validation, latest-provider promise, platform implementation
 
 **Runner Consistency Set**:
-安全恢复一个 Runner Generation 所需的完整 SQLite lifecycle ledger、冻结 artifact 与 inputs、Workspace metadata 和 IaC state 集合。
+安全恢复 Generation 所需的 SQLite（含 Terraform state/lock、worker/GitHub/terminal facts）、冻结 artifact/inputs，以及未解决的 emergency state 集合；普通 materialized copy 与 provider cache 可重建。
 _Avoid_: State file alone, database backup alone, best-effort cache
 
-**Lifecycle Apply Fence**:
-在 Create 或 Destroy subprocess 可能启动前持久化的 attempt、plan digest、exact engine binary digest、state identity 与 child-process ownership 证据，用于阻止崩溃恢复后的并发、同路径二进制替换或重复 apply。
-_Avoid_: PID alone, Runner Operation intent, retry counter
+**Create Start Authorization**:
+daemon 针对 current Worker Claim 和 Fleet Mutation Fence 记录的单次 Create-start 许可；未解决的 spawn handover 必须保守视为 Create 可能已开始，不能通过重启获得第二次 Create apply。
+_Avoid_: Terraform lock, PID alone, retry counter

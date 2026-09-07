@@ -13,9 +13,14 @@ use super::{digest_of, exec_err, plan_err, state_err, TemplateRuntime};
 impl TemplateRuntime {
     pub(super) async fn destroy_flow(
         &self,
-        request: TemplateDestroyRequest,
+        mut request: TemplateDestroyRequest,
     ) -> Result<DestroyClassification, TemplateOutcomeError> {
+        if self.http_backend.is_some() && request.apply_intent_sink.is_none() {
+            return Err(state_err("destroy.authorization"));
+        }
+        self.configure_environment(&request.generation_id, &mut request.environment)?;
         let workspace = &request.workspace_path;
+        self.verify_http_workspace(workspace, true)?;
         let flow = self.open_flow(request.timeout).await?;
         let original = &request.original_provenance;
 
@@ -29,7 +34,8 @@ impl TemplateRuntime {
         if digest_of(&input_now) != original.protected_input_digest {
             return Err(state_err("destroy.plan"));
         }
-        let workspace_now = crate::workspace::template_files_digest(workspace)
+        let workspace_now = self
+            .workspace_digest(workspace)
             .map_err(|_| state_err("destroy.plan"))?;
         let expected_material = crate::artifact_integrity::material_digest(
             &request.artifact_dir,
@@ -141,7 +147,8 @@ impl TemplateRuntime {
         if digest_of(&input_now) != provenance.protected_input_digest {
             return Err(exec_err("destroy.apply"));
         }
-        if crate::workspace::template_files_digest(workspace)
+        if self
+            .workspace_digest(workspace)
             .map_err(|_| state_err("destroy.apply"))?
             != provenance.template_material_digest
         {
@@ -162,6 +169,7 @@ impl TemplateRuntime {
         // the destroy apply process is spawned under its tree fence —
         // after the final verification, never before it, and never held
         // for the child's whole lifetime.
+        self.verify_http_workspace(workspace, true)?;
         let apply_spawn = flow
             .start_apply_saved_plan(workspace, &request.environment)
             .await
@@ -173,6 +181,7 @@ impl TemplateRuntime {
             .and_then(|output| flow.require_success(output, "apply"))
             .map_err(|_| exec_err("destroy.apply"))?;
 
+        self.verify_http_workspace(workspace, true)?;
         let after = flow
             .state_pull_snapshot(workspace, &request.environment)
             .await

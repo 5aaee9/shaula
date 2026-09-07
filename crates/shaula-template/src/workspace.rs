@@ -142,6 +142,17 @@ fn engine_generated(rel: &std::path::Path) -> bool {
 /// bookkeeping — while an ADDED module or variables file changes the
 /// pin (spec 0004 §5: the provenance binds the full executed material).
 pub fn template_files_digest(dir: &Path) -> CoreResult<String> {
+    material_digest(dir, false)
+}
+
+/// Explicit HTTP-runtime digest: only the verified fixed root backend file is
+/// outside the immutable artifact. Legacy callers get no such exception.
+pub(crate) fn http_template_files_digest(dir: &Path) -> CoreResult<String> {
+    crate::http_backend::verify_system_file(dir)?;
+    material_digest(dir, true)
+}
+
+fn material_digest(dir: &Path, http_backend: bool) -> CoreResult<String> {
     for name in ["main.tf", "profile.yaml", ".terraform.lock.hcl"] {
         if !dir.join(name).is_file() {
             return Err(err(format!(
@@ -150,7 +161,12 @@ pub fn template_files_digest(dir: &Path) -> CoreResult<String> {
             )));
         }
     }
-    fn collect(root: &Path, dir: &Path, into: &mut Vec<PathBuf>) -> CoreResult<()> {
+    fn collect(
+        root: &Path,
+        dir: &Path,
+        into: &mut Vec<PathBuf>,
+        http_backend: bool,
+    ) -> CoreResult<()> {
         let entries = std::fs::read_dir(dir)
             .map_err(|e| err(format!("template dir {} unreadable: {e}", dir.display())))?;
         for entry in entries {
@@ -159,11 +175,13 @@ pub fn template_files_digest(dir: &Path) -> CoreResult<String> {
             let rel = path
                 .strip_prefix(root)
                 .map_err(|_| err("template path escaped its root"))?;
-            if engine_generated(rel) {
+            if engine_generated(rel)
+                || (http_backend && rel == Path::new(crate::http_backend::BACKEND_FILE))
+            {
                 continue;
             }
             if path.is_dir() {
-                collect(root, &path, into)?;
+                collect(root, &path, into, http_backend)?;
             } else {
                 into.push(rel.to_path_buf());
             }
@@ -171,7 +189,7 @@ pub fn template_files_digest(dir: &Path) -> CoreResult<String> {
         Ok(())
     }
     let mut files = Vec::new();
-    collect(dir, dir, &mut files)?;
+    collect(dir, dir, &mut files, http_backend)?;
     files.sort();
     use sha2::{Digest as _, Sha256};
     let mut hasher = Sha256::new();

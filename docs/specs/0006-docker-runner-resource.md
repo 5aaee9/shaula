@@ -7,15 +7,16 @@
 
 This document specializes the provider-neutral [Template Profile Runtime Specification](0004-template-profile-runtime.md) for Docker. It does not add Docker capability to the Shaula daemon. The production binary imports no Docker client, invokes no Docker CLI, interprets no container schema and watches no Docker event.
 
-Related decisions are [ADR-0002](../ard/0002-run-immutable-runner-lifecycles-as-local-subprocesses.md), [ADR-0004](../ard/0004-allow-bootstrap-secrets-in-provisioning-state.md), and [ADR-0008](../ard/0008-keep-platform-capabilities-in-terraform-template-profiles.md).
+Worker/state ownership follows [spec 0010](0010-lifecycle-worker-and-http-state-backend.md). Related decisions are [ADR-0014](../ard/0014-run-lifecycle-workers-with-a-database-http-state-backend.md), [ADR-0004](../ard/0004-allow-bootstrap-secrets-in-provisioning-state.md), and [ADR-0008](../ard/0008-keep-platform-capabilities-in-terraform-template-profiles.md).
 
 ## 1. Outcome
 
-Each Runner Generation is realized by one `docker_container` managed by the pinned Docker Terraform provider. Terraform runs as a local Shaula child process and connects to an already-running local Docker Engine through an administrator-approved Unix socket. Docker is the Runner Resource realization platform, not Shaula's execution environment or native API；Target remains GitHub scope terminology.
+Each Runner Generation is realized by one `docker_container` managed by the pinned Docker Terraform provider. Terraform runs as a child of the local Generation-specific `shaula job` worker and connects to an already-running Docker Engine through an approved Unix socket. Its state goes to the daemon's database HTTP backend. Docker names the Runner Resource platform, not an Executor Driver or native API; Target remains GitHub scope terminology.
 
 ```mermaid
 flowchart LR
-    Shaula["shaula daemon"] --> TF["local Terraform subprocess"]
+    Shaula["shaula daemon / exec Driver"] --> Worker["shaula job / one Generation"]
+    Worker --> TF["local Terraform subprocess"]
     TF --> Provider["Docker Terraform provider"]
     Provider --> Socket["protected docker.sock"]
     Socket --> Container["one Generation container"]
@@ -59,29 +60,22 @@ A reviewed bootstrap shim:
 4. relies on Runner `CommandSettings` startup to capture the value into its private in-memory argument map and unset the ordinary environment entry；`GetJitConfig()` later reads that captured value;
 5. exits rather than starting an unregistered Runner when the file is absent or malformed.
 
-JIT is absent from declarative container environment, args, command, labels and metadata, and conformance proves it absent from process argv, the consumed staged file, ordinary inherited job environment, workflow context, HTTP reads, audit, logs and telemetry. Runner environment unsetting is not `/proc` or memory isolation；v1 accepts possible JIT access by workflow code with process-inspection capability inside the same Runner Execution Domain, and this does not block activation. No process-isolation or memory-zeroization claim is made. The container, Workspace, Terraform plan/state and exact original protected input remain credential-grade artifacts through successful Destroy and empty-state proof. A memory-only claim requires verified provider upload into `tmpfs` and is not part of the default contract. GitHub App/PAT/derived control-plane tokens, provider credentials, sensitive Template bindings and Shaula HTTP/SQLite credentials never enter the Runner Execution Domain.
+JIT is absent from declarative container environment, args, command, labels and metadata, and conformance proves it absent from process argv, the consumed staged file, ordinary inherited job environment, workflow context, management HTTP reads, audit, logs and telemetry. Runner environment unsetting is not `/proc` or memory isolation；v1 accepts possible JIT access by workflow code with process-inspection capability inside the same Runner Execution Domain, and this does not block activation. No process-isolation or memory-zeroization claim is made. The container, Workspace, Terraform plan/state and exact original protected input remain credential-grade artifacts through successful Destroy and empty-state proof. A memory-only claim requires verified provider upload into `tmpfs` and is not part of the default contract. GitHub App/PAT/derived control-plane tokens, provider credentials, sensitive Template bindings and Shaula HTTP/SQLite credentials never enter the Runner Execution Domain.
 
 ## 5. Create
 
-The generic Template Runtime lifecycle applies with these Docker-specific checks:
+The full worker sequence, GitHub gates and HTTP state protocol are owned by spec 0010; generic saved-plan checks are owned by spec 0004 §5. Docker adds only:
 
-1. Persist Generation identity, exact Profile artifact and Revision, exact `bindings_digest`, Workspace and state lineage/serial, then materialize the artifact.
-2. Verify the exact compatibility attestation and run locked Terraform initialization before issuing JIT.
-3. Write the exact protected input and create a saved plan.
-4. Apply the complete provider-neutral gate: supported JSON major, `applyable=true`, `complete=true`, `errored=false`, empty managed prior state, exactly one `docker_container` with exact `["create"]`, and only data-resource `["read"]`/`["no-op"]`. Reject unknown shape/action/mode/address/type, deferred changes, import, deposed instances, moves and replacements.
-5. Bind the saved-plan digest to exact engine kind/version/binary digest, artifact/input digests, state lineage/serial or empty sentinel, Generation ID and attempt ID. Re-hash the plan and engine binary, persist `ApplyStarting` and provenance, then apply that exact plan at most once.
-6. Validate the fixed `shaula_result` envelope and echoed `bindings_digest`, then store container identity only as opaque protected evidence.
-7. Treat the Runner as online only when GitHub inventory reports the expected Shaula runner identity.
+1. The manifest requires exactly one generation-scoped `docker_container` with `["create"]`; shared image data is not Generation-owned infrastructure.
+2. The provider uploads the protected JIT file before container start; the pinned shim consumes it under §4's handoff constraints.
+3. `shaula_result` uses the common envelope and opaque container evidence; authoritative Terraform state is stored by the database HTTP backend.
+4. Readiness is determined by daemon GitHub inventory, not a Docker API client or worker process exit.
 
 Docker `running` state is diagnostic evidence, not authoritative Runner readiness. A container that exits before GitHub reports the Runner online is retired through the normal GitHub removal and Destroy path.
 
 ## 6. Destroy and recovery
 
-Destroy starts only after GitHub's safe-removal gate permits it and always uses the exact original Profile artifact, protected input, Workspace and state. Already-empty state succeeds without plan or apply.
-
-For non-empty state, the saved plan must pass the full generic format/shape gate, give every remaining managed instance exact `["delete"]`, and allow only data-resource `["read"]`/`["no-op"]`. Import, deposed, move, replacement, deferred and unknown forms fail closed.
-
-Before apply, Shaula binds and re-hashes the plan with the same provenance fields as Create and durably persists `DestroyApplyStarting`. A retry creates a new plan and attempt only after the previous subprocess is proven terminated. Completion requires successful apply and empty state；only then may the exact protected input be erased.
+The daemon authorizes safe GitHub removal; the worker then uses original artifact/runtime/inputs and database state to Destroy the recorded container. Spec 0004 owns delete-only plan checks; spec 0010 owns descendant fencing, lock/CAS, retry and exact empty-state completion/seal before cleanup. An empty initial state or worker exit alone is not successful Destroy. Ordinary Workspace reconstruction is permitted only from complete retained materials and DB state; emergency local state cannot be discarded.
 
 A possibly started Create is never applied again. Missing/corrupt original state with a possible external container causes `Quarantined`；Shaula never scans Docker, imports by name or issues native delete. A normal plan is allowed only for bounded read-only drift diagnosis and is never applied. Exact live absence and security shape belong to the external conformance harness.
 
@@ -108,7 +102,7 @@ The Profile's external integration suite may use Docker APIs or CLI and emit sep
 | Container exits before GitHub online | Safely remove any GitHub registration, then Destroy |
 | Runner is Busy | Do not Destroy；surface bounded blocked status and retry GitHub removal later |
 | State missing with possible container | Quarantine；require operator recovery, never native discovery/delete |
-| Destroy partly succeeds | Re-plan, re-check delete-only actions and retry until state is empty |
+| Destroy partly succeeds | Fence prior descendants, re-read state and re-plan delete-only; unresolved outcome still blocks terminal completion |
 | OTel exporter unavailable | Continue lifecycle and retain bounded local diagnostics |
 
 ## 9. Acceptance criteria
@@ -120,20 +114,18 @@ Implementation is incomplete until:
 3. A passing activation attestation binds the exact engine version/binary digest, provider lock versions/checksums, Profile artifact digest, protected `bindings_digest`, runtime/trust policy including accepted limitations, Runner/shim image digest and suite revision；without it the Profile cannot become `Active` or advertise Docker capability.
 4. The bundled default Runner container has no Docker socket, GitHub App/PAT, provider/registry credential, sensitive Profile binding or host API credential；only the approved Terraform child receives the socket/bindings needed to create it.
 5. External inspection proves `restart=no`, `must_run=false`, `rm=false`, pinned image digest, bounded ownership labels and all forbidden privilege/host settings.
-6. JIT is absent from declarative env/args/command/metadata, process argv, the consumed staged file, ordinary inherited job environment, workflow context, HTTP reads, audit, logs and telemetry；the shim uses only `ACTIONS_RUNNER_INPUT_JITCONFIG`, Runner startup captures then unsets it, and tests record rather than deny the accepted same-Execution-Domain process-inspection risk without making a memory-zeroization claim.
+6. JIT is absent from declarative env/args/command/metadata, process argv, the consumed staged file, ordinary inherited job environment, workflow context, management HTTP reads, audit, logs and telemetry；the shim uses only `ACTIONS_RUNNER_INPUT_JITCONFIG`, Runner startup captures then unsets it, and tests record rather than deny the accepted same-Execution-Domain process-inspection risk without making a memory-zeroization claim.
 7. Create-plan tests cover every generic header/shape rejection and require empty prior state plus one exact create.
 8. Destroy-plan tests cover empty-state success, exact deletes, every ambiguous-form rejection and partial-delete recovery.
-9. Crashes after `ApplyStarting` or `DestroyApplyStarting` never repeat Create apply or reuse a Destroy attempt；the exact protected input remains until empty-state proof, and lost/corrupt state with possible resource is quarantined.
+9. Worker/daemon crashes, backend outages and lock races pass spec 0010; no second Create apply or unfenced Destroy retry occurs. Exact inputs/emergency state remain until trusted empty-state completion; lost authoritative state with possible resources quarantines.
 10. Malicious Fleet input cannot change the socket, provider source, image outside the allowlist, privilege/host settings, executable, filesystem paths or artifact code.
 11. Docker-specific live assertions exist only in the Profile conformance harness；production lifecycle/recovery tests pass without Docker capability in Shaula core.
 12. OTel failure, generic-reason, manifest-platform and redaction tests cover every Docker lifecycle stage from the first release.
 13. Conformance explicitly records that every same-identity IaC child shares the ambient Docker host-admin trust domain.
 14. Sensitive Docker bindings survive restart from the exact plaintext SQLite Template Revision but are absent from every read/audit/diagnostic/telemetry surface；database, WAL/SHM, copies and backups are tested as one credential boundary.
 
+A placeholder `.terraform.lock.hcl` is not a compatibility pin. Release requires real provider versions/checksums and passing engine/provider/image/GitHub/HTTP-backend tests; the checked-in artifact's evidence status is recorded in [implementation status](../IMPLEMENTATION_STATUS.md).
+
 ## 10. Open decisions
 
-1. Should v1 additionally ship an explicitly high-trust Docker-building Profile that mounts `docker.sock` into its Runner? The bundled default Profile is settled: it forbids the mount.
-2. Must Docker JIT be memory-only? If yes, verified provider upload into `tmpfs` is a release-blocking compatibility spike.
-3. Must Docker-capable IaC children run under a separate operating-system identity or sandbox, rather than accepting one ambient host-admin trust domain for every IaC child of the daemon?
-
-Selecting exact engine/provider/Profile bindings/runtime policy/Runner versions is release configuration, not an unresolved architecture choice；only a passing attested tuple may be activated.
+The [central decision register](../README.md#仍需决定或冻结) distinguishes R1/R3 release configuration from optional hardening. A Runner-socket Profile, memory-only JIT and separate OS identities/sandboxing are not default guarantees; the accepted baseline remains no Runner socket mount, protected file handoff and one ambient host-admin trust domain. Only a passing exact tuple may be activated.

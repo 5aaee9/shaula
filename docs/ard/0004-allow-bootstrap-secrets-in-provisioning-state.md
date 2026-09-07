@@ -5,6 +5,8 @@ date: 2026-09-04
 
 # Allow bootstrap secrets in provisioning state and generation resources
 
+> State ownership is amended by [ADR-0014](0014-run-lifecycle-workers-with-a-database-http-state-backend.md): authoritative state is SQLite-backed HTTP state; DB/WAL/backups and unresolved emergency local state share this credential boundary. Worker control is not a Runner/workflow secret broker.
+
 Shaula v1 直接通过不可变 Template Profile Revision 向 Runner Resource 传递 GitHub JIT bootstrap payload，并接受该 payload 进入 per-runner IaC state、exact original protected input 与 generation-scoped bootstrap carrier。原始受保护输入必须保留到 Destroy 成功且 state 为空后才可清理。当前不引入 Runner 回连 Shaula 的一次性 secret broker；JIT 是一次性 Runner Registration 材料，不是 GitHub App 或 PAT 控制面凭据。
 
 ## Consequences

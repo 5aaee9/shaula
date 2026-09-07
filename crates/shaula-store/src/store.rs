@@ -43,15 +43,20 @@ impl Store {
         options
             .max_connections(8)
             .min_connections(1)
-            .connect_timeout(Duration::from_secs(10));
+            .connect_timeout(Duration::from_secs(10))
+            // State, lock metadata and capability verifiers must not appear
+            // in SQL diagnostics, even under a debug-level subscriber.
+            .sqlx_logging(false)
+            // Apply on EVERY pooled connection, not four arbitrary checkouts.
+            // FULL preserves acknowledged authoritative state across a crash.
+            .map_sqlx_sqlite_opts(|options| {
+                options
+                    .pragma("journal_mode", "WAL")
+                    .pragma("synchronous", "FULL")
+                    .foreign_keys(true)
+                    .busy_timeout(Duration::from_secs(5))
+            });
         let db = Database::connect(options).await?;
-        // Durability-relevant pragmas; WAL keeps readers and the single
-        // writer from blocking each other.
-        use sea_orm::ConnectionTrait;
-        db.execute_unprepared("PRAGMA journal_mode=WAL;").await?;
-        db.execute_unprepared("PRAGMA foreign_keys=ON;").await?;
-        db.execute_unprepared("PRAGMA busy_timeout=5000;").await?;
-        db.execute_unprepared("PRAGMA synchronous=NORMAL;").await?;
         Ok(Self { db })
     }
 

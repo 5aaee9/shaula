@@ -5,7 +5,7 @@ date: 2026-09-04
 
 # One daemon supervises multiple isolated homogeneous Fleets
 
-一个 `shaula serve` 实例可以管理多个 Fleet。每个 Fleet 固定绑定一个 GitHub Actions Scale Set、一个 GitHub Auth Profile 和一份同质 Template Profile Revision，并拥有独立的 listener/session、需求快照和生命周期状态；所有 Fleet 共享 SQLite、artifact store、有界且公平的本地 IaC subprocess 调度器和 OpenTelemetry pipeline。
+一个 `shaula serve` 实例可以管理多个 Fleet。每个 Fleet 固定绑定一个 GitHub Actions Scale Set、一个 GitHub Auth Profile 和一份同质 Template Profile Revision，并拥有独立的 listener/session、需求快照和生命周期状态；所有 Fleet 共享 SQLite、artifact store、公平 worker/command budgets 和 OpenTelemetry。经 [ADR-0014](0014-run-lifecycle-workers-with-a-database-http-state-backend.md) 修订，daemon 经 exec Driver 监督每 Generation 的 `shaula job`，不逐命令调度 Terraform；state/locks 由内部 HTTP backend 保存。
 
 这个形状允许不同 Fleet 使用不同 Template Platform 和 Profile，同时避免在单个 Scale Set 的聚合需求中进行无法可靠完成的逐 job 模板路由。
 

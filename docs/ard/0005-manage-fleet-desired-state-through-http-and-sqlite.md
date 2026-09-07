@@ -5,6 +5,8 @@ date: 2026-09-04
 
 # Manage Fleet desired state through HTTP and SQLite revisions
 
+> [ADR-0014](0014-run-lifecycle-workers-with-a-database-http-state-backend.md) adds the private worker/state protocol without changing HTTP/SQLite desired-state authority. Lifecycle substeps move into `shaula job`; worker/state mutations still use the daemon's single logical SQLite writer.
+
 Shaula v1 通过进程内 HTTP control Interface 管理 Fleet resources。已接受的 Fleet Spec 作为不可变 Fleet Revision 保存在 SQLite，当前 desired head 是运行时唯一真相源；`shaula serve --config` 只保留 storage、HTTP binding、execution limits、root trust 和 observability 等 daemon bootstrap concerns，不再持续定义 Fleet 或 Profile catalog。
 
 HTTP Adapter 调用 Fleet Registry Module。一次有效 mutation 在一个短 SQLite transaction 中提交 desired revision、Fleet Change、append-only audit fact 和 durable reconcile wake marker，然后在不调用 GitHub 或 IaC engine 的情况下返回；Fleet supervisor 异步处理已提交的 Revision，周期性 SQLite scan 修复丢失的进程内通知和进程崩溃。
@@ -24,7 +26,7 @@ Fleet-level replacement 不是 Runner Update primitive。每个既有 Runner Gen
 - Fleet 创建、容量调整和 Decommission 不需要 daemon restart。
 - SQLite 在同一个 single-writer ownership boundary 内保存 Fleet revisions、Changes、status、idempotency records 和 Runner lifecycle ledger。
 - HTTP Adapter、未来 remote CLI 和测试必须使用相同 Fleet Registry Interface，不得直接编辑 SQLite。
-- Fleet Spec 使用 typed `github.com` organization/repository Target、稳定 Auth Profile key，以及 current Active 且已 attested 的精确 Template Profile Revision；它不接受 `config_url`、platform-specific raw target、attestation 或 credential。Fleet Revision 记录 admission-time Auth tuple，独立 Auth Handoff state 保存并推进当前完整 desired/observed Auth Revision Refs，因此 same-Profile promotion 不改写 Fleet Spec、Revision 或 ETag。
+- Fleet Spec 使用 typed `github.com` organization/repository Target、稳定 Auth Profile key，以及新引用时 current Active、后续保留 exact pin 的已 attested Template Profile Revision；它不接受 `config_url`、platform-specific raw target、attestation 或 credential。Fleet Revision 记录 admission-time Auth tuple，独立 Auth Handoff state 保存并推进当前完整 desired/observed Auth Revision Refs，因此 same-Profile promotion 不改写 Fleet Spec、Revision 或 ETag。
 - GitHub access、Profile readiness 和 Template Platform prerequisites 是异步 status Conditions，不得让 HTTP transaction 调用远端系统。
 - YAML 或 Git 可以产生 HTTP requests，但 daemon 不监视它们作为第二个 desired-state source。
 - HTTP request cancellation 不会取消已提交的 Fleet Change 或其产生的 Runner Operation。

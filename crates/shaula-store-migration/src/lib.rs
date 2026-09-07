@@ -8,6 +8,7 @@ pub mod m0003_auth_tables;
 pub mod m0004_lifecycle_tables;
 pub mod m0005_durable_format;
 pub mod m0006_attestation_subject_verified;
+pub mod m0007_http_state;
 
 use sea_orm_migration::prelude::*;
 
@@ -23,12 +24,19 @@ impl MigratorTrait for Migrator {
             Box::new(m0004_lifecycle_tables::Migration),
             Box::new(m0005_durable_format::Migration),
             Box::new(m0006_attestation_subject_verified::Migration),
+            Box::new(m0007_http_state::Migration),
         ]
     }
 }
 
-/// Runs pending migrations forward to the latest version.
+/// Runs pending migrations forward to the latest version atomically.
 pub async fn migrate(db: &sea_orm::DatabaseConnection) -> Result<(), DbErr> {
+    use sea_orm::TransactionTrait as _;
     use sea_orm_migration::MigratorTrait as _;
-    Migrator::up(db, None).await
+
+    // SeaORM does not wrap SQLite migrations in a transaction. DDL and
+    // migration history must commit together so a failed upgrade is retryable.
+    let tx = db.begin().await?;
+    Migrator::up(&tx, None).await?;
+    tx.commit().await
 }

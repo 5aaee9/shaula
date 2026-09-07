@@ -7,7 +7,7 @@ date: 2026-09-04
 
 Shaula v1 由纯 Rust `shaula-scaleset` Adapter 为每个 Fleet 实现 message session 与长轮询。Adapter 在 ACK 前持久化 statistics snapshot、幂等 Job Observation、message checkpoint 和 acquisition intent；事务失败时不 ACK，重复投递按消息身份幂等处理。固定版本的 `actions/scaleset` Go SDK 与 `internal/testserver` 只作为 wire/outcome compatibility oracle，不进入生产运行时。
 
-即使采用 persist-before-ACK，服务端截断、重分配、session 丢失、消息过期或协议本身不提供完整历史时，JobStarted、JobCompleted 仍可能缺失、重复或乱序。因此消息只用于加速 reconcile，不能累加成 desired count 或当作生命周期真相源。Shaula 通过最新 Assigned Demand 覆盖快照、GitHub Runner inventory、启动恢复、周期性 retirement reaper 和持久化 Runner Operation 等独立 level-triggered sources 收敛资源生命周期。
+即使采用 persist-before-ACK，服务端截断、重分配、session 丢失、消息过期或协议本身不提供完整历史时，JobStarted、JobCompleted 仍可能缺失、重复或乱序。因此消息只用于加速 reconcile，不能累加成 desired count 或当作生命周期真相源。Shaula 通过最新 Assigned Demand 覆盖快照、GitHub Runner inventory、启动恢复、周期性 retirement reaper 和持久化 Generation/worker/外部副作用事实等独立 level-triggered sources 收敛资源生命周期。
 
 ## Consequences
 

@@ -8,6 +8,8 @@
 - Native platform clients: none
 - v1 bundled Template Platforms: Kubernetes and Docker
 - Lifecycle primitives: Create and Destroy only
+- Lifecycle execution: one `shaula job` per Generation; exec Executor only in v1
+- Terraform state authority: daemon HTTP backend backed by SQLite
 - Observability: Day 0 OpenTelemetry
 - Production implementation: pure Rust multi-crate workspace
 - Rust stack: Tokio, clap, axum, SeaORM/SQLite, serde, reqwest and Rust OpenTelemetry
@@ -20,9 +22,9 @@
 
 Fleet、Template Profile 和 GitHub Auth Profile 都通过同一 HTTP control plane 管理；SQLite 中的不可变 Revision、desired head、observed state、Change、outbox 和 audit 是唯一运行时真相源。Template artifact 通过 digest HTTP 发布到 content-addressed artifact store。Fleet/Profile resource mutation 只提交 durable desired state，GitHub、Profile validation 和 IaC 副作用都在提交后异步发生；artifact streaming 与 atomic publication 遵循独立的高权限上传契约。
 
-Shaula 原生只是一个 pure-Rust daemon。生产路径使用 Tokio、clap、axum、SeaORM/SQLite、serde、reqwest 和 Rust OpenTelemetry；`shaula-scaleset` crate 实现 GitHub Scale Set wire protocol。它拥有 HTTP/SQLite、artifact/workspace、容量协调、本地 IaC subprocess、崩溃恢复和 OpenTelemetry，但不链接 production Go、Kubernetes 或 Docker client，不构造平台请求，也不解释 Pod、Secret、container 等平台对象。Kubernetes 和 Docker 是 v1 随附的 Terraform Template Profiles；新增平台应交付 Profile artifact 与验收，而不是扩展核心生命周期 Interface。
+Shaula 是 pure-Rust 多进程执行模型：一个 daemon 管理 Fleet/GitHub/容量，每个 Generation 的 `shaula job` worker 顺序负责完整 Terraform 生命周期。生产路径使用 Tokio、clap、axum、SeaORM/SQLite、serde、reqwest 和 Rust OpenTelemetry；`shaula-scaleset` 实现 GitHub wire protocol，state 通过 daemon 内部 HTTP backend 写入 SQLite。生产 binary 不链接 Go、Kubernetes 或 Docker client，不构造平台请求，也不解释平台对象。Kubernetes/Docker 是 bundled Terraform Profiles，不是 Executor Drivers。
 
-每个 Runner Generation 固定一份不可变 Template Profile Revision、artifact、输入、Workspace 和 IaC state。基础设施生命周期只有 Create 和 Destroy，没有 Update。JobStarted、JobCompleted 和进程内 wakeup 都可能丢失；最新 Assigned Demand、GitHub Runner inventory、持久化 intent/operation、outbox 扫描和 retirement reaper 共同提供 level-triggered 最终收敛，而不是完整事件重放。
+每个 Runner Generation 固定一份不可变 Template Profile Revision、artifact、输入、Workspace 和 IaC state。基础设施生命周期只有 Create 和 Destroy，没有 Update。JobStarted、JobCompleted 和进程内 wakeup 都可能丢失；最新 Assigned Demand、GitHub Runner inventory、Generation/worker 与外部副作用事实、outbox 扫描和 retirement reaper 共同提供 level-triggered 最终收敛，而不是完整事件重放。
 
 OpenTelemetry tracing、metrics 和日志关联是 Day 0 Interface。HTTP commit、Profile validation/activation、Auth rollout、Fleet session、reconcile、Runner lifecycle、IaC subprocess、recovery 和 reaper 从首次实现开始就必须可观察。
 
@@ -38,7 +40,7 @@ OpenTelemetry tracing、metrics 和日志关联是 Day 0 Interface。HTTP commit
 相关 Architecture Decision Records：
 
 - [ADR-0001: One daemon supervises multiple isolated homogeneous Fleets](../ard/0001-one-daemon-supervises-multiple-isolated-fleets.md)
-- [ADR-0002: Run immutable Runner lifecycles as local subprocesses](../ard/0002-run-immutable-runner-lifecycles-as-local-subprocesses.md)
+- [ADR-0014: Lifecycle workers and database HTTP state backend](../ard/0014-run-lifecycle-workers-with-a-database-http-state-backend.md) supersedes ADR-0002；详细协议见 [spec 0010](0010-lifecycle-worker-and-http-state-backend.md)。
 - [ADR-0003: Treat Scale Set messages as reconciliation hints](../ard/0003-treat-scale-set-messages-as-reconciliation-hints.md)
 - [ADR-0004: Allow bootstrap secrets in provisioning state](../ard/0004-allow-bootstrap-secrets-in-provisioning-state.md)
 - [ADR-0005: Manage Fleet desired state through HTTP and SQLite revisions](../ard/0005-manage-fleet-desired-state-through-http-and-sqlite.md)
@@ -48,7 +50,7 @@ OpenTelemetry tracing、metrics 和日志关联是 Day 0 Interface。HTTP commit
 - [ADR-0009: Manage Template and GitHub Auth Profiles through HTTP and SQLite](../ard/0009-manage-profile-resources-through-http-and-sqlite.md)
 - [ADR-0010: Build a pure-Rust multi-crate daemon and use scaleset as an oracle](../ard/0010-build-a-pure-rust-multi-crate-daemon-and-use-scaleset-as-an-oracle.md)
 
-ADR-0008、ADR-0009、ADR-0010 和 ADR-0013 共同约束平台边界、Profile publication、credential storage、Auth rollout、HTTP exposure、mandatory OIDC、生产语言和 Scale Set protocol verification；本规范的核心模型遵循这些已接受决定。ADR-0013 supersedes ADR-0011。
+ADR-0008、ADR-0009、ADR-0010、ADR-0013 与其 worker/internal-HTTP 修订 ADR-0014 共同约束平台边界、Profile publication、credential storage、Auth rollout、HTTP exposure、mandatory OIDC、生产语言和 Scale Set protocol verification；本规范的核心模型遵循这些已接受决定。ADR-0013 supersedes ADR-0011。
 - [ADR-0013: Require OpenID Connect for all HTTP access](../ard/0013-require-openid-connect-for-all-http-access.md)
 
 ## 2. Goals
@@ -62,9 +64,9 @@ v1 MUST：
 5. 将 Fleet 固定到一个精确 Template Profile Revision 和 artifact digest；发布新 Revision 不隐式改变 Fleet 或既有 Runner。
 6. 将 Fleet 绑定到一个完整 Auth Revision Ref `(profile_key, revision)`，并以显式 `desired_auth_ref` / `observed_auth_ref` 状态推进已验证 credential revision 的 session rollout。
 7. 根据最新 Assigned Demand，在每个 Fleet 的 `min_runners` 与 `max_runners` 之间最终收敛 Runner 容量。
-8. 通过本地 Terraform subprocess 执行每个 Runner Generation 的 Create 和 Destroy；核心 Interface 不出现平台分支或平台对象类型。
+8. 经 exec Driver 启动每 Generation 一个 Lifecycle Worker，由它执行 Create、等待安全清退、Destroy；daemon 不持久化/派发每个 Terraform 步骤。核心 Interface 不出现平台分支或平台对象类型。
 9. 同时交付 `templates/kubernetes` 与 `templates/docker`，并让两者遵守相同的 Template Runtime contract。
-10. 使用 SQLite ledger、content-addressed artifact 和 per-runner IaC state 支持通知丢失与进程崩溃后的恢复。
+10. 使用 SQLite desired/worker/GitHub facts、HTTP-backed Terraform state/lock、retained artifacts/inputs 和 emergency state 支持恢复，不承诺 Create 的逐指令 resume。
 11. 容忍重复、乱序和缺失的 Job Observation，且不故意销毁 GitHub 已知仍在执行 job 的 Runner。
 12. 将 GitHub App 和 PAT 都作为正式、受测试的认证方式；GitHub App 是推荐默认，认证失败不自动 fallback 到另一 kind 或旧 revision。
 13. 接受 PAT、GitHub App private key 与 schema-sensitive Kubernetes/Docker Template bindings 作为 write-only HTTP 输入并允许其明文存入各自 immutable SQLite Revision，同时禁止所有读取接口、audit、error、log、OTel 和 diagnostics 回显；GitHub credential 只进入 GitHub Access Module，Template binding secret 只进入 exact-Revision IaC child，二者都不进入 Runner/workflow。
@@ -78,11 +80,11 @@ v1 不包括：
 - Shaula 原生 Kubernetes/Docker client、watcher、controller、平台对象 schema 或平台特定 reconcile 分支；
 - 在单个 Scale Set 内按逐 job labels 动态选择 Template Profile；
 - Runner 或 Scale Set 原地 Update、模板热更新、自动 drift repair；
-- 通过 Kubernetes Job、远程 worker 或另一控制面执行 Terraform/OpenTofu；
+- 实现 Kubernetes Job 或远程 Executor Driver；仅保留其可替换 Interface，不禁止未来另行决策的扩展；
 - 多主、跨主机 HA、共享 SQLite 或分布式 operation lease；
 - 完整 JobStarted/JobCompleted audit、消息 exactly-once 或 job history 重建；
 - 自动删除 GitHub Scale Set；
-- 通用 Terraform remote backend；
+- 服务任意项目的通用 Terraform remote backend；v1 仅实现 Shaula Generation 专用的数据库 HTTP backend；
 - 未通过兼容性门槛的 OpenTofu 支持；
 - 手工 `shaula create`、`shaula destroy` 或 `shaula update` CLI 命令；
 - 通过 Fleet HTTP 直接创建、更新或强制销毁 Runner；
@@ -106,20 +108,24 @@ flowchart TB
     Daemon --> FB["Fleet B supervisor"]
     FA <-->|"session, demand, JIT, inventory"| GHA["GitHub Actions Scale Set A"]
     FB <-->|"session, demand, JIT, inventory"| GHB["GitHub Actions Scale Set B"]
-    FA --> Scheduler["Fair operation scheduler"]
+    FA --> Scheduler["Fair worker / command budgets"]
     FB --> Scheduler
-    Scheduler --> Lifecycle["Runner Lifecycle Module<br/>Create / Destroy"]
-    Lifecycle --> Runtime["Template Runtime Module"]
+    Scheduler --> Executor["Executor Module: exec"]
+    Executor --> Worker["shaula job: one Generation"]
+    Worker --> Runtime["Template Runtime Module"]
     Runtime --> IaC["Local Terraform child process"]
     IaC --> Profile["Pinned Template Profile artifact"]
     Profile --> Platform["Template-defined external platform"]
-    Lifecycle <--> Workspaces["Per-generation workspace / state"]
+    Worker <--> Workspaces["Exclusive CoW/copy Workspace"]
+    Worker <-->|"scoped control / GitHub gates"| Daemon
+    IaC <-->|"GET / POST / LOCK / UNLOCK"| Backend["Private HTTP state backend"]
+    Backend <--> DB
     Daemon --> OTel["OpenTelemetry"]
     HTTP --> OTel
     ProfileRegistry --> OTel
     FA --> OTel
     FB --> OTel
-    Lifecycle --> OTel
+    Worker --> OTel
 ```
 
 `Profile -> Platform` 表示 Terraform provider 的行为，不表示 Shaula daemon 拥有平台 client。平台只通过 Profile manifest、标准 inputs、declared outputs 和 IaC exit/state classification 与核心相接。
@@ -128,7 +134,7 @@ flowchart TB
 
 本节的 Module/Adapter 边界由 [Rust Workspace Architecture Specification](0007-rust-workspace-architecture.md) 映射到 Cargo crates。生产 workspace 包含 `shaula`、`shaula-core`、`shaula-daemon`、`shaula-http`、`shaula-store`、`shaula-store-migration`、`shaula-scaleset`、`shaula-template` 和 `shaula-observability`；依赖只朝 `shaula-core` 指向，binary 是唯一 composition root。Adapter DTO、SeaORM entity 和 Scale Set wire model 不得穿过 core-owned ports。
 
-Daemon Module 的 driving Interface 是启动 HTTP control plane 并运行 SQLite 中所有 active Fleets，直到 Tokio cancellation 或 daemon-fatal error。clap parsing 和 signal handling 在 `shaula` binary 外层；telemetry startup、ledger recovery、supervisor 管理、公平调度和 shutdown ordering 隐藏在 `shaula-daemon` Implementation 中。
+Daemon Module 的 driving Interface 是启动 HTTP control plane 并运行 SQLite 中所有 active Fleets，直到 Tokio cancellation 或 daemon-fatal error。clap parsing 和 signal handling 在 `shaula` binary 外层；telemetry startup、Registry/worker recovery、supervisor 管理、公平预算和 shutdown ordering 隐藏在 `shaula-daemon` Implementation 中。Executor 与 worker 协议由 spec 0010 定义，Terraform 内部步骤不回流为 daemon 的逐命令状态机。
 
 Fleet Registry Module 负责 Fleet Spec admission、不可变 Fleet Revision、optimistic concurrency、idempotency、Fleet Change 和 Decommission。HTTP 和未来远程 CLI 是 driving Adapters。它提交 desired state，但不在 HTTP transaction 中调用 GitHub 或 IaC。
 
@@ -138,7 +144,7 @@ GitHub Access Module 的 production Adapter 是 `shaula-scaleset`。它由稳定
 
 每个 Fleet Reconciler 只处理一个 Scale Set 的 durable observations、capacity intent 和 Runner lifecycle。它不暴露 reqwest/wire DTO、Terraform、SeaORM/SQLite 或任何平台对象类型。
 
-Runner Lifecycle Module 只暴露 Create 和 Destroy。Template Runtime Module 是唯一 IaC seam，隐藏 artifact materialization、Workspace、environment allowlist、subprocess、state、declared output classification 和只读 diagnosis。其 provider-neutral contract 见 [Template Profile Runtime Specification](0004-template-profile-runtime.md)。
+Executor Interface 只负责 launch、observe、stop/fence `shaula job` 及 descendants；每个 worker 内的 Runner Lifecycle 只执行 Create/Destroy。Template Runtime Module 是 worker 的 IaC seam，隐藏 materialization、Workspace、env、subprocess、backend access、plan/output classification 与只读 diagnosis，见 [Template Runtime](0004-template-profile-runtime.md)。GitHub safety 通过 daemon 内部控制通道请求，state 通过内部 HTTP backend 持久化，见 [spec 0010](0010-lifecycle-worker-and-http-state-backend.md)。
 
 Store、HTTP、Scale Set、Template Runtime 和 telemetry 都有 local-substitutable test Adapters。生产实现分别以 SeaORM/SQLite、axum、reqwest、Tokio subprocess 和 Rust `tracing`/OpenTelemetry 封装于对应 crate。平台差异只存在于 Template Profile artifact 及其外部验收，不扩张 Fleet/Runner core Interface。
 
@@ -169,6 +175,7 @@ SQLite corruption、共享 data directory 丢失、ownership lock 失效、sched
 v1 MUST 提供：
 
 - `shaula serve --config <path>`：运行 HTTP control plane 和 SQLite 中所有 active Fleets；启动时还 MUST 通过 clap flags / env 提供 mandatory OIDC Provider/client 配置，见 [spec 0009](0009-mandatory-openid-connect.md)；
+- `shaula job`：仅由 Executor 经受保护 handoff 启动的内部 Lifecycle Worker，不是 operator infrastructure mutation CLI；
 - `shaula version`：输出版本信息；
 - clap 生成的 shell completion commands MAY be provided。
 
@@ -180,7 +187,7 @@ PAT、App private key、JIT、provider credential、OIDC client secret 和 telem
 
 ### 5.2 Bootstrap shape
 
-Bootstrap 只包含 daemon-native concerns：
+Bootstrap 只包含 daemon-native concerns。以下为目标配置示例，不代表当前 parser 已支持新字段，最终 defaults/limits 见统一决策 D3：
 
 ```yaml
 version: 1
@@ -190,17 +197,22 @@ storage:
   database: shaula.db
   work_root: runners
   artifact_root: template-artifacts
+  retained_input_root: generation-inputs
 
 http:
   listen: 127.0.0.1:8080
   request_body_limit: 1MiB
   artifact_body_limit: 64MiB
 
+worker_http:
+  listen: 127.0.0.1:8081
+
 limits:
   max_active_fleets: 100
   max_pending_changes: 1000
 
 execution:
+  executor: exec
   create_concurrency: 8
   destroy_concurrency: 8
   operation_timeout: 30m
@@ -229,7 +241,7 @@ Terraform 是 v1 必需 engine。OpenTofu 只有通过 section 12 的兼容性�
 
 ### 6.1 Fleet
 
-Fleet 是稳定 Fleet Key 下的 desired resource。客户端 Fleet Spec 包含 typed GitHub Target、稳定 `auth_profile_ref` key、不可变 Scale Set identity、capacity、精确 `template_profile_ref` 和 bounded template inputs。Fleet admission 把该 key 当时的 current active Auth Revision 解析并记录为 Fleet Revision 的 admission-time tuple；独立 `fleet_auth_handoffs` 状态维护可推进的完整 `desired_auth_ref` / `observed_auth_ref`，因此 same-Profile promotion 不修改 Fleet Spec、Fleet Revision 或 ETag。Auth Profile key 只可通过显式 conditional Fleet replacement 改变，且 admission 时 Resource Occupancy 为零，也不存在 active acquisition、GitHub effect/session 或 Runner Operation。Fleet HTTP、Revision、Status 和 Change 语义以 [Fleet HTTP Control-Plane Specification](0002-fleet-http-control-plane.md) 为准。
+Fleet 是稳定 Fleet Key 下的 desired resource。客户端 Fleet Spec 包含 typed GitHub Target、稳定 `auth_profile_ref` key、不可变 Scale Set identity、capacity、精确 `template_profile_ref` 和 bounded template inputs。Fleet admission 把该 key 当时的 current active Auth Revision 解析并记录为 Fleet Revision 的 admission-time tuple；独立 `fleet_auth_handoffs` 状态维护可推进的完整 `desired_auth_ref` / `observed_auth_ref`，因此 same-Profile promotion 不修改 Fleet Spec、Fleet Revision 或 ETag。Auth Profile key 只可通过显式 conditional Fleet replacement 改变；admission 要求零 Occupancy、无 unresolved worker/Create handover、acquisition 或 mutating GitHub effect。既有 idle session 本身不阻止提交，由后续 Auth Handoff quiesce/release；详见 spec 0002。Fleet HTTP、Revision、Status 和 Change 语义以 [Fleet HTTP Control-Plane Specification](0002-fleet-http-control-plane.md) 为准。
 
 Fleet mutation 使用 conditional request 与 idempotency key；effective mutation 在一个短 SQLite transaction 中提交 Revision、Change、audit 和 durable wake marker。handler 返回 `202` 前不调用 GitHub、Terraform 或任何外部平台。
 
@@ -243,11 +255,11 @@ Template Profile 是 HTTP-managed logical resource。异步静态验证只把 Ca
 - Fleet 可提供的 bounded input policy；
 - artifact 和规范化非 credential material 的 digest。
 
-Attestation 是引用 Template Revision/canonical subject 的独立 immutable record；它的 PUT 不创建或修改 Revision，`Ready -> Active` transaction 只在 Profile activation state 中冻结 `active_attestation_id`。Artifact upload 是独立的 digest-idempotent HTTP operation。`template.publish` 拥有等同部署 IaC code 的高权限，`template.attest` 独立控制 attestation acceptance；普通 `fleet.write` 两者皆无。Fleet admission 只将 key 或 exact ref 解析为 current Active Revision，并把 revision、artifact digest 与 attestation identity 固定到不可变 Fleet Revision。以后发布或 attestation 新 Template Revision 不改变该 Fleet；切换必须显式 Fleet replacement，且 v1 仅在 Resource Occupancy 与 active Runner Operations 都为零时允许。Template Platform 只能来自 admitted artifact manifest，HTTP body、bindings 或 attestation 均不得覆盖。
+Attestation 是引用 Template Revision/canonical subject 的独立 immutable record；它的 PUT 不创建或修改 Revision，`Ready -> Active` transaction 只在 Profile activation state 中冻结 `active_attestation_id`。Artifact upload 是独立的 digest-idempotent HTTP operation。`template.publish` 拥有等同部署 IaC code 的高权限，`template.attest` 独立控制 attestation acceptance；普通 `fleet.write` 两者皆无。新增或改变 Template reference 的 admission 只解析 current Active subject，并冻结 revision/artifact/attestation；capacity/inputs/no-op 中未改变的旧 pin 按 spec 0002 保留，不重新准入或升级。以后发布或 attestation 新 Template Revision 不改变该 Fleet；切换必须显式 Fleet replacement，且 v1 仅在 Resource Occupancy 与 active Runner Operations 都为零时允许。Template Platform 只能来自 admitted artifact manifest，HTTP body、bindings 或 attestation 均不得覆盖。
 
 ### 6.3 GitHub Auth Profile
 
-GitHub Auth Profile 是稳定 logical key 下的一组不可变 credential Revisions。Profile kind 是 `github_app` 或 `pat`；App/installation identity、PAT principal identity 和 normalized Target allowlist 在一个 Profile incarnation 内固定。改变身份或 policy 需要新 key，不能伪装成 same-key rotation；Fleet 改引新 key 要求零 Resource Occupancy，且不存在 active acquisition、GitHub effect/session 或 Runner Operation。
+GitHub Auth Profile 是稳定 logical key 下的一组不可变 credential Revisions。Profile kind 是 `github_app` 或 `pat`；App/installation identity、PAT principal identity 和 normalized Target allowlist 在一个 Profile incarnation 内固定。改变身份或 policy 需要新 key，不能伪装成 same-key rotation；Fleet 改引新 key 使用 spec 0002 的零占用/effect barrier；idle session 允许存在，由已持久化 Handoff 负责 quiesce，不能把“无 session”作为进入 Handoff 的前置条件。
 
 PAT 和 GitHub App private key 是 write-only HTTP fields，并允许原始明文字节保存在 SQLite Auth Revision 中。所有 GET/list/status/revision、audit、error、log、trace 和 metric 只能返回 `credential_present` 等非 secret metadata，不能返回 prefix、suffix、hash 或任何可推导 secret 的表示。
 
@@ -274,7 +286,7 @@ GitHub App 是推荐默认。PAT classic/fine-grained 是否都作为 v1 release
 - SQLite desired heads 是 Fleet/Profile 资源的唯一运行时真相源。
 - Template artifact store 只保存按 digest 引用的 bytes；没有 Profile Revision 引用的 artifact 不能直接运行。
 - 每个 Runner Generation 永久固定其创建时的 Fleet Revision、Template Revision、artifact digest、inputs、Workspace 和 state。
-- Auth Profile 的 same-key active credential 可通过受控 rollout 演进，因此 Fleet status 必须同时暴露完整 `desired_auth_ref` 与 `observed_auth_ref`；跨 Profile key replacement 仅允许在零 Occupancy且无 active acquisition/GitHub/Runner Operation 时提交，并走同一 Auth Handoff。
+- Auth Profile 的 same-key active credential 可通过受控 rollout 演进，因此 Fleet status 必须同时暴露完整 `desired_auth_ref` 与 `observed_auth_ref`；跨 Profile key replacement 仅在 spec 0002 的零 Occupancy/effect barrier 下提交，并走同一 Auth Handoff；idle session 不单独构成 admission blocker。
 - 任何 direct SQLite edit、第二 writer 或 bootstrap catalog override 都不受支持。
 
 ## 7. Fleet and Scale Set ownership
@@ -320,13 +332,13 @@ Persist-before-ACK 消除了“本地提交尚未完成却主动确认”的窗�
 1. 新 session initial current statistics 与后续 current-statistics snapshot 原子替换旧 Assigned Demand；
 2. periodic GitHub Runner inventory 重新观察 online/busy/absent 状态；
 3. retirement reaper 重新检查过期或多余 Generation，并始终经过 GitHub removal safety gate；
-4. SQLite 中的 non-terminal Runner Operation、acquisition intent、Fleet Change、leases 和 retry deadlines 在 restart 后恢复；
+4. SQLite 中的 non-terminal Generation/Worker Claim、GitHub/acquisition intents、Fleet Change 与 retry deadlines 在 restart 后恢复；
 5. outbox、message checkpoint 与 `desired > observed` periodic scans 修复丢失的进程内 wakeup；
 6. saved state、process fences 和 authoritative removal results 重新证明 Create/Destroy 是否可推进。
 
 最终收敛保证是有条件的：desired state 必须最终稳定；当前 Auth/Scale Set ownership 必须可证明；GitHub、filesystem 和 IaC engine 必须最终返回 authoritative 结果；listener 必须最终取得新的 current-statistics snapshot；旧 child 必须可终止或 fence；scheduler/reaper 必须继续获得运行机会；且 Fleet 不处于 Quarantine、`ScaleSetMissingWithResources`、missing-state 或其他 safety block。
 
-满足这些条件时，重复 reconcile 最终达到固定点：Resource Occupancy 不超过 hard limit，Effective Capacity 匹配最新 target，已完成/多余资源通过安全 removal 后 Destroy，GitHub 已知 Busy 的 Runner 不被故意销毁。事件丢失只会推迟这一过程，不是唯一授权。条件不满足时 Shaula 优先停止副作用、持久化并告警 bounded Condition，且 MUST NOT 误报 `Converged=True`；不承诺固定 wall-clock SLO 或完整 job history。
+满足这些条件时，重复 reconcile 最终达到固定点：在安全清退后 Resource Occupancy 不超过当前 max（显式缩容可暂时低于既有 Occupancy），Effective Capacity 匹配最新 target，已完成/多余资源通过安全 removal 后 Destroy，GitHub 已知 Busy 的 Runner 不被故意销毁。事件丢失只会推迟这一过程，不是唯一授权。条件不满足时 Shaula 优先停止副作用、持久化并告警 bounded Condition，且 MUST NOT 误报 `Converged=True`；不承诺固定 wall-clock SLO 或完整 job history。
 
 ## 9. Capacity and fair scheduling
 
@@ -350,7 +362,7 @@ createCount[fleet] = min(
 
 scale-down 优先选择 observed Idle；由于 Completed 可能丢失，stale Busy observation 不能永久阻塞候选检查，但 GitHub removal 的 `JobStillRunning` 仍是 Destroy 前的 authoritative safety gate。Retirement 一旦开始即单调前进；需求回升会在 occupancy 允许时新建 Generation，而不 Update 或恢复旧 Generation。
 
-全局 scheduler 为 Create 和 Destroy 保留独立的 bounded worker budgets，按 Fleet 公平选择，且同一 Workspace 至多一个 active operation。每次外部 Create side effect 前都重新验证 Fleet revision、mutation fence 和 deletion marker。Destroy 不能因持续 Create demand 饿死；任何 SQLite transaction 不跨 worker wait、network call 或 subprocess。
+Worker lifetime 与活跃 Terraform command budgets 分开；等待 GitHub 的 worker 不占用 Create/Destroy command slot。两种命令保留独立预算及跨 Fleet 公平性，同 Workspace 至多一个 active command。Create-start 和 Decommission 的 side-effect handover 由 spec 0010 约束，事务不跨等待/IPC/网络/子进程。下调 max 可暂时低于既有 Occupancy/Busy；此时不准新增 Generation，只安全清退，不强杀 Busy。
 
 ## 10. Provider-neutral Runner lifecycle
 
@@ -383,44 +395,23 @@ stateDiagram-v2
     Destroying --> Quarantined: ownership or state unknown
 ```
 
-Job phase 与 infrastructure phase 分开持久化，因为 observation 可能缺失或乱序。
-
-图中是对外 coarse state；operation ledger 还必须持久化至少 `JITStarting`、`JITReady`、`CreatePlanReady`、`ApplyStarting`、`DestroyPlanReady` 与 `DestroyApplyStarting` subphase。恢复只能根据 durable subphase 与证据推进，不能从进程消失推断 side effect 未发生。
+图中是 coarse status，不要求持久化每条边或 Terraform subphase。GitHub observations 与 worker 状态不互相推断；spec 0010 §2 定义必要的持久化事实。worker exit、heartbeat timeout 和 state lock expiry 都不是 side effect 未发生或资源已销毁的证明。
 
 ### 10.2 Create
 
-Create MUST 遵循 provider-neutral 顺序：
+daemon 在外部效果前分配并持久化 stable Generation ID、由 Fleet incarnation/完整 Generation 派生的唯一 Runner name、exact immutable materials、Worker Claim 和容量槽。名字永不复用；JIT 由 daemon 在 Fleet/session fence 下记录 intent/result 并调用 GitHub，不把控制面 credential 交给 worker。
 
-1. 分配 stable Generation ID 和在 normalized GitHub Target/Scale Set 内全局唯一的 Runner name；name 必须由 Fleet incarnation 与完整 Generation identity 确定性导出，持久化后永不复用或改变。同时持久化 Create intent、Fleet Revision、精确 Template Revision/digest、normalized inputs 和 Workspace path。
-2. materialize 已固定 artifact，验证 manifest/digest/containment/Workspace isolation，并在获取短期 JIT 前运行 locked `terraform init`。
-3. JIT POST 前重新验证 Fleet/session mutation fence，并在一个 transaction 中写 `JITStarting`、唯一 JIT attempt、stable Runner name、exact Scale Set ID、完整 Auth Revision Ref 和 request digest。
-4. JIT success 必须验证返回的 name/Scale Set identity，并在继续前原子持久化 exact GitHub Runner ID/result；固定 `shaula` input envelope 必须写入受保护路径、fsync/atomic publish 并记录 digest。
-5. 生成 immutable saved Create plan，以 `terraform show -json` fail closed：只接受已支持的 `format_version`、`applyable=true`、`complete=true`、`errored=false`；managed prior state 必须为空，所有 declared managed instance 的 action 必须恰为 `["create"]`，data source 只可 read/no-op，role/type/cardinality 必须与 manifest 精确相等。update、delete、replacement、import、move、deposed、deferred 或 unknown action/field 均拒绝。
-6. 在 child 可能 spawn 前持久化 `ApplyStarting`：唯一 operation/attempt identity、saved-plan digest、exact engine executable/kind/version/binary digest、artifact/input digest、state lineage/serial 和 process-fence identity。
-7. 在 Workspace exclusive fence 下紧邻 spawn 再次 CAS Fleet/Generation mutation fences，重新计算 plan/artifact/input/engine-binary digest 并确认 state lineage/serial；任何 mismatch 都不 spawn。
-8. 对该 Generation 至多一次执行 `terraform apply <exact-saved-plan-path>`；一旦 child 可能启动，任何恢复路径都不得再次 apply。
-9. 验证固定 `shaula_result` 的 contract version、Generation 回显、exact `bindings_digest`、role/cardinality 和大小，将 body/digest 作为受保护的不透明 evidence 持久化，再进入 `WaitingOnline`；只通过 GitHub inventory 证明 Runner online 后进入 `Idle` 或 `Busy`。
-10. 完整 protected input envelope、JIT carrier/copy、saved plan、artifact 与 state 至少保留到 successful Destroy 且 state-empty proof durable。只可删除不参与 recovery/Destroy 的额外 transient copy；JIT 过期或已消费不降低其 secret classification。
+worker 的 materialize → HTTP-backed locked init → JIT → saved Create plan → 单次 apply → 等待 GitHub 的顺序、Create-start handover 与 retained facts 只在 [spec 0010 §2–3](0010-lifecycle-worker-and-http-state-backend.md) 定义。Saved-plan 的 action/shape/provenance policy 只在 [spec 0004 §5](0004-template-profile-runtime.md) 定义。完整 protected inputs/JIT 至少保留到可信的空 state terminal completion；不能因 token 过期删除 recovery/Destroy 材料。
 
 `JITStarting` 后若 response outcome unknown，绝不对同一 Generation/name 直接再发 JIT POST。恢复先在 exact Target/Scale Set 下按 stable unique Runner name 做 bounded lookup：恰有一个 exact match 时持久化 recovered Runner ID，经过正常 safe removal，确认 absent 后终结旧 Generation，再以全新 Generation/name 请求 fresh JIT；authoritative proof 表明 POST 未 commit 时也只终结旧 Generation并创建 fresh Generation；multiple/mismatched match、access ambiguity 或无法证明 absence 时 Quarantine。已知 JIT 过期、损坏或 protected input 丢失也遵循 remove-then-fresh-Generation，而不复用旧 identity。
 
-每个 Create claim 在 JIT POST 或 apply spawn 前都必须重新检查 desired revision、mutation fence 和 deletion marker。若可证明 IaC child 未启动，可在同一 operation phase 内安全继续；一旦 apply 可能启动，失败或 crash 都进入 `CleanupRequired`，不得对同一 Generation 再次 apply。任何旧 Create/Destroy child 都必须确认结束或被 process fence 排除，随后才可进入 GitHub removal/Destroy；无法证明 ownership、process 或 state safety 时 Quarantine。
+Create 一旦可能启动，worker crash/restart 只能进入观察或 cleanup-only 恢复，不产生同 Generation 的第二次 Create apply。任何 replacement worker/Destroy 都要先证明旧 worker 及 Terraform/provider descendants 不能继续修改资源；未知 outcome 保留 Occupancy 和证据，不以进程退出或锁超时替代证明。
 
 ### 10.3 Retirement and Destroy
 
-JobCompleted 或 excess capacity 只开始 Retirement，不直接授权基础设施删除。Destroy MUST：
+JobCompleted 或 excess capacity 只开始 Retirement。worker 向 daemon 请求 exact Runner 的 safe-removal：`JobStillRunning` 使 Destroy call count 保持零；只有已验证 ownership 的 removed/authoritative absence 且不处于 `ScaleSetMissingWithResources` 才能授权 Destroy。
 
-1. 持久化 Retirement 和目标 Generation；
-2. 在已验证当前 Scale Set binding/ownership 下请求 GitHub Runner removal；
-3. 若返回 `JobStillRunning`，保留资源并 backoff retry；只有 authoritative already-absent 且 Fleet 不处于 `ScaleSetMissingWithResources` 才可继续；
-4. 持久化 Destroy intent；若原始 state 已有可信 empty proof，可直接进入 terminal classification，否则继续；
-5. 使用该 Generation 原始 exact engine executable/kind/version/binary digest、artifact、inputs、Workspace 和 state 生成 immutable saved destroy plan，并以 `terraform show -json` fail closed：只接受已支持的 `format_version`、`applyable=true`、`complete=true`、`errored=false`；原 state 中每个 managed instance 的 action 必须恰为 `["delete"]`，data source 只可 read/no-op。create、update、replacement、import、move、deposed、deferred、unknown action/field、foreign identity 或新增 resource 均拒绝；
-6. 在 child 可能 spawn 前持久化 `DestroyApplyStarting`、唯一 operation/attempt identity、plan digest、exact engine executable/kind/version/binary digest、artifact/input digest、state lineage/serial 和 process-fence identity；
-7. 在 Workspace exclusive fence 下紧邻 spawn 重新计算上述 digests、CAS Generation/mutation fence 并验证 state lineage/serial，随后只执行 `terraform apply <exact-saved-destroy-plan-path>`；
-8. 只有 exit classification 成功且独立 `terraform state list` 为空时写 `Destroyed` tombstone；
-9. tombstone durable 后才按 retention policy 清理 protected inputs、JIT material、plan、artifact reference 和 Workspace。
-
-Partial/uncertain Destroy 只有在 prior child 已确认结束或被 fence 排除，并重新读取当前原始 state lineage/serial 后才可 re-plan 与重试 delete-only apply。它不能改用新 Template Revision、import unowned resource、执行 Create apply 或 drift repair。任何可能仍存活的旧 Create 或 Destroy child 都会阻止下一次 spawn。缺失/损坏 state 且 Create 曾可能开始时必须 Quarantine 并继续计入 Occupancy，不能假定 Destroy 成功。
+worker 从原始 materials 和 database state 执行 delete-only saved plan；partial Destroy 只有在旧 descendants 已结束/fenced 后才能重新读 state、re-plan 重试。成功退出、可信 state-empty proof、daemon completion/seal 与 Workspace cleanup 的顺序以 spec 0010 为准；不能从 worker exit、空初始 state 或缺失 state 推导资源已不存在。
 
 ### 10.4 Template specializations
 
@@ -440,11 +431,11 @@ Ledger 至少持久化：
 - Template/Auth Profile desired/active/observed revisions、Profile Change、references 和 credential rollout acknowledgements；
 - normalized GitHub Target、per-Fleet desired/observed Auth Revision Refs、Scale Set identity/ID/fingerprint、Create attempt/outcome 和 `ScaleSetMissingWithResources` Condition；
 - session identity/epoch、latest Assigned Demand、message checkpoint/dedup、acquisition intent/result 和 inventory/reaper progress；
-- Runner Generation identity/stable name、creating Fleet Revision、JIT phase/attempt/result、GitHub Runner ID、Template Revision/digest、protected input digest/retention、Workspace 和 opaque `shaula_result` body/digest；
-- infrastructure/job subphase、Create/Destroy intent、operation/attempt、saved-plan path/digest、exact engine executable/kind/version/binary digest、artifact/input digest、state lineage/serial、process fence/child identity、lease、retry deadline、sanitized result 和 terminal tombstone；
+- Generation identity/stable name、creating Fleet Revision、GitHub JIT intent/result/Runner ID、Template/engine/runtime material refs、protected inputs/retention、Workspace ownership 和 protected opaque `shaula_result`；
+- Worker Claim/epoch/Executor identity、Create-start/cleanup authority、Terraform backend state/version/lock、recovery/terminal facts、sanitized status 和 retry deadlines；不要求持久化 init/plan/inspect 等逐命令 subphase；
 - async correlation context needed for span links。
 
-每个 Shaula 发起的 mutating side effect 在开始前有 durable intent，结束后有 durable result；事务不跨 network 或 subprocess。Listener 先本地 commit 再 ACK，stale session epoch 不能 ACK/acquire。Scale Set Create 与 JIT POST 都以 stable identity、starting phase 和 lookup/classify-before-retry 处理 uncertain response。
+GitHub mutation 与可能启动的基础设施 mutation 均受 durable identity/intent 和结果分类保护；worker 内部 Terraform 步骤不另建中央 operation ledger；事务不跨 network 或 subprocess。Listener 先本地 commit 再 ACK，stale session epoch 不能 ACK/acquire。Scale Set Create 与 JIT POST 都以 stable identity、starting phase 和 lookup/classify-before-retry 处理 uncertain response。
 
 ### 11.1 Startup
 
@@ -453,32 +444,28 @@ Ledger 至少持久化：
 1. 由 `shaula-observability` 初始化 Rust `tracing`、local structured logging 和 OpenTelemetry SDK/export pipeline；
 2. 验证 daemon bootstrap、HTTP safety、engine 和 filesystem roots，并完成 clap/env mandatory OIDC 配置及 discovery/JWKS validation；任一失败均不启动 HTTP listener 或资源 workers；
 3. 获取 data-directory ownership lock，迁移 SQLite，验证数据库/artifact/workspace consistency；
-4. 启动 HTTP registries、scheduler、worker pools 和 periodic outbox/desired scans；
+4. 启动管理 HTTP registries、独立内部 control/state backend、Executor/budgets 和 periodic scans；内部 backend 可用前不 launch worker；
 5. 从 SQLite 加载 active Fleet/Profile desired heads。
 
 之后每个 Profile validator、Auth rollout 和 Fleet supervisor 独立恢复。一个资源缓慢、invalid 或 blocked 不延迟无关 Fleet 建立 session。Fleet supervisor：
 
 1. 解析精确 Template Revision 和 Auth desired/observed state；
-2. 验证 non-terminal Workspace、artifact、state 与 ownership records，不解释平台对象；
-3. expire stale leases，处理可能存活的旧 subprocess；
-4. create-or-adopt Scale Set 并恢复或隔离 incomplete Runner Operations；
+2. 验证 non-terminal Generation 的 database state、retained artifact/inputs、Worker Claim 与 emergency evidence，不解释平台对象；
+3. 验证/恢复或 fence 旧 worker 和 descendants；不得凭 lease/lock expiry 接管；
+4. 在 ownership/missing-set gates 允许时 reconcile Scale Set，恢复或隔离 incomplete Generations；
 5. 执行 GitHub inventory/reaper，启用安全 claims 并建立 listener。
 
 ### 11.2 Recovery rules
 
-- `CreatePending` 且 JIT/IaC effect 都可证明未开始时，可从 immutable intent 重建 Workspace 或继续 Create。
-- `JITStarting`/JIT input failure 按 stable name lookup、safe removal、fresh Generation 或 Quarantine 规则恢复，绝不复用旧 Generation 发第二次 JIT POST。
-- `JITReady`/`CreatePlanReady` 只有在 IaC child 可证明未启动，且 artifact/input/plan/state bindings 完整匹配时才可继续；否则 fail closed。
-- `ApplyStarting` 表示 Create child 可能已运行：先确认其结束或 fence，再进入 `CleanupRequired`；同一 Generation 永不 re-apply。
-- `WaitingOnline`、`Idle`、`Busy` 跨重启保留资源，由 GitHub inventory 重新分类。
-- `DestroyApplyStarting` 恢复先 fence 旧 child，再验证 original state lineage/serial；可信 state empty 写 tombstone，否则仅在 state 可用且 prior child 已排除后重建 delete-only plan。无法 fence 或验证时 Quarantine。
-- auth desired/observed 不同则恢复 normal 或 Decommission cleanup-only handoff；失败不 fallback。
-- `ScaleSetMissingWithResources` 阻止 create/adopt/session、acquisition 和基于 absent 的 Destroy，且所有可能已创建的 Generation 继续计入 Occupancy。
-- state loss 是 phase-sensitive：在 JIT 与 IaC Create 均未开始时可安全重建/终结；JIT 已发生则先做远端 identity cleanup；Create apply 可能开始或 Destroy 尚未取得 empty proof 后缺失/损坏 state 时必须 Quarantine。
-- 只读 Terraform diagnosis 可以辅助 classification，但不得 apply、import、recreate 或 repair。
-- Quarantine 需要未来显式、可审计 operator procedure；v1 不 silently forget，也不计入自动收敛承诺。
+Worker fencing、database state CAS、emergency state、Workspace 重建、backup 和旧 local-state migration 的唯一契约在 [spec 0010 §6–7](0010-lifecycle-worker-and-http-state-backend.md)。
 
-SQLite、WAL、Template artifact store 和所有 per-runner Workspaces/state 是一个 backup/restore consistency set。PAT/App private key 与 schema-sensitive Template bindings 位于 SQLite，因此 main DB、WAL/SHM、online/migration copies、crash dumps 和 backups 都必须进入 credential-grade boundary。
+- JIT uncertainty 仍按 §10.2 的 stable-name/remove/fresh-Generation 规则处理。
+- GitHub known Busy 的既有 Runner 跨 worker/daemon restart 保留，通过 inventory 和 safety gate 重新观察。
+- Auth desired/observed 不同恢复 normal 或 cleanup-only Handoff；失败不 fallback。
+- `ScaleSetMissingWithResources` 不因 worker 重启解除，继续阻止 rebind/acquisition/absent-based Destroy。
+- 只读 diagnosis 不能 apply/import/repair；Quarantine 不 silently forget，也不属于自动收敛承诺。
+
+SQLite/retained material/emergency state 构成 credential-grade consistency set；普通 materialized Workspace 可重建，不再把所有本地文件都视作 authoritative state。
 
 ## 12. Subprocess and engine contract
 
@@ -487,11 +474,11 @@ SQLite、WAL、Template artifact store 和所有 per-runner Workspaces/state 是
 - 使用 argument vector，不使用 shell string；
 - 使用对应 Runner Workspace 作为 cwd；
 - 使用 explicit per-process environment allowlist，不修改 daemon-global environment；
-- 使用 operation 已持久化的 exact engine executable/kind/version/binary digest，并在 spawn 前重新 hash binary；禁止恢复时换 engine、版本或同路径替换二进制；
+- 使用 Generation retained runtime material 固定的 exact engine executable/kind/version/binary digest，并在 spawn 前重新 hash binary；禁止换 engine、版本或同路径替换二进制；
 - 只接收该 Profile/operation 声明的 provider/bootstrap material；
 - 有 bounded stdout/stderr、redaction、timeout 和 cancellation；
 - 与同 Workspace 的其他 operation 串行，并参加 global fair Create/Destroy limits；
-- 由 durable process fence/child identity 防止旧 Create 或 Destroy child 与新 attempt 并发；cancellation 本身不是 child 已退出的证明；
+- 由 Worker Claim、exec descendant fencing、Workspace exclusivity 和 backend locks 共同防止新旧 attempt 并发；cancellation/UNLOCK 本身不是 child 已退出的证明；
 - spawn 前创建 OTel span，退出和 classification 后结束；
 - 遵循 checked-in dependency lock，禁止 implicit provider upgrade；
 - 只运行固定 Terraform protocol；Profile 不得定义 custom executable hook 或 command name；
@@ -502,7 +489,7 @@ SQLite、WAL、Template artifact store 和所有 per-runner Workspaces/state 是
 
 Terraform 是 required v1 engine。OpenTofu 只有在 exact versions、init/apply/destroy/state/lock/cancellation/error semantics 和完整 lifecycle/crash/telemetry/redaction suite 均通过，且无需在 Fleet/Runner lifecycle 分支时才可 advertised；否则 v1 是 Terraform-only。
 
-Graceful shutdown 依次停止 HTTP mutation、停止 listener/new claims、在 bounded deadline 内处理 child processes、在单独 deadline 内 flush telemetry，并保留 Scale Sets、Runner Resources、ledger、artifacts 和 Workspaces 供重启恢复。
+Graceful shutdown 遵循 spec 0010 §8：先停止管理 mutation/acquisition/new claims，再处理 worker/descendants；内部 backend/DB 必须等待最后 state write、UNLOCK 和 receipt，不得先关 backend。随后 bounded telemetry flush，并保留 Scale Sets、Runner Resources 与 consistency set。
 
 ## 13. Day 0 observability
 
@@ -540,7 +527,8 @@ Credential 术语必须准确：
 
 | Class | Examples | Runner/workflow visibility |
 | --- | --- | --- |
-| GitHub Control-Plane Credential | App private key、installation/admin token、Shaula PAT | 永不传入 IaC、Runner 或 workflow |
+| GitHub Control-Plane Credential | App private key、installation/admin token、Shaula PAT | 只在 daemon GitHub Access Module，永不传入 Lifecycle Worker、IaC、Runner 或 workflow |
+| Internal Worker/State Capability | Generation/worker-scoped control token、Terraform backend password | control token 仅 worker；state token 仅 worker/其 Terraform child；两者都不进入 Runner/workflow |
 | Platform Provider Credential / Sensitive Binding | Profile-owned kubeconfig、remote Docker TLS/registry credential、schema-sensitive Kubernetes/Docker binding | 原始值只从 exact Template Revision 传给获准 IaC subprocess，永不传入 Runner/workflow；local `docker.sock` 是同 OS identity children 共享的 ambient host-admin capability，不是 environment scoping 可隔离的 credential |
 | Runner Registration | one-time JIT bootstrap payload | 进入 bootstrap/Runner Execution Domain；禁止主动传递给 job，但 v1 接受同域 process inspection 风险 |
 | Workflow Credential | per-job `GITHUB_TOKEN` 与 workflow 显式引用的 `${{ secrets.* }}` | 按 GitHub/workflow policy 对该 job 可见 |
@@ -559,7 +547,9 @@ PAT/App private key 与 schema-sensitive Template bindings 可以明文存入各
 
 Template artifact publication 等价于部署可运行 provider plugin 并持有平台权限的代码。`template.publish`、`template.attest`、`fleet.write`、`auth.write`、read 和 retirement 必须独立分权；artifact streaming 需 digest、size、expansion、path/link/device、atomic publication 和 GC 安全检查。Static validation 只能到 `Ready`，exact accepted attestation 才可到 `Active`，且 Template Platform 只从 artifact manifest 派生。
 
-v1 HTTP listener 只支持 loopback；任何 non-loopback bind 配置都在 startup fail closed。远程访问由 reverse proxy 终止 TLS，Shaula 自行执行 mandatory OIDC authentication、authorization 与 audit，详见 [spec 0009](0009-mandatory-openid-connect.md)。所有 UI、静态资源、API 和 health endpoints 均要求认证，仅 exact login/callback routes 允许匿名完成认证流程。Direct loopback 与 development 无例外，legacy backend token / actor headers 不再是身份来源。Native inbound TLS/mTLS serving 仍不在范围内，loopback 不是 tenant boundary。请求 body、Authorization、cookie、OIDC code/token/client secret、CSRF、idempotency key、JIT、Profile sensitive bindings、tfvars、state、provider output 和 OTel headers 都不得进入 proxy/Shaula 日志或 telemetry。
+v1 管理 HTTP listener 只支持 loopback；non-loopback startup fail closed，远程 proxy 终止 TLS，Shaula 自行执行 spec 0009 的 OIDC/authz/audit。所有管理 UI、assets、API、health 均认证，仅 exact login/callback 可匿名完成认证流程。Direct loopback/development 无例外，legacy actor/backend token 不是管理身份。
+
+新增的独立 loopback worker/control/state listener 只接受 spec 0010 的 scoped capabilities，不暴露给管理 reverse proxy，也不接受管理 Cookie/OIDC token 代替内部权限。State/JIT 的受保护内部传输是明确授权的 secret channel，不是 ordinary management read。Native inbound TLS/mTLS 不在 v1 范围；loopback 不是 tenant boundary。两种通道均禁止把请求 body、Authorization、cookie、OIDC code/token/client secret、CSRF、idempotency/lock ID、JIT、bindings、tfvars/state、provider output 或 OTel headers 写入日志/telemetry。
 
 IaC child process 使用 configured Shaula execution identity、restricted Workspace 和最小环境。Runner 只接收 JIT；任何 Profile provider credential、Shaula HTTP credential 或 SQLite access material 都不进入 Runner。若 Docker Profile 使用 local `docker.sock`，该 identity 实际拥有 host-admin capability，所有 same-identity IaC children 都在同一 ambient trust domain；只有选择 separate OS identity/sandbox 才能声称 per-Profile isolation。
 
@@ -585,7 +575,10 @@ IaC child process 使用 configured Shaula execution identity、restricted Works
 | Apply fails or outcome is uncertain | Fence child, then `CleanupRequired` and safe removal/Destroy；never re-apply same Generation |
 | `JobStillRunning` during removal | Retain resource and retry；Destroy call count remains zero |
 | Destroy fails or result is uncertain | Fence prior child, retain original artifact/input/state, revalidate lineage and retry a new delete-only plan |
-| Missing/corrupt state | Rebuild only before JIT/IaC effects；after possible Create or before Destroy empty proof, Quarantine and count Occupancy |
+| Missing/corrupt authoritative state or unresolved emergency state | Follow spec 0010 recovery；never recreate a fresh backend row after possible Create；preserve Occupancy/evidence |
+| Ordinary materialized Workspace is missing | Rebuild only from verified retained artifact/inputs and authoritative DB state, after old worker fencing |
+| Backend unavailable / state upload fails | Stop new mutation starts；retain emergency local state and Workspace；never infer Destroyed |
+| Worker exit or orphan Terraform lock | Retain Occupancy；prove all descendants fenced before replacement/lock recovery |
 | Profile-side drift is observed | Diagnose or retire；never same-Generation Update/repair |
 | Shared SQLite/data directory becomes unsafe | Stop new mutations/effects and mark control plane unready |
 | OTLP exporter fails | Continue lifecycle with bounded local degradation reporting |
@@ -599,19 +592,19 @@ Implementation is incomplete until：
 2. Daemon 在 bootstrap 不含任何 Fleet/Profile resource catalog 的情况下启动；三类 resources 均通过 HTTP 创建并跨重启恢复。启动必须通过 spec 0009 的 OIDC 配置/discovery gate，所有 UI/assets/API/health routes 通过其认证验收。
 3. `cargo metadata`/`cargo tree` architecture gate 证明 production binary 是 pure Rust，不含 Go bridge/FFI 或 Kubernetes/Docker client；framework/Adapter concrete types 与平台分支不进入 `shaula-core`。
 4. Template artifact HTTP publication 对 digest idempotent，并拒绝 traversal、link/device、expansion bomb、digest mismatch 和 oversize；`template.publish`、`template.attest` 与 `fleet.write` 权限彼此独立。
-5. Static validation 只产生 `Ready`；exact accepted conformance attestation 才产生 `Active`。Fleet admission 只解析 current Active Template key/revision，并持久化 exact artifact 与 attestation identity；新 Profile Revision 或 attestation 不改变 Fleet 和既有 Generation，Platform authority 只来自 artifact manifest。
+5. Static validation 只产生 `Ready`；exact accepted conformance attestation 才产生 `Active`。新增或改变 Template reference 的 admission 只解析 current Active subject 并冻结 artifact/attestation，未改变的旧 pin 按 spec 0002 保留；新 Profile Revision 或 attestation 不改变 Fleet 和既有 Generation，Platform authority 只来自 artifact manifest。
 6. PAT/App private-key 与 sensitive Template binding bytes 能从 exact SQLite Revision 跨重启重建 client 或 IaC input，但任何 GET/list/status/revision/attestation、audit、error、log、trace、metric 或 diagnostic 中均找不到原值或可推导表示；两类 secret 都不进入 Runner/workflow，GitHub credential 也不进入 Terraform。
 7. same-key credential promotion 为每个依赖 Fleet 写入完整 desired/observed Auth Revision Refs；normal handoff 只做 quiesce、read-only ownership/absence classification 与 observed-ref acknowledgement，再由普通 reconcile 独占 create/adopt、ID binding 和 session establish/replace。Decommission cleanup-only handoff 不建 session/acquire/Create；跨 Profile key replacement 只在零 Occupancy且无 active acquisition/GitHub/Runner Operation 时接受，`Blocked` 不释放任何 exact reference。
 8. pinned Go-oracle differential suite 与 organization/repository × GitHub App/PAT 的真实 `github.com` matrix 都通过 create-or-adopt、session、ACK/acquire、JIT、inventory、safe removal 和 restart。
 9. Scale Set uncertain Create 先持久化 `ScaleSetCreateStarting` 并按 stable tuple lookup；missing set with resources 进入 `ScaleSetMissingWithResources`，不 Update、不换名、不重绑。
 10. 两个 Fleet 的相同 message/job/runner suffix 不发生 cross-Fleet dedup、wakeup、retirement 或 recovery。
 11. fault injection 证明 message facts 在 ACK 前提交、commit failure 不 ACK、redelivery 幂等，且旧 `session_epoch` task 无法 ACK/acquire/覆盖 demand；事件丢失仍通过 fresh snapshot、inventory、reaper 和 periodic scan 收敛。
-12. 并发 statistics/message ingestion 不超过每个 Fleet 的 `max_runners` Resource Occupancy，也不重复 Generation。
+12. 并发 Create admission 不超当前 max 或重复 Generation；显式下调 max 可低于既有 Occupancy，但停止新建并安全清退，不强杀 Busy。
 13. 丢失 JobStarted 后 scale-down 遇到 `JobStillRunning` 时 Terraform Destroy call count 为零；丢失 JobCompleted 在一次成功 inventory/reaper cycle 后进入正常 removal gate。
-14. JIT response loss 按 stable unique name lookup，remove 后使用 fresh Generation 或 Quarantine；Create apply 至多一次，`ApplyStarting` crash 走 cleanup 而非 re-apply。
-15. 每个 Destroy 使用原始 exact engine executable/kind/version/binary digest、Profile/artifact/inputs/Workspace/state；`DestroyApplyStarting` 在 spawn 前 durable，prior child fenced 且 engine hash/state lineage/serial 重验，只有 state empty 后才清理 protected JIT/input evidence。
+14. JIT response loss 按 stable unique name lookup，remove 后使用 fresh Generation 或 Quarantine；Create-start response/spawn uncertainty 跨 worker crash 不产生第二次 Create apply。
+15. Destroy 使用原始 exact runtime/Profile/inputs 和 database state；prior descendants fenced，engine/plan/state bindings 重验，只有可信 empty-state completion/seal 后才允许清理 protected inputs。普通 Workspace 重建不能换材料。
 16. Create/Destroy plans 只有 supported format、`applyable=true`、`complete=true`、`errored=false` 才可 apply；managed actions 分别严格等于 create/delete，并在 spawn 前复验 plan/engine/artifact/input/state bindings。
-17. local process inspection/fault injection 证明每个 IaC executable 是 fenced Shaula child，使用隔离 cwd/env；旧 Create/Destroy child 不与新 attempt 并发，且没有远程 executor 或 daemon native platform call。
+17. exec Driver 启动每 Generation 一个 `shaula job`，Terraform 是其受跟踪 child；进程树 fencing、隔离 cwd/env、worker restart、内部 auth 和 HTTP state CAS 通过 spec 0010 完整验收。v1 无远程 Executor 或 native platform client。
 18. Kubernetes 与 Docker bundled Profiles 均在 `Active` 前取得绑定 exact artifact/dependency/engine binary/provider/protected bindings/runtime policy/image/suite tuple 的 conformance attestation，并通过 [Template Runtime](0004-template-profile-runtime.md) contract suite；各自 real integration test 从 queue 到 run-once、safe unregister、Destroy 和 empty state。Kubernetes 还必须证明 exact `metadata.name` 稳定且跨 Generation 不复用、normalization/truncation collision 在 mutation 前 fail closed、Destroy 只使用原始 state，并记录 target/namespace continuity 被破坏或同名 replacement 时 name-based provider 可能删除 replacement 的 accepted risk。
 19. 一个平台 Profile 的错误/阻塞不会停止另一个 Fleet 或整个 HTTP control plane；hung dependency 受 deadline 限制。
 20. 每个 effective Fleet/Profile mutation 原子持久化 Revision、Change、audit 和 outbox；handler 在 `202` 前无 GitHub、Terraform 或平台副作用。
@@ -619,14 +612,14 @@ Implementation is incomplete until：
 22. Fleet Decommission 永久停止新 acquisition/Create，允许 cleanup-only Auth Handoff，等待 Busy Runner，Destroy 已知 owned Generations，保留 Scale Set 并写 tombstone；unknown ownership/Quarantine 显示 Blocked 而非假成功。
 23. Day 0 in-memory OTel tests 覆盖 startup、HTTP、Profile/Auth、session、reconcile、Create/Destroy、recovery 和 exporter failure；metric cardinality 有显式上界。
 24. hung exporter 不超过 queue/timeout budget，也不延迟 commit/lifecycle；本地 rate-limited warning 和 counters 可见。
-25. JIT、PAT/App key、derived token、provider credential、Profile sensitive binding、tfvars、state、request body、Authorization 和 OTel headers 不进入任何进程 argv、HTTP read response、audit、log 或 telemetry，也不进入 Runner declarative env/args/metadata、普通 job environment、workflow context 或 workflow-facing file。Provider credential 与 sensitive binding 只通过 protected input 进入获准的 exact-Revision IaC child；JIT 的唯一 env 例外是受信 bootstrap shim 为 pinned `Runner.Listener` 临时设置 `ACTIONS_RUNNER_INPUT_JITCONFIG`，Runner startup 捕获后 unset。v1 明确接受同一 Runner Execution Domain 内具备 process-inspection 能力的 workflow 可能读取 Listener initial environment/memory；这不是 activation failure，也不放宽 PAT/App/derived/provider/binding/HTTP/SQLite credential 永不进入 Runner 的边界。
-26. graceful stop 和 forced kill 都不删除 Scale Set 或主动 fleet-wide Destroy；restart 从 consistency set 恢复。
+25. JIT、PAT/App key、derived token、provider credential、Profile sensitive binding、tfvars、state、request body、Authorization 和 OTel headers 不进入任何进程 argv、普通管理 HTTP read response、audit、log 或 telemetry，也不进入 Runner declarative env/args/metadata、普通 job environment、workflow context 或 workflow-facing file。Provider credential 与 sensitive binding 只通过 protected input 进入获准的 exact-Revision IaC child；JIT 的唯一 env 例外是受信 bootstrap shim 为 pinned `Runner.Listener` 临时设置 `ACTIONS_RUNNER_INPUT_JITCONFIG`，Runner startup 捕获后 unset。v1 明确接受同一 Runner Execution Domain 内具备 process-inspection 能力的 workflow 可能读取 Listener initial environment/memory；这不是 activation failure，也不放宽 PAT/App/derived/provider/binding/HTTP/SQLite credential 永不进入 Runner 的边界。
+26. graceful stop 和 forced kill 都不删除 Scale Set 或主动 fleet-wide Destroy；backend 在 worker 最后写入后关闭，restart/backup/migration 从 spec 0010 consistency set 恢复。
 
 Verification SHOULD 组合 deep-Interface unit tests、fake Scale Set/IaC Adapters、pinned Go-oracle differential tests、in-memory OTel exporter、crash injection、real GitHub Scale Sets，以及由外部 harness 执行的 Kubernetes/Docker integration tests。外部 harness 使用平台工具不构成 daemon capability。
 
 ## 17. Delivery plan
 
-当前只做规划；以下阶段描述未来实现顺序。
+以下是交付顺序，不是当前实现进度。唯一进度与验收证据见 [implementation status](../IMPLEMENTATION_STATUS.md)；已定基线、未决项和发布门槛见 [文档索引](../README.md)。
 
 ### Phase 0: Contract and threat-boundary freeze
 
@@ -645,7 +638,8 @@ Verification SHOULD 组合 deep-Interface unit tests、fake Scale Set/IaC Adapte
 ### Phase 2: Template Registry and provider-neutral runtime
 
 - safe digest artifact publication、static validation、reference/retention 和 Profile state machine。
-- local Terraform subprocess Adapter、isolated env/workspaces、fixed input/result envelopes、saved-plan policy、Create/Destroy、read-only diagnosis 和 crash recovery。
+- `shaula job`、exec Driver、分权内部 control/state listener、Generation Claim 与事务化 HTTP state/LOCK/UNLOCK。
+- worker-owned Template Runtime、CoW/copy materialization、fixed envelopes、saved-plan policy、Create/Destroy、emergency-state recovery 与旧 local-state migration。
 - fake third-platform contract test，证明核心无需平台 branch。
 
 ### Phase 3: GitHub access and multi-Fleet reconcile
@@ -670,19 +664,9 @@ Verification SHOULD 组合 deep-Interface unit tests、fake Scale Set/IaC Adapte
 
 ## 18. Open decisions
 
-以下细节仍需对齐；它们不改变上述核心边界：
+统一清单见 [文档索引](../README.md#仍需决定或冻结)：D1（PAT variants）、D2/D3（retention 与运行限额）、D4（bindings commitment）及 R1–R3（发布配置/验收）。
 
-1. v1 是否额外交付一个把 `docker.sock` 挂进 Runner 的显式 high-trust Docker-building Profile？bundled default Profile 已确定不挂载。
-2. Binding schema 使用哪个 exact annotation 标记 sensitive field，mixed binding 的 GET/revision presence-only representation 如何标准化，`bindings_digest` 的 non-verifier opaque commitment 采用什么构造与编码？
-3. 已由 ADR-0013 / spec 0009 决定：由 Shaula 验证 OIDC session/API access token，不再选择 proxy actor assertion/backend-auth format。
-4. 是否在 `JITStarting` 前增加独立、non-mutating provider-backed namespace preflight？v1 baseline 只要求 static validation 与 locked init；若省略，后续 plan 失败必须 safe-remove JIT identity 并以 fresh Generation 重试，不能复用旧 JIT。
-5. Docker JIT 是否必须 memory-only？若必须，provider upload 到 `tmpfs` 的真实行为是 release-blocking compatibility spike。
-6. PAT v1 支持 classic、fine-grained，还是两者都需通过完整 scope matrix？
-7. Fleet DELETE 是否永久保留空 Scale Set，还是只删除 fully drained 且明确由 Shaula 创建的 Scale Set？当前规范保留。
-8. Fleet/Profile Changes、idempotency、audit、tombstones、rejected/retired credential revisions、artifact 和 Workspace 的 retention/GC 时限是多少？
-9. operation timeout、recovery deadline、retry budget、reaper interval、HTTP limits 和 global concurrency 默认值是什么？
-10. 哪个 exact Terraform/Kubernetes provider/Docker provider/Runner/init/shim image version matrix 通过 v1 gate？
-11. 什么兼容性阈值使 OpenTofu 可以 advertised？
+OIDC、保留 Scale Set、默认 Runner 不挂 host socket 已是基线，不重复列为未决。额外 hardening、OpenTofu 与远程 Executor 是候选扩展；未经相应决定和验收不得 advertised。
 
 ## 19. References
 

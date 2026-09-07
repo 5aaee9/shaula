@@ -62,7 +62,7 @@ Auth:     Pending -> Validating --------> Active -> Retiring -> Retired
 
 Every Template/Auth Profile-spec PUT uses a strong ETag, `If-None-Match`/`If-Match`, a bounded `Idempotency-Key`, an authenticated actor and strict JSON. An effective Profile-spec mutation atomically commits an immutable Revision, Profile Change, sanitized audit fact and outbox marker before returning `202`. Attestation PUT and Profile DELETE use the same conditional/idempotent discipline but commit their endpoint-specific immutable record or retirement state plus Change/audit/outbox；they never create or modify a Template Profile Revision. No HTTP handler invokes Terraform or GitHub. An identical valid Profile-spec PUT returns replayable `200` without a new Revision or Change.
 
-For a mutation containing a GitHub credential or sensitive Template binding, the idempotency record points at the committed Auth or Template Revision. A retry compares any supplied secret only in protected memory with that revision and returns its sanitized response；the record contains no reusable body or secret-derived verifier. Reusing the key with different content returns conflict. Profile DELETE is safe retirement, not row deletion. It immediately rejects new references and remains `Blocked(ResourceInUse)` while any Profile desired/active/observed head, Fleet-to-Template-Revision/attestation exact pin, Fleet desired/observed Auth tuple, in-flight effect/session, Decommission cleanup, non-terminal Generation/Operation or recovery record needs it. `Blocked` cannot release a reference. Only after every reference clears may retention/GC write a tombstone；there is no force delete.
+For a mutation containing a GitHub credential or sensitive Template binding, the idempotency record points at the committed Auth or Template Revision. A retry compares any supplied secret only in protected memory with that revision and returns its sanitized response；the record contains no reusable body or secret-derived verifier. Reusing the key with different content returns conflict. Profile DELETE is safe retirement, not row deletion. It immediately rejects new references and waits for live consumers: Fleet exact Template/attestation pins, desired/observed Auth tuples, effects/sessions, validators, workers/Generations, cleanup and recovery. `Blocked` is not reference-clearance evidence. Section 7.1 defines the explicit release of the retiring Profile's own heads and separates runtime references from retained history; a Profile must not deadlock retirement on its own historical revision numbers. There is no force delete.
 
 ## 4. HTTP Interface
 
@@ -107,7 +107,7 @@ A Template Profile PUT contains an exact uploaded artifact digest, engine refere
 }
 ```
 The artifact's versioned binding schema marks which fields are sensitive. Those fields are write-only: the original bytes are retained in the immutable Template Profile Revision so restart, Create, Destroy and recovery can reproduce the exact binding, while every GET/list/status/revision/attestation response exposes only schema-approved non-secret fields and bounded presence metadata. No response exposes a secret value, prefix, suffix, hash or length. External secret references are not a v1 storage mode.
-The wire field named `bindings_digest` is an opaque server-issued commitment to the exact immutable binding Revision. It MUST NOT be an unkeyed digest of sensitive plaintext or otherwise permit offline validation of a guessed secret. It may appear in protected envelopes and attestation subjects only under that non-verifier property；otherwise it is secret and must be redacted. Its exact construction and encoding remain an open contract detail.
+The wire field named `bindings_digest` is an opaque server-issued commitment to the exact immutable binding Revision. It MUST NOT be an unkeyed digest of sensitive plaintext or otherwise permit offline validation of a guessed secret. It may appear in protected envelopes and attestation subjects only under that non-verifier property；otherwise it is secret and must be redacted. Representation and compatibility remain decision D4 in the [central register](../README.md#仍需决定或冻结); this change does not introduce a new commitment format or rewrite old rows.
 
 
 
@@ -119,7 +119,7 @@ Asynchronous static validation：
 
 1. Re-open the already published artifact by digest.
 2. Verify archive containment, manifest version, manifest-derived `platform`/`bindings_contract`, declared inputs/outputs, provider lock checksums and engine constraints.
-3. Reject undeclared files, missing lock file, arbitrary executable hooks, a caller-supplied platform authority and Profile/Fleet input confusion according to policy.
+3. Reject undeclared files, missing lock file, arbitrary executable hooks, Profile-owned backend configuration/overrides, reserved worker-file collisions, a caller-supplied platform authority and Profile/Fleet input confusion according to policy.
 4. Run isolated non-mutating Terraform initialization/validation with bounded output and no infrastructure credentials.
 5. If this Candidate is still desired and all checks pass, transition it to `Ready`；static validation alone never activates it.
 
@@ -136,7 +136,7 @@ A `Ready` Template Candidate is not selectable until a trusted external harness 
     "providers": [
       {"source": "hashicorp/kubernetes", "version": "x.y.z", "checksums_digest": "sha256:..."}
     ],
-    "engine": {"kind": "terraform", "version": "x.y.z", "binary_digest": "sha256:..."},
+    "engine": {"kind": "terraform", "required_version": ">= 1.9, < 2.0", "version": "x.y.z", "binary_digest": "sha256:..."},
     "runner_image_digests": ["ghcr.io/actions/actions-runner@sha256:..."],
     "bindings_digest": "opaque-binding-revision-commitment",
     "runtime_policy_digest": "sha256:runner-runtime-trust-policy",
@@ -155,7 +155,21 @@ Attestation PUT requires `template.attest`, `If-None-Match: *`, bounded idempote
 
 Only a `passed` attestation whose subject exactly matches the still-current desired `Ready` Candidate may gate an atomic `Ready -> Active` transition and freeze its `active_attestation_id`. A failed, mismatched or stale attestation remains durable and audited but cannot activate the Candidate or replace the previous active Revision.
 
-A Fleet may submit a bare Profile key for convenience or an exact `{key, revision}`, but admission of a new or replacement reference accepts only the current `active_revision` and persists its exact artifact digest and active attestation in the immutable Fleet Revision. An already-admitted Fleet may keep using an older retained exact pin for normal reconciliation, future Create, Destroy and recovery until it releases that reference. Publishing or attesting a newer Revision never changes an existing Fleet/Runner；switching a Fleet follows the zero-Resource-Occupancy rule.
+A Fleet may submit a bare Profile key or exact `{key, revision}`. A new or changed reference must resolve the current `active_revision`; an unchanged existing pin in a capacity/inputs update or no-op is not new-reference admission. Spec 0002 §4.1 owns that distinction. An already-admitted Fleet may keep using an older retained exact pin for normal reconciliation, future Create, Destroy and recovery until it releases that reference. Publishing or attesting a newer Revision never changes an existing Fleet/Runner；switching a Fleet follows the zero-Resource-Occupancy rule.
+
+#### Trust and evidence
+
+The v1 integrity boundary is authenticated OIDC submission, independent `template.attest` authorization, exact subject validation and append-only audit/immutable attestation storage. The recorded actor is the server-verified `(iss, sub)`, never a body claim. A separately signed envelope/PKI is not required; a caller with publication/Fleet permission alone cannot attest. The daemon does not rerun the conformance harness or independently prove arbitrary platform assertions.
+
+`evidence_digest` identifies a retained, bounded **sanitized** conformance report, not a hash of raw state, credentials or provider output. The trusted harness records the exact tested tuple, suite/version, scenario results and accepted limitations. Operator audit must be able to locate the corresponding protected report; an arbitrary caller-supplied `passed` flag without this trust/authorization boundary is not evidence. Infrastructure administrators and the authorized attester remain in the trusted computing base.
+
+The typed subject includes the engine's `required_version` constraint as well as resolved version/binary digest. Unknown/duplicate JSON fields are rejected; equality is against the Registry-derived exact subject, not independent platform assertions. Canonical serialization/digest and request replay use the versioned subject codec and fixed cross-restart golden vectors, never raw request property order. Array order remains part of canonical submitted representation; key/content changes conflict rather than rewriting the record. Provider/image set membership must still match the expected tuple. Digest/codec changes require explicit versioning and compatibility tests; D4's unresolved bindings representation is not silently replaced here.
+
+### 5.2 Binding sensitivity and read shape
+
+For v1 `schemas/bindings.schema.json`, `properties.<field>.sensitive` is the boolean annotation. A true value protects the entire top-level member/subtree; omitted annotation is conservatively sensitive, and a non-boolean annotation is invalid. Nested mixed-secret objects are protected as a whole, not split through JSON-path read exceptions. Publishers must not mark credential-bearing material non-sensitive.
+
+The normalized v1 read projection is deliberately small: omit `bindings` values altogether and expose only `bindings_present: boolean` (whether any binding material was supplied). It does not expose per-field lengths, hashes, names derived from values or a new map of secret fingerprints. This conservative projection also omits non-sensitive binding values; richer mixed-field reads are not promised. It applies to Profile GET/list/revision/attestation-related reads regardless of caller write permission. A full replacement must resubmit required bindings, not round-trip redacted placeholders or infer deletion from omitted response fields.
 
 ## 6. GitHub Auth Profile resource
 
@@ -186,7 +200,7 @@ The two request shapes are discriminated and strict：
 
 `private_key` and `token` are write-only secret fields. SQLite stores their original bytes in the immutable Auth Revision. They are omitted from every response, event, audit payload and diagnostic representation. A response exposes only `credential_present: true`, kind, non-secret identity, Target policy, Revision/state and timestamps；it exposes no prefix, suffix, hash or encrypted/plaintext representation.
 
-The following identity fields are immutable for one Auth Profile incarnation：kind, App ID, installation ID, initial authenticated PAT principal and normalized Target allowlist. Changing any of them requires a new Profile key and explicit Fleet reassignment. A Fleet may replace its Auth Profile key only at zero Resource Occupancy with no active acquisition, GitHub or Runner operation；its Target and Scale Set identity remain immutable. A replacement PUT on the existing key is credential rotation only：new App private-key bytes for the same App/installation, or a new PAT that authenticates as the same GitHub principal. A PAT whose principal cannot be proved equal is a principal migration, not rotation.
+The following identity fields are immutable for one Auth Profile incarnation：kind, App ID, installation ID, initial authenticated PAT principal and normalized Target allowlist. Changing any of them requires a new Profile key and explicit Fleet reassignment. A Fleet Auth-key replacement follows spec 0002's zero-Occupancy/effect barrier; an existing idle session is quiesced by the subsequent Handoff, not an admission deadlock. Target and Scale Set identity remain immutable. A replacement PUT on the existing key is credential rotation only：new App private-key bytes for the same App/installation, or a new PAT that authenticates as the same GitHub principal. A PAT whose principal cannot be proved equal is a principal migration, not rotation.
 
 Asynchronous validation and activation：
 
@@ -224,7 +238,18 @@ The conceptual schema adds typed tables：
 
 Auth Revision rows contain PAT/App private-key plaintext, and Template Revision rows contain plaintext values for schema-sensitive bindings. SQLite main/page files, WAL/SHM, online and migration copies, crash dumps and backups MUST receive credential-grade access, retention and disposal. Application-level encryption is not a v1 requirement；deployment-level full-disk/filesystem/backup encryption is strongly recommended.
 
-The atomic backup/restore consistency set is SQLite, Template artifact store and all per-runner Workspaces/state. Restoring only one member is unsupported. Because GitHub credentials and sensitive Template bindings reside in SQLite, no separate external secret-store restore is required for either in v1.
+The authoritative consistency set is defined by [spec 0010 §7](0010-lifecycle-worker-and-http-state-backend.md): SQLite including Terraform state/locks/worker facts, retained artifact/inputs and unresolved emergency state. Ordinary materialized copies are reconstructible. Partial restore is unsupported; no external secret-store restore is required for the credential bytes kept in SQLite.
+
+### 7.1 Retirement completion and reference release
+
+1. DELETE atomically marks the incarnation Retiring, advances its mutation fence, records Change/audit/outbox and closes new-reference admission/publication/activation. Already-pinned consumers keep the exact materials needed for normal reconciliation and cleanup; retirement does not mutate or silently upgrade them.
+2. Validators/activation attempts must recheck that fence before committing and release their own claims after completion or verified cancellation. Pending candidate work cannot promote after retirement starts.
+3. Recompute **live execution references** transactionally: current Fleet pins/heads, non-terminal Changes that still need materials, Auth tuples, in-flight sessions/effects, worker/Generation/cleanup/recovery claims. An old immutable Revision, terminal Change, audit record or tombstone retained only for history is not automatically an execution reference.
+4. While any live consumer remains, retain the needed Profile heads/material and expose `Blocked(ResourceInUse)`. Verified consumer progress may release its references; merely labelling a Change Blocked or deleting a history row is not proof.
+5. When all external execution references and validator/activation claims clear, one transaction rechecks the retirement fence and releases the Profile's own desired/active/observed **execution-head references**, records Retired/tombstone and completes its retirement Change. Last-revision/high-water numbers may remain as explicitly historical metadata; they no longer authorize execution or keep retirement permanently Blocked.
+6. Physical GC is later and independent: retain audit, immutable metadata, credential/artifact/state bytes for their applicable retention periods and any remaining verified recovery need. Tombstone/ETag/idempotency replay remain valid. Credential revocation timing is D2; retirement does not revoke externally while an in-flight/cleanup consumer still needs it.
+
+Retirement and new-reference/activation transactions use the same admission fence: exactly one side wins. A crash before step 5 retries from Retiring; a crash after its commit replays completion without releasing any newly referenced incarnation. History retention never authorizes a new Fleet reference or a second worker.
 
 ## 8. Authorization and security
 
@@ -261,7 +286,7 @@ The database ownership lock prevents a second Shaula writer but is not encryptio
 | Persisted Scale Set lookup during handoff says missing | Record `ScaleSetMissing` without creating or rebinding；let ordinary Fleet reconciliation decide create-or-adopt |
 | Decommission cleanup Auth handoff fails | Remain permanently non-acquiring, retain cleanup references and retry only cleanup work |
 | SQLite commit fails | No accepted Revision/Change exists；do not run validators |
-| Active Profile is requested for deletion | Stop new references and keep retirement Blocked without releasing desired/observed/in-flight/cleanup/recovery references |
+| Active Profile is requested for deletion | Close new references; wait for live consumers, then atomically release self heads and finish under §7.1; history retention alone cannot deadlock it |
 | SQLite/artifact restore mismatch | Fail affected Profile/Fleet closed and preserve recovery evidence |
 | OTLP exporter fails | Continue durable mutation/validation with bounded local diagnostics |
 
@@ -290,7 +315,7 @@ Implementation is incomplete until：
 5. Static validation can move a Template Candidate only to `Ready`；it cannot activate it, and a rejected replacement leaves the previous active Revision selectable.
 6. An authorized `template.attest` request durably binds artifact, dependency lock, exact providers, engine binary, runner images, protected `bindings_digest`, runtime/trust policy with accepted limitations, manifest-derived `platform`/`bindings_contract` and suite version；only an exact passing subject gates a Template `Ready -> Active`, while Auth activation remains identity/access-validation gated.
 7. A failed, mismatched or stale attestation remains audited and cannot activate or replace the previous active Revision；`template.publish`, `template.attest` and `fleet.write` are independently testable permissions.
-8. Fleet admission accepts a bare or exact Template reference only when it denotes the current active Revision and pins its digest and attestation；later publication/attestation changes neither Fleet nor Generation.
+8. New/changed Fleet Template references resolve current Active and pin its digest/attestation; unchanged pins in capacity/inputs/no-op requests are retained under spec 0002. Later publication/attestation changes neither Fleet nor Generation.
 9. PAT/App private-key bytes and sensitive Template binding bytes survive daemon restart from their immutable SQLite Revisions and reconstruct the exact client or IaC input, but never appear in any GET/list/status/revision/attestation response, audit, error, log, trace, metric or diagnostic representation；GitHub credentials never enter IaC/Runner, and Template binding secrets never enter Runner/workflow.
 10. The Rust `shaula-scaleset` implementation passes the GitHub App/PAT × organization/repository matrix against real `github.com` and differential conformance against the fixed Go `github.com/actions/scaleset` oracle.
 11. Wrong principal, App/installation mismatch, `401`, `403` and access-filtered `404` reject the Auth Candidate and never cause fallback or Scale Set Create.
@@ -298,13 +323,12 @@ Implementation is incomplete until：
 13. Handoff never creates/adopts, binds a Scale Set ID or establishes/replaces a session；ordinary Fleet reconciliation exclusively owns those effects while Target and Scale Set identity remain immutable.
 14. Decommission permanently stops acquisition while allowing cleanup-only Auth handoff that cannot establish an acquiring session, create/adopt, rebind or mint JIT configuration.
 15. An Auth Revision is GC-eligible only after desired/observed tuples, in-flight effects/sessions, Decommission cleanup and recovery references all clear；a `Blocked` state releases none of them.
-16. Profile retirement refuses new references, remains visibly Blocked while in use and never deletes artifacts/credentials needed for Destroy or recovery.
+16. Profile retirement rejects new references, preserves live cleanup/worker material, and eventually releases its own heads when consumers/validators clear. Tests cover unused Active profiles, historical revisions/terminal Changes, consumer release, activation/admission races and crash/replay before/after the Retired transaction.
 17. Database/WAL/SHM/online-copy/backup/migration-copy/crash-dump tests and documentation identify every plaintext credential- or binding-bearing artifact and enforce restrictive permissions, retention and disposal.
 18. OTel tests cover commit, validation, attestation/activation, Auth handoff, ordinary session reconcile and exporter failure without leaking bodies, bindings or credentials.
+19. Trusted attestation tests cover absent/forged identity, wrong scopes, exact subject/engine constraints, evidence linkage, canonical replay and immutable audit; no unimplemented independent signature verification or daemon-run harness is claimed.
+20. Binding schema annotation tests cover true/false/omitted/invalid sensitivity and nested secret material; every read uses §5.2's presence-only projection without placeholders, secret fingerprints or accidental round-trip updates.
 
 ## 12. Open decisions
 
-1. Which exact manifest-schema annotation marks a binding field sensitive, what normalized presence-only shape should mixed sensitive/non-sensitive bindings use in read responses, and which keyed/opaque non-verifier construction and encoding should `bindings_digest` use?
-2. Resolved by ADR-0013 / spec 0009: mandatory OIDC sessions/API access tokens replace proxy actor assertions and backend authentication tokens.
-3. Once an Auth Revision satisfies every reference-clearance rule and becomes GC-eligible, how long is its plaintext credential retained, and is explicit credential revocation part of retirement?
-4. Should Profile DELETE remain asynchronous `Blocked(ResourceInUse)`, as specified, or return immediate `409` while referenced?
+The [central decision register](../README.md#仍需决定或冻结) owns D2 (retention and external credential revocation timing) and D4 (commitment representation/compatibility). Asynchronous retirement, separate attestation authority, sensitive-field read rules and OIDC management authentication are contract decisions, not competing implementation options.

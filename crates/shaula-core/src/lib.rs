@@ -18,6 +18,7 @@ pub mod plan;
 pub mod ports;
 pub mod registry;
 pub mod secret;
+pub mod state_backend;
 pub mod telemetry;
 pub mod template;
 

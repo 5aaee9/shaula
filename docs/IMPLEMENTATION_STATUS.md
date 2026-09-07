@@ -1,13 +1,18 @@
 # Implementation Status (Phase Boundary)
 
-Status: Draft implementation of the Shaula v1 specification set.
-Date: 2026-09-06
+Status: Partial implementation; HTTP state backend and explicit Runtime adapter implemented,
+production lifecycle-worker integration and migration pending.
+Evidence baseline: `461859f` plus the HTTP-backend implementation increment of 2026-09-07;
+historical local review reports dated 2026-09-06.
 
-This file records, honestly and per review round, which specification
-capabilities are implemented and which remain staged for later phases of
-the delivery plan (spec 0001 §17).
+This is the sole implementation-progress record. [The documentation index](README.md)
+separates accepted contracts, open decisions and release gates. A specification or
+accepted ADR is not proof that its implementation or external acceptance is complete.
+The earlier documentation-only pass could not run Cargo. The subsequent implementation
+pass uses an owner-approved temporary Nix Rust environment; current verification
+and remaining integration boundaries are recorded below.
 
-## Implemented and tested
+## Existing implementation and local test coverage
 
 - Multi-crate pure-Rust workspace with enforced dependency architecture
   (`cargo tree` gate tests; spec 0007 §2/§6) — no Go/FFI, no Kubernetes or
@@ -23,8 +28,8 @@ the delivery plan (spec 0001 §17).
   monotonic epochs, demand snapshots, idempotent job observations,
   acquisition intents, scale set ownership. Atomic composite commits.
 - Fleet HTTP control plane: conditional PUT/DELETE (428/412/410/409/422),
-  idempotent replay and conflict, trusted actor context (401/403),
-  sanitized problem responses, loopback-only bind fail-closed.
+  idempotent replay and conflict, OIDC-derived actors (401/403),
+  sanitized problem responses, loopback-only management bind fail-closed.
 - Profile control plane: artifact publication (digest-verified, archive
   safety, atomic), template publish → static validation (scan-driven
   Ready) → conformance attestation (subject digest match, fail-closed) →
@@ -91,8 +96,9 @@ verifies the stamp after migrating.
 - Profile DELETE uses the documented resource paths and commits retirement,
   Change, audit, outbox and replay facts atomically. New references are refused
   in the Fleet commit transaction; existing exact references and protected
-  material remain available. Retained Profile heads keep retirement visibly
-  `Blocked(ResourceInUse)` pending retention/reference clearance.
+  material remain available. Retained Profile heads currently keep retirement
+  `Blocked(ResourceInUse)`; automatic head release, retirement completion and GC
+  are implementation gaps, not the intended terminal behavior.
 - Credential destinations use parsed HTTPS URLs restricted to the GitHub
   Actions service domain; loopback requires explicit test construction.
   Count/entry disagreement in runner inventory fails closed without indexing.
@@ -106,18 +112,87 @@ verifies the stamp after migrating.
   Endpoint contracts follow the official [GitHub App API](https://docs.github.com/en/rest/apps/apps)
   and [authenticated user API](https://docs.github.com/en/rest/users/users).
 
+## HTTP state backend increment (2026-09-07)
+
+Implemented as an **opt-in adapter**, not a production lifecycle switch:
+
+- `shaula-core/src/state_backend/` owns the narrow state port, redacted capability /
+  document / LockInfo types, bounded raw-v4 validation and safe error classes.
+  State capabilities are independently random, state-only secrets; SQLite stores
+  SHA-256 verifiers, with constant-time comparison. No management OIDC or worker
+  control credential is accepted as state authority.
+- `shaula-store-migration/src/m0007_http_state.rs` adds `generation_http_state`
+  without backfilling existing Generations. `shaula-store/src/http_state/` inserts
+  a **new** Generation and its backend ownership atomically, checks the Fleet
+  head, and refuses any existing Generation, including an unmigrated legacy row.
+  This is the storage half of admission, not a replacement for daemon capacity,
+  material/attestation admission or the Fleet effect gate. The migration entry
+  point explicitly wraps SQLite DDL and migration history in one transaction;
+  fault injection verifies rollback preserves pre-existing schema and permits
+  retry. This atomic schema upgrade is not a legacy local-state importer.
+- LOCK/POST/UNLOCK reserve SQLite's writer before ownership reads. Owner/epoch /
+  lock/revision checks and the conditional update share that transaction, across
+  independent connection pools. Same serial requires byte-identical replay and
+  does not increment backend revision; changed lineage, stale serial, unlocked
+  writes, wrong ID, revoked credentials and sealed writes fail closed. Lock
+  metadata is not identity; there is no expiry takeover, force-unlock or DELETE.
+- The backend-only revoke/seal primitives retain Generation Occupancy. They do
+  **not** establish descendant death, GitHub-safe removal, Destroy completion or
+  authority to delete a Workspace. `note_create_starting` is only a missing-state
+  fence and requires initialized state; the future worker must establish initial
+  state/lineage before planning/start handover, rather than assume Terraform init
+  or plan persisted it. Atomic terminal receipt + seal + Occupancy release is not
+  yet implemented.
+- `shaula-http/src/state_backend/` provides an independently bound loopback-only
+  `StateServer`, authenticates before reading bodies, rechecks ownership at each
+  store operation, and implements the standard GET/POST/LOCK/UNLOCK wire protocol.
+  Responses are private/no-store; no generic request/SQL log exposes state, lock
+  metadata or credentials. Current hard bounds: 16 MiB state, 16 KiB LockInfo,
+  16 in-flight handlers and 30-second request deadline. Raw-v4 serials are bounded
+  to `0..=i64::MAX`. Final operational limits remain tracked under D3.
+- `shaula-template/src/http_backend.rs` and `runtime_backend.rs` add explicit
+  `TemplateRuntime::with_http_backend`. The sole extra source file is fixed
+  `shaula.backend.tf`; its exact contents are verified separately from artifact
+  identity. Backend passwords go only through `TF_HTTP_PASSWORD`, not HCL/argv.
+  Runtime-owned env keys and proxy overrides are refused in provider env; cached
+  backend config cannot override the empty HCL. Native HCL `backend`/`cloud`
+  keywords are conservatively rejected even in comments/strings, and JSON keys
+  are decoded before checking overrides. HTTP init retains readonly provider
+  locks. Existing local/emergency state and non-pristine Workspaces are refused
+  and preserved, not overwritten or implicitly migrated. HTTP Create/Destroy
+  require an apply-intent sink; that seam is not yet a worker control client.
+- SQLite WAL, foreign keys, busy timeout and `synchronous=FULL` now apply on every
+  pooled connection, and SQL logging is disabled. Full regression exposed an Auth
+  replacement read-to-writer upgrade race (500 instead of 412): `auth_repo.rs`
+  now obtains the writer via revision INSERT before reading the head. A controlled
+  writer-contention regression is in `shaula-store/src/tests/auth_concurrency.rs`;
+  the original HTTP race passed 20 consecutive runs after the fix.
+
+Coverage is in the core/HTTP backend module tests, `shaula-store/src/http_state/tests/`,
+`shaula-template/src/http_backend_tests.rs` and `shaula/tests/http_state_backend.rs`.
+The latter exercises real SQLite over loopback HTTP and has an explicit ignored
+Terraform test enabled with `SHAULA_TEST_TERRAFORM`. Verified Terraform **1.9.8**
+completed locked init, inspected saved Create/Destroy plans, apply, state pull and
+empty-state verification with builtin `terraform_data`; raw state persisted in
+SQLite and the password was absent from cached backend config. This is protocol
+acceptance, **not** a Runner Profile/GitHub/Kubernetes/Docker conformance attestation.
+
 ## Staged (next phases; not yet wired or externally validated)
 
-- Mandatory OIDC ([spec 0009](specs/0009-mandatory-openid-connect.md),
-  [ADR-0013](ard/0013-require-openid-connect-for-all-http-access.md)) is now an
-  accepted requirement, NOT implemented. Current `serve` does not require OIDC
-  Provider/client configuration; the UI shell/assets and health routes remain
-  public, while management APIs still use the legacy proxy actor/backend token.
-  Required work includes clap/env startup validation, discovery/JWKS, login and
-  session/CSRF/logout, API access-token verification, principal-to-scope policy,
-  default authentication over all routes/assets/fallbacks, private/no-store
-  caching and removal of development identity injection. Existing auth and UI
-  tests demonstrate the old contract, not compliance with the new requirement.
+- `shaula job`, exec Driver, protected launch handoff, worker control capability /
+  client, GitHub gate, Create-start handover, command budgets and restart fencing
+  are not yet implemented. `serve` does not yet bind `StateServer` or issue worker
+  claims; production still uses the daemon-owned local-state lifecycle. No new
+  backend behavior is silently enabled for an existing Generation. The adapter
+  tests above do not establish complete compliance with
+  [spec 0010](specs/0010-lifecycle-worker-and-http-state-backend.md) /
+  [ADR-0014](ard/0014-run-lifecycle-workers-with-a-database-http-state-backend.md).
+  Complete worker/provider crash and backend-outage recovery, atomic terminal
+  completion, backup/restore and an explicit legacy state importer remain release
+  gates. `m0007` creates a schema, not a legacy-state migration.
+- Mandatory management OIDC is implemented with local test coverage; acceptance
+  against the actual deployment's registered Provider and API client remains a
+  release gate. See the dedicated OIDC evidence section below.
 - The per-Fleet capacity/ownership/cleanup supervisor and Auth validator are
   started by the binary. The production session listener, persist-before-ACK
   message ingestion/acquisition, online/busy inventory classification, operation
@@ -126,7 +201,10 @@ verifies the stamp after migrating.
 - End-to-end real-GitHub validation and the Go-oracle differential suite
   (`references/scaleset`, pinned commit) have not been executed.
 - Bundled-profile conformance harness (real Kubernetes/Docker runs) and
-  provider lock checksums — attestation remains the activation gate. The
+  provider lock checksums — attestation remains the activation gate. Both
+  `templates/kubernetes/.terraform.lock.hcl` and
+  `templates/docker/.terraform.lock.hcl` are explicit placeholders, not real
+  reviewed provider/checksum pins. The
   bundled templates REQUIRE a runner image that carries the reviewed
   bootstrap-shim at `/usr/local/bin/bootstrap-shim`; that shim-bearing
   image is built and pinned by the conformance harness, not by the
@@ -134,9 +212,42 @@ verifies the stamp after migrating.
   are finalized by the same harness.
 - OTLP export pipeline and OTel SDK instrumentation (bounded in-process
   counters and their call sites exist; no span/export pipeline yet);
-  remaining
-  endpoint surface (list pagination cursors, revision reads, artifact
-  metadata GET), and Profile reference clearance/retention/GC.
+  remaining endpoint surface (notably pagination and artifact metadata GET),
+  and Profile reference clearance/retention/GC. Template/Auth revision and
+  attestation reads already have handlers in
+  `crates/shaula-http/src/router/profile_reads.rs`; their existence is not
+  evidence that the entire specified read representation is complete.
+
+## Contract alignment and remaining evidence gaps
+
+| Contract | Source evidence / remaining gap |
+| --- | --- |
+| Keep an unchanged old Template pin during capacity/no-op PUT | Already handled by `ControlPlane::resolve_admission_materials` in `crates/shaula-daemon/src/service_fleet_ops.rs`; do not list this wholesale as unimplemented. Spec 0002 clarifies new-reference versus unchanged-reference admission. |
+| Zero-Occupancy barrier for changed `template_inputs` | Still missing from the audited replacement boundary; `crates/shaula-store/src/registry_impl/commits_fleet.rs` currently protects reference replacement but does not establish the newly explicit inputs-change rule. Requires transactional race tests with Generation/worker admission. |
+| Lower max below current Busy/Occupancy | Normative behavior is stop new admission and retire safely, not reject solely for current Occupancy or kill Busy. Existing arithmetic does not prove complete listener/worker scale-down acceptance. |
+| Reachable cross-Auth handoff with an idle session | Spec 0002 removes an idle session as an admission blocker while retaining the zero-Occupancy/effect barrier. Full production listener/handoff integration and idle-session/race acceptance remain outstanding. |
+| Profile retirement self-head release | `service_profile_retirement.rs` and `shaula-store/src/registry_impl/retirement.rs` retain current heads. Spec 0005 §7.1's final self-reference release/Retired transaction and history-versus-runtime-reference tests are missing. |
+| Binding reads | Existing core/Profile reads expose coarse `bindings_present`; spec 0005 §5.2 retains that conservative projection, not a new per-secret fingerprint map. Full manifest annotation/schema/redaction acceptance still needs verification. |
+| Attestation integrity/evidence | Existing `service_profile_attestation.rs`, `service_attestation.rs` and core `registry/attestation_subject.rs` provide authority/subject handling. No independent signing PKI is required by the clarified contract; complete external report linkage, canonical compatibility and real-platform suite evidence are not established by local record-acceptance tests. |
+| `bindings_digest` compatibility | Current `BindingsDigest::from_keyed_material` in `crates/shaula-core/src/template.rs` emits `bd1_` HMAC-SHA256; its material does not include Profile incarnation. D4 remains deferred. No new encoding or historical-record rewrite was made. |
+
+## Mandatory management OIDC: implementation and evidence
+
+- `crates/shaula/src/oidc_args.rs` and `main.rs` load required CLI/env settings
+  and initialize discovery/JWKS before listeners or resource workers.
+- `crates/shaula-http/src/oidc/` owns verification, browser login, opaque sessions,
+  Origin/CSRF, logout, default route protection and private/no-store responses.
+  Legacy actor/backend-token headers do not establish a management identity.
+- Rust coverage is in `crates/shaula/tests/oidc_startup.rs`,
+  `oidc_authentication.rs` and the HTTP crate's OIDC tests. Browser coverage is
+  in `web/e2e/oidc.spec.ts`, backed by `crates/shaula/tests/oidc_browser.rs`.
+  Prior reports recorded local HTTPS Provider/browser acceptance. The current
+  implementation pass reruns Rust tests; the separately ignored Playwright/browser
+  acceptance is not a new browser validation claim.
+- The actual registered deployment Provider/browser/API acceptance is still
+  unverified. Internal state capability authentication is now independently
+  tested; worker control authentication remains unimplemented. Neither is a
+  management OIDC fallback.
 
 ## Embedded operator UI (2026-09-06)
 
@@ -146,13 +257,44 @@ verifies the stamp after migrating.
 - The HTTP crate builds and embeds the production frontend into both debug
   and release binaries. UI document routes support direct navigation;
   missing APIs/assets are not rewritten to HTML.
-- The UI currently uses the legacy proxy authentication boundary, superseded
-  in the target design by spec 0009 / ADR-0013 but not yet replaced in code. The session
-  read returns only actor name/scopes. Browser code has no backend token,
-  identity assertion, durable credential storage or independent desired state.
+- The UI uses OIDC-derived browser sessions under spec 0009 / ADR-0013.
+  The session read returns actor name/scopes and a CSRF response header.
+  Browser code has no backend token, identity assertion, durable credential
+  storage or independent desired state.
 - Node/npm dependencies are build prerequisites only; runtime serving needs
   no frontend directory. Setup and verification commands are in `web/README.md`.
 - UI availability does not resolve any of the daemon/runtime gaps listed above.
+
+## Implementation verification (2026-09-07)
+
+The earlier documentation-only pass checked Markdown links/fragments and diff
+whitespace but lacked Cargo (exit 127). That environment blocker has been resolved
+with a temporary Nix shell: rustc/clippy/rustfmt 1.97.1, Cargo 1.97.0 and nextest
+0.9.140, without repository environment files or global configuration changes.
+Frontend prerequisites were installed with `npm ci --prefix web` (lockfile unchanged).
+Terraform 1.9.8 was downloaded to a temporary directory and checked against the
+vendor's HTTPS-published SHA-256 checksum list, not installed globally.
+
+Final results after the Auth transaction and migration rollback fixes:
+
+| Command | Result |
+| --- | --- |
+| `cargo fmt --all` and `cargo fmt --all --check` | Passed |
+| `cargo clippy` | Passed |
+| `cargo clippy --workspace --all-targets -- -D warnings` | Passed |
+| `cargo nextest run --manifest-path "Cargo.toml" --workspace test` | 218 passed; 44 filtered/ignored |
+| `cargo nextest run --manifest-path Cargo.toml --workspace --no-fail-fast` | 260 passed; 2 ignored |
+| `SHAULA_TEST_TERRAFORM=<verified-1.9.8> cargo test --workspace --test http_state_backend -- --include-ignored` | 2 passed, including the real Terraform roundtrip |
+
+The required command's trailing `test` is a name filter, so the additional
+unfiltered run is necessary to cover all ordinary integration tests. Its initial
+failure exposed the Auth transaction race described above; the regression and
+20-repeat original reproducer now pass. The migration rollback test also failed
+before the transaction wrapper and passed after it, including retry/idempotency.
+The two default-ignored cases are the
+explicit Terraform probe (run separately) and the Playwright/OIDC browser suite
+(not rerun here). Windows-only engine tests, real Runner Platforms, actual GitHub
+and registered OIDC Provider acceptance are not established by this Linux increment.
 
 ## Known accepted limitations (per ADR)
 

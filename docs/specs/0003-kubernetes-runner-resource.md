@@ -5,7 +5,7 @@
 - Template Platform: Kubernetes
 - Managed objects per Runner Generation: one Pod and one Secret
 
-This specification refines the Kubernetes portions of the [Multi-Fleet Runner Scale Set Controller Specification](0001-shaula-runner-scale-set.md). Related decisions are [ADR-0002](../ard/0002-run-immutable-runner-lifecycles-as-local-subprocesses.md), [ADR-0004](../ard/0004-allow-bootstrap-secrets-in-provisioning-state.md), [ADR-0006](../ard/0006-realize-each-kubernetes-runner-generation-as-one-pod-and-one-bootstrap-secret.md), and [ADR-0008](../ard/0008-keep-platform-capabilities-in-terraform-template-profiles.md).
+This specification refines the Kubernetes portions of the [Multi-Fleet Runner Scale Set Controller Specification](0001-shaula-runner-scale-set.md). Worker/state ownership follows [spec 0010](0010-lifecycle-worker-and-http-state-backend.md). Related decisions are [ADR-0014](../ard/0014-run-lifecycle-workers-with-a-database-http-state-backend.md), [ADR-0004](../ard/0004-allow-bootstrap-secrets-in-provisioning-state.md), [ADR-0006](../ard/0006-realize-each-kubernetes-runner-generation-as-one-pod-and-one-bootstrap-secret.md), and [ADR-0008](../ard/0008-keep-platform-capabilities-in-terraform-template-profiles.md).
 
 ## 1. Outcome and capability boundary
 
@@ -14,7 +14,7 @@ The Kubernetes Template Profile realizes each Runner Generation as exactly two g
 1. one immutable `core/v1 Secret` containing the encoded JIT bootstrap payload；
 2. one `core/v1 Pod` that runs one ephemeral GitHub Actions Runner.
 
-Shaula runs Terraform locally. Kubernetes does not run the IaC engine and does not host a Shaula controller or listener. The Runner Pod receives no Kubernetes API credential, schema-sensitive Profile binding, GitHub App private key, installation/admin token or Shaula PAT.
+In the v1 exec baseline, Terraform runs inside a local `shaula job` Lifecycle Worker. Kubernetes hosts the Runner Pod, not that worker or the daemon listener; a future Kubernetes Job Executor is a separate, unimplemented extension. The Runner Pod receives no Kubernetes API credential, schema-sensitive Profile binding, GitHub App private key, installation/admin token or Shaula PAT.
 
 The production Shaula binary MUST NOT link a Kubernetes client, deserialize Kubernetes objects, construct Kubernetes requests, invoke `kubectl`, or implement Pod, Secret, Namespace or UID semantics. Its Runner Lifecycle Module invokes the approved local Terraform subprocess through the provider-neutral Template Runtime Interface. The Kubernetes provider and its platform object model belong to the immutable Profile artifact and Terraform child process, not to Shaula core.
 
@@ -22,7 +22,7 @@ An external conformance harness MAY use `kubectl` or a Kubernetes client to insp
 
 ```mermaid
 flowchart LR
-    Core["Shaula core<br/>saved-plan policy + state machine"]
+    Core["shaula job worker<br/>saved-plan policy + lifecycle"]
     TF["Local Terraform subprocess<br/>Kubernetes Template Profile"]
     Namespace["Pre-provisioned namespace<br/>not managed by Shaula"]
     Secret["Generation Secret<br/>immutable JIT file"]
@@ -75,7 +75,7 @@ The Profile reads namespace existence and identity through an ordinary Terraform
 
 The Profile MUST fail planning rather than create a missing namespace or select a fallback namespace. No saved plan is admitted or applied. Core reports only `TemplatePlanFailed` with phase `create.plan`；it does not derive a Kubernetes-specific reason from provider text. Whether this blocking precondition completes before JIT acquisition remains the explicit compatibility gate in section 11；the current sequence may consume one JIT when planning fails.
 
-Terraform's Kubernetes credential is a schema-sensitive, write-only Profile binding whose original plaintext is retained in the immutable SQLite Template Revision and supplied only to its exact local Terraform subprocess. It is distinct from the Runner Pod identity and is provisioned outside Shaula with only the namespace-scoped access required to read the namespace and create, read and delete Pods and Secrets. External secret references are not a v1 storage mode；the Profile neither grants nor manages the underlying access.
+Terraform's Kubernetes credential is a schema-sensitive, write-only Profile binding whose original plaintext is retained in the immutable SQLite Template Revision and supplied only to its exact local Terraform subprocess. It is distinct from the Runner Pod identity and is provisioned outside Shaula. Reading the existing Namespace object requires explicitly scoped access to that cluster-scoped resource; Pod/Secret permissions are namespace-scoped and limited to the pinned provider's required operations. No permission to create Namespaces or manage RBAC is implied. External secret references are not a v1 storage mode；the Profile neither grants nor manages the underlying access.
 
 A Fleet may share a namespace only with Fleets in the same operator-declared trust and policy domain. A dedicated namespace per trust domain is recommended. The target must not be repointed and the namespace must not be deleted/recreated while any associated Generation remains；every writer, admission webhook and controller in that domain MUST honor Shaula's reserved-name rule. Cluster administrators or compromised provider credentials can violate these assumptions. Namespace/target binding changes create a new Profile Revision, while existing Generations always Destroy through their exact original Revision, bindings and state.
 
@@ -100,7 +100,7 @@ The accepted handoff is a reviewed init-to-memory path：
 5. the pinned Runner's `CommandSettings` startup captures `ACTIONS_RUNNER_INPUT_JITCONFIG` into its private in-memory argument map and unsets the ordinary process environment entry；`GetJitConfig()` later reads that captured value；
 6. conformance proves JIT is absent from every process command line, the consumed staged-memory path, ordinary inherited job environment, workflow context and other intentionally workflow-facing state before GitHub reports the Runner ready. It does not claim isolation from process inspection inside the Runner Execution Domain.
 
-JIT never appears in the declarative Pod/container environment, args or command, and never enters HTTP reads, audit, logs or telemetry. Directly mounting the Secret into the runner container is forbidden by this Profile contract. Runner startup unset prevents ordinary child-environment inheritance but is not `/proc` or memory isolation；v1 accepts that workflow code with process-inspection capability inside the same Runner Execution Domain may read `Runner.Listener` initial environment or memory. That residual risk does not block activation and makes no memory-zeroization claim. This exception applies only to JIT：GitHub App/PAT/derived control-plane tokens, provider credentials, sensitive Template bindings and Shaula HTTP/SQLite credentials never enter the Runner Execution Domain. The exact bindings, runtime/trust policy and Runner/init/shim image tuple are release-gated by the attestation in section 10.
+JIT never appears in the declarative Pod/container environment, args or command, and never enters management HTTP reads, audit, logs or telemetry. Directly mounting the Secret into the runner container is forbidden by this Profile contract. Runner startup unset prevents ordinary child-environment inheritance but is not `/proc` or memory isolation；v1 accepts that workflow code with process-inspection capability inside the same Runner Execution Domain may read `Runner.Listener` initial environment or memory. That residual risk does not block activation and makes no memory-zeroization claim. This exception applies only to JIT：GitHub App/PAT/derived control-plane tokens, provider credentials, sensitive Template bindings and Shaula HTTP/SQLite credentials never enter the Runner Execution Domain. The exact bindings, runtime/trust policy and Runner/init/shim image tuple are release-gated by the attestation in section 10.
 
 The init container, runner container and bootstrap shim images or executables are fixed by digest in the immutable Profile. The Pod has no long-running sidecar in v1. A normal job later receives GitHub's per-job `GITHUB_TOKEN`; a custom PAT is visible only if the workflow owner deliberately stores and references it as an Actions Secret. Neither fact authorizes exposure of Shaula control-plane credentials.
 
@@ -123,38 +123,26 @@ GitHub inventory, not a Terraform output or Kubernetes readiness field, is the a
 
 ## 7. Create sequence
 
-The Kubernetes specialization of Runner Create is：
+The worker sequence and daemon GitHub gates are defined once in spec 0010 §3, with saved-plan admission in spec 0004 §5. Kubernetes adds only:
 
-1. Persist the Runner Generation, stable unique Runner name and Kubernetes `generation_name`, Fleet Revision, exact Profile artifact and Revision, exact `bindings_digest`, Workspace and state lineage/serial before external mutation.
-2. Materialize the immutable Profile, verify its activation attestation and run locked `terraform init` before acquiring JIT.
-3. Revalidate the Fleet/session mutation fences.
-4. Before the JIT POST, atomically persist `JITStarting`, a unique JIT attempt, stable Runner name, exact Scale Set ID, complete Auth Revision Ref and request digest.
-5. Issue the JIT request once. On definite success, validate and persist the exact GitHub Runner ID/result, then atomically publish the protected standard input. An unknown response follows the stable-name lookup/remove/fresh-Generation procedure below and never repeats the POST for this Generation.
-6. Run `terraform plan -out=<saved-plan>`. An ordinary namespace data source feeds blocking Secret and Pod `lifecycle.precondition` expressions; a failed lookup or precondition prevents creation of an applyable saved plan.
-7. Parse the saved plan with the complete provider-neutral policy in section 6 and require exactly one Secret and one Pod with exact `["create"]` actions.
-8. Bind the saved-plan digest to the exact engine kind/version/binary digest, artifact and protected-input digests, state lineage/serial or empty-state sentinel, Generation ID and attempt ID. Re-hash the bytes, persist `ApplyStarting` with that provenance, then invoke `terraform apply <saved-plan>` at most once.
-9. The Profile's Terraform graph creates the immutable Secret before the dependent Pod.
-10. Read and validate the standard `shaula_result` envelope and exact echoed `bindings_digest`, persist its evidence opaquely, and verify the expected managed-resource count in Terraform state.
-11. Enter `WaitingOnline`; only GitHub inventory can promote the Runner to `Idle` or `Busy`.
+1. The already-persisted stable Generation name becomes the exact Pod/Secret `metadata.name`; collision detection precedes external mutation.
+2. A namespace data source feeds blocking Pod/Secret `lifecycle.precondition` expressions. Lookup/precondition failure prevents an applyable plan; it may occur after JIT under the baseline ordering.
+3. Create's managed shape is exactly one Secret and one Pod, each with `["create"]`; the Terraform graph creates the immutable Secret before its dependent Pod.
+4. `shaula_result` carries only the common envelope and protected opaque identity evidence. State is persisted through the HTTP backend, and only daemon GitHub inventory proves online/Busy.
 
 A post-Create Terraform Inspect MAY run an ordinary no-apply plan with detailed exit classification. It may report drift but never authorizes repair. Live Pod shape, Generation Resource Key correspondence, optional UID diagnostics and admission mutation are Profile/harness concerns, not native Create steps in core.
 
-After `JITStarting`, an unknown JIT response is never retried for the same Generation/name. Recovery performs a bounded lookup by the persisted stable name in the exact Target/Scale Set. An exact match is persisted and safely removed；authoritative proof of no commit also terminates the old Generation. Either case uses a fresh Generation/name for any later JIT request. Ambiguous access, multiple/mismatched results or unprovable absence quarantines. Once apply may have started, Shaula never applies that Generation again. A crash, missing result or uncertain apply outcome enters `CleanupRequired` and follows the ordinary GitHub removal and Destroy path. The exact original protected input, including JIT, remains available through successful Destroy and empty-state verification; only then may the retention policy erase it.
+JIT uncertainty follows spec 0001 §10.2's stable-name lookup/remove/fresh-Generation rule. Worker crash and Create uncertainty follow spec 0010: no second Create apply, no process/lock-expiry inference, and no protected-input cleanup before trusted empty-state completion.
 
 ## 8. Retirement and Destroy
 
-Only after the common GitHub safe-removal gate succeeds may Shaula continue. Runner-specific already-absent is authoritative only for a still-bound, authenticated-readable Scale Set；Scale Set absence, access-filtered `404` or `ScaleSetMissingWithResources` never proves Busy safety. After that gate, Shaula：
+The worker requests daemon safe-removal authority; spec 0010 owns Busy/absence/ownership gates, original-state delete-only planning, process fencing, completion/seal and retention ordering. Already-empty state skips apply only when that contract's trusted terminal classification holds; an empty initial state or worker exit is not cleanup proof.
 
-1. uses the Generation's exact original artifact, protected input, Workspace and state；
-2. treats an already-empty state as successful Destroy without planning or applying；
-3. otherwise creates a saved destroy plan and applies the complete provider-neutral gate from section 6: every remaining managed instance has exact `["delete"]`, only data resources may read or no-op, and all other actions and ambiguous forms are rejected；
-4. binds and re-hashes the plan with the same provenance fields as Create, persists `DestroyApplyStarting`, then applies it. A retry uses a new plan and attempt only after the prior subprocess is proven terminated；
-5. relies on the Profile's Terraform dependency graph to request Pod deletion before Secret deletion；
-6. persists `Destroyed` only after the empty-state fast path or successful apply followed by `terraform state list` returning empty, then permits protected-input cleanup.
+The Kubernetes-specific requirement is Pod-before-Secret deletion through the original provider-bound namespace/name state. A partial Destroy may leave a subset of the original managed instances; a retry uses a new delete-only plan only after prior descendants are excluded.
 
 Production Shaula does not issue Pod/Secret delete or absence requests, compare Kubernetes UIDs, or reconstruct a resource name after state loss. With usable exact original bindings, Workspace and Terraform state, v1 intentionally permits the pinned HashiCorp provider to delete by namespace/name. Missing or corrupt state, contradictory opaque evidence, a known binding/name collision or any condition in which the original state-bound key is unavailable leaves the Generation in Quarantine and retains Resource Occupancy.
 
-State-empty is the provider-neutral completion proof available to core；it is not independently asserted to be a Kubernetes live-absence proof. The external conformance harness MUST verify Pod-before-Secret name-based deletion and final live absence for every exact attested compatibility tuple.
+Trusted Destroy classification plus exact state-empty completion is the provider-neutral proof available to core；it is not independently asserted to be a Kubernetes live-absence proof. The external conformance harness MUST verify Pod-before-Secret name-based deletion and final live absence for every exact attested compatibility tuple.
 
 Core may rely on a Kubernetes Profile only after its activation attestation binds the exact engine binary, provider lock/checksums, artifact naming algorithm, protected bindings/namespace, runtime trust policy, Runner/init/shim images and suite, and proves stable same-Generation names, cross-Generation non-reuse, collision failure and original-state-only Destroy. No UID-precondition claim is made. A same-name different-UID replacement may be deleted when target/namespace continuity or trusted name reservation is violated；this accepted risk does not prevent activation.
 
@@ -163,21 +151,22 @@ Core may rely on a Kubernetes Profile only after its activation attestation bind
 | Observation available to core | Required behavior |
 | --- | --- |
 | JIT request provably never started | Continue the original Generation's persisted JIT intent and stable name；do not mint a second identity |
-| `JITReady` or `CreatePlanReady`, protected JIT is complete/unexpired, and Create subprocess provably never started | Resume the same Generation with its original JIT and frozen inputs/plan；never mint a fresh JIT for it |
+| Protected JIT is valid and Create-start is provably not authorized/possible | Continue original frozen input under the worker protocol; never mint a second JIT for that Generation |
 | JIT outcome is uncertain, expired or missing | Apply section 7 lookup/removal/absence classification, terminalize the old Generation, then use a fresh Generation/name；ambiguity quarantines |
 | Apply may have started and its result is unknown | Enter `CleanupRequired`; never re-apply |
 | Valid state describes a partial or drifted Generation | Pass GitHub safe removal, then run the original delete-only Destroy；never Update |
 | Terraform Inspect returns drift | Retire or Quarantine according to generic ownership confidence；never apply the proposed change |
 | The Profile reports bindings/Generation Resource Key disagreement | Block new effects and Quarantine rather than delete through reconstructed or mismatched state |
-| State or Workspace is missing/corrupt while objects may remain | Quarantine and retain Resource Occupancy；do not scan, import or delete by a reconstructed/out-of-state name |
+| Authoritative state or unique emergency evidence is missing/corrupt while objects may remain | Quarantine and retain Occupancy; no native discovery/import/reconstructed-name deletion |
+| Ordinary Workspace copy is lost, but retained materials and DB state are complete | Rebuild only after worker fencing under spec 0010; do not change original bindings |
 | Pod never becomes online according to GitHub inventory | Retire, remove the registration and Destroy through Terraform |
-| Destroy result is uncertain but state remains usable | Retry the same delete-only Destroy until Terraform succeeds and state is empty |
+| Destroy result is uncertain but state remains usable | Fence prior descendants, re-read state and admit a new delete-only plan; complete only with the exact backend empty-state receipt |
 
 Kubernetes UIDs and live-object observations may appear inside opaque Profile evidence or external harness results, but UID is neither the v1 Resource Key nor a column/branch in the core lifecycle state machine. Recovery remains level-triggered from SQLite, GitHub inventory and fixed Terraform operations. Kubernetes event watches are neither present nor required for correctness.
 
 ## 10. Security, observability and acceptance
 
-Kubernetes Secrets may be stored unencrypted in etcd unless the cluster enables encryption at rest. The target namespace, Kubernetes credential, saved plans, state, backups and node access belong to the deployment threat model. Because the binding credential is plaintext in the Template Revision, SQLite main DB, WAL/SHM, online/migration copies, backups and crash dumps are also credential-bearing. Every HTTP read, audit, error, log, OTel signal and diagnostic excludes the binding value and any prefix/suffix/hash/length. A subject allowed to create Pods in the namespace may often arrange to consume namespace Secrets, so the namespace is a trusted runner security domain rather than isolation from its administrators.
+Kubernetes Secrets may be stored unencrypted in etcd unless the cluster enables encryption at rest. The target namespace, Kubernetes credential, saved plans, state, backups and node access belong to the deployment threat model. Because the binding credential is plaintext in the Template Revision, SQLite main DB, WAL/SHM, online/migration copies, backups and crash dumps are also credential-bearing. Every management HTTP read, audit, error, log, OTel signal and diagnostic excludes the binding value and any prefix/suffix/hash/length. A subject allowed to create Pods in the namespace may often arrange to consume namespace Secrets, so the namespace is a trusted runner security domain rather than isolation from its administrators.
 
 Runtime telemetry uses provider-neutral attempts such as Profile validation, Terraform init, create plan, saved-plan policy, apply, Inspect, destroy plan, destroy apply and state-empty verification. Attributes may contain Fleet Key, Generation ID, Profile digest and finite result/reason values. They MUST NOT contain namespace/object identity, JIT, Kubernetes credentials, manifests, Terraform input, saved-plan JSON, state, raw `shaula_result` or unredacted provider output. Metrics use only bounded dimensions and omit Fleet, namespace and resource identity.
 
@@ -187,10 +176,10 @@ Core contract tests, without a Kubernetes client, MUST prove：
 2. `platform` and `bindings_contract` come only from the admitted artifact manifest；the exact protected `bindings_digest` comes from the immutable Profile binding revision accepted through HTTP/SQLite. Fleet input cannot assert or override any of them；
 3. saved-plan admission accepts only a supported JSON format major with `applyable=true`, `complete=true` and `errored=false`, and rejects unknown shape/action/mode/address/type, deferred changes, import, deposed instances, moves and replacements；
 4. Create requires empty managed prior state and exactly one manifest-declared Secret plus one Pod with exact `["create"]` actions；
-5. Destroy succeeds without apply for empty state, otherwise requires exact `["delete"]` for every managed instance；only data resources may use `["read"]` or `["no-op"]`；
+5. trusted terminal classification permits empty-state completion without apply; otherwise require exact `["delete"]` for each managed instance, with data-only read/no-op；
 6. `shaula_result` is schema-checked, must echo `bindings_digest`, is stored opaquely and is never interpreted as Kubernetes fields；
 7. Create apply uncertainty never produces a second Create apply；
-8. `DestroyApplyStarting` and complete saved-plan provenance are durable before each Destroy apply；
+8. worker provenance, Create-start facts, descendant fencing and backend state/locks satisfy spec 0010, without requiring daemon per-command subphases；
 9. `JobStillRunning` keeps Terraform Destroy invocation count at zero；
 10. missing/corrupt state with possible residue enters Quarantine；
 11. Destroy is complete only after empty state and the exact original protected input remains until that proof；
@@ -215,14 +204,13 @@ The external Kubernetes conformance harness MUST prove for every supported tuple
 
 The conformance harness MAY inspect Kubernetes API audit evidence or use a fake provider to establish delete-call order while `JobStillRunning`; those inspection capabilities remain outside production Shaula.
 
-A signed or equivalently integrity-protected passing attestation binds the exact tuple above, including bindings and runtime policy, to the Profile Revision. Without that attestation the Profile cannot transition to `Active`, be assigned to a Fleet Revision, or advertise Kubernetes capability.
+Spec 0005 §5.1's authenticated, independently authorized and immutably audited attestation binds this exact tuple and retained conformance report; a separate signing PKI is not required. Without it the Profile cannot become Active, accept a new Fleet reference or advertise capability. Existing pins follow spec 0002's retained-reference rules.
+
+A placeholder `.terraform.lock.hcl` is not a verified provider pin. Release requires real checksums and passing engine/provider/image/GitHub/HTTP-backend tests; the checked-in artifact's evidence status lives in [implementation status](../IMPLEMENTATION_STATUS.md).
 
 ## 11. Open decisions and compatibility gates
 
-The following details are intentionally unresolved and MUST NOT be advertised as guaranteed until accepted and tested：
-
-1. **Pre-JIT namespace check**: the minimal shared protocol obtains JIT before its provider-backed Create plan. Requiring namespace validation before JIT would need an additional fixed Terraform preflight phase/root or another explicitly designed mechanism. The choice must be aligned before claiming that an unavailable namespace consumes no JIT.
-2. **Profile hardening**: select exact Runner/init image digests, CPU/memory/ephemeral-storage limits, security context, seccomp/capability policy, namespace network policy and namespace-sharing policy.
+The [central decision register](../README.md#仍需决定或冻结) owns R1/R3: exact images, resource limits, security context, seccomp/capabilities, namespace sharing/network policy and RBAC acceptance. The baseline checks the namespace during Create planning, after JIT; a pre-JIT provider check is an optional extension, not a promised guarantee that an unavailable namespace consumes no JIT.
 
 The Runner process-inspection choice is resolved as an accepted v1 trust limitation, not a compatibility gate. A future guarantee against same-domain `/proc` or memory inspection requires a new hardening decision and conformance contract.
 

@@ -8,26 +8,21 @@
 
 This specification defines the platform-neutral seam between Shaula and infrastructure templates. It extends the [Multi-Fleet Runner Scale Set Controller Specification](0001-shaula-runner-scale-set.md). Platform details live in the [Kubernetes Runner Resource Specification](0003-kubernetes-runner-resource.md) and [Docker Runner Resource Specification](0006-docker-runner-resource.md), while profile publication is defined by the [Profile HTTP Control-Plane Specification](0005-profile-http-control-plane.md).
 
-Related decisions are [ADR-0002](../ard/0002-run-immutable-runner-lifecycles-as-local-subprocesses.md), [ADR-0004](../ard/0004-allow-bootstrap-secrets-in-provisioning-state.md), [ADR-0008](../ard/0008-keep-platform-capabilities-in-terraform-template-profiles.md), [ADR-0009](../ard/0009-manage-profile-resources-through-http-and-sqlite.md), and [ADR-0010](../ard/0010-build-a-pure-rust-multi-crate-daemon-and-use-scaleset-as-an-oracle.md).
+Worker ownership and the database state protocol are defined by [spec 0010](0010-lifecycle-worker-and-http-state-backend.md) and [ADR-0014](../ard/0014-run-lifecycle-workers-with-a-database-http-state-backend.md), which supersedes ADR-0002. Other related decisions are [ADR-0004](../ard/0004-allow-bootstrap-secrets-in-provisioning-state.md), [ADR-0008](../ard/0008-keep-platform-capabilities-in-terraform-template-profiles.md), [ADR-0009](../ard/0009-manage-profile-resources-through-http-and-sqlite.md), and [ADR-0010](../ard/0010-build-a-pure-rust-multi-crate-daemon-and-use-scaleset-as-an-oracle.md).
 
 ## 1. Outcome
 
-Shaula is one pure-Rust daemon, not an infrastructure controller framework. Its production binary owns：
-
-- clap process lifecycle and the HTTP control Interface；
-- SQLite desired state, lifecycle ledger and artifact/workspace ownership；
-- GitHub Scale Set access through the Rust/reqwest Scale Set Adapter, checked against the pinned `actions/scaleset` protocol oracle；
-- capacity reconciliation, Create/Destroy orchestration and crash recovery；
-- local Terraform/OpenTofu subprocess execution；
-- Day 0 OpenTelemetry and correlated structured logging.
+Shaula is a pure-Rust daemon plus one Lifecycle Worker (`shaula job`) per Generation, not a platform-controller framework. The daemon owns Fleet/GitHub/capacity, worker supervision and the SQLite-backed HTTP state backend. The worker owns sequential Create/wait/Destroy and its Template Runtime; exec is the only v1 Executor Driver. Both use the same binary and Day 0 observability, but GitHub credentials remain in the daemon.
 
 It does not own Kubernetes or Docker capability. The daemon imports no Kubernetes/Docker client, constructs no platform request, watches no platform event, and interprets no Pod, Secret or container schema. Platform behavior is executable infrastructure code inside a Template Profile.
 
 ```mermaid
 flowchart LR
-    Fleet["Fleet Reconciler"] --> Lifecycle["Runner Lifecycle Module<br/>Create / Destroy"]
-    Lifecycle --> Runtime["Template Runtime Module"]
+    Fleet["Fleet Reconciler / GitHub gates"] --> Executor["exec Executor"]
+    Executor --> Worker["shaula job / one Generation"]
+    Worker --> Runtime["Template Runtime Module"]
     Runtime --> IaC["Local Terraform subprocess"]
+    IaC <-->|"HTTP state / LOCK / UNLOCK"| Backend["daemon / SQLite"]
     IaC --> K8sProfile["templates/kubernetes<br/>Kubernetes provider"]
     IaC --> DockerProfile["templates/docker<br/>Docker provider"]
     K8sProfile --> K8s["Kubernetes API"]
@@ -40,7 +35,7 @@ flowchart LR
 2. The only mutating infrastructure Operations are Create and Destroy. Profile publication, validation, state inspection and read-only diagnosis are not Update primitives.
 3. Every Runner Generation pins one immutable Template Profile Revision, artifact digest, normalized input digest, Workspace and state.
 4. An uncertain Create result is never retried with a second apply. It enters `CleanupRequired` and proceeds through the same GitHub removal and Destroy safety path.
-5. Destroy always uses the original artifact, inputs, Workspace and state. A newer Profile Revision never repairs or destroys an older Generation.
+5. Destroy always uses the original artifact/inputs/runtime tuple and that Generation's authoritative database state. An ordinary Workspace copy may be reconstructed after fencing; missing unique emergency state or original materials cannot. A newer Profile Revision never repairs or destroys an older Generation.
 6. The daemon treats platform-specific declared outputs as protected opaque evidence. It persists them for recovery but does not reproduce platform reconciliation logic in Rust or expose their bodies through ordinary diagnostics.
 7. Adding a Template Platform requires a conforming profile and test suite, not a new Fleet/Runner lifecycle method.
 8. Provider administration credentials may enter the isolated IaC subprocess when the Profile declares them, but never the Runner Resource or workflow.
@@ -60,7 +55,7 @@ A Template Profile Revision is an immutable tuple of：
 - a protected opaque binding commitment, carried under the wire name `bindings_digest`, that identifies the exact immutable binding Revision without exposing an offline credential verifier；
 - the normalized digest of all non-credential material.
 
-`bindings_digest` MUST NOT be an unkeyed digest of sensitive binding plaintext or permit a reader to validate secret guesses. It is a server-issued equality token for an immutable Revision；its exact keyed/opaque construction is fixed before implementation. If that non-verifier property cannot be met, the field and every containing subject/output are secret and cannot appear on read surfaces.
+`bindings_digest` MUST NOT be an unkeyed digest of sensitive binding plaintext or permit a reader to validate secret guesses. It is a server-issued equality token for an immutable Revision；its representation, exact-Revision/incarnation binding and compatibility freeze remain decision D4 in the [central register](../README.md#仍需决定或冻结). This revision does not introduce a new bd2/HMAC encoding or rewrite existing records. If that non-verifier property cannot be met, the field and every containing subject/output are secret and cannot appear on read surfaces.
 
 The trusted conformance attestation is a separate immutable record that references the Revision and its canonical compatibility subject. Attestation submission never mutates the Revision；the activation transaction freezes `active_attestation_id`, and each admitted Fleet/Generation pins both the Revision and that attestation.
 
@@ -156,14 +151,14 @@ The Profile separates three input classes：
 | Fleet input | Fleet manager | approved size/network/image alias | Bounded by manifest schema and fixed by Fleet Revision |
 
 Raw scripts, provider blocks, executable paths, arbitrary environment names and arbitrary filesystem paths are never Fleet inputs. The Profile publisher is trusted to publish executable infrastructure code and has a separate authorization capability.
-A trusted external conformance attestation is required before every Template activation. Its provider-neutral envelope binds the artifact/manifest digests, exact engine kind/version/binary digest, dependency lock and provider versions/checksums, protected `bindings_digest`, runtime/trust policy, executable or image digests declared by the Profile, manifest-derived `platform`/`bindings_contract` and conformance-suite revision. The runtime/trust policy records enforced handoff controls and accepted limitations；it does not imply same-Runner-Execution-Domain process isolation. Shaula verifies the attestation trust, envelope and exact digest/version equality without interpreting platform assertions. A changed member creates a different compatibility tuple and requires a new attestation.
+A trusted external conformance attestation is required before every Template activation. Its provider-neutral envelope binds the artifact/manifest digests, exact engine kind/version/binary digest, dependency lock and provider versions/checksums, protected `bindings_digest`, runtime/trust policy, executable or image digests declared by the Profile, manifest-derived `platform`/`bindings_contract` and conformance-suite revision. The runtime/trust policy records enforced handoff controls and accepted limitations；it does not imply same-Runner-Execution-Domain process isolation. Shaula verifies the attestation trust, envelope and exact digest/version equality without interpreting platform assertions. A changed member creates a different compatibility tuple and requires a new attestation. Trust is authenticated OIDC submission under independent `template.attest` authority plus immutable audit/record storage, not a new signing PKI or a claim that the daemon reruns the harness; spec 0005 §5.1 owns this contract.
 
 The artifact manifest remains the sole source of `platform`. Profile publication may attach bindings but cannot attach an activation attestation, override platform identity or independently declare it. Only after the Candidate reaches `Ready` may a separate authorized attestation PUT create the immutable record and atomically activate by reference；it never creates or rewrites the Profile Revision.
 
 
 ## 4. Template Runtime Module
 
-The Template Runtime Module is the single platform-neutral seam. Its external Interface is conceptually：
+The Template Runtime Module runs inside the Lifecycle Worker; it is not a daemon command queue or Executor Driver. Its platform-neutral Interface is conceptually：
 
 - validate an immutable Profile artifact without infrastructure mutation；
 - Create one Runner Generation from a pinned Profile and normalized inputs；
@@ -174,13 +169,13 @@ The exact Rust types, traits and method names are implementation details. Caller
 
 `Validate` MAY run `terraform init -backend=false` and `terraform validate` in an isolated candidate directory. Any command that can contact or mutate external infrastructure is asynchronous, explicitly classified and never executed in the HTTP request transaction.
 
-Read-only diagnosis MAY use `terraform show -json` and a bounded normal plan with `-detailed-exitcode`. It MUST NOT run `terraform refresh`, apply a refresh-only or diagnostic plan, import an unowned object, recreate a missing object or repair drift. A Profile that cannot prove safe Destroy from its own state is incompatible with v1. Plan/state JSON is credential-grade even when Terraform marks values sensitive and is never logged or returned by HTTP.
+Read-only diagnosis MAY use `terraform show -json` and a bounded normal plan with `-detailed-exitcode`. It MUST NOT run `terraform refresh`, apply a refresh-only or diagnostic plan, import an unowned object, recreate a missing object or repair drift. A Profile that cannot prove safe Destroy from its own state is incompatible with v1. Plan/state JSON is credential-grade even when Terraform marks values sensitive and is never logged or returned by management HTTP. The only state-byte HTTP channel is the authenticated internal backend in spec 0010.
 
 Lifecycle-visible template failures use only the provider-neutral reason `TemplatePlanFailed` or `TemplateExecutionFailed` plus a bounded phase such as `create.plan`, `create.apply`, `inspect.plan`, `destroy.plan`, `destroy.apply` or `state.verify`. Provider text, platform-specific status and raw diagnostics remain protected details and are never parsed into core reason codes.
 
 ## 5. Saved-plan admission and provenance
 
-Every mutating Terraform invocation applies a previously inspected saved plan, never a directory. The protected operation record stores the saved-plan file digest and binds it to the exact engine executable, kind/version/binary digest, artifact digest, protected-input digest, state lineage and serial or explicit empty-state sentinel, Generation ID and unique attempt ID.
+Every mutating Terraform invocation applies a previously inspected saved plan, never a directory. The worker retains protected plan provenance in its exclusive Workspace: plan digest, exact engine executable/kind/version/binary digest, artifact/protected-input digests, backend Generation identity/revision and Terraform lineage/serial, Generation ID and current Worker Claim. This does not require a central per-command operation record or promise that Create resumes from an arbitrary saved plan after a crash.
 
 Immediately before spawning apply, the Template Runtime re-hashes the plan, inputs and engine binary and re-reads the state lineage/serial. Any mismatch, missing member or changed engine/artifact rejects the plan. The plan file, inspection result and provenance record are credential-grade and never appear in HTTP or telemetry.
 
@@ -190,35 +185,23 @@ Saved-plan admission is fail closed：
 2. A missing or unknown action, mode, address, resource type or shape-critical value is rejected；provider-computed attribute values may remain unknown when they cannot alter resource identity, action or cardinality.
 3. Deferred changes, importing, deposed instances, moved/`previous_address` entries and both replacement action orderings are rejected.
 4. Create requires both the bound state snapshot and plan prior state to contain no managed instance. Every manifest-declared managed instance appears exactly once with `mode=managed` and `actions=["create"]`, and the role/type/cardinality is exact.
-5. Destroy first accepts an already-empty bound state as success without apply. Otherwise every managed instance in that bound state appears exactly once with `mode=managed` and `actions=["delete"]`；the set may be a subset after a partial Destroy but may contain no new address or type.
+5. Destroy may skip apply for already-empty bound state only when spec 0010's trusted terminal classification is satisfied; an empty initial state after an uncertain Create is not proof of cleanup. Otherwise every managed instance in that bound state appears exactly once with `mode=managed` and `actions=["delete"]`；the set may be a subset after a partial Destroy but may contain no new address or type.
 6. Only `mode=data` entries may use exactly `["read"]` or `["no-op"]`. All other actions, modes and combinations are rejected.
 
 A standalone Terraform `check` is advisory and cannot satisfy a lifecycle safety gate. Failed or errored checks reject plan admission when present, but every property required before mutation must also be expressed through a blocking mechanism such as an ordinary data source plus resource `lifecycle.precondition`.
 
 ## 6. Provider-neutral lifecycle
 
-Create follows this platform-neutral sequence：
+The full sequence, process/side-effect gates, database locks and crash behavior are owned solely by [spec 0010 §2–8](0010-lifecycle-worker-and-http-state-backend.md). The Template Runtime implements the following local mechanisms, not a duplicate durable state machine:
 
-1. Persist Generation identity, exact Profile Revision, artifact and bindings digests, normalized parameters and Workspace before an external effect.
-2. Materialize the exact artifact and run locked `terraform init` before obtaining short-lived JIT.
-3. Re-check the Fleet/session mutation fences, durably persist `JITStarting` with the stable Runner name, exact Scale Set/Auth context, request digest and unique attempt, then issue the JIT request once and write a definite result into the exact protected input envelope. An unknown response is never retried for the same Generation and follows bounded stable-name recovery/removal before any fresh Generation.
-4. Create, inspect and admit the saved Create plan under section 5.
-5. Persist `ApplyStarting`, attempt identity, saved-plan digest and the complete provenance binding before starting the subprocess.
-6. Re-check that binding, then run `terraform apply <saved-plan>` at most once for the Generation. Once apply might have started, no recovery path may apply that Generation again.
-7. Validate `shaula_result`, including contract version, Generation ID, `bindings_digest`, roles and cardinality, then persist its protected opaque evidence without platform interpretation.
-8. Keep the exact original protected input, including JIT, until Destroy succeeds with empty state；only then may retention cleanup remove it. GitHub inventory alone proves Runner readiness.
+- CoW/reflink materialization with ordinary-copy fallback; no writable hardlinks or shared working tree. Verify artifact content and containment before use; retain existing recovery evidence rather than deleting a previous directory.
+- A reserved worker-owned backend configuration selects only the internal HTTP backend. Reject Profile-defined backends/overrides and reserved-file collisions. This fixed non-secret configuration is distinct from the immutable published artifact; it does not permit arbitrary generated Terraform code.
+- Locked `terraform init` precedes JIT; provider versions/checksums cannot implicitly upgrade. Backend credentials use only the prescribed per-child `TF_HTTP_*` env, never HCL or `-backend-config` secrets.
+- Saved-plan admission/provenance follows §5. The worker requests daemon JIT/Create-start/removal authority; no raw GitHub credential is passed into the Runtime.
+- Output validation is the fixed envelope in §3; readiness/Busy classification comes from daemon GitHub observations, not provider object parsing.
+- Original inputs and any emergency local state remain protected until the daemon acknowledges exact empty-state terminal completion and seals backend writes. Worker exit, backend failure or missing state never triggers unconditional cleanup.
 
-Destroy follows this sequence：
-
-1. Complete the GitHub safe-removal gate and acquire the Generation mutation fence.
-2. Re-open the original Profile Revision, artifact, protected input, Workspace and state. A missing required member quarantines rather than reconstructs it.
-3. If the bound state is already empty, persist the terminal result and perform retention cleanup without invoking apply.
-4. Otherwise create, inspect and admit a saved Destroy plan under section 5.
-5. Persist `DestroyApplyStarting`, the unique Destroy attempt, saved-plan digest and complete provenance binding before spawning the child；re-check all members immediately before spawn.
-6. Apply that plan at most once for the attempt. After a provably terminated partial/failed attempt, a new attempt may re-read state, create a new delete-only plan and retry.
-7. Persist `Destroyed` and delete the protected inputs/plans/Workspace only after a zero execution classification and `terraform state list` is empty.
-
-If the daemon cannot prove a possibly started child is dead or fenced from its Workspace, it waits or quarantines instead of running a concurrent operation. An uncertain Create enters `CleanupRequired` and is never re-applied. Missing/corrupt state with possible external resources enters `Quarantined`；native platform discovery, import and out-of-state/reconstructed-name deletion are forbidden.
+Native platform discovery, import, out-of-state/reconstructed-name deletion and same-Generation Create re-apply remain forbidden. Worker recovery can regenerate a delete-only plan only after prior descendants are excluded and the original state/materials are trustworthy.
 
 ## 7. Kubernetes v1 Profile
 
@@ -257,7 +240,7 @@ Access to the Docker daemon is effectively host-administrative. When the daemon 
 
 Template artifact publication is equivalent to deploying code that can run provider plugins with infrastructure credentials. The HTTP authorization model separates `template.publish` from `fleet.write`, `auth.write` and read-only roles.
 
-The Template Runtime uses a per-process environment allowlist, dedicated Workspace, restricted files, bounded output and redaction. It never forwards the daemon's full environment. Terraform state, plans, variable files, provider credentials, JIT, Docker registry credentials and sensitive Profile bindings are credential-grade data. JIT never enters Shaula/Terraform argv or environment, declarative Pod/container env/args/commands, ordinary inherited job environment, workflow context, HTTP reads, audit, logs or telemetry. Bundled Profiles prohibit secret-bearing argv. Their pinned shim may set only `ACTIONS_RUNNER_INPUT_JITCONFIG` on the spawned `Runner.Listener`; `CommandSettings` captures it into a private in-memory map and unsets the ordinary environment entry before `GetJitConfig()` reads that copy. Linux may retain initial exec environment through `/proc/<pid>/environ`, so v1 explicitly accepts possible JIT access by workflow code with process-inspection capability inside the same Runner Execution Domain. This is not an activation failure and no process-isolation or memory-zeroization claim is made. The exception is JIT-only；GitHub control-plane/derived tokens, provider credentials, sensitive Template bindings and Shaula HTTP/SQLite credentials never enter that domain.
+The Template Runtime uses a per-process environment allowlist, dedicated Workspace, restricted files, bounded output and redaction. It never forwards the daemon's full environment. Terraform state, plans, variable files, provider credentials, JIT, Docker registry credentials and sensitive Profile bindings are credential-grade data. JIT never enters Shaula/Terraform argv or environment, declarative Pod/container env/args/commands, ordinary inherited job environment, workflow context, management HTTP reads, audit, logs or telemetry. Bundled Profiles prohibit secret-bearing argv. Their pinned shim may set only `ACTIONS_RUNNER_INPUT_JITCONFIG` on the spawned `Runner.Listener`; `CommandSettings` captures it into a private in-memory map and unsets the ordinary environment entry before `GetJitConfig()` reads that copy. Linux may retain initial exec environment through `/proc/<pid>/environ`, so v1 explicitly accepts possible JIT access by workflow code with process-inspection capability inside the same Runner Execution Domain. This is not an activation failure and no process-isolation or memory-zeroization claim is made. The exception is JIT-only；GitHub control-plane/derived tokens, provider credentials, sensitive Template bindings and Shaula HTTP/SQLite credentials never enter that domain.
 Schema-sensitive Kubernetes/Docker bindings are write-only HTTP fields whose original plaintext is retained in the immutable Template Profile Revision. The SQLite main DB, WAL/SHM, online/migration copies, backups and crash dumps therefore share the credential boundary. Read APIs, audit, errors, logs, OTel and diagnostics expose only approved non-secret fields and bounded presence metadata, never a secret value or derived prefix/suffix/hash/length. Each sensitive binding is resolved only into the exact approved IaC child and never into the Runner/workflow.
 
 
@@ -284,16 +267,11 @@ Implementation is incomplete until：
 9. Publishing a third fake platform Profile requires no change to Fleet Reconciler or Runner Lifecycle Interfaces.
 10. OTel tests observe both platforms through the same generic span/metric names and bounded attributes.
 11. Plan-policy tests cover unsupported format major, `applyable/complete/errored`, empty Create prior state, exact managed create/delete, data-only read/no-op, deferred/unknown shape, import, deposed, move and replacement rejection.
-12. A crash after `ApplyStarting` never causes a second Create apply. Every Destroy apply has a durable `DestroyApplyStarting` attempt/provenance record, while a provably terminated partial Destroy is retryable only through a newly bound delete-only plan.
+12. A crash after Create-start authorization never causes a second Create apply. Worker provenance, exec fencing and database state/lock tests pass spec 0010; a terminated partial Destroy retries only through a newly bound delete-only plan, without requiring a daemon per-command ledger.
 13. The exact protected input remains readable for recovery and Destroy until state is empty, then is removed under retention policy.
 14. Engine binary replacement or binding/runtime-trust-policy changes fail the provenance/attestation gates rather than reuse prior approval；the policy explicitly records the accepted same-Execution-Domain JIT inspection limitation. The exposed `bindings_digest` cannot validate offline guesses of a sensitive binding.
 
 15. Sensitive Kubernetes/Docker bindings survive restart from their exact plaintext SQLite Revision but are absent from every read response, audit, error, log, trace, metric and diagnostic；DB/WAL/SHM/copies/backups are tested as one credential boundary.
 ## 12. Open decisions
 
-1. Should v1 additionally ship an explicitly high-trust Docker-building Profile that mounts `docker.sock` into its Runner? The bundled default Profile is settled: it never mounts the socket.
-2. Must Docker execution use a separate OS identity or sandbox so only Docker IaC children can open the host-admin socket, or does v1 explicitly accept one ambient host-admin trust domain for all IaC children?
-3. Must the Kubernetes namespace precondition complete before JIT acquisition? If yes, the fixed protocol needs a separate non-mutating preflight phase；the current flow may consume one JIT when Create planning fails.
-4. Must the Docker JIT handoff be memory-only? If yes, provider upload into a verified `tmpfs` mount is a blocking compatibility spike.
-5. Which exact Docker provider and Runner image versions form the first attested compatibility tuple?
-6. Is a provider-backed normal plan sufficient read-only drift evidence for both bundled Profiles, or must uncertain identity always quarantine without further diagnosis?
+See the [central decision register](../README.md#仍需决定或冻结), especially D4 and R1/R3. Socket-enabled Runners, per-Profile OS isolation, pre-JIT provider preflight and memory-only Docker handoff are optional extensions to the accepted baseline. Read-only diagnosis may add evidence, but never replaces ownership, process fencing or the GitHub removal gate and never authorizes repair.

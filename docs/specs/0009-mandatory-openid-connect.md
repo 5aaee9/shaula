@@ -1,12 +1,14 @@
 # Mandatory OpenID Connect Authentication
 
-- Status: Implemented; local protocol/browser acceptance, registered deployment Provider acceptance pending
+- Status: Accepted contract; implementation and acceptance evidence live in [implementation status](../IMPLEMENTATION_STATUS.md)
 - Date: 2026-09-06
 - Decision: [ADR-0013](../ard/0013-require-openid-connect-for-all-http-access.md)
 
 ## 1. Scope
 
-Shaula MUST 自行验证来自启动时配置的单个 OpenID Connect Provider 的身份。所有 UI documents、嵌入静态资源、API、health endpoints 和未来新增 HTTP routes 都默认要求认证；loopback、反向代理、development mode 和 debug binary 均不能绕过认证。
+Shaula 的**管理 HTTP listener** MUST 自行验证来自启动时配置的单个 OpenID Connect Provider 的身份。其全部 UI documents、嵌入 assets、API、health 与未来 routes 默认要求 OIDC；loopback、proxy、development/debug 均不能绕过。
+
+[ADR-0014](../ard/0014-run-lifecycle-workers-with-a-database-http-state-backend.md) 明确新增一个独立、仅 loopback 的内部 worker/control/state listener，认证协议由 [spec 0010](0010-lifecycle-worker-and-http-state-backend.md) 定义：Generation/worker-scoped capabilities，且 control 与 state 分权。它不暴露到管理 proxy，不接受管理身份替代内部权限，也不构成管理 Router 的 OIDC bypass。除这个明确的新协议外，本规范的 default-deny/anonymous exceptions 不变。
 
 本规范替代 ADR-0011 的 proxy actor trust model 和 spec 0008 / ADR-0012 的 public UI shell。OIDC 用于访问 Shaula 的用户与自动化客户端；用于访问 GitHub 的 GitHub App/PAT Profile 是另一种身份和凭据，二者不得互相替代。
 
@@ -23,7 +25,7 @@ Shaula MUST 自行验证来自启动时配置的单个 OpenID Connect Provider �
 | `--oidc-api-audience <audience>` | `SHAULA_OIDC_API_AUDIENCE` | Required. Provider 为 Shaula API 签发的 access token audience；与 web client ID 不同 |
 | `--oidc-ca-cert <pem-path>` | `SHAULA_OIDC_CA_CERT` | Optional. 私有 Provider 的附加 PEM trust root；不关闭 TLS certificate/hostname validation |
 
-Provider 与上述 client/public-origin 配置只能通过 CLI/env 提供，bootstrap YAML 不提供另一套同名来源。Secret 不得以 `VITE_` 环境变量、前端 bundle 或子进程完整环境传递。`version`、`--help` 和 completion 不启动 server，不要求 OIDC 配置。
+Provider 与上述 client/public-origin 配置只能通过 CLI/env 提供，bootstrap YAML 不提供另一套同名来源。Secret 不得以 `VITE_` 环境变量、前端 bundle 或子进程完整环境传递。`version`、`--help` 和 completion 不启动 server，不要求 OIDC 配置。内部 `job` 只消费 spec 0010 的 authenticated exec handoff，不加载/继承 OIDC client secret，也不自行启动管理 server；`serve` 的 mandatory OIDC startup barrier 不变。
 
 Provider registration MUST 支持 Authorization Code flow、PKCE S256、`openid` scope、asymmetric signed ID Tokens 和 `client_secret_basic` token-endpoint authentication。固定 redirect URI 为 `<public-origin>/auth/oidc/callback`，必须预先在 Provider 注册并 exact match；daemon 不进行 dynamic client registration。API 客户端从同一 Provider 获取符合 §5 的 access token；注册 web client 本身不自动获得机器客户端权限。
 
@@ -88,7 +90,7 @@ Discovery/JWKS refresh 使用 bounded cache、有限 timeout/backoff 和 unknown
 ## 7. Acceptance criteria
 
 1. 子进程启动测试覆盖缺少/空/非法 Provider、client 配置缺失、CLI/env precedence、issuer mismatch、不可用 discovery/JWKS；均非零退出且未监听端口/启动资源 effects。`--help`/`version` 无需 Provider。
-2. 枚举所有 production routes 与 fallback：未认证 UI document 只 redirect；JS/CSS/font/image/HEAD/conditional GET、API/artifacts/session、health、OPTIONS 和未知路径不泄露数据或创建副作用。有效旧 backend token 与 forged identity/scopes headers 仍不能访问。
+2. 枚举所有管理 listener 的 production routes 与 fallback；内部 listener 的凭据隔离另按 spec 0010 验收：未认证 UI document 只 redirect；JS/CSS/font/image/HEAD/conditional GET、API/artifacts/session、health、OPTIONS 和未知路径不泄露数据或创建副作用。有效旧 backend token 与 forged identity/scopes headers 仍不能访问。
 3. 完整浏览器登录覆盖 code + S256、state/nonce/browser binding、重放拒绝、固定 redirect origin、open redirect 拒绝、session fixation、expiry、logout 和 restart invalidation。
 4. API 验证拒绝错误 issuer/audience/type/algorithm、ID Token、损坏签名、未知 key、过期 token、冲突 credentials；机器 principal 和用户 principal 权限分别测试，认证成功但 scope 不足是 `403`。
 5. Cookie mutations 的跨站 Origin、缺失/错误 CSRF 均 `403`；合法 bearer 调用维持原 ETag、idempotency、redaction、audit 与 `202` convergence semantics。

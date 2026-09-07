@@ -1,9 +1,12 @@
 ---
-status: accepted
+status: superseded
 date: 2026-09-04
+superseded-by: 0014
 ---
 
 # Run immutable Runner lifecycles as local subprocesses
+
+> Historical decision, superseded by [ADR-0014](0014-run-lifecycle-workers-with-a-database-http-state-backend.md). Immutable Generations and Create/Destroy-only remain; daemon-owned command orchestration, local-state authority and the permanent prohibition on future remote Executors do not. Current worker/state protocol: [spec 0010](../specs/0010-lifecycle-worker-and-http-state-backend.md).
 
 Shaula 在 daemon 主机上直接以 subprocess 运行受支持的 IaC engine，并为每个 Runner Generation 冻结 Template Profile Revision、Template Artifact、输入、dependency lock、Runner Workspace 和 IaC state。Runner 生命周期只提供 Create 和 Destroy；配置或模板变化通过新的 Runner Generation 实现，不向既有 Generation 执行 Update。
 
