@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "ignorePatterns": [
+    "node_modules/**",
+    "dist/**",
+    "test-results/**",
+    "playwright-report/**",
+    "package-lock.json"
+  ],
+  "printWidth": 100
+}

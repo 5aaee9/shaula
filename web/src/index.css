@@ -1,0 +1,221 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme inline {
+  --font-sans: "Inter Variable", Inter, system-ui, sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* shadcn/ui neutral theme. Domain status colors live in StatusBadge. */
+:root {
+  --radius: 0.5rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  color-scheme: light;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    letter-spacing: 0;
+  }
+  body {
+    @apply m-0 min-w-80 bg-background font-sans text-sm text-foreground;
+  }
+  h1 {
+    @apply text-2xl font-semibold;
+  }
+  h2 {
+    @apply text-base font-semibold;
+  }
+  button:not(:disabled),
+  select {
+    cursor: pointer;
+  }
+  a:focus-visible {
+    @apply outline-2 outline-offset-4 outline-ring;
+  }
+}
+
+@layer components {
+  .mono {
+    @apply font-mono;
+  }
+  .page-heading {
+    @apply mb-6 flex flex-wrap items-center justify-between gap-4;
+  }
+  .page-heading > div:first-child {
+    @apply min-w-0;
+  }
+  .page-heading p {
+    @apply mt-1 text-sm text-muted-foreground;
+    overflow-wrap: anywhere;
+  }
+  .section-heading {
+    @apply mb-4 flex flex-wrap items-center justify-between gap-4;
+  }
+  .count {
+    @apply ml-2 inline-flex items-center rounded-md border px-1.5 py-0.5 text-xs font-medium text-muted-foreground;
+  }
+  .toolbar {
+    @apply mb-4 flex flex-wrap items-center gap-2;
+  }
+  .search-input {
+    @apply relative min-w-36 flex-1 max-sm:basis-full sm:max-w-90;
+  }
+  .search-input > svg {
+    @apply absolute top-2.5 left-3 size-4 text-muted-foreground;
+  }
+  .filter-select {
+    @apply flex items-center gap-2 text-muted-foreground;
+  }
+  .table-scroll {
+    @apply relative w-full min-w-0 overflow-hidden rounded-lg border;
+  }
+  .table-scroll thead {
+    @apply bg-muted;
+  }
+  .resource-name {
+    @apply flex min-w-40 items-center gap-3 py-1 text-sm;
+  }
+  .resource-name strong {
+    @apply block font-medium;
+  }
+  .resource-name small {
+    @apply mt-1 block text-xs text-muted-foreground;
+  }
+  .resource-icon {
+    @apply grid size-8 shrink-0 place-items-center rounded-md border bg-muted/50 text-muted-foreground;
+  }
+  .resource-icon svg {
+    @apply size-4;
+  }
+  .table-detail {
+    @apply max-w-48 text-sm;
+    overflow-wrap: anywhere;
+  }
+  .capacity-cell {
+    @apply min-w-18 max-w-24 text-sm;
+  }
+  .capacity-track {
+    @apply mt-2 h-1 overflow-hidden rounded-full bg-muted;
+  }
+  .capacity-track > span {
+    @apply block h-full bg-primary;
+  }
+  .table-footer {
+    @apply flex justify-between gap-2 border-t px-4 py-3 text-xs text-muted-foreground;
+  }
+  .change-notice {
+    @apply mb-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm;
+    overflow-wrap: anywhere;
+  }
+  .back-link {
+    @apply mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground;
+  }
+  .details-section {
+    @apply border-b py-6;
+  }
+  .details-section h2 {
+    @apply mb-5;
+  }
+  .details-section .section-heading h2 {
+    @apply mb-0;
+  }
+  .details-grid {
+    @apply grid grid-cols-1 gap-6 md:grid-cols-2;
+  }
+  .key-value {
+    @apply min-w-0;
+  }
+  .key-value dt {
+    @apply mb-2 text-sm text-muted-foreground;
+  }
+  .key-value dd {
+    @apply text-sm;
+    overflow-wrap: anywhere;
+  }
+  .label-chip {
+    @apply rounded-md border bg-muted/50 px-2 py-1 text-xs;
+  }
+  .text-link {
+    @apply underline underline-offset-4;
+  }
+  .json-view {
+    @apply overflow-x-auto rounded-lg border bg-muted/50 p-4 text-xs leading-relaxed;
+  }
+  .form-stack {
+    @apply flex min-w-0 flex-col gap-4;
+  }
+  .form-grid {
+    @apply grid grid-cols-2 gap-3 sm:gap-4;
+  }
+  .dialog-actions {
+    @apply flex justify-end gap-2 pt-1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

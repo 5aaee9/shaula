@@ -42,6 +42,8 @@ http = "1"
 http-body-util = "0.1"
 jsonwebtoken = "9"
 regex = "1"
+rust-embed = { version = "8", features = ["debug-embed", "deterministic-timestamps"] }
+mime_guess = "2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 sea-orm = { version = "1.1", default-features = false, features = ["sqlx-sqlite", "runtime-tokio-rustls", "macros", "with-chrono", "with-json", "with-uuid"] }
 serde = { version = "1", features = ["derive"] }

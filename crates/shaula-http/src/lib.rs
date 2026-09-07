@@ -12,6 +12,7 @@ pub mod dto;
 pub mod problem;
 pub mod router;
 pub mod server;
+mod web;
 
 pub use router::build_router;
 pub use server::{loopback_policy as verify_loopback, ServerConfig};

@@ -16,6 +16,8 @@ chrono = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }
+rust-embed = { workspace = true }
+mime_guess = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

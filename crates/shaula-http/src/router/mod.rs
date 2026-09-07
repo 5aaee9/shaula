@@ -171,6 +171,20 @@ async fn health_ready(State(state): State<AppState>) -> Response {
     }
 }
 
+async fn session(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    match actor_or_problem(&headers, &state) {
+        Ok(actor) => (
+            [(axum::http::header::CACHE_CONTROL, "no-store")],
+            Json(serde_json::json!({
+                "name": actor.name,
+                "scopes": actor.scopes.iter().map(|scope| scope.as_str()).collect::<Vec<_>>(),
+            })),
+        )
+            .into_response(),
+        Err(response) => response,
+    }
+}
+
 /// Builds the full v1 router. R10-06: the configured body limits are
 /// ENFORCED at the HTTP layer — the artifact route gets the artifact
 /// limit, every other route the smaller management limit — instead of
@@ -178,6 +192,7 @@ async fn health_ready(State(state): State<AppState>) -> Response {
 pub fn build_router(state: AppState) -> Router {
     use axum::extract::DefaultBodyLimit;
     Router::new()
+        .route("/api/v1/session", get(session))
         .route("/livez", get(health_live))
         .route("/readyz", get(health_ready))
         .route("/api/v1/profile-changes/{changeId}", get(profile_reads::profile_change_get))
@@ -238,5 +253,6 @@ pub fn build_router(state: AppState) -> Router {
                 .delete(profile_reads::auth_profile_delete),
         )
         .layer(DefaultBodyLimit::max(state.request_body_limit))
+        .fallback(crate::web::serve)
         .with_state(state)
 }
