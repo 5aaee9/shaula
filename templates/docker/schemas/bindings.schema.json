@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shaula Docker Profile bindings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["docker_host"],
+  "properties": {
+    "docker_host": {
+      "type": "string",
+      "anyOf": [
+        {"format": "uri", "pattern": "^unix://"},
+        {"format": "uri", "pattern": "^npipe://"}
+      ],
+      "description": "Local Docker Engine endpoint, default unix:///var/run/docker.sock. Possession is a host-admin capability shared by all same-identity IaC children (accepted v1 trust domain). Plaintext TCP is rejected. Never a Fleet input.",
+      "sensitive": false
+    },
+    "registry_auth": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional private-registry credential for image pull. Schema-sensitive: write-only plaintext stored in the immutable SQLite Revision; never enters the Runner Execution Domain.",
+      "sensitive": true
+    }
+  }
+}

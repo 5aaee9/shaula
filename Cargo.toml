@@ -1,0 +1,71 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/shaula",
+    "crates/shaula-core",
+    "crates/shaula-daemon",
+    "crates/shaula-http",
+    "crates/shaula-store",
+    "crates/shaula-store-migration",
+    "crates/shaula-scaleset",
+    "crates/shaula-template",
+    "crates/shaula-observability",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+shaula-core = { path = "crates/shaula-core" }
+shaula-daemon = { path = "crates/shaula-daemon" }
+shaula-http = { path = "crates/shaula-http" }
+shaula-store = { path = "crates/shaula-store" }
+shaula-store-migration = { path = "crates/shaula-store-migration" }
+shaula-scaleset = { path = "crates/shaula-scaleset" }
+shaula-template = { path = "crates/shaula-template" }
+shaula-observability = { path = "crates/shaula-observability" }
+
+async-trait = "0.1"
+axum = "0.8"
+base64 = "0.22"
+bytes = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+clap = { version = "4.5", features = ["derive", "string"] }
+flate2 = "1"
+futures = "0.3"
+hex = "0.4"
+hmac = "0.12"
+http = "1"
+http-body-util = "0.1"
+jsonwebtoken = "9"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+sea-orm = { version = "1.1", default-features = false, features = ["sqlx-sqlite", "runtime-tokio-rustls", "macros", "with-chrono", "with-json", "with-uuid"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+sha2 = "0.10"
+tar = "0.4"
+fd-lock = "4"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry", "json"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+zeroize = "1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+dbg_macro = "deny"
+
+[profile.release]
+lto = "thin"

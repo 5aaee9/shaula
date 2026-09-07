@@ -1,0 +1,42 @@
+[package]
+name = "shaula"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Shaula daemon binary; the only composition root"
+
+[[bin]]
+name = "shaula"
+path = "src/main.rs"
+
+[dependencies]
+shaula-core = { workspace = true }
+shaula-daemon = { workspace = true }
+shaula-http = { workspace = true }
+shaula-store = { workspace = true }
+shaula-store-migration = { workspace = true }
+shaula-scaleset = { workspace = true }
+shaula-template = { workspace = true }
+shaula-observability = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+async-trait = { workspace = true }
+axum = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+hex = { workspace = true }
+tempfile = "3"
+tower = { workspace = true, features = ["util"] }
+toml = "0.8"
+
+[lints]
+workspace = true

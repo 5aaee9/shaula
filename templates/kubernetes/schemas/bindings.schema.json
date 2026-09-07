@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shaula Kubernetes Profile bindings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["namespace", "kubeconfig"],
+  "properties": {
+    "namespace": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "description": "Pre-provisioned namespace; selected by the publisher with template.publish authority and frozen in the immutable Revision. Never a Fleet input.",
+      "sensitive": false
+    },
+    "kubeconfig": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Kubernetes API credential for the pinned provider, namespace-scoped to read the namespace and manage Pods/Secrets. Schema-sensitive: write-only plaintext stored in the immutable SQLite Revision; never enters the Runner Execution Domain.",
+      "sensitive": true
+    }
+  }
+}

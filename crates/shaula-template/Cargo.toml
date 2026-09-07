@@ -1,0 +1,36 @@
+[package]
+name = "shaula-template"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Artifact/workspace management and Terraform subprocess runtime"
+
+[dependencies]
+shaula-core = { workspace = true }
+shaula-observability = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+flate2 = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+tar = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+zeroize = { workspace = true }
+tempfile = "3"
+
+[lints]
+workspace = true
+
+[target."cfg(windows)".dependencies]
+win32job = "2"
+
+[target."cfg(unix)".dependencies]
+nix = { version = "0.29", features = ["signal"] }

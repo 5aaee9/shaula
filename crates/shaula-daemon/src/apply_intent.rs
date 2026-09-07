@@ -1,0 +1,74 @@
+//! Durable apply-start intent sink: the Template Runtime calls this with
+//! the plan provenance BEFORE a mutating apply may spawn, so
+//! `ApplyStarting`/`DestroyApplyStarting` is on disk first (spec 0004
+//! section 6, at-most-once).
+
+use std::sync::Arc;
+
+use shaula_core::ports::{ApplyClaim, ApplyIntentSink, PlanProvenance};
+use shaula_core::registry::LifecycleStore;
+
+use crate::effect_gate::FleetEffectGates;
+
+/// Persists provenance into the runner-operations ledger and takes the
+/// fleet's shared effect admission claim.
+pub struct LedgerApplyIntentSink {
+    pub store: Arc<dyn LifecycleStore>,
+    pub gates: Arc<FleetEffectGates>,
+}
+
+#[async_trait::async_trait]
+impl ApplyIntentSink for LedgerApplyIntentSink {
+    async fn persist_apply_starting(
+        &self,
+        provenance: &PlanProvenance,
+    ) -> Result<ApplyClaim, String> {
+        // R5-02/R6-03: the gate claim is taken BEFORE the durable record
+        // and held by the caller only until the SPAWN HANDOVER (the
+        // EngineSpawn returned by start_apply_saved_plan) — never for
+        // the child's whole lifetime. While it is held, a decommission
+        // or a head-advancing PUT — both of which take the gate
+        // exclusively around their commits — cannot interleave; and any
+        // decommission that already committed makes the CAS's
+        // in-transaction fleet-head fence below fail, so no apply can
+        // spawn against a deleted fleet or a stale desired revision.
+        let record = self
+            .store
+            .generation_get(&provenance.generation_id)
+            .await
+            .map_err(|e| e.summary)?
+            .ok_or_else(|| {
+                format!(
+                    "generation {} is not in the ledger",
+                    provenance.generation_id
+                )
+            })?;
+        let claim = self.gates.acquire_claim(&record.fleet_key).await;
+
+        // The FENCE lives inside the store's single transaction (F05):
+        // a Create is recorded only while the fleet head still matches
+        // the generation's admitted revision and no deletion marker is
+        // set; a Destroy is fenced only on generation existence so a
+        // DELETE/replacement can never block cleanup of the generation's
+        // own original resources (spec 0002 §8.330/§8.334).
+        let kind = match provenance.intent {
+            shaula_core::plan::PlanIntent::Create => "Create",
+            shaula_core::plan::PlanIntent::Destroy => "Destroy",
+        };
+        let provenance_json =
+            serde_json::to_string(provenance).map_err(|e| format!("provenance serialize: {e}"))?;
+        let saved_plan_path = "tfplan".to_string();
+        self.store
+            .operation_record_apply_starting(
+                &provenance.generation_id,
+                kind,
+                &provenance_json,
+                &saved_plan_path,
+                &provenance.saved_plan_digest,
+                chrono::Utc::now().timestamp_millis(),
+            )
+            .await
+            .map_err(|e| e.summary)?;
+        Ok(Box::new(claim))
+    }
+}

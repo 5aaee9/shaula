@@ -1,0 +1,21 @@
+api_version: shaula.io/template-profile/v1
+kind: RunnerTemplateProfile
+platform: docker
+runtime:
+  protocol: terraform-cli/v1
+  engine: terraform
+  root_module: .
+  required_version: ">= 1.9, < 2.0"
+bindings_contract: shaula.bindings.docker/v1
+schemas:
+  bindings: schemas/bindings.schema.json
+  parameters: schemas/parameters.schema.json
+
+managed_resource_shape:
+  - role: runner
+    terraform_type: docker_container
+    exact_count: 1
+runner_image_digests:
+  - ghcr.io/actions/actions-runner:2.323.0@sha256:3f2a1b9c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8
+  - ghcr.io/actions/actions-runner:2.322.1@sha256:abababababababababababababababababababababababababababababababab
+runtime_policy_digest: sha256:shaula-runtime-policy-v1

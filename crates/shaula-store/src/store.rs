@@ -1,0 +1,110 @@
+//! Store handle: single-writer SQLite connection with explicit pragmas.
+
+use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr, TransactionTrait};
+use std::time::Duration;
+
+use shaula_store_migration as migration;
+
+/// Typed store error; ORM/SQL details stay sanitized behind a summary.
+#[derive(Debug, thiserror::Error)]
+pub enum StoreError {
+    #[error("database unavailable: {0}")]
+    Unavailable(String),
+    #[error("conflicting concurrent write on {resource}")]
+    Conflict { resource: String },
+    #[error("{0}")]
+    Corrupt(String),
+}
+
+impl From<DbErr> for StoreError {
+    fn from(value: DbErr) -> Self {
+        StoreError::Unavailable(value.to_string())
+    }
+}
+
+pub type StoreResult<T> = Result<T, StoreError>;
+
+/// The store handle. One daemon owns one database; the ownership lock lives
+/// above this layer in the binary.
+#[derive(Clone)]
+pub struct Store {
+    db: DatabaseConnection,
+}
+
+impl Store {
+    /// Opens (creating if needed) the SQLite database with WAL, foreign
+    /// keys and a bounded busy timeout.
+    pub async fn open(path: &std::path::Path) -> StoreResult<Self> {
+        let url = format!(
+            "sqlite://{}?mode=rwc",
+            path.to_string_lossy().replace('\\', "/")
+        );
+        let mut options = ConnectOptions::new(url);
+        options
+            .max_connections(8)
+            .min_connections(1)
+            .connect_timeout(Duration::from_secs(10));
+        let db = Database::connect(options).await?;
+        // Durability-relevant pragmas; WAL keeps readers and the single
+        // writer from blocking each other.
+        use sea_orm::ConnectionTrait;
+        db.execute_unprepared("PRAGMA journal_mode=WAL;").await?;
+        db.execute_unprepared("PRAGMA foreign_keys=ON;").await?;
+        db.execute_unprepared("PRAGMA busy_timeout=5000;").await?;
+        db.execute_unprepared("PRAGMA synchronous=NORMAL;").await?;
+        Ok(Self { db })
+    }
+
+    /// Connection accessor for migrations only.
+    pub(crate) fn connection(&self) -> &DatabaseConnection {
+        &self.db
+    }
+
+    /// Applies pending forward migrations and verifies the durable-format
+    /// marker. A LEGACY or missing marker means the database was written
+    /// by an unsupported pre-release build: the daemon fails closed
+    /// instead of resolving durable identities under a different encoding
+    /// than the one that wrote them (R8-03) — rebuild the data directory.
+    pub async fn migrate(&self) -> StoreResult<()> {
+        migration::migrate(&self.db).await?;
+        self.check_durable_format().await
+    }
+
+    async fn check_durable_format(&self) -> StoreResult<()> {
+        use sea_orm::{ConnectionTrait, Statement};
+        let row = self
+            .db
+            .query_one(Statement::from_string(
+                sea_orm::DatabaseBackend::Sqlite,
+                "SELECT version FROM durable_format",
+            ))
+            .await
+            .map_err(StoreError::from)?;
+        let version: Option<i64> = row
+            .map(|r| r.try_get::<i64>("", "version"))
+            .transpose()
+            .map_err(StoreError::from)?;
+        match version {
+            Some(v) if v == migration::m0005_durable_format::DURABLE_FORMAT_VERSION => Ok(()),
+            Some(v) if v == migration::m0005_durable_format::DURABLE_FORMAT_LEGACY => {
+                Err(StoreError::Corrupt(
+                    "data directory was written by an unsupported pre-release build (legacy durable identity encoding); no compatibility path exists — rebuild the data directory"
+                        .to_string(),
+                ))
+            }
+            Some(v) => Err(StoreError::Corrupt(format!(
+                "data directory durable-format version {v} is newer than this build ({}); upgrade the binary",
+                migration::m0005_durable_format::DURABLE_FORMAT_VERSION
+            ))),            None => Err(StoreError::Corrupt(
+                "data directory has no durable-format marker; rebuild the data directory"
+                    .to_string(),
+            )),
+        }
+    }
+
+    /// Begins a short transaction. Transactions never span network calls or
+    /// subprocesses; callers must keep them small.
+    pub(crate) async fn begin(&self) -> StoreResult<sea_orm::DatabaseTransaction> {
+        self.db.begin().await.map_err(StoreError::from)
+    }
+}

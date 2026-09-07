@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shaula Kubernetes Profile Fleet inputs",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "runner_image": {
+      "type": "string",
+      "enum": [
+        "ghcr.io/actions/actions-runner:2.323.0",
+        "ghcr.io/actions/actions-runner:2.322.1"
+      ],
+      "description": "Finite image alias; the conformance attestation pins the resolved digest for the exact compatibility tuple."
+    },
+    "cpu_request": {
+      "type": "string",
+      "enum": ["500m", "1", "2"]
+    },
+    "memory_request": {
+      "type": "string",
+      "enum": ["2Gi", "4Gi", "8Gi"]
+    }
+  }
+}

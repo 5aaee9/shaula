@@ -1,0 +1,13 @@
+[package]
+name = "shaula-store-migration"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Bundled forward migrations and schema checks"
+
+[dependencies]
+sea-orm-migration = { version = "1.1", default-features = false, features = ["sqlx-sqlite", "runtime-tokio-rustls", "with-chrono", "with-json", "with-uuid"] }
+
+[lints]
+workspace = true
