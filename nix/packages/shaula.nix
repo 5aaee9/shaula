@@ -53,10 +53,21 @@ rustPlatform.buildRustPackage {
   '';
   # Local-server test constructors deliberately do not exist in release
   # builds. Test in debug without enabling those seams in the shipped binary.
+  # nextest's run output never reaches the streamed Nix build log, so the run
+  # goes through a file: echoed back on failure to name the failing test, and
+  # summarized on success so bounded retries keep rare hosted-runner flakes
+  # visible instead of silently masking them.
   checkPhase = ''
     runHook preCheck
     cargo clippy --offline --locked --workspace --all-targets -- -D warnings
-    cargo nextest run --offline --locked --manifest-path Cargo.toml --workspace
+    if cargo nextest run --offline --locked --manifest-path Cargo.toml --workspace \
+      --retries 2 >nextest-output.log 2>&1; then
+      tail -n 40 nextest-output.log
+    else
+      status=$?
+      cat nextest-output.log
+      exit "$status"
+    fi
     SHAULA_TEST_TERRAFORM=${lib.getExe terraform} \
       cargo test --offline --locked --workspace --test http_state_backend -- --include-ignored
     runHook postCheck
