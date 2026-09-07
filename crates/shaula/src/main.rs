@@ -4,6 +4,7 @@
 
 mod auth_worker;
 mod fleet_tasks;
+mod oidc_args;
 mod wiring;
 
 use clap::{Parser, Subcommand};
@@ -45,6 +46,8 @@ enum Command {
         /// Path to the daemon bootstrap configuration file.
         #[arg(long)]
         config: String,
+        #[command(flatten)]
+        oidc: oidc_args::OidcArgs,
     },
     /// Print version information.
     Version,
@@ -70,7 +73,7 @@ async fn main() {
         Command::Version => {
             println!("shaula {}", env!("CARGO_PKG_VERSION"));
         }
-        Command::Serve { config } => match serve(&config).await {
+        Command::Serve { config, oidc } => match serve(&config, oidc).await {
             Ok(()) => println!("shaula stopped cleanly"),
             Err(err) => {
                 eprintln!("shaula: {err}");
@@ -80,13 +83,14 @@ async fn main() {
     }
 }
 
-async fn serve(config_path: &str) -> Result<(), String> {
+async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), String> {
     // Bootstrap validation happens before the API becomes ready; runtime
     // errors never print clap usage. Validation is a pure file read, so
     // telemetry can initialize once with the CONFIGURED service name and
     // still precede every migration or remote effect (spec 0001 §13).
     let bootstrap = ValidatedBootstrap::load(std::path::Path::new(config_path))?;
     let _telemetry = shaula_observability::init(&bootstrap.service_name);
+    let oidc = oidc.initialize(bootstrap.authorization.clone()).await?;
 
     // Filesystem roots must exist before the store opens its database.
     for dir in [
@@ -168,17 +172,13 @@ async fn serve(config_path: &str) -> Result<(), String> {
         .transpose()
         .map_err(|e| format!("listen port invalid: {e}"))?
         .unwrap_or_else(|| ("127.0.0.1".to_string(), 8080));
-    let http_config = shaula_http::server::ServerConfig::new(
-        host,
-        port,
-        bootstrap.backend_token.clone(),
-        bootstrap.request_body_limit,
-    )?;
+    let http_config =
+        shaula_http::server::ServerConfig::new(host, port, bootstrap.request_body_limit)?;
     let state = shaula_http::router::AppState {
         fleets: service.clone(),
         profiles: service.clone(),
         health: service.clone(),
-        backend_token: http_config.backend_token.expose().to_string(),
+        oidc,
         body_limit: bootstrap.artifact_body_limit,
         request_body_limit: bootstrap.request_body_limit,
         artifact_publisher: std::sync::Arc::new(DirArtifactPublisher {

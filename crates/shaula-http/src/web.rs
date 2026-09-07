@@ -1,4 +1,4 @@
-//! Embedded public UI shell. Management endpoints retain their actor checks.
+//! Embedded UI assets, served only behind the global OIDC boundary.
 
 use axum::{
     body::Body,
@@ -24,20 +24,14 @@ pub(crate) async fn serve(method: Method, uri: Uri) -> Response {
         )
             .into_response();
     }
-    let document = path.is_empty()
-        || matches!(path, "fleets" | "templates" | "auth" | "changes")
-        || (path.starts_with("fleets/") && !path.contains('.'));
+    let document = crate::oidc::document(uri.path());
     let asset_path = if document { "index.html" } else { path };
     let Some(asset) = WebAssets::get(asset_path) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let len = asset.data.len();
     let mime = mime_guess::from_path(asset_path).first_or_octet_stream();
-    let cache = if asset_path.starts_with("assets/") {
-        "public, max-age=31536000, immutable"
-    } else {
-        "no-cache"
-    };
+    let cache = "private, no-store";
     let mut response = (
         [
             (header::CONTENT_TYPE, mime.to_string()),

@@ -1,6 +1,6 @@
 # Shaula Web UI
 
-React + TypeScript, Vite 8 (Oxc transforms/minification and React Refresh),
+React + TypeScript, Vite 8 (Oxc transforms/minification),
 Tailwind CSS 4 and official shadcn/ui Radix components, downloaded with the CLI.
 Fonts are bundled locally.
 Oxc also provides linting (`oxlint`) and formatting (`oxfmt`).
@@ -57,35 +57,37 @@ dependencies, not Node.js or `web/dist`. Build output and `node_modules` are ign
 npm run dev --prefix web
 ```
 
-Vite listens on loopback and proxies `/api`, `/livez`, and `/readyz` to
-`http://127.0.0.1:8080`. Set `SHAULA_API_TARGET` in `web/.env.local` to use a different
-backend (or an existing authenticating proxy). For an isolated local daemon,
-development-only actor injection is available:
+Vite listens on loopback and proxies `/api`, `/auth/oidc/`, `/livez`, and `/readyz`
+to `http://127.0.0.1:8080`. Set `SHAULA_API_TARGET` in `web/.env.local` to change
+the backend:
 
 ```dotenv
 SHAULA_API_TARGET=http://127.0.0.1:8080
-SHAULA_DEV_BACKEND_TOKEN=replace-with-the-local-daemon-backend-token
-SHAULA_DEV_ACTOR=web-developer
-SHAULA_DEV_SCOPES=fleet.read,template.read,auth.read
 ```
 
-These variables are read only by the Vite server. Do not prefix them with `VITE_`,
-which exposes values to browser JavaScript. Grant additional scopes explicitly
-when testing mutations. Never expose this development server on a public interface.
+Serve Vite through a local HTTPS reverse proxy and register that exact HTTPS
+origin/callback with the Provider. Set the daemon's `SHAULA_OIDC_PUBLIC_URL` to
+the same origin. Every document and source asset is checked against the backend
+session before Vite serves it. Dev and preview have no actor injection or
+anonymous mode. HMR/WebSocket transport is disabled; refresh after source edits.
+Never expose the development server on a public interface or put secrets in
+`VITE_` variables. See [OIDC deployment](../docs/oidc-deployment.md).
 
 ## HTTP and authentication
 
 Open `/` on the daemon/proxy. `/fleets`, `/fleets/{key}`, `/templates`, `/auth`,
 and `/changes` support direct navigation and reload. Missing asset/API routes
-return 404, unsupported UI methods return 405, and HEAD returns no body. Hashed
-assets are immutable-cacheable; the HTML shell is revalidated. The shell is public
-and contains no data or credentials. CSP restricts requests and scripts to same origin.
+return 404 after authentication, unsupported UI methods return 405, and HEAD
+returns no body. All responses, including embedded assets, are private/no-store.
+CSP restricts requests and scripts to the same origin.
 
-All management calls, including `GET /api/v1/session`, still require the trusted
-actor context in ADR 0011. Deploy behind the same authenticating reverse proxy as
-the API. The browser uses same-origin cookies/requests, never backend tokens or
-identity headers. A direct unauthenticated visit displays the shell and a 401
-state. `/api/v1/session` returns only `{name, scopes}` with `Cache-Control: no-store`.
+All UI, assets, API and health routes require OIDC under ADR 0013. An anonymous
+document visit redirects to login without returning HTML; anonymous assets/API
+return 401. The browser receives an opaque Secure/HttpOnly session cookie, never
+OIDC tokens or identity headers. `/api/v1/session` returns `{name, scopes}` plus
+an `X-CSRF-Token` header. Mutations and logout include that token. A 401 clears
+query caches and credential forms and presents explicit sign-in; failed writes
+are never replayed after login.
 
 The UI supports Fleet list/search/detail, create/replace/retire, template archive
 upload/publication/revisions/retirement, auth lookup/create/rotation/retirement,
@@ -107,12 +109,14 @@ npm run lint --prefix web
 npm run fmt:check --prefix web
 npm exec --prefix web -- playwright install chromium
 npm test --prefix web
+npm run test:oidc --prefix web
 cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
 cargo nextest run --manifest-path Cargo.toml --workspace
 ```
 
-Playwright uses intercepted API fixtures only inside tests. It covers desktop and
-mobile layouts, deep links, authorization errors, conditional edits, uncertain
-write retries, profile lookup and retirement. Rust tests exercise the real router
-and embedded files, including preservation of API authorization.
+Presentation tests use an isolated test server and intercepted API fixtures.
+They cover desktop/mobile layouts, conditional edits, uncertain write retries,
+session expiry, CSRF and logout. The separate OIDC suite starts a real Shaula
+binary, HTTPS proxy and local test Provider to verify login and protected
+embedded files. Production/dev configuration never enables that fixture.

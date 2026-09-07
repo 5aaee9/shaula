@@ -8,19 +8,14 @@ use axum::Json;
 use shaula_core::registry::Scope;
 
 use crate::problem::{mutation_problem, problem};
-use crate::router::{
-    accepted_response, actor_or_problem, idempotency_header, require_scope, AppState,
-};
+use crate::router::{accepted_response, idempotency_header, require_scope, AppState};
 
 pub(crate) async fn profile_change_get(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    headers: HeaderMap,
+    auth: crate::oidc::Authenticated,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(a) => a,
-        Err(r) => return r,
-    };
+    let actor = auth.actor;
     match state.profiles.profile_change_get(&actor, &id).await {
         Ok(Some(change)) => {
             let scope = if change.resource_kind == "template_profile" {
@@ -45,12 +40,9 @@ pub(crate) async fn profile_change_get(
 
 pub(crate) async fn template_profile_list(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: crate::oidc::Authenticated,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::TemplateRead) {
         return response;
     }
@@ -81,12 +73,10 @@ pub(crate) async fn template_profile_list(
 pub(crate) async fn template_profile_delete(
     State(state): State<AppState>,
     Path(profile_key): Path<String>,
+    auth: crate::oidc::Authenticated,
     headers: HeaderMap,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::TemplateRetire) {
         return response;
     }
@@ -116,12 +106,10 @@ pub(crate) async fn template_profile_delete(
 pub(crate) async fn auth_profile_delete(
     State(state): State<AppState>,
     Path(key): Path<String>,
+    auth: crate::oidc::Authenticated,
     headers: HeaderMap,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(a) => a,
-        Err(r) => return r,
-    };
+    let actor = auth.actor;
     if let Err(r) = require_scope(&actor, Scope::AuthRetire) {
         return r;
     }
@@ -147,12 +135,9 @@ pub(crate) async fn auth_profile_delete(
 pub(crate) async fn template_revision_get(
     State(state): State<AppState>,
     Path((profile_key, revision)): Path<(String, i64)>,
-    headers: HeaderMap,
+    auth: crate::oidc::Authenticated,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::TemplateRead) {
         return response;
     }
@@ -183,12 +168,9 @@ pub(crate) async fn template_revision_get(
 pub(crate) async fn template_attestation_get(
     State(state): State<AppState>,
     Path((profile_key, revision, attestation_key)): Path<(String, i64, String)>,
-    headers: HeaderMap,
+    auth: crate::oidc::Authenticated,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::TemplateRead) {
         return response;
     }
@@ -218,12 +200,9 @@ pub(crate) async fn template_attestation_get(
 pub(crate) async fn auth_profile_status(
     State(state): State<AppState>,
     Path(profile_key): Path<String>,
-    headers: HeaderMap,
+    auth: crate::oidc::Authenticated,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::AuthRead) {
         return response;
     }
@@ -246,12 +225,9 @@ pub(crate) async fn auth_profile_status(
 pub(crate) async fn auth_revision_get(
     State(state): State<AppState>,
     Path((profile_key, revision)): Path<(String, i64)>,
-    headers: HeaderMap,
+    auth: crate::oidc::Authenticated,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::AuthRead) {
         return response;
     }

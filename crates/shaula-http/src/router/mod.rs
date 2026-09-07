@@ -1,4 +1,4 @@
-//! Route construction for `/api/v1`. Handlers enforce the trusted actor
+//! Route construction for `/api/v1`. Handlers enforce the verified OIDC actor
 //! context, authorization scopes, conditional writes and idempotency
 //! headers before delegating to registry ports.
 
@@ -17,7 +17,7 @@ use shaula_core::registry::{
     Actor, FleetRegistryPort, HealthPort, MutationAccepted, ProfileRegistryPort, Scope,
 };
 
-use crate::actor::{validate_actor, ActorError};
+use crate::oidc::{Authenticated, Oidc};
 use crate::problem::problem;
 
 /// Shared handler state.
@@ -26,8 +26,8 @@ pub struct AppState {
     pub fleets: Arc<dyn FleetRegistryPort>,
     pub profiles: Arc<dyn ProfileRegistryPort>,
     pub health: Arc<dyn HealthPort>,
-    /// Shared secret proving the request came through the trusted backend.
-    pub backend_token: String,
+    /// Required initialized OIDC verifier and session boundary.
+    pub oidc: Arc<Oidc>,
     /// Maximum accepted request body bytes for ARTIFACT uploads.
     pub body_limit: usize,
     /// Maximum accepted request body bytes for MANAGEMENT endpoints
@@ -41,29 +41,6 @@ pub struct AppState {
 /// implementation.
 pub trait ArtifactPublisher: Send + Sync {
     fn publish(&self, bytes: &[u8], declared_digest: &str) -> shaula_core::error::CoreResult<u64>;
-}
-
-pub(crate) fn actor_or_problem(headers: &HeaderMap, state: &AppState) -> Result<Actor, Response> {
-    validate_actor(headers, &state.backend_token).map_err(|e| match e {
-        ActorError::Missing => problem(
-            StatusCode::UNAUTHORIZED,
-            "ActorContextMissing",
-            "trusted actor context missing",
-        )
-        .into_response(),
-        ActorError::Invalid => problem(
-            StatusCode::UNAUTHORIZED,
-            "ActorContextInvalid",
-            "trusted actor context invalid",
-        )
-        .into_response(),
-        ActorError::ForgedIdentity => problem(
-            StatusCode::FORBIDDEN,
-            "ActorIdentityForgery",
-            "caller-supplied identity headers are not trusted",
-        )
-        .into_response(),
-    })
 }
 
 pub(crate) fn require_scope(actor: &Actor, scope: Scope) -> Result<(), Response> {
@@ -160,7 +137,7 @@ async fn health_live(State(state): State<AppState>) -> StatusCode {
 }
 
 async fn health_ready(State(state): State<AppState>) -> Response {
-    if state.health.ready().await {
+    if state.oidc.ready().await && state.health.ready().await {
         (StatusCode::OK, Json(serde_json::json!({"ready": true}))).into_response()
     } else {
         (
@@ -171,18 +148,19 @@ async fn health_ready(State(state): State<AppState>) -> Response {
     }
 }
 
-async fn session(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    match actor_or_problem(&headers, &state) {
-        Ok(actor) => (
-            [(axum::http::header::CACHE_CONTROL, "no-store")],
-            Json(serde_json::json!({
-                "name": actor.name,
-                "scopes": actor.scopes.iter().map(|scope| scope.as_str()).collect::<Vec<_>>(),
-            })),
-        )
-            .into_response(),
-        Err(response) => response,
+async fn session(auth: Authenticated) -> Response {
+    let mut response = Json(serde_json::json!({
+        "name": auth.name,
+        "scopes": auth.actor.scopes.iter().map(|scope| scope.as_str()).collect::<Vec<_>>(),
+    }))
+    .into_response();
+    if let Some(csrf) = auth
+        .csrf
+        .and_then(|s| s.parse::<axum::http::HeaderValue>().ok())
+    {
+        response.headers_mut().insert("x-csrf-token", csrf);
     }
+    response
 }
 
 /// Builds the full v1 router. R10-06: the configured body limits are
@@ -193,6 +171,9 @@ pub fn build_router(state: AppState) -> Router {
     use axum::extract::DefaultBodyLimit;
     Router::new()
         .route("/api/v1/session", get(session))
+        .route("/auth/oidc/login", get(crate::oidc::login))
+        .route("/auth/oidc/callback", get(crate::oidc::callback))
+        .route("/auth/oidc/logout", axum::routing::post(crate::oidc::logout))
         .route("/livez", get(health_live))
         .route("/readyz", get(health_ready))
         .route("/api/v1/profile-changes/{changeId}", get(profile_reads::profile_change_get))
@@ -254,5 +235,6 @@ pub fn build_router(state: AppState) -> Router {
         )
         .layer(DefaultBodyLimit::max(state.request_body_limit))
         .fallback(crate::web::serve)
+        .layer(axum::middleware::from_fn_with_state(state.clone(), crate::oidc::guard))
         .with_state(state)
 }

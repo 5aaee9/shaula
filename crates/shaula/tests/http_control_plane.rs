@@ -3,6 +3,9 @@
 //! End-to-end HTTP control-plane tests through the axum router with the
 //! real ControlPlane service and in-memory infrastructure.
 
+#[path = "../../shaula-http/tests/support/mod.rs"]
+mod oidc;
+
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -94,7 +97,7 @@ async fn build_app() -> axum::Router {
         fleets: service.clone(),
         profiles: service.clone(),
         health: service,
-        backend_token: "test-backend-token-0123456789".to_string(),
+        oidc: oidc::oidc().await,
         body_limit: 64 * 1024 * 1024,
         request_body_limit: 64 * 1024 * 1024,
         artifact_publisher: Arc::new(TestPublisher {
@@ -119,9 +122,7 @@ fn authorized(method: &str, uri: &str, body: Option<String>) -> Request<Body> {
     let mut builder = Request::builder()
         .method(method)
         .uri(uri)
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "ops")
-        .header("x-shaula-scopes", "fleet.read,fleet.write,fleet.retire,template.read,template.publish,template.attest,template.retire,auth.read,auth.write,auth.retire");
+        .header("authorization", oidc::bearer("fleet.read fleet.write fleet.retire template.read template.publish template.attest template.retire auth.read auth.write auth.retire"));
     // R10-05: conditional writes are mandatory — test PUTs are all
     // create-style re-assertions, so they carry If-None-Match: *.
     if method == "PUT" {
@@ -244,7 +245,7 @@ async fn missing_actor_context_rejected_everywhere() {
         .body(Body::empty())
         .unwrap();
     let response = app2.oneshot(request).await.unwrap();
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
@@ -267,9 +268,7 @@ async fn fleet_put_requires_valid_template_and_auth_references() {
     let request = Request::builder()
         .method("PUT")
         .uri("/api/v1/fleets/linux-x64")
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "ops")
-        .header("x-shaula-scopes", "fleet.write")
+        .header("authorization", oidc::bearer("fleet.write"))
         .header("if-none-match", "*")
         .body(Body::from(fleet_body.to_string()))
         .unwrap();
@@ -301,9 +300,7 @@ async fn artifact_upload_digest_idempotent_and_shape_validated() {
     let request = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/template-artifacts/{digest}"))
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "publisher")
-        .header("x-shaula-scopes", "template.publish")
+        .header("authorization", oidc::bearer("template.publish"))
         .body(Body::from(bytes.clone()))
         .unwrap();
     let response = app.clone().oneshot(request).await.unwrap();
@@ -316,9 +313,7 @@ async fn artifact_upload_digest_idempotent_and_shape_validated() {
     let request = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/template-artifacts/{digest}"))
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "publisher")
-        .header("x-shaula-scopes", "template.publish")
+        .header("authorization", oidc::bearer("template.publish"))
         .body(Body::from(bytes))
         .unwrap();
     let response = app.oneshot(request).await.unwrap();

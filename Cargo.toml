@@ -33,7 +33,7 @@ axum = "0.8"
 base64 = "0.22"
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
-clap = { version = "4.5", features = ["derive", "string"] }
+clap = { version = "4.5", features = ["derive", "string", "env"] }
 flate2 = "1"
 futures = "0.3"
 hex = "0.4"
@@ -41,6 +41,10 @@ hmac = "0.12"
 http = "1"
 http-body-util = "0.1"
 jsonwebtoken = "9"
+oauth2 = { version = "5", default-features = false }
+cookie = "0.18"
+subtle = "2"
+url = "2"
 regex = "1"
 rust-embed = { version = "8", features = ["debug-embed", "deterministic-timestamps"] }
 mime_guess = "2"

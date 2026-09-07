@@ -33,9 +33,10 @@ pub async fn seed_profile(
     let mut builder = Request::builder()
         .method("PUT")
         .uri("/api/v1/github-auth-profiles/prod-app")
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "ops")
-        .header("x-shaula-scopes", "auth.read,auth.write");
+        .header(
+            "authorization",
+            crate::common::oidc::bearer("auth.read auth.write"),
+        );
     if probe.status() == StatusCode::NOT_FOUND {
         builder = builder.header("if-none-match", "*");
     } else {
@@ -56,9 +57,10 @@ pub async fn seed_profile(
     let request = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/template-artifacts/{digest}"))
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "publisher")
-        .header("x-shaula-scopes", "template.publish,template.attest")
+        .header(
+            "authorization",
+            crate::common::oidc::bearer("template.publish template.attest"),
+        )
         .body(Body::from(bytes))
         .unwrap();
     assert_eq!(
@@ -118,12 +120,7 @@ pub async fn put_attestation_profile(
             Request::builder()
                 .method("PUT")
                 .uri(format!("/api/v1/template-profiles/{profile}"))
-                .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-                .header("x-shaula-actor", "ops")
-                .header(
-                    "x-shaula-scopes",
-                    "fleet.read,fleet.write,fleet.retire,template.read,template.publish,template.attest,template.retire,auth.read,auth.write,auth.retire",
-                )
+                .header("authorization", crate::common::oidc::bearer("fleet.read fleet.write fleet.retire template.read template.publish template.attest template.retire auth.read auth.write auth.retire"))
                 // The create-style precondition so the request reaches the
                 // key-validating boundary instead of stopping at 428.
                 .header("if-none-match", "*")
@@ -152,11 +149,9 @@ pub async fn put_template_profile_raw(
     let mut builder = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/template-profiles/{key}"))
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "ops")
         .header(
-            "x-shaula-scopes",
-            "template.read,template.publish,template.attest",
+            "authorization",
+            crate::common::oidc::bearer("template.read template.publish template.attest"),
         );
     if let Some(key) = &idempotency_key {
         builder = builder.header("idempotency-key", key);
@@ -207,12 +202,7 @@ pub async fn put_template_profile(app: &axum::Router, key: &str, body: String) -
     let mut builder = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/template-profiles/{key}"))
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "ops")
-        .header(
-            "x-shaula-scopes",
-            "fleet.read,fleet.write,fleet.retire,template.read,template.publish,template.attest,template.retire,auth.read,auth.write,auth.retire",
-        );
+        .header("authorization", crate::common::oidc::bearer("fleet.read fleet.write fleet.retire template.read template.publish template.attest template.retire auth.read auth.write auth.retire"));
     if create {
         builder = builder.header("if-none-match", "*");
     }

@@ -11,20 +11,18 @@ use shaula_core::registry::Scope;
 use crate::dto::FleetSpecDto;
 use crate::problem::{mutation_problem, problem};
 use crate::router::{
-    accepted_response, actor_or_problem, idempotency_header, if_none_match_star, parse_if_match,
-    require_scope, AppState,
+    accepted_response, idempotency_header, if_none_match_star, parse_if_match, require_scope,
+    AppState,
 };
 
 pub(crate) async fn fleet_put(
     State(state): State<AppState>,
     Path(fleet_key): Path<String>,
+    auth: crate::oidc::Authenticated,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::FleetWrite) {
         return response;
     }
@@ -74,12 +72,9 @@ pub(crate) async fn fleet_put(
 pub(crate) async fn fleet_get(
     State(state): State<AppState>,
     Path(fleet_key): Path<String>,
-    headers: HeaderMap,
+    auth: crate::oidc::Authenticated,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::FleetRead) {
         return response;
     }
@@ -120,12 +115,9 @@ pub(crate) async fn fleet_get(
 pub(crate) async fn fleet_status(
     State(state): State<AppState>,
     Path(fleet_key): Path<String>,
-    headers: HeaderMap,
+    auth: crate::oidc::Authenticated,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::FleetRead) {
         return response;
     }
@@ -167,12 +159,10 @@ pub(crate) async fn fleet_status(
 pub(crate) async fn fleet_delete(
     State(state): State<AppState>,
     Path(fleet_key): Path<String>,
+    auth: crate::oidc::Authenticated,
     headers: HeaderMap,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::FleetRetire) {
         return response;
     }
@@ -206,12 +196,9 @@ pub(crate) async fn fleet_delete(
 pub(crate) async fn fleet_change_get(
     State(state): State<AppState>,
     Path(change_id): Path<String>,
-    headers: HeaderMap,
+    auth: crate::oidc::Authenticated,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::FleetRead) {
         return response;
     }
@@ -236,11 +223,11 @@ pub(crate) async fn fleet_change_get(
 
 /// R10-05: the fleet LIST route — every active (non-tombstoned) fleet
 /// with its desired revision and incarnation.
-pub(crate) async fn fleet_list(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+pub(crate) async fn fleet_list(
+    State(state): State<AppState>,
+    auth: crate::oidc::Authenticated,
+) -> Response {
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::FleetRead) {
         return response;
     }

@@ -28,4 +28,4 @@ UI HTML、embedded assets、全部 API、health 和未来 HTTP routes 默认受�
 - 未登录用户不能取得 UI bundle；session 到期后不能从服务器继续取得 UI/API/asset 内容。已交付给浏览器的字节无法撤回，因此禁止持久/共享缓存与离线 service worker。
 - Identity-provider availability、discovery/JWKS rotation、session/CSRF lifecycle 成为 HTTP Adapter 的责任；使用成熟 Rust 库，限制网络重试和内存状态。暂时 outage 不授权 anonymous access，也不遗忘已有 Runner cleanup intent。
 - 不引入多租户隔离、本地密码账户、自动首次登录 admin 或 GitHub credential 复用。现有资源 scope、conditional writes、audit、redaction 和 asynchronous convergence 语义继续适用。
-- 这是已接受的目标要求。现有实现仍是 proxy-context/public-shell 模式；完成 spec 0009 验收前不得宣称已符合强制 OIDC。
+- 实现已替换 proxy-context/public-shell，使用本地 HTTPS Provider 验证协议、真实 binary 与浏览器路径；发布前仍须完成部署中已注册 Provider 的浏览器与 API client 验收。

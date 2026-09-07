@@ -3,6 +3,8 @@
 #![allow(dead_code)]
 
 pub mod attestation_harness;
+#[path = "../../../shaula-http/tests/support/mod.rs"]
+pub mod oidc;
 
 use std::sync::Arc;
 
@@ -127,7 +129,7 @@ async fn build_app_inner() -> (
         fleets: service.clone(),
         profiles: service.clone(),
         health: service,
-        backend_token: "test-backend-token-0123456789".to_string(),
+        oidc: oidc::oidc().await,
         body_limit: 64 * 1024 * 1024,
         request_body_limit: 64 * 1024 * 1024,
         artifact_publisher: Arc::new(TestPublisher {
@@ -180,12 +182,7 @@ pub fn authorized(method: &str, uri: &str, body: Option<String>) -> Request<Body
     let mut builder = Request::builder()
         .method(method)
         .uri(uri)
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "ops")
-        .header(
-            "x-shaula-scopes",
-            "fleet.read,fleet.write,fleet.retire,template.read,template.publish,template.attest,template.retire,auth.read,auth.write,auth.retire",
-        );
+        .header("authorization", crate::common::oidc::bearer("fleet.read fleet.write fleet.retire template.read template.publish template.attest template.retire auth.read auth.write auth.retire"));
     // R10-05: conditional writes are mandatory — test PUTs are all
     // create-style re-assertions, so they carry If-None-Match: *.
     if method == "PUT" {

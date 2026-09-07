@@ -29,9 +29,10 @@ async fn fleet_delete_commission_flow_and_preconditions() {
     let request = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/template-artifacts/{digest}"))
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "publisher")
-        .header("x-shaula-scopes", "template.publish,template.attest")
+        .header(
+            "authorization",
+            crate::common::oidc::bearer("template.publish template.attest"),
+        )
         .body(Body::from(bytes))
         .unwrap();
     assert_eq!(
@@ -99,9 +100,7 @@ async fn fleet_delete_commission_flow_and_preconditions() {
     let request = Request::builder()
         .method("DELETE")
         .uri("/api/v1/fleets/linux-x64")
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "ops")
-        .header("x-shaula-scopes", "fleet.retire")
+        .header("authorization", crate::common::oidc::bearer("fleet.retire"))
         .header("if-match", "\"wrong:0\"")
         .body(Body::empty())
         .unwrap();
@@ -112,9 +111,7 @@ async fn fleet_delete_commission_flow_and_preconditions() {
     let request = Request::builder()
         .method("DELETE")
         .uri("/api/v1/fleets/linux-x64")
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "ops")
-        .header("x-shaula-scopes", "fleet.retire")
+        .header("authorization", crate::common::oidc::bearer("fleet.retire"))
         .header("if-match", format!("\"{etag}\""))
         .header("idempotency-key", "delete-fleet")
         .body(Body::empty())
@@ -148,9 +145,7 @@ async fn fleet_delete_commission_flow_and_preconditions() {
     let request = Request::builder()
         .method("DELETE")
         .uri("/api/v1/fleets/linux-x64")
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "ops")
-        .header("x-shaula-scopes", "fleet.retire")
+        .header("authorization", crate::common::oidc::bearer("fleet.retire"))
         .header("if-match", format!("\"{etag}\""))
         .header("idempotency-key", "delete-fleet")
         .body(Body::empty())
@@ -195,9 +190,10 @@ async fn decommission_commit_waits_for_an_in_flight_admission_claim() {
     let request = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/template-artifacts/{digest}"))
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "publisher")
-        .header("x-shaula-scopes", "template.publish,template.attest")
+        .header(
+            "authorization",
+            crate::common::oidc::bearer("template.publish template.attest"),
+        )
         .body(Body::from(bytes))
         .unwrap();
     assert_eq!(
@@ -257,9 +253,7 @@ async fn decommission_commit_waits_for_an_in_flight_admission_claim() {
     let request = Request::builder()
         .method("DELETE")
         .uri("/api/v1/fleets/linux-x64")
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "ops")
-        .header("x-shaula-scopes", "fleet.retire")
+        .header("authorization", crate::common::oidc::bearer("fleet.retire"))
         .header("if-match", format!("\"{etag}\""))
         .header("idempotency-key", "delete-waiting")
         .body(Body::empty())

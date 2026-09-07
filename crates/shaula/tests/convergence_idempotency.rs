@@ -29,9 +29,10 @@ async fn idempotency_replay_and_conflict() {
     let request = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/template-artifacts/{digest}"))
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "publisher")
-        .header("x-shaula-scopes", "template.publish,template.attest")
+        .header(
+            "authorization",
+            crate::common::oidc::bearer("template.publish template.attest"),
+        )
         .body(Body::from(bytes))
         .unwrap();
     assert_eq!(

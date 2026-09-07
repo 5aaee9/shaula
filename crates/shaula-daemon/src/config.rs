@@ -54,8 +54,9 @@ pub struct HttpConfigDto {
     pub request_body_limit: String,
     #[serde(default = "default_artifact_limit")]
     pub artifact_body_limit: String,
-    /// Shared backend authentication token injected by the trusted proxy.
-    pub backend_token: String,
+    /// Exact external principals with explicitly granted resource scopes.
+    #[serde(default)]
+    pub authorization: Vec<AuthorizationGrant>,
     /// Per-deployment server key for the opaque bindings commitments.
     /// Must be unique per deployment; hardcoded keys break the
     /// non-verifier property of `bindings_digest` (0005 §5).
@@ -68,10 +69,17 @@ impl std::fmt::Debug for HttpConfigDto {
             .field("listen", &self.listen)
             .field("request_body_limit", &self.request_body_limit)
             .field("artifact_body_limit", &self.artifact_body_limit)
-            .field("backend_token", &"[REDACTED]")
             .field("bindings_server_key", &"[REDACTED]")
             .finish()
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthorizationGrant {
+    pub issuer: String,
+    pub subject: String,
+    pub scopes: Vec<String>,
 }
 
 fn default_body_limit() -> String {

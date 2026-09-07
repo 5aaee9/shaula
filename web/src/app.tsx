@@ -1,4 +1,10 @@
-import type { CSSProperties } from "react";
+import { useSyncExternalStore, type CSSProperties } from "react";
+import {
+  authenticationExpired,
+  authenticatedFetch,
+  loginUrl,
+  subscribeAuthentication,
+} from "@/lib/authentication";
 import { useQuery } from "@tanstack/react-query";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { useSession } from "@/lib/queries";
@@ -14,16 +20,18 @@ import { AuthPage } from "@/pages/auth";
 import { ChangesPage } from "@/pages/changes";
 
 export function App() {
+  const expired = useSyncExternalStore(subscribeAuthentication, authenticationExpired);
   const session = useSession();
   const location = useLocation();
   const health = useQuery({
     queryKey: ["health"],
     queryFn: async ({ signal }) => {
-      const response = await fetch("/readyz", { signal, cache: "no-store", redirect: "error" });
+      const response = await authenticatedFetch("/readyz", { signal });
       if (![200, 503].includes(response.status)) throw new Error("Health unavailable");
       return (await response.json()) as { ready: boolean };
     },
     refetchInterval: 10_000,
+    enabled: !expired,
   });
   const current =
     navigation.find((item) => location.pathname.startsWith(item.url))?.title || "Control plane";
@@ -35,6 +43,15 @@ export function App() {
       : health.data?.ready
         ? "Ready"
         : "Not ready";
+  if (expired)
+    return (
+      <main className="flex min-h-svh flex-col items-center justify-center gap-4 p-6">
+        <h1 className="text-xl font-semibold">Sign in to Shaula</h1>
+        <Button asChild>
+          <a href={loginUrl()}>Sign in</a>
+        </Button>
+      </main>
+    );
   return (
     <SidebarProvider
       style={

@@ -7,8 +7,9 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "lint": "oxlint --deny-warnings src tests vite.config.ts",
+    "lint": "oxlint --deny-warnings src tests e2e vite.config.ts dev-auth.ts oidc.playwright.config.ts",
     "test": "playwright test",
+    "test:oidc": "playwright test --config oidc.playwright.config.ts",
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check ."
   },

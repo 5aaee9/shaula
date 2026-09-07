@@ -22,6 +22,7 @@ async fn web_tests_embedded_document_and_deep_link() -> TestResult {
         "/",
         "/fleets",
         "/fleets/linux-build",
+        "/fleets/linux-x64.1_a",
         "/templates",
         "/auth",
         "/changes",
@@ -29,7 +30,10 @@ async fn web_tests_embedded_document_and_deep_link() -> TestResult {
         let response = request(path, Method::GET).await?;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()[header::CONTENT_TYPE], "text/html");
-        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-cache");
+        assert_eq!(
+            response.headers()[header::CACHE_CONTROL],
+            "private, no-store"
+        );
         assert!(response
             .headers()
             .contains_key(header::CONTENT_SECURITY_POLICY));
@@ -71,7 +75,7 @@ async fn web_tests_assets_and_head_have_correct_headers() -> TestResult {
         .contains("javascript"));
     assert_eq!(
         response.headers()[header::CACHE_CONTROL],
-        "public, max-age=31536000, immutable"
+        "private, no-store"
     );
     let head = request(&format!("/{path}"), Method::HEAD).await?;
     assert_eq!(

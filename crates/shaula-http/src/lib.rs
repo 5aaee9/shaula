@@ -7,8 +7,11 @@
 //! at the crate root.
 #![allow(clippy::result_large_err)]
 
-pub mod actor;
+#[cfg(test)]
+extern crate self as shaula_http;
+
 pub mod dto;
+pub mod oidc;
 pub mod problem;
 pub mod router;
 pub mod server;

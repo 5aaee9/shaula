@@ -14,7 +14,7 @@ pub struct ValidatedBootstrap {
     pub work_root: PathBuf,
     pub artifact_root: PathBuf,
     pub listen: String,
-    pub backend_token: String,
+    pub authorization: Vec<super::config::AuthorizationGrant>,
     pub bindings_server_key: String,
     pub request_body_limit: usize,
     pub artifact_body_limit: usize,
@@ -27,7 +27,7 @@ pub struct ValidatedBootstrap {
     pub service_name: String,
 }
 
-// Type-bound redaction: the backend token and bindings server key are
+// Type-bound redaction: the bindings server key is a
 // credentials and must never appear through Debug formatting.
 impl std::fmt::Debug for ValidatedBootstrap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -37,7 +37,6 @@ impl std::fmt::Debug for ValidatedBootstrap {
             .field("work_root", &self.work_root)
             .field("artifact_root", &self.artifact_root)
             .field("listen", &self.listen)
-            .field("backend_token", &"[REDACTED]")
             .field("bindings_server_key", &"[REDACTED]")
             .field("request_body_limit", &self.request_body_limit)
             .field("artifact_body_limit", &self.artifact_body_limit)
@@ -167,10 +166,6 @@ impl ValidatedBootstrap {
         }
         shaula_core::net::verify_loopback(listen_parts[0])?;
 
-        let backend_token = config.http.backend_token;
-        if backend_token.len() < 16 {
-            return Err("http.backend_token must be at least 16 characters".to_string());
-        }
         let bindings_server_key = config.http.bindings_server_key;
         if bindings_server_key.len() < 32 {
             return Err("http.bindings_server_key must be at least 32 characters".to_string());
@@ -200,7 +195,7 @@ impl ValidatedBootstrap {
             work_root,
             artifact_root,
             listen: config.http.listen,
-            backend_token,
+            authorization: config.http.authorization,
             bindings_server_key,
             request_body_limit,
             artifact_body_limit,
@@ -273,7 +268,6 @@ storage:
   data_dir: /var/lib/shaula
 http:
   listen: 127.0.0.1:8080
-  backend_token: "bootstrap-backend-token-0123456789"
   bindings_server_key: "bootstrap-bindings-key-0123456789abcdef"
 execution:
   engines:
@@ -361,7 +355,6 @@ storage:
   data_dir: /tmp
 http:
   listen: 127.0.0.1:8080
-  backend_token: "bootstrap-backend-token"
   bindings_server_key: "bootstrap-bindings-key-0123456789abcdef"
 template_profiles:
   - key: kubernetes
@@ -381,10 +374,11 @@ template_profiles:
     }
 
     #[test]
-    fn weak_backend_token_rejected() {
-        let mut config = base_config();
-        config.http.backend_token = "short".to_string();
-        assert!(ValidatedBootstrap::validate(config).is_err());
+    fn legacy_backend_token_rejected() {
+        let parsed = serde_yaml::from_str::<crate::config::HttpConfigDto>(
+            "listen: 127.0.0.1:8080\nbackend_token: obsolete\nbindings_server_key: key\n",
+        );
+        assert!(parsed.is_err());
     }
 
     #[test]

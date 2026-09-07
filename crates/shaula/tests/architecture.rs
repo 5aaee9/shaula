@@ -110,7 +110,18 @@ fn daemon_has_no_adapter_dependencies() {
 #[test]
 fn http_never_touches_the_store() {
     let tree = cargo_tree("shaula-http", "normal,build");
-    assert_forbidden("shaula-http", tree, &["shaula-store", "sea-orm", "reqwest"]);
+    // ADR-0013 permits outbound HTTP only for the adapter's OIDC provider.
+    assert_forbidden(
+        "shaula-http",
+        tree,
+        &[
+            "shaula-store",
+            "sea-orm",
+            "sqlx",
+            "shaula-scaleset",
+            "shaula-template",
+        ],
+    );
 }
 
 #[test]

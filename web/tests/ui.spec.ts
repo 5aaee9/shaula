@@ -143,8 +143,11 @@ test("read-only access hides mutations and authentication failure is explicit", 
     }),
   );
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Authentication required" })).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText("Authentication required");
+  await expect(page.getByRole("heading", { name: "Sign in to Shaula" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Sign in", exact: true })).toHaveAttribute(
+    "href",
+    /\/auth\/oidc\/login/,
+  );
 });
 
 test("template and authentication profiles use real route contracts", async ({ page }) => {

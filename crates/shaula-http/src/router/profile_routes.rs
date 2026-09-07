@@ -11,20 +11,17 @@ use shaula_core::registry::{AttestationPut, AuthProfilePut, Scope, TemplateProfi
 use crate::dto::{AttestationPutDto, AuthProfilePutDto, TemplateProfilePutDto};
 use crate::problem::{mutation_problem, problem};
 use crate::router::{
-    accepted_response, actor_or_problem, idempotency_header, if_none_match_star, parse_if_match,
-    require_scope, AppState,
+    accepted_response, idempotency_header, if_none_match_star, parse_if_match, require_scope,
+    AppState,
 };
 
 pub(crate) async fn template_artifact_put(
     State(state): State<AppState>,
     Path(digest): Path<String>,
-    headers: HeaderMap,
+    auth: crate::oidc::Authenticated,
     body: Bytes,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::TemplatePublish) {
         return response;
     }
@@ -62,13 +59,11 @@ pub(crate) async fn template_artifact_put(
 pub(crate) async fn template_profile_put(
     State(state): State<AppState>,
     Path(profile_key): Path<String>,
+    auth: crate::oidc::Authenticated,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::TemplatePublish) {
         return response;
     }
@@ -126,13 +121,11 @@ pub(crate) async fn template_profile_put(
 pub(crate) async fn template_attestation_put(
     State(state): State<AppState>,
     Path((profile_key, revision, attestation_key)): Path<(String, i64, String)>,
+    auth: crate::oidc::Authenticated,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::TemplateAttest) {
         return response;
     }
@@ -180,13 +173,11 @@ pub(crate) async fn template_attestation_put(
 pub(crate) async fn auth_profile_put(
     State(state): State<AppState>,
     Path(profile_key): Path<String>,
+    auth: crate::oidc::Authenticated,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::AuthWrite) {
         return response;
     }
@@ -288,12 +279,9 @@ pub(crate) fn build_auth_payload(dto: AuthProfilePutDto) -> Result<AuthProfilePu
 pub(crate) async fn auth_profile_get(
     State(state): State<AppState>,
     Path(profile_key): Path<String>,
-    headers: HeaderMap,
+    auth: crate::oidc::Authenticated,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::AuthRead) {
         return response;
     }
@@ -322,12 +310,9 @@ pub(crate) async fn auth_profile_get(
 pub(crate) async fn template_profile_get(
     State(state): State<AppState>,
     Path(profile_key): Path<String>,
-    headers: HeaderMap,
+    auth: crate::oidc::Authenticated,
 ) -> Response {
-    let actor = match actor_or_problem(&headers, &state) {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
+    let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::TemplateRead) {
         return response;
     }

@@ -11,7 +11,8 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "npm run dev -- --port 5180 --strictPort",
+    command:
+      "vite --host 127.0.0.1 --config tests/component-server.config.ts --port 5180 --strictPort",
     url: "http://127.0.0.1:5180",
     reuseExistingServer: !process.env.CI,
   },

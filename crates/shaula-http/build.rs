@@ -7,6 +7,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         "public",
         "index.html",
         "vite.config.ts",
+        "dev-auth.ts",
         "tsconfig.json",
         "package.json",
         "package-lock.json",

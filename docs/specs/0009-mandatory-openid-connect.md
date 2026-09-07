@@ -1,6 +1,6 @@
 # Mandatory OpenID Connect Authentication
 
-- Status: Accepted requirement; implementation pending
+- Status: Implemented; local protocol/browser acceptance, registered deployment Provider acceptance pending
 - Date: 2026-09-06
 - Decision: [ADR-0013](../ard/0013-require-openid-connect-for-all-http-access.md)
 
@@ -21,10 +21,13 @@ Shaula MUST 自行验证来自启动时配置的单个 OpenID Connect Provider �
 | 无 secret-value CLI flag | `SHAULA_OIDC_CLIENT_SECRET` | Required. 仅 daemon 读取，不出现在 argv、clap help/error、Debug 或配置转储中 |
 | `--oidc-public-url <origin>` | `SHAULA_OIDC_PUBLIC_URL` | Required. 浏览器访问 Shaula 的固定 HTTPS origin，无 userinfo/path prefix/query/fragment |
 | `--oidc-api-audience <audience>` | `SHAULA_OIDC_API_AUDIENCE` | Required. Provider 为 Shaula API 签发的 access token audience；与 web client ID 不同 |
+| `--oidc-ca-cert <pem-path>` | `SHAULA_OIDC_CA_CERT` | Optional. 私有 Provider 的附加 PEM trust root；不关闭 TLS certificate/hostname validation |
 
 Provider 与上述 client/public-origin 配置只能通过 CLI/env 提供，bootstrap YAML 不提供另一套同名来源。Secret 不得以 `VITE_` 环境变量、前端 bundle 或子进程完整环境传递。`version`、`--help` 和 completion 不启动 server，不要求 OIDC 配置。
 
 Provider registration MUST 支持 Authorization Code flow、PKCE S256、`openid` scope、asymmetric signed ID Tokens 和 `client_secret_basic` token-endpoint authentication。固定 redirect URI 为 `<public-origin>/auth/oidc/callback`，必须预先在 Provider 注册并 exact match；daemon 不进行 dynamic client registration。API 客户端从同一 Provider 获取符合 §5 的 access token；注册 web client 本身不自动获得机器客户端权限。
+
+当前实现的签名 allowlist 为 `RS256`，ID Token 和 API access token 均需使用带 `kid` 的 RSA signing key。Authorization grants 位于 bootstrap `http.authorization`，每项为 `{issuer, subject, scopes}`；空列表默认不授予资源权限。部署示例见 [OIDC deployment](../oidc-deployment.md)。
 
 `serve` 在 bind HTTP listener、启动 Fleet/Profile workers 或产生远程资源副作用之前 MUST 完成：
 

@@ -14,6 +14,7 @@ test("new fleet sends the API spec with create precondition", async ({ page }) =
     const request = route.request();
     expect(request.method()).toBe("PUT");
     expect(request.headers()["if-none-match"]).toBe("*");
+    expect(request.headers()["x-csrf-token"]).toBe("test-session-csrf");
     expect(request.headers()["x-shaula-backend-auth"]).toBeUndefined();
     expect(request.headers()["x-shaula-actor"]).toBeUndefined();
     expect(request.postDataJSON().github.target).toEqual({ kind: "organization", owner: "acme" });

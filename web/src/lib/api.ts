@@ -1,3 +1,5 @@
+import { authenticatedFetch, authenticationExpired } from "./authentication";
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -18,7 +20,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<R
   headers.set("accept", "application/json");
   if (options.body && typeof options.body === "string")
     headers.set("content-type", "application/json");
-  const response = await fetch(`/api/v1${path}`, {
+  const response = await authenticatedFetch(`/api/v1${path}`, {
     ...options,
     headers,
     credentials: "same-origin",
@@ -26,7 +28,10 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<R
     redirect: "error",
   });
   const contentType = response.headers.get("content-type") || "";
-  if (!contentType.includes("application/json")) {
+  if (
+    !contentType.includes("application/json") &&
+    !contentType.includes("application/problem+json")
+  ) {
     throw new ApiError(
       response.status,
       "InvalidResponse",
@@ -34,6 +39,8 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<R
     );
   }
   const data = await response.json();
+  if (authenticationExpired())
+    throw new ApiError(401, "AuthenticationRequired", "Authentication required.");
   if (!response.ok)
     throw new ApiError(
       response.status,

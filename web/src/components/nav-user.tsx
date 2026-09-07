@@ -1,4 +1,6 @@
-import { MoreVertical, RefreshCw } from "lucide-react";
+import { LogOut, MoreVertical, RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { logout } from "@/lib/authentication";
 import type { Session } from "@/lib/types";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -18,6 +20,19 @@ import {
 
 export function NavUser({ session, onRefresh }: { session?: Session; onRefresh: () => void }) {
   const { isMobile } = useSidebar();
+  const [signingOut, setSigningOut] = useState(false);
+  const [error, setError] = useState("");
+  async function signOut() {
+    setSigningOut(true);
+    setError("");
+    try {
+      await logout();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Sign out failed.");
+    } finally {
+      setSigningOut(false);
+    }
+  }
   const name = session?.name || "Unauthenticated";
   const role = session
     ? session.scopes.some((scope) => /\.(write|retire)$/.test(scope))
@@ -71,6 +86,21 @@ export function NavUser({ session, onRefresh }: { session?: Session; onRefresh: 
               <RefreshCw />
               Refresh session
             </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!session || signingOut}
+              onSelect={(event) => {
+                event.preventDefault();
+                void signOut();
+              }}
+            >
+              <LogOut />
+              {signingOut ? "Signing out..." : "Sign out"}
+            </DropdownMenuItem>
+            {error && (
+              <p role="alert" className="px-2 py-1 text-sm text-destructive">
+                {error}
+              </p>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>

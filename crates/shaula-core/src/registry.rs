@@ -8,9 +8,8 @@ use crate::auth::AuthKind;
 use crate::error::CoreResult;
 use crate::fleet::{FleetSpec, TemplateProfileRefDto};
 
-/// Authenticated actor produced by the trusted reverse-proxy assertion or
-/// the equivalent direct-loopback backend context. Loopback never
-/// synthesizes an actor.
+/// Authenticated principal and effective grants supplied by the HTTP adapter.
+/// `name` is a versioned stable identity, not a mutable display name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Actor {
     pub name: String,

@@ -47,7 +47,10 @@ export async function mockApi(page: Page, permissions = scopes) {
     const key = path.split("/")[2];
     const headers = { etag: '"fleet-incarnation:2"' };
     if (path === "/session")
-      return route.fulfill({ json: { name: "Alex Morgan", scopes: permissions } });
+      return route.fulfill({
+        headers: { "x-csrf-token": "test-session-csrf" },
+        json: { name: "Alex Morgan", scopes: permissions },
+      });
     if (path === "/fleets")
       return route.fulfill({
         json: {

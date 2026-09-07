@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, resourcePath } from "./api";
+import { authenticationExpired } from "./authentication";
 import type { FleetResource, FleetStatus, FleetSummary, Session, TemplateSummary } from "./types";
 
 export function useSession() {
   return useQuery({
     queryKey: ["session"],
+    enabled: !authenticationExpired(),
     queryFn: ({ signal }) => api<Session>("/session", { signal }),
     retry: false,
     refetchInterval: 30_000,

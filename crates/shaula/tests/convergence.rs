@@ -16,9 +16,10 @@ async fn scan_moves_candidate_to_ready_but_never_active() {
     let request = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/template-artifacts/{digest}"))
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "publisher")
-        .header("x-shaula-scopes", "template.publish,template.attest")
+        .header(
+            "authorization",
+            crate::common::oidc::bearer("template.publish template.attest"),
+        )
         .body(Body::from(bytes))
         .unwrap();
     assert_eq!(
@@ -72,9 +73,10 @@ async fn attestation_activates_then_fleet_admission_binds_exact_pin() {
     let request = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/template-artifacts/{digest}"))
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "publisher")
-        .header("x-shaula-scopes", "template.publish,template.attest")
+        .header(
+            "authorization",
+            crate::common::oidc::bearer("template.publish template.attest"),
+        )
         .body(Body::from(bytes))
         .unwrap();
     assert_eq!(
@@ -172,9 +174,10 @@ async fn forged_subject_members_cannot_activate() {
     let request = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/template-artifacts/{digest}"))
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "publisher")
-        .header("x-shaula-scopes", "template.publish,template.attest")
+        .header(
+            "authorization",
+            crate::common::oidc::bearer("template.publish template.attest"),
+        )
         .body(Body::from(bytes))
         .unwrap();
     assert_eq!(
@@ -268,9 +271,10 @@ async fn incompatible_candidate_cannot_slip_into_a_pending_incarnation() {
     let request = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/template-artifacts/{digest}"))
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "publisher")
-        .header("x-shaula-scopes", "template.publish,template.attest")
+        .header(
+            "authorization",
+            crate::common::oidc::bearer("template.publish template.attest"),
+        )
         .body(Body::from(bytes))
         .unwrap();
     assert_eq!(
@@ -283,9 +287,10 @@ async fn incompatible_candidate_cannot_slip_into_a_pending_incarnation() {
     let request = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/template-artifacts/{docker_digest}"))
-        .header("x-shaula-backend-auth", "test-backend-token-0123456789")
-        .header("x-shaula-actor", "publisher")
-        .header("x-shaula-scopes", "template.publish,template.attest")
+        .header(
+            "authorization",
+            crate::common::oidc::bearer("template.publish template.attest"),
+        )
         .body(Body::from(docker_bytes))
         .unwrap();
     assert_eq!(

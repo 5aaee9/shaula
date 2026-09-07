@@ -18,6 +18,14 @@ http = { workspace = true }
 http-body-util = { workspace = true }
 rust-embed = { workspace = true }
 mime_guess = { workspace = true }
+jsonwebtoken = { workspace = true }
+oauth2 = { workspace = true }
+cookie = { workspace = true }
+subtle = { workspace = true }
+url = { workspace = true }
+reqwest = { workspace = true }
+sha2 = { workspace = true }
+base64 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -28,6 +36,9 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rcgen = "0.13"
 
 [lints]
 workspace = true

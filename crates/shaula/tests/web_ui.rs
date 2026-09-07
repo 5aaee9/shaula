@@ -9,15 +9,25 @@ use axum::{
 use tower::ServiceExt;
 
 #[tokio::test]
-async fn web_tests_public_shell_does_not_authorize_management_routes() {
+async fn web_tests_shell_and_management_require_authentication() {
     let (app, _, _) = common::build_app_with_scan().await;
-    for path in ["/", "/fleets/example", "/templates", "/auth"] {
+    for path in [
+        "/",
+        "/fleets/example",
+        "/fleets/linux-x64.1_a",
+        "/templates",
+        "/auth",
+    ] {
         let response = app
             .clone()
             .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert!(to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap()
+            .is_empty());
     }
     for path in [
         "/api/v1/session",
@@ -41,13 +51,13 @@ async fn web_tests_public_shell_does_not_authorize_management_routes() {
         )
         .await
         .unwrap();
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     let response = app
         .oneshot(common::authorized("GET", "/api/v1/session", None))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(response.headers()["cache-control"], "no-store");
+    assert_eq!(response.headers()["cache-control"], "private, no-store");
     let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert!(json["name"].is_string());
