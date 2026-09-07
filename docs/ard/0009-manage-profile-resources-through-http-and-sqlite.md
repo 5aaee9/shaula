@@ -21,6 +21,6 @@ PAT、GitHub App private key 与 schema 标记为 sensitive 的 Kubernetes/Docke
 - Profile deletion 受 exact Profile heads、Fleet refs、in-flight effects/sessions、cleanup/recovery references 与 retention policy 约束；`Blocked` 不释放引用，也不提供 force delete。
 - SQLite 主库、WAL/SHM、online copy、备份、迁移副本和 crash dump 都可能含明文 credential/binding，必须采用 credential-grade host permissions、retention、backup handling 和 disposal policy；application-level field encryption 不是 v1 requirement。
 - GitHub Control-Plane Credentials 永不进入 Template/Terraform/Runner；sensitive Template bindings 只从 exact Revision 解析到获准 IaC child，并且永不进入 Runner/workflow。两类 secret 都不会因 `write-only` 而丧失 restart/Destroy/recovery 可用性。
-- Management endpoint 的 authorization、audit、request-size limits 和 redaction 是 Day 0 requirements；v1 Shaula listener 只绑定 loopback，remote authentication/TLS 由 trusted reverse proxy 承担，Shaula 暂不内建 mTLS/OIDC。
+- Management endpoint 的 authentication、authorization、audit、request-size limits 和 redaction 是 Day 0 requirements。经 [ADR-0013](0013-require-openid-connect-for-all-http-access.md) 修订：v1 listener 仍只绑定 loopback，remote TLS 由 reverse proxy 承担；Shaula 必须验证启动时显式配置的 OIDC Provider 身份，禁止 proxy actor/backend-token fallback。Native inbound TLS/mTLS 仍不在范围内。
 
 详细契约见 [Profile HTTP Control-Plane Specification](../specs/0005-profile-http-control-plane.md)。

@@ -12,7 +12,7 @@
 - Production Go dependency: none
 - Scale Set compatibility oracle: pinned `github.com/actions/scaleset` Go SDK and `internal/testserver`
 
-This specification maps Shaula's accepted domain and Module boundaries onto a Rust Cargo workspace. It extends the [Multi-Fleet Runner Scale Set Controller Specification](0001-shaula-runner-scale-set.md), [ADR-0010](../ard/0010-build-a-pure-rust-multi-crate-daemon-and-use-scaleset-as-an-oracle.md), and [ADR-0011](../ard/0011-expose-v1-http-through-loopback-and-an-authenticating-proxy.md). It describes package ownership and dependency rules, not implementation code.
+This specification maps Shaula's accepted domain and Module boundaries onto a Rust Cargo workspace. It extends the [Multi-Fleet Runner Scale Set Controller Specification](0001-shaula-runner-scale-set.md), [ADR-0010](../ard/0010-build-a-pure-rust-multi-crate-daemon-and-use-scaleset-as-an-oracle.md), and [ADR-0013](../ard/0013-require-openid-connect-for-all-http-access.md). [Spec 0009](0009-mandatory-openid-connect.md) defines mandatory inbound OIDC. This specification describes package ownership and dependency rules, not implementation code.
 
 ## 1. Outcome
 
@@ -70,7 +70,7 @@ CI inspects `cargo metadata` and `cargo tree -p shaula --edges normal,build` to 
 
 ### 3.1 `shaula`
 
-The binary crate is intentionally shallow. It uses clap derive for `shaula serve`, loads and validates daemon bootstrap configuration, initializes local structured logging and OpenTelemetry before migrations or remote effects, constructs concrete adapters, acquires the data-directory ownership lock, starts the daemon, handles signals and enforces bounded shutdown ordering.
+The binary crate is intentionally shallow. It uses clap derive for `shaula serve`, loads and validates daemon bootstrap configuration and required OIDC Provider/client settings from CLI/env, initializes local structured logging and OpenTelemetry before migrations or remote effects, constructs concrete adapters, acquires the data-directory ownership lock, starts the daemon, handles signals and enforces bounded shutdown ordering. It awaits the HTTP Adapter's OIDC discovery/JWKS initialization before binding the listener or starting resource workers; missing/invalid settings or initialization failure exit nonzero.
 
 It contains no Fleet reconciliation, SQL, HTTP handler, GitHub protocol or Terraform plan logic. v1 has no local Create/Destroy/Update command；future management subcommands are HTTP clients only.
 
@@ -88,9 +88,9 @@ Tokio tasks are supervised；detached fire-and-forget tasks are forbidden. Every
 
 ### 3.4 `shaula-http`
 
-This crate owns the loopback-only Axum listener, Router, extractors, trusted reverse-proxy actor-context validation, authorization middleware, request limits, ETag/idempotency handling, strict Serde DTOs, pagination and conversion between domain errors and sanitized HTTP problem responses. It calls only inbound core/application ports and never receives a SeaORM connection. A configured non-loopback address fails startup；native TLS, mTLS and OIDC verification are outside v1.
+This crate owns the loopback-only Axum listener, Router, extractors, mandatory OIDC discovery/token verification, login/callback/session/CSRF/logout, authorization middleware, request limits, ETag/idempotency handling, strict Serde DTOs, pagination and conversion between domain errors and sanitized HTTP problem responses. OIDC implementation stays in cohesive internal modules using established Rust protocol/crypto libraries; no new crate is required solely for a wrapper. It calls only inbound core/application ports and never receives a SeaORM connection. A configured non-loopback address fails startup; native inbound TLS/mTLS remains outside v1, while OIDC verification is mandatory.
 
-Mutation DTOs reject unknown fields. Every management request, proxied or direct loopback, must validate the selected trusted actor assertion/backend context；loopback never synthesizes an actor, and missing/invalid context is rejected. Caller-supplied identity headers are stripped by the required proxy and cannot directly define the actor；the exact trusted assertion/backend-auth format is a pending wire choice. Request bodies, Authorization, idempotency keys and secret values are excluded from tracing middleware. Route templates rather than raw paths identify OTel server spans.
+Mutation DTOs reject unknown fields. A default authentication guard protects UI documents, embedded assets, all API/health routes and fallback before resource/cache handling; only exact login/callback GET routes are anonymous. The Adapter maps verified `(iss, sub)` and server-authorized scopes into core actor facts. Legacy backend tokens and identity/scopes headers cannot establish identity; debug/development uses the same contract. Request bodies, Authorization, cookies, login codes, CSRF, OIDC tokens/client secrets and idempotency keys are excluded from tracing middleware. Route templates rather than raw paths identify OTel server spans. Session stores are bounded and in-memory; their loss requires reauthentication, without altering durable Fleet/Profile state.
 
 ### 3.5 `shaula-store` and `shaula-store-migration`
 
@@ -173,7 +173,7 @@ Implementation is incomplete until：
 11. Tokio task, subprocess and exporter failure injection proves Fleet isolation and bounded shutdown.
 12. In-memory OTel tests observe HTTP, SQL/use-case boundaries, Scale Set, reconcile and Template lifecycle without secrets or unbounded labels.
 13. A Template Profile cannot become Active unless every required external safety claim has a current conformance attestation for its exact immutable compatibility tuple.
-14. Axum startup rejects every non-loopback bind；tests accept only a validated trusted actor context for proxied or direct management requests, reject forged/missing context and prove the production binary has no native inbound HTTP TLS/mTLS/OIDC serving path.
+14. Axum startup rejects every non-loopback bind and missing/invalid CLI/env OIDC configuration or failed discovery initialization. Tests enforce spec 0009 across proxied/direct requests, UI/assets/API/health/fallback, CSRF, session expiry, token/key validation and forged legacy headers. The production binary must include OIDC verification and must not expose native inbound HTTP TLS/mTLS serving.
 
 ## 7. Delivery order
 

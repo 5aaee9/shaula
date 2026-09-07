@@ -17,7 +17,7 @@ Related decisions：
 - [ADR-0005: Manage Fleet desired state through HTTP and SQLite revisions](../ard/0005-manage-fleet-desired-state-through-http-and-sqlite.md)
 - [ADR-0008: Keep platform capabilities in Terraform Template Profiles](../ard/0008-keep-platform-capabilities-in-terraform-template-profiles.md)
 - [ADR-0009: Manage Template and GitHub Auth Profiles through HTTP and SQLite](../ard/0009-manage-profile-resources-through-http-and-sqlite.md)
-- [ADR-0011: Expose v1 HTTP through loopback and an authenticating proxy](../ard/0011-expose-v1-http-through-loopback-and-an-authenticating-proxy.md)
+- [ADR-0013: Require OpenID Connect for all HTTP access](../ard/0013-require-openid-connect-for-all-http-access.md)
 
 ## 1. Outcome
 
@@ -39,7 +39,7 @@ flowchart LR
     Runtime --> Terraform["Local Terraform subprocess"]
 ```
 
-Fleet Registry 是 deep Module。HTTP routing、strict JSON、trusted backend actor-context validation、authorization middleware 和 response mapping 位于 driving Adapter；TLS termination 与 caller authentication 位于 deployment reverse proxy，SQLite schema/transactions/migrations 位于 Store Adapter。Registry Interface 负责 canonicalization、Profile reference resolution、authorization facts、optimistic concurrency、idempotency、Revision/Change/audit/outbox commit 和 Decommission rules。HTTP Adapter 不直接调用 Store、GitHub 或 Template Runtime。
+Fleet Registry 是 deep Module。HTTP routing、strict JSON、OIDC verification、browser session/CSRF、authorization middleware 和 response mapping 位于 driving Adapter；TLS termination 位于 deployment reverse proxy，SQLite schema/transactions/migrations 位于 Store Adapter。Registry Interface 负责 canonicalization、Profile reference resolution、authorization facts、optimistic concurrency、idempotency、Revision/Change/audit/outbox commit 和 Decommission rules。HTTP Adapter 不直接调用 Store、GitHub 或 Template Runtime，Registry 不接收未验证 OIDC wire claims。
 
 Shaula 核心没有 Kubernetes/Docker client 或平台对象语义。Fleet Registry 只认识已验证的 Template Profile key/revision/digest 和 bounded inputs；所有 namespace、socket、endpoint、provider credential 等 binding 固定在 Template Profile Revision 中。
 
@@ -65,7 +65,7 @@ Shaula 核心没有 Kubernetes/Docker client 或平台对象语义。Fleet Regis
 `shaula serve --config` 只包含 process-wide native concerns：
 
 - data directory、SQLite filename、artifact/workspace roots 和 ownership lock；
-- loopback HTTP bind、trusted reverse-proxy actor contract、authorization policy、body/rate/backlog limits；
+- loopback HTTP bind、mandatory OIDC 启动配置、principal authorization policy、body/rate/backlog limits；OIDC Provider/client 仅通过 clap/env 提供，见 [spec 0009](0009-mandatory-openid-connect.md)；
 - supported IaC executable/install policy；
 - Create/Destroy concurrency、timeouts、retry defaults；
 - artifact upload/expansion/retention limits；
@@ -361,13 +361,13 @@ SQLite main/WAL/SHM、Template artifact store 和 Workspaces/state 是一个 bac
 Startup 顺序：
 
 1. 初始化 local structured logging 和 OpenTelemetry SDK。
-2. 验证 bootstrap、HTTP safety、filesystem roots、IaC engines 和 limits；不加载 static resource catalogs。
+2. 验证 bootstrap、HTTP safety、filesystem roots、IaC engines 和 limits；从 clap/env 读取 mandatory OIDC Provider/client 配置并完成 discovery/JWKS validation，失败时在 listener/workers 启动前非零退出；不加载 static resource catalogs。
 3. 获取 data-directory ownership lock，migrate SQLite，检查 artifact/workspace consistency。
 4. 启动 Fleet/Profile Registries、HTTP server、scheduler、worker pools 和 periodic scanners。
 5. 从 SQLite 加载 active Template/Auth/Fleet desired heads，恢复 Profile Changes、Fleet Changes、Auth Handoffs 和 Runner Operations。
 6. 为每个 Fleet 独立验证其 exact pinned、仍被 retention/reference rules 保留的 Template Revision/artifact/accepted attestation，以及完整 Auth desired/observed tuples；重启不要求旧 pin 仍是 current Active。随后由普通 reconciliation 恢复 create-or-adopt、ID binding 与 session。
 
-`/livez` 只检查 daemon supervision loop，不访问 SQLite、GitHub、IaC、平台或 OTel exporter。`/readyz` 仅在 authenticated control plane 能 durable commit 与安全调度时 true。Ownership-lock loss、shared storage failure 或 scheduler termination 让 readiness false 并停止新 effects。
+`/livez` 与 `/readyz` 的 HTTP 访问均先通过 spec 0009 的 OIDC authentication。`/livez` 的业务检查只检查 daemon supervision loop，不访问 SQLite、GitHub、IaC、平台或 OTel exporter。`/readyz` 仅在 authenticated control plane 能 durable commit 与安全调度时 true；OIDC service degradation 的 readiness 行为见 spec 0009 §6。Ownership-lock loss、shared storage failure 或 scheduler termination 让 readiness false 并停止新 effects。
 
 Profile/Fleet invalid、Auth Handoff lag、listener failure 或外部依赖 failure 只降级相应资源/消费者。它们不让整个 API unready，也不阻塞无关 Fleet recovery。
 
@@ -375,9 +375,9 @@ Profile/Fleet invalid、Auth Handoff lag、listener failure 或外部依赖 fail
 
 v1 假设一个 administrative security domain，不声明 tenant isolation。若增加 multi-tenancy，object authorization、所有 Store query、artifact ownership 和 metric/log isolation 都需新 ADR。
 
-- v1 只支持 loopback listener；配置 non-loopback address 必须在 startup fail closed。远程访问由 trusted reverse proxy 终止 TLS 并认证 caller；Shaula 暂不内建 TLS、mTLS 或 OIDC，但仍执行 authorization 与 audit。
+- v1 只支持 loopback listener；配置 non-loopback address 必须在 startup fail closed。远程访问由 reverse proxy 终止 TLS；Shaula 按 [spec 0009](0009-mandatory-openid-connect.md) 执行 mandatory OIDC、authorization 与 audit。Native inbound TLS/mTLS 仍不在范围内。
 - Authorization 至少区分 `fleet.read`、`fleet.write`、Fleet retirement、`template.read`、高权限 `template.publish`、独立高权限 `template.attest`、`auth.read`、高权限 `auth.write` 和 Auth retirement。
-- 每个 management request，无论经 proxy 还是 direct loopback，都必须携带并通过 selected trusted actor assertion/backend authentication；loopback origin 不会自动产生 actor。缺少或无效 context 的 direct request 必须拒绝，body actor 或普通 caller-supplied identity header 永不可信；proxy 必须 strip 外部 identity headers 后再注入认证结果。具体 assertion/backend-auth format 尚待固定。loopback 不是 tenant boundary。
+- 所有 UI、静态资源、API 和 health routes，无论经 proxy 还是 direct loopback，均必须验证 OIDC-derived session 或相应 API access token；仅 exact login/callback GET 有匿名例外。缺失/无效身份的 API 请求返回 `401`，有效身份缺少权限返回 `403`；body actor、caller identity/scopes headers 和 legacy backend token 均不建立身份。Cookie mutations 必须通过 Origin/CSRF 校验，全部响应 private/no-store；loopback 不是 tenant boundary。
 - Strict JSON 拒绝 unknown fields，并限制 body、strings、lists、pagination、rate 和 backlog。
 - Fleet JSON 不接受 PAT、App private key、derived token、JIT、provider credential、platform identity/binding、conformance attestation、raw endpoint 或 executable；它只引用 typed Target、Auth Profile key、current active exact Template Revision 和 bounded inputs。
 - Auth Profile PUT 可以携带 write-only PAT/App private key；Template Profile PUT 可以携带 binding schema 标记为 sensitive 的 write-only value。SQLite 允许把两者原始 plaintext 存入对应 immutable Revision。所有 GET/list/status/revision/attestation、Fleet response、audit、errors、logs、traces、metrics 和 panic/diagnostic middleware 永不回显 request body、secret、prefix/suffix/hash/length 或 parser content。
@@ -451,15 +451,15 @@ Implementation is incomplete until：
 13. DELETE 永久停止 acquisition 但允许 cleanup-only Auth Handoff，等待 `JobStillRunning`，只 Destroy known owned Generations，保留 Scale Set 并写 tombstone；unknown/Quarantine/Auth handoff failure 保持 Blocked。
 14. Lost wakeup、crash after commit 和 due `Blocked` Change 都从 periodic scan/lease recovery 前进。
 15. 一个 blocked/retrying Fleet 不影响另一个 healthy Fleet 的 HTTP management、session 或 lifecycle；shared unsafe storage 才使 global readiness false。
-16. Restart 只需 SQLite、Template artifacts、per-runner Workspaces/state 和 configured engine policy，即可重建 supervisors、Changes、Auth Handoffs 与 Operations；不依赖 mutable source directory 或 native platform inspection。
-17. v1 non-loopback bind 始终在 startup fail closed；loopback listener 可由 TLS/authenticating reverse proxy 暴露，且 forged caller identity header 或无 trusted context 的 direct loopback request 不能成为 actor。生产路径没有 native inbound HTTP TLS/mTLS serving 或 OIDC client-auth verification path；GitHub/OTLP 等 outbound TLS 不受此限制。
+16. Restart 从 SQLite、Template artifacts、per-runner Workspaces/state 和 configured engine policy 重建 supervisors、Changes、Auth Handoffs 与 Operations；启动还必须满足 spec 0009 的 OIDC 配置/discovery 前置条件，不依赖 mutable source directory 或 native platform inspection。
+17. v1 non-loopback bind 始终在 startup fail closed；缺少 clap/env OIDC Provider/client 配置或 discovery validation 失败同样不启动 listener/workers。UI/assets/API/health/fallback 均通过 spec 0009 认证矩阵验收；forged actor headers 与 legacy backend token 无法绕过。生产路径无 native inbound HTTP TLS/mTLS serving，但必须有 OIDC verification；GitHub/OTLP outbound TLS 不受此限制。
 18. In-memory OTel tests 覆盖 HTTP、commit、async links、Auth Handoff、reconcile 和 exporter outage；credential/request body 不泄漏，metric series 数量有显式上界。
 19. Continuously changing Assigned Demand 不让 Fleet Change 永久 open；Change 记录明确 demand checkpoint，后续 demand 触发新 reconcile。
 20. Organization/repository Target canonical round-trip；unknown kind、malformed name、arbitrary URL 和 Auth allowlist 外 Target 都 fail admission。
 
 ## 15. Open decisions
 
-1. Trusted reverse proxy 使用哪种 actor assertion 与 proxy-to-Shaula backend authentication format？
+1. 已由 ADR-0013 / spec 0009 决定：OIDC session/API access token 替代 proxy actor assertion/backend authentication。
 2. Fleet DELETE 是否一直保留空 Scale Set，还是只删除 fully drained 且明确由 Shaula 创建的 Scale Set？当前 contract 保留。
 3. Bare Template Profile key convenience 是否保留，还是要求 client 始终显式提交 revision？两种方式都必须持久化 exact pin。
 4. Fleet/Profile Changes、idempotency、audit、tombstones、eligible unreferenced Auth revisions、artifacts、attestations 和 Workspaces 的 retention 时限是什么？

@@ -31,7 +31,7 @@ Fleet-level replacement 不是 Runner Update primitive。每个既有 Runner Gen
 - Fleet Decommission 永久停止新 acquisition/Create，但允许持久化的 cleanup-only Auth Handoff；它等待安全 GitHub removal，Destroy 全部 owned Runner Resource，关闭 Fleet supervisor，并保留空 GitHub Scale Set 与 auditable tombstone。
 - 不提供 force-delete path；Busy jobs、unknown remote Runners、Quarantine 或 missing state 可以让 Decommission 明确阻塞。
 - Template Profile、Template Artifact 和 GitHub Auth Profile 由独立的 Profile HTTP resources 管理；`template.publish`、`template.attest` 与 `fleet.write` 分权，Fleet mutation 不能发布模板代码、提交 attestation 或提交原始 credential。
-- Management authorization、mutation audit 和 HTTP telemetry 是 Day 0 requirements。v1 Shaula listener 只允许 loopback，non-loopback configuration 在 startup fail closed；远程 caller 由 TLS/authenticating reverse proxy 接入，Shaula 不内建 TLS、mTLS 或 OIDC，但仍消费可信 actor context 并执行 authorization/audit。
+- Management authentication、authorization、mutation audit 和 HTTP telemetry 是 Day 0 requirements。经 [ADR-0013](0013-require-openid-connect-for-all-http-access.md) 修订：v1 listener 仍只允许 loopback，non-loopback configuration 在 startup fail closed；reverse proxy 提供 HTTPS，Shaula 自行验证 mandatory OIDC session/API token 并执行 authorization/audit。Legacy backend token 与 actor headers 不再建立身份；native inbound TLS/mTLS 不在范围内。
 - Metrics 不使用动态 Fleet Key 作为无界 dimension；per-Fleet 状态通过 HTTP、traces 和 logs 观测。
 - SQLite 只支持一个本地 active daemon；本决定不增加 multi-host HA、distributed leases 或 concurrent writers。
 

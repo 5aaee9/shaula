@@ -108,6 +108,16 @@ verifies the stamp after migrating.
 
 ## Staged (next phases; not yet wired or externally validated)
 
+- Mandatory OIDC ([spec 0009](specs/0009-mandatory-openid-connect.md),
+  [ADR-0013](ard/0013-require-openid-connect-for-all-http-access.md)) is now an
+  accepted requirement, NOT implemented. Current `serve` does not require OIDC
+  Provider/client configuration; the UI shell/assets and health routes remain
+  public, while management APIs still use the legacy proxy actor/backend token.
+  Required work includes clap/env startup validation, discovery/JWKS, login and
+  session/CSRF/logout, API access-token verification, principal-to-scope policy,
+  default authentication over all routes/assets/fallbacks, private/no-store
+  caching and removal of development identity injection. Existing auth and UI
+  tests demonstrate the old contract, not compliance with the new requirement.
 - The per-Fleet capacity/ownership/cleanup supervisor and Auth validator are
   started by the binary. The production session listener, persist-before-ACK
   message ingestion/acquisition, online/busy inventory classification, operation
@@ -127,6 +137,22 @@ verifies the stamp after migrating.
   remaining
   endpoint surface (list pagination cursors, revision reads, artifact
   metadata GET), and Profile reference clearance/retention/GC.
+
+## Embedded operator UI (2026-09-06)
+
+- `web/` provides React + Vite 8/Oxc and CLI-downloaded shadcn/ui components for
+  Fleet management, template publication/revisions, GitHub authentication
+  profiles and accepted change status. See spec 0008 and ADR 0012.
+- The HTTP crate builds and embeds the production frontend into both debug
+  and release binaries. UI document routes support direct navigation;
+  missing APIs/assets are not rewritten to HTML.
+- The UI currently uses the legacy proxy authentication boundary, superseded
+  in the target design by spec 0009 / ADR-0013 but not yet replaced in code. The session
+  read returns only actor name/scopes. Browser code has no backend token,
+  identity assertion, durable credential storage or independent desired state.
+- Node/npm dependencies are build prerequisites only; runtime serving needs
+  no frontend directory. Setup and verification commands are in `web/README.md`.
+- UI availability does not resolve any of the daemon/runtime gaps listed above.
 
 ## Known accepted limitations (per ADR)
 

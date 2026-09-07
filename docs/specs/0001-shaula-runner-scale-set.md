@@ -48,8 +48,8 @@ OpenTelemetry tracing、metrics 和日志关联是 Day 0 Interface。HTTP commit
 - [ADR-0009: Manage Template and GitHub Auth Profiles through HTTP and SQLite](../ard/0009-manage-profile-resources-through-http-and-sqlite.md)
 - [ADR-0010: Build a pure-Rust multi-crate daemon and use scaleset as an oracle](../ard/0010-build-a-pure-rust-multi-crate-daemon-and-use-scaleset-as-an-oracle.md)
 
-ADR-0008、ADR-0009、ADR-0010 和 ADR-0011 共同约束平台边界、Profile publication、credential storage、Auth rollout、HTTP exposure、生产语言和 Scale Set protocol verification；本规范的核心模型遵循这些已接受决定。
-- [ADR-0011: Expose v1 HTTP through loopback and an authenticating proxy](../ard/0011-expose-v1-http-through-loopback-and-an-authenticating-proxy.md)
+ADR-0008、ADR-0009、ADR-0010 和 ADR-0013 共同约束平台边界、Profile publication、credential storage、Auth rollout、HTTP exposure、mandatory OIDC、生产语言和 Scale Set protocol verification；本规范的核心模型遵循这些已接受决定。ADR-0013 supersedes ADR-0011。
+- [ADR-0013: Require OpenID Connect for all HTTP access](../ard/0013-require-openid-connect-for-all-http-access.md)
 
 ## 2. Goals
 
@@ -168,13 +168,15 @@ SQLite corruption、共享 data directory 丢失、ownership lock 失效、sched
 
 v1 MUST 提供：
 
-- `shaula serve --config <path>`：运行 HTTP control plane 和 SQLite 中所有 active Fleets；
+- `shaula serve --config <path>`：运行 HTTP control plane 和 SQLite 中所有 active Fleets；启动时还 MUST 通过 clap flags / env 提供 mandatory OIDC Provider/client 配置，见 [spec 0009](0009-mandatory-openid-connect.md)；
 - `shaula version`：输出版本信息；
 - clap 生成的 shell completion commands MAY be provided。
 
 `serve` MUST 使用 clap derive，并由 Tokio runtime 驱动。运行时错误不打印 clap usage。Runner Create/Destroy 和 Profile/Fleet mutation 都不是本地 operator commands；未来 CLI MAY 作为 HTTP client，但不得直写 SQLite 或绕过认证、并发控制、validation 和 audit。
 
-PAT、App private key、JIT、provider credential 和 telemetry header MUST NOT 作为 CLI flags。
+`--oidc-provider <issuer-url>` / `SHAULA_OIDC_PROVIDER` 为必填，且无默认值；完整 client ID、secret、public origin 和 API audience 契约由 spec 0009 定义。OIDC 配置与 discovery/JWKS validation 必须在 HTTP bind 和资源 workers 启动之前成功，失败时非零退出；禁止匿名、legacy backend-token 或 development fallback。OIDC 配置不来自 bootstrap YAML 或 SQLite，authorization grants 仍属于 daemon bootstrap policy。
+
+PAT、App private key、JIT、provider credential、OIDC client secret 和 telemetry header MUST NOT 作为 CLI flags。
 
 ### 5.2 Bootstrap shape
 
@@ -449,7 +451,7 @@ Ledger 至少持久化：
 全局 startup barrier 只做共享工作：
 
 1. 由 `shaula-observability` 初始化 Rust `tracing`、local structured logging 和 OpenTelemetry SDK/export pipeline；
-2. 验证 daemon bootstrap、HTTP safety、engine 和 filesystem roots；
+2. 验证 daemon bootstrap、HTTP safety、engine 和 filesystem roots，并完成 clap/env mandatory OIDC 配置及 discovery/JWKS validation；任一失败均不启动 HTTP listener 或资源 workers；
 3. 获取 data-directory ownership lock，迁移 SQLite，验证数据库/artifact/workspace consistency；
 4. 启动 HTTP registries、scheduler、worker pools 和 periodic outbox/desired scans；
 5. 从 SQLite 加载 active Fleet/Profile desired heads。
@@ -557,7 +559,7 @@ PAT/App private key 与 schema-sensitive Template bindings 可以明文存入各
 
 Template artifact publication 等价于部署可运行 provider plugin 并持有平台权限的代码。`template.publish`、`template.attest`、`fleet.write`、`auth.write`、read 和 retirement 必须独立分权；artifact streaming 需 digest、size、expansion、path/link/device、atomic publication 和 GC 安全检查。Static validation 只能到 `Ready`，exact accepted attestation 才可到 `Active`，且 Template Platform 只从 artifact manifest 派生。
 
-v1 HTTP listener 只支持 loopback；任何 non-loopback bind 配置都在 startup fail closed。远程访问由 trusted reverse proxy 终止 TLS 并认证 caller；Shaula 暂不内建 inbound HTTP TLS/mTLS serving 或 OIDC client-auth verification，但仍负责 authorization 与 audit。每个 management request（包括 direct loopback）都必须验证 trusted actor assertion/backend context；loopback 不自动产生 actor，缺失/无效 context 必须拒绝。Proxy 必须 strip caller-supplied identity headers 后再注入认证结果；exact assertion/backend-auth format 尚待固定。Loopback 不是 tenant boundary。请求 body、Authorization、idempotency key、JIT、Profile sensitive bindings、tfvars、state、provider output 和 OTel headers 都不得进入 proxy/Shaula 日志或 telemetry。
+v1 HTTP listener 只支持 loopback；任何 non-loopback bind 配置都在 startup fail closed。远程访问由 reverse proxy 终止 TLS，Shaula 自行执行 mandatory OIDC authentication、authorization 与 audit，详见 [spec 0009](0009-mandatory-openid-connect.md)。所有 UI、静态资源、API 和 health endpoints 均要求认证，仅 exact login/callback routes 允许匿名完成认证流程。Direct loopback 与 development 无例外，legacy backend token / actor headers 不再是身份来源。Native inbound TLS/mTLS serving 仍不在范围内，loopback 不是 tenant boundary。请求 body、Authorization、cookie、OIDC code/token/client secret、CSRF、idempotency key、JIT、Profile sensitive bindings、tfvars、state、provider output 和 OTel headers 都不得进入 proxy/Shaula 日志或 telemetry。
 
 IaC child process 使用 configured Shaula execution identity、restricted Workspace 和最小环境。Runner 只接收 JIT；任何 Profile provider credential、Shaula HTTP credential 或 SQLite access material 都不进入 Runner。若 Docker Profile 使用 local `docker.sock`，该 identity 实际拥有 host-admin capability，所有 same-identity IaC children 都在同一 ambient trust domain；只有选择 separate OS identity/sandbox 才能声称 per-Profile isolation。
 
@@ -594,7 +596,7 @@ IaC child process 使用 configured Shaula execution identity、restricted Works
 Implementation is incomplete until：
 
 1. 一个 daemon 同时管理至少两个 HTTP-created、SQLite-persisted Fleets，它们使用不同的 exact Template Revisions 且需求互不干扰。
-2. Daemon 在 bootstrap 不含任何 Fleet/Profile resource catalog 的情况下启动；三类 resources 均通过 HTTP 创建并跨重启恢复。
+2. Daemon 在 bootstrap 不含任何 Fleet/Profile resource catalog 的情况下启动；三类 resources 均通过 HTTP 创建并跨重启恢复。启动必须通过 spec 0009 的 OIDC 配置/discovery gate，所有 UI/assets/API/health routes 通过其认证验收。
 3. `cargo metadata`/`cargo tree` architecture gate 证明 production binary 是 pure Rust，不含 Go bridge/FFI 或 Kubernetes/Docker client；framework/Adapter concrete types 与平台分支不进入 `shaula-core`。
 4. Template artifact HTTP publication 对 digest idempotent，并拒绝 traversal、link/device、expansion bomb、digest mismatch 和 oversize；`template.publish`、`template.attest` 与 `fleet.write` 权限彼此独立。
 5. Static validation 只产生 `Ready`；exact accepted conformance attestation 才产生 `Active`。Fleet admission 只解析 current Active Template key/revision，并持久化 exact artifact 与 attestation identity；新 Profile Revision 或 attestation 不改变 Fleet 和既有 Generation，Platform authority 只来自 artifact manifest。
@@ -631,7 +633,7 @@ Verification SHOULD 组合 deep-Interface unit tests、fake Scale Set/IaC Adapte
 - 对齐 section 18 open decisions，接受或更新相关 ADR。
 - 固定 Rust toolchain/MSRV、Cargo.lock/features、`shaula-scaleset` wire fixtures、Go oracle commit/module/checksum、Terraform/provider 和 Rust OpenTelemetry version policy。
 - 冻结 Template manifest、Profile/Fleet HTTP schemas、auth identity/rollout state、redaction fixtures 和 metric attribute allowlist。
-- 为 plaintext SQLite credential/sensitive binding、reverse-proxy actor handoff 和 remote IaC publication 完成 threat review。
+- 为 plaintext SQLite credential/sensitive binding、mandatory OIDC/session/CSRF boundary 和 remote IaC publication 完成 threat review。
 
 ### Phase 1: Native daemon, persistence and Day 0 visibility
 
@@ -672,7 +674,7 @@ Verification SHOULD 组合 deep-Interface unit tests、fake Scale Set/IaC Adapte
 
 1. v1 是否额外交付一个把 `docker.sock` 挂进 Runner 的显式 high-trust Docker-building Profile？bundled default Profile 已确定不挂载。
 2. Binding schema 使用哪个 exact annotation 标记 sensitive field，mixed binding 的 GET/revision presence-only representation 如何标准化，`bindings_digest` 的 non-verifier opaque commitment 采用什么构造与编码？
-3. Trusted reverse proxy 使用哪种 actor assertion 与 proxy-to-Shaula backend authentication format？
+3. 已由 ADR-0013 / spec 0009 决定：由 Shaula 验证 OIDC session/API access token，不再选择 proxy actor assertion/backend-auth format。
 4. 是否在 `JITStarting` 前增加独立、non-mutating provider-backed namespace preflight？v1 baseline 只要求 static validation 与 locked init；若省略，后续 plan 失败必须 safe-remove JIT identity 并以 fresh Generation 重试，不能复用旧 JIT。
 5. Docker JIT 是否必须 memory-only？若必须，provider upload 到 `tmpfs` 的真实行为是 release-blocking compatibility spike。
 6. PAT v1 支持 classic、fine-grained，还是两者都需通过完整 scope matrix？

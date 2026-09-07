@@ -6,7 +6,7 @@
 - Persistence: SQLite plus content-addressed Template artifacts
 - Secret-at-rest decision: PAT, GitHub App private key, and schema-sensitive Template bindings may be plaintext in SQLite
 
-This specification extends the [Fleet HTTP Control-Plane Specification](0002-fleet-http-control-plane.md). Related decisions are [ADR-0005](../ard/0005-manage-fleet-desired-state-through-http-and-sqlite.md), [ADR-0007](../ard/0007-use-target-bound-github-auth-profiles.md), [ADR-0009](../ard/0009-manage-profile-resources-through-http-and-sqlite.md), and [ADR-0011](../ard/0011-expose-v1-http-through-loopback-and-an-authenticating-proxy.md).
+This specification extends the [Fleet HTTP Control-Plane Specification](0002-fleet-http-control-plane.md). Related decisions are [ADR-0005](../ard/0005-manage-fleet-desired-state-through-http-and-sqlite.md), [ADR-0007](../ard/0007-use-target-bound-github-auth-profiles.md), [ADR-0009](../ard/0009-manage-profile-resources-through-http-and-sqlite.md), and [ADR-0013](../ard/0013-require-openid-connect-for-all-http-access.md). Inbound authentication is normative in [spec 0009](0009-mandatory-openid-connect.md); GitHub Auth Profiles remain outbound credentials, not OIDC identities.
 
 ## 1. Outcome
 
@@ -238,7 +238,7 @@ At minimum, management authorization separates：
 
 Template publication is equivalent to deploying reviewed code that can execute provider plugins with infrastructure credentials. Attestation independently asserts that one exact runtime subject passed the accepted suite, so `template.attest` MUST remain separately grantable from both `template.publish` and `fleet.write`. Auth writes disclose reusable GitHub credentials to Shaula, and Template publication may disclose sensitive platform bindings. All three capabilities require stronger controls than ordinary Fleet capacity changes.
 
-The supported v1 Shaula listener binds loopback only；a configured non-loopback address fails startup. Remote clients reach it through a trusted reverse proxy that terminates TLS and authenticates callers. Shaula does not implement native inbound HTTP TLS/mTLS serving or OIDC client-auth verification in v1, but it still owns authorization and audit. Every management request, proxied or direct loopback, requires a validated trusted actor assertion/backend context；loopback never synthesizes an actor, and a direct request without valid context is rejected. The proxy must remove caller-supplied identity headers before injecting its authenticated context；the exact assertion and proxy-to-Shaula authentication formats remain open contract details. Loopback is not a tenant boundary.
+The supported v1 Shaula listener binds loopback only; a configured non-loopback address fails startup. The reverse proxy terminates HTTPS, while Shaula itself owns mandatory OIDC verification, authorization and audit under spec 0009. Provider/client configuration is required through clap/env before startup. Every Profile/artifact API, including reads, uploads and attestation, requires an OIDC-derived session or verified API access token, even over direct loopback. Authentication precedes upload processing; cookie mutations also require Origin/CSRF validation. Legacy backend tokens and caller identity/scope headers cannot establish an actor. Native inbound HTTP TLS/mTLS remains outside v1. Loopback is not a tenant boundary.
 
 Request bodies are never logged or attached to spans. Reverse-proxy access logs, body capture, panic dumps and tracing middleware must be tested against credential leakage. Profile GET/list/status/revision endpoints are redacted even for write-capable callers；rotation or binding replacement requires submitting new secret bytes.
 
@@ -305,6 +305,6 @@ Implementation is incomplete until：
 ## 12. Open decisions
 
 1. Which exact manifest-schema annotation marks a binding field sensitive, what normalized presence-only shape should mixed sensitive/non-sensitive bindings use in read responses, and which keyed/opaque non-verifier construction and encoding should `bindings_digest` use?
-2. Which trusted actor-assertion and proxy-to-Shaula backend-authentication format should the required reverse proxy use?
+2. Resolved by ADR-0013 / spec 0009: mandatory OIDC sessions/API access tokens replace proxy actor assertions and backend authentication tokens.
 3. Once an Auth Revision satisfies every reference-clearance rule and becomes GC-eligible, how long is its plaintext credential retained, and is explicit credential revocation part of retirement?
 4. Should Profile DELETE remain asynchronous `Blocked(ResourceInUse)`, as specified, or return immediate `409` while referenced?

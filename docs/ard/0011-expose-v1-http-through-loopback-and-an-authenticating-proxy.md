@@ -1,9 +1,13 @@
 ---
-status: accepted
+status: superseded
 date: 2026-09-04
+superseded-by: 0013
 ---
 
 # Expose v1 HTTP through loopback and an authenticating proxy
+
+> Historical decision, superseded by [ADR-0013](0013-require-openid-connect-for-all-http-access.md).
+> 以下保留原决定供追溯，不再是当前认证契约。Mandatory OIDC 与所有 UI/API 的保护范围见 [spec 0009](../specs/0009-mandatory-openid-connect.md)；loopback-only 与 HTTPS proxy 约束由 ADR-0013 继续保留。
 
 Shaula v1 的 Axum listener 只支持 loopback address。若 bootstrap 配置 `0.0.0.0`、`::` 或任何 non-loopback address，daemon 必须在 startup fail closed，而不是静默降级、自动生成证书或启动不受保护的 listener。
 
