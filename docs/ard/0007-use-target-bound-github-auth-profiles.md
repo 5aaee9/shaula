@@ -5,6 +5,8 @@ date: 2026-09-04
 
 # Use target-bound GitHub Auth Profiles with GitHub App preferred and PAT supported
 
+待审修订：[ADR-0015](0015-route-one-github-app-profile-to-multiple-accounts.md) 提议将单 installation / 固定 Target allowlist 改为同 App 的多账户 policy 与 Revision-scoped bindings，并扩展 exact auth context。该提案尚未接受；以下决定及 PAT/no-fallback 等其余边界继续有效。
+
 Shaula v1 将 GitHub App 和 PAT 都作为正式、受测试的 GitHub 认证方式。GitHub App 是默认推荐，PAT 是同等级支持的兼容选择；每个 Fleet 只引用一个允许其 GitHub Target 的 GitHub Auth Profile，Profile 必须且只能选择一种认证方式，运行时不得在 GitHub App 与 PAT 之间 fallback。
 
 生产环境只使用纯 Rust `shaula-scaleset` 实现 GitHub Scale Set 协议。固定并经评审、精确 pin 到某个 commit 的 Go `github.com/actions/scaleset` oracle 只用于 conformance/differential tests，不随 Shaula 发布，也不由生产进程调用。

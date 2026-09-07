@@ -311,6 +311,8 @@ Auth Profile 内的 same-identity credential rotation 不是 Fleet replacement�
 
 ## 7. Auth Revision handoff
 
+待审扩展：[spec 0011 §5](0011-multi-account-github-authentication.md#5-publication-handoff-and-isolation) 为同 App 的 policy/binding publication 增加 exact Resolved Auth Context。它保留本节完整 Auth Revision Ref、quiesce 与 ownership/effect 边界；在提案接受前不改变下述基线。
+
 Auth Revision Ref 是不可拆分的 `(profile_key, revision)` tuple。每个 Fleet 有 durable `desired_auth_ref`、nullable `observed_auth_ref`、handoff state、attempt、lease、`next_retry_at` 和 sanitized reason；所有 GitHub intent/effect 记录其使用的 exact tuple，不能仅凭裸 revision number 关联。
 
 Desired tuple 有两个合法来源：同 Profile Candidate promotion 将每个 dependent Fleet 从 `(P,n)` 推进到 `(P,n+1)`，写 outbox/Profile Change linkage但不产生 Fleet Revision；零 Resource Occupancy 的 Fleet replacement 将 `auth_profile_ref` 从 `P` 改为 `Q`，解析 `Q` 的 current active revision，并与 Fleet Revision/Change 原子提交 `(Q,m)`。

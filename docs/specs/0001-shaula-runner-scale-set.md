@@ -259,6 +259,8 @@ Attestation 是引用 Template Revision/canonical subject 的独立 immutable re
 
 ### 6.3 GitHub Auth Profile
 
+待审修订：[spec 0011](0011-multi-account-github-authentication.md) / [ADR-0015](../ard/0015-route-one-github-app-profile-to-multiple-accounts.md) 提议支持同一 App 的多账户 bindings 与动态仓库 policy。以下仍是提案接受前的单 installation 基线；不能把草案视为已实现的权限能力。
+
 GitHub Auth Profile 是稳定 logical key 下的一组不可变 credential Revisions。Profile kind 是 `github_app` 或 `pat`；App/installation identity、PAT principal identity 和 normalized Target allowlist 在一个 Profile incarnation 内固定。改变身份或 policy 需要新 key，不能伪装成 same-key rotation；Fleet 改引新 key 使用 spec 0002 的零占用/effect barrier；idle session 允许存在，由已持久化 Handoff 负责 quiesce，不能把“无 session”作为进入 Handoff 的前置条件。
 
 PAT 和 GitHub App private key 是 write-only HTTP fields，并允许原始明文字节保存在 SQLite Auth Revision 中。所有 GET/list/status/revision、audit、error、log、trace 和 metric 只能返回 `credential_present` 等非 secret metadata，不能返回 prefix、suffix、hash 或任何可推导 secret 的表示。

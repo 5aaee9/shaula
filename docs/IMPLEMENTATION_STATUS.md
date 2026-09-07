@@ -13,6 +13,22 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Proposed multi-account GitHub authentication (2026-09-07)
+
+[Spec 0011](specs/0011-multi-account-github-authentication.md) and
+[ADR-0015](ard/0015-route-one-github-app-profile-to-multiple-accounts.md) are
+documentation-only proposals. The current `shaula-core/src/auth.rs` stores one
+installation ID and an exact Target allowlist; `shaula-daemon/src/service_auth.rs`
+rejects same-key installation/policy changes. `shaula/src/auth_worker.rs` and
+`wiring.rs` still construct clients from that single installation. The web form
+likewise accepts one installation and explicit targets.
+
+Dynamic account-repository selectors, multiple account bindings per App Profile,
+target-aware installation resolution, durable Auth Context refs and the new
+schema/migration/UI have not been implemented or externally validated. The
+existing GitHub App installations and active organization-only authentication
+do not establish support for these proposed features.
+
 ## Existing implementation and local test coverage
 
 - Multi-crate pure-Rust workspace with enforced dependency architecture

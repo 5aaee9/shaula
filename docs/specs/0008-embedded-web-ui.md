@@ -7,6 +7,10 @@ The UI is an API client, not a second source of Fleet/Profile desired state.
 
 ## Contracts
 
+The proposed multi-account GitHub authentication form and per-binding status
+are specified in [spec 0011 §6](0011-multi-account-github-authentication.md#6-http-and-ui-contract).
+They are not implemented by the current single-installation authentication UI.
+
 - Cargo builds and embeds the frontend into debug and release binaries. A failed
   frontend build fails the binary build. Runtime serving requires no frontend files.
 - UI document routes support refresh and direct links. Unknown API paths and

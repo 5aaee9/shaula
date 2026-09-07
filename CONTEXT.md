@@ -40,6 +40,18 @@ _Avoid_: Fleet, runner group
 一个 Scale Set 在 `github.com` 上的注册目的地；v1 的 Target 是 organization 或 repository。
 _Avoid_: Config URL, tenant, runner group
 
+**GitHub Account**:
+拥有 GitHub 仓库的个人账户或组织；账户身份与可变的 login 名称相区分。
+_Avoid_: OIDC actor, collaborator, Fleet Target
+
+**Target Selector**:
+GitHub Auth Profile policy 中界定可准入 Target 集合的规则；它可以指定一个组织、一个仓库或指定账户所拥有的仓库集合。
+_Avoid_: Fleet Target, repository snapshot, arbitrary glob
+
+**Account Binding**:
+一个 GitHub App 在某个明确账户上的已验证安装关系。
+_Avoid_: App identity, personal login session, all App installations
+
 **GitHub Auth Profile**:
 一个可由多个 Fleet 引用的稳定 GitHub 控制面身份与 Target policy；其认证方式只能是 GitHub App 或 PAT。
 _Avoid_: GitHub token, inline credential, fallback chain
@@ -55,6 +67,10 @@ _Avoid_: revision number alone, current credential, implicit profile key
 **Auth Handoff**:
 Fleet 在切换 desired GitHub Auth Revision Ref 时持久化执行的 quiesce 与 access/ownership classification；它只推进 observed ref，不创建或采用 Scale Set、不绑定 ID，也不建立 session。
 _Avoid_: Runtime fallback, credential retry, Scale Set reconcile
+
+**Resolved Auth Context**:
+一个精确 Auth Revision 对具体 Fleet Target 的已验证访问身份，包含该目标使用的 Account Binding 和远程目标身份。
+_Avoid_: Latest credential, Profile-wide installation, ready session
 
 **Control-Plane Credential**:
 GitHub App private key、installation/admin token 或 PAT 等只供 Shaula 调用 GitHub 管理面使用的凭据；它们不属于 Runner 或 workflow 身份。

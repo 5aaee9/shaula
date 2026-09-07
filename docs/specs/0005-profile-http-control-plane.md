@@ -173,6 +173,8 @@ The normalized v1 read projection is deliberately small: omit `bindings` values 
 
 ## 6. GitHub Auth Profile resource
 
+Proposed amendment: [spec 0011](0011-multi-account-github-authentication.md) / [ADR-0015](../ard/0015-route-one-github-app-profile-to-multiple-accounts.md) defines a versioned multi-account GitHub App policy and installation-routing model. Until accepted, the single-installation identity and rotation-only rules below remain the baseline. PAT and common Profile lifecycle rules are not replaced by that proposal.
+
 The two request shapes are discriminated and strict：
 
 ```json

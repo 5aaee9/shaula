@@ -5,6 +5,8 @@ date: 2026-09-04
 
 # Manage Template and GitHub Auth Profiles through HTTP and SQLite
 
+待审修订：[ADR-0015](0015-route-one-github-app-profile-to-multiple-accounts.md) / [spec 0011](../specs/0011-multi-account-github-authentication.md) 提议允许同 App 的 policy/installation bindings 通过新 Revision 演进；这将部分替代下述必须新 Profile 的规则。提案尚未接受，持久化、secret 与 retirement 决定继续有效。
+
 Shaula 通过同一个 HTTP control plane 管理 Fleet、Template Profile 和 GitHub Auth Profile。Profile 使用不可变 Revision，SQLite 保存 desired state、validation status 与 active heads；Template Artifact 通过 HTTP 发布到 content-addressed artifact store。`shaula serve --config` 不再包含 `template_profiles` 或 `github_auth_catalog` 真相源。
 
 PAT、GitHub App private key 与 schema 标记为 sensitive 的 Kubernetes/Docker Template bindings 都作为 write-only HTTP fields 提交，并以未应用字段级加密的原始明文保存在各自 immutable Revision 的 SQLite rows 中。External secret reference 不是 v1 storage mode。HTTP transport 的保护与此 at-rest 决定相互独立；读取响应、audit、errors、logs 和 OpenTelemetry 永不回显 secret value 或其 prefix、suffix、hash、length 等可推导表示。Wire field `bindings_digest` 只能是不可用于离线猜测验证的 opaque Revision commitment，不能是 sensitive plaintext 的 unkeyed digest。
