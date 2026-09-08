@@ -82,7 +82,7 @@ All paths are below `/api/v1`：
 | `DELETE` | `/template-profiles/{profileKey}` | Retire after all references clear |
 | `PUT` | `/template-profiles/{profileKey}/revisions/{revision}/attestations/{attestationKey}` | Submit one immutable conformance result |
 | `GET` | `/template-profiles/{profileKey}/revisions/{revision}/attestations/{attestationKey}` | Read bounded attestation metadata |
-| `GET` | `/github-auth-profiles` | Paginated redacted Auth summaries |
+| `GET` | `/github-auth-profiles` | Redacted Auth inventory; collection shape and UI contract in [spec 0012](0012-github-authentication-inventory.md) |
 | `PUT` | `/github-auth-profiles/{profileKey}` | Create or rotate a Candidate Auth Revision |
 | `GET` | `/github-auth-profiles/{profileKey}` | Redacted desired/active metadata and ETag |
 | `GET` | `/github-auth-profiles/{profileKey}/status` | Validation, rollout and reference status |
