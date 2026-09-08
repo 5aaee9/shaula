@@ -10,6 +10,22 @@ use shaula_core::registry::Scope;
 use crate::problem::{mutation_problem, problem};
 use crate::router::{require_scope, resource_version_headers, AppState};
 
+pub(crate) async fn auth_profile_list(
+    State(state): State<AppState>,
+    auth: crate::oidc::Authenticated,
+) -> Response {
+    if let Err(response) = require_scope(&auth.actor, Scope::AuthRead) {
+        return response;
+    }
+    match state.profiles.auth_list(&auth.actor).await {
+        Ok(views) => axum::Json(serde_json::json!({
+            "profiles": views.iter().map(auth_profile_body).collect::<Vec<_>>(),
+        }))
+        .into_response(),
+        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
+    }
+}
+
 /// Current dependency inventory for an explicit policy preview. Kept separate
 /// from the legacy resource so legacy GET/replay representations stay stable.
 pub(crate) async fn auth_profile_impact(

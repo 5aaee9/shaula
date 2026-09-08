@@ -2,6 +2,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;
+#[path = "auth_read_views/list.rs"]
+mod list;
 
 use axum::{http::StatusCode, Router};
 use common::{authorized, build_app_with_scan, get_json};

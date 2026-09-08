@@ -42,6 +42,8 @@ test("normal Vite dev and preview authenticate source assets and disable shared 
       await authenticated.body?.cancel();
     }
   } finally {
+    // Finish eager import transforms before closing their optimizer and plugin container.
+    await dev.environments.client.waitForRequestsIdle();
     await dev.close();
     await new Promise<void>((resolve) => production.httpServer.close(() => resolve()));
     await new Promise<void>((resolve) => backend.close(() => resolve()));

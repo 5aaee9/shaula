@@ -106,6 +106,7 @@ export async function mockApi(page: Page, permissions = scopes) {
           state: "Active",
         },
       });
+    if (path === "/github-auth-profiles") return route.fulfill({ json: { profiles: [] } });
     if (path.startsWith("/github-auth-profiles/") && path.endsWith("/impact"))
       return route.fulfill({ json: { desiredRevision: 1, liveFleets: [] } });
     if (path.startsWith("/github-auth-profiles/"))

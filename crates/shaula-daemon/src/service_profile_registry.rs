@@ -231,10 +231,11 @@ impl ProfileRegistryPort for ControlPlane {
     async fn auth_list(&self, actor: &Actor) -> CoreResult<Vec<AuthProfileView>> {
         let mut views = Vec::new();
         for key in self.store.auth_profile_keys().await? {
-            if let Ok(Ok(view)) = self.auth_get(actor, &key).await {
+            if let Ok(view) = self.auth_get(actor, &key).await? {
                 views.push(view);
             }
         }
+        views.sort_unstable_by(|left, right| left.key.cmp(&right.key));
         Ok(views)
     }
 

@@ -90,10 +90,11 @@ query caches and credential forms and presents explicit sign-in; failed writes
 are never replayed after login.
 
 The UI supports Fleet list/search/detail, create/replace/retire, template archive
-upload/publication/revisions/retirement, auth lookup/create/rotation/retirement,
-and lookup/polling of accepted changes. Auth and change APIs currently provide
-lookup by key/ID, not collection listing. Template attestation submission remains
-an API workflow. No demo data is used in the application.
+upload/publication/revisions/retirement, auth list/search/detail/create/rotation/retirement,
+and lookup/polling of accepted changes. The authentication page lists existing
+connections with their active target policy and revision status; selecting a row
+opens its details. Change lookup still requires an ID. Template attestation
+submission remains an API workflow. No demo data is used in the application.
 
 Edits capture the ETag when the dialog opens. Creates use `If-None-Match: *`;
 replace/retire uses `If-Match`. Retrying an unchanged uncertain mutation reuses

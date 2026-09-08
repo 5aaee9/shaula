@@ -365,6 +365,16 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
 - The HTTP crate builds and embeds the production frontend into both debug
   and release binaries. UI document routes support direct navigation;
   missing APIs/assets are not rewritten to HTML.
+- The authentication inventory (2026-09-08) uses the `auth.read`-protected
+  `GET /github-auth-profiles` collection, sharing the redacted detail serializer.
+  `/auth` lists existing connections, supports search/refresh and preserves direct
+  detail links. Summaries show active targets separately from candidate revisions.
+  This increment returns the full local collection under spec 0012 / ADR-0016;
+  it does not introduce pagination or enumerate GitHub repositories.
+  Regression entrypoints are `shaula/tests/auth_read_views/list.rs` (real
+  Router/SQLite enumeration, ordering, authorization, redaction and read faults)
+  and `web/tests/auth-list.spec.ts` / `mutations.spec.ts` (entry-page discovery,
+  selection, search, refresh, candidate separation and create invalidation).
 - The UI uses OIDC-derived browser sessions under spec 0009 / ADR-0013.
   The session read returns actor name/scopes and a CSRF response header.
   Browser code has no backend token, identity assertion, durable credential

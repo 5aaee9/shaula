@@ -226,6 +226,10 @@ pub fn build_router(state: AppState) -> Router {
                 .get(profile_reads::template_attestation_get),
         )
         .route(
+            "/api/v1/github-auth-profiles",
+            get(profile_auth_reads::auth_profile_list),
+        )
+        .route(
             "/api/v1/github-auth-profiles/{profileKey}/status",
             get(profile_reads::auth_profile_status),
         )

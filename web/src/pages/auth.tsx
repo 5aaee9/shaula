@@ -1,15 +1,15 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, RotateCw, Search, ShieldCheck, Trash2 } from "lucide-react";
+import { Plus, RotateCw, ShieldCheck, Trash2 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { api, resourcePath } from "@/lib/api";
 import type { AuthResource, ChangeRef } from "@/lib/types";
 import { selectorLabel } from "@/lib/types";
 import { selectorKey } from "@/lib/auth-policy";
 import { AuthBindings } from "@/components/auth-bindings";
+import { AuthConnections } from "@/components/auth-connections";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Empty, ErrorNotice, KeyValue, Loading, StatusBadge } from "@/components/status";
+import { ErrorNotice, KeyValue, Loading, StatusBadge } from "@/components/status";
 import { RetireDialog } from "@/components/retire-dialog";
 import { ChangeNotice } from "@/components/change-notice";
 import { AuthForm } from "@/components/auth-form";
@@ -17,19 +17,14 @@ import { AuthForm } from "@/components/auth-form";
 export function AuthPage({ scopes }: { scopes: string[] }) {
   const [params, setParams] = useSearchParams();
   const key = params.get("key") || "";
-  const [search, setSearch] = useState(key);
   const [create, setCreate] = useState(false);
   const [change, setChange] = useState<ChangeRef | null>(null);
-  function lookup(event: FormEvent) {
-    event.preventDefault();
-    setParams({ key: search.trim() });
-  }
   return (
     <>
       <div className="page-heading">
         <div>
           <h1>Authentication</h1>
-          <p>Target-bound credentials and validated profile revisions.</p>
+          <p>GitHub connections, target policies, and validated profile revisions.</p>
         </div>
         <Button disabled={!scopes.includes("auth.write")} onClick={() => setCreate(true)}>
           <Plus />
@@ -41,27 +36,8 @@ export function AuthPage({ scopes }: { scopes: string[] }) {
         <ErrorNotice error={new Error("Authentication profile read permission is required.")} />
       ) : (
         <>
-          <form className="toolbar" onSubmit={lookup}>
-            <div className="search-input">
-              <Search />
-              <Input
-                className="pl-9"
-                required
-                aria-label="Authentication profile key"
-                placeholder="Profile key"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </div>
-            <Button variant="outline" type="submit">
-              Open profile
-            </Button>
-          </form>
-          {key ? (
-            <AuthDetails key={key} profileKey={key} scopes={scopes} onAccepted={setChange} />
-          ) : (
-            <Empty title="No authentication profile selected" />
-          )}
+          <AuthConnections selectedKey={key} onSelect={(value) => setParams({ key: value })} />
+          {key && <AuthDetails key={key} profileKey={key} scopes={scopes} onAccepted={setChange} />}
         </>
       )}
       {create && (
@@ -70,7 +46,6 @@ export function AuthPage({ scopes }: { scopes: string[] }) {
           onAccepted={(value) => {
             setChange(value);
             setParams({ key: value.resource });
-            setSearch(value.resource);
           }}
         />
       )}

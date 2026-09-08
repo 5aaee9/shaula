@@ -31,6 +31,20 @@ test("new fleet sends the API spec with create precondition", async ({ page }) =
 
 test("auth creation keeps credentials out of storage and the read model", async ({ page }) => {
   await mockApi(page);
+  let created = false;
+  const profile = {
+    key: "new-auth",
+    incarnation: "auth-inc",
+    kind: "pat",
+    desiredRevision: 1,
+    activeRevision: null,
+    status: "Validating",
+    target_allowlist: ["acme"],
+    credential_present: true,
+  };
+  await page.route("**/api/v1/github-auth-profiles", (route) =>
+    route.fulfill({ json: { profiles: created ? [profile] : [] } }),
+  );
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/auth");
   await page.getByRole("button", { name: "Create profile" }).click();
@@ -40,17 +54,7 @@ test("auth creation keeps credentials out of storage and the read model", async 
   await page.getByLabel("Personal access token", { exact: true }).fill("test-only-secret");
   await page.getByLabel("Allowed targets", { exact: true }).fill("acme\nacme/build-tools");
   await page.route("**/api/v1/github-auth-profiles/new-auth", (route) => {
-    if (route.request().method() === "GET")
-      return route.fulfill({
-        json: {
-          key: "new-auth",
-          desiredRevision: 1,
-          activeRevision: null,
-          status: "Validating",
-          target_allowlist: ["acme"],
-          credential_present: true,
-        },
-      });
+    if (route.request().method() === "GET") return route.fulfill({ json: profile });
     expect(route.request().headers()["if-none-match"]).toBe("*");
     expect(route.request().postDataJSON()).toEqual({
       kind: "pat",
@@ -61,6 +65,7 @@ test("auth creation keeps credentials out of storage and the read model", async 
         { kind: "repository", owner: "acme", repository: "build-tools" },
       ],
     });
+    created = true;
     return route.fulfill({
       status: 202,
       json: { changeId: "auth-1", state: "Accepted", revision: 1 },
@@ -74,7 +79,10 @@ test("auth creation keeps credentials out of storage and the read model", async 
   ).toBe(true);
   await page.getByRole("dialog").getByRole("button", { name: "Create profile" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByText("Validating", { exact: true })).toBeVisible();
+  const connection = page.getByRole("row").filter({ hasText: "new-auth" });
+  await expect(connection.getByText("Validating", { exact: true })).toBeVisible();
+  await expect(connection).toHaveAttribute("data-state", "selected");
+  expect(await page.evaluate(() => document.body.scrollWidth <= window.innerWidth)).toBe(true);
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
   await expect(page.locator("body")).not.toContainText("test-only-secret");
 });
