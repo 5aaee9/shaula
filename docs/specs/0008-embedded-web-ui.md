@@ -42,6 +42,19 @@ status belongs in [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md).
 - UI creates, edits and retirement preserve conditional mutation and idempotency
   semantics. An editor keeps the version originally displayed even as background
   queries refresh. Conflicts retain user input and require explicit reload/review.
+- Creation dialogs start with the required identity, source/target and credential
+  fields. Optional settings live in a collapsed **Advanced settings** section;
+  collapsing preserves values and submission semantics. Hidden invalid controls
+  expand their section before native validation focuses them; invalid advanced
+  JSON also reveals its editor. Existing resource values are never reset by folding.
+  New Fleets default the scale set name to their key unless explicitly overridden;
+  runner group `Default`, zero minimum runners, empty labels/inputs and the active
+  template revision remain defaults. Maximum capacity stays visible. Templates
+  expose an archive/existing-digest choice; Terraform, bindings and input policy
+  are advanced. Authentication retains a visible first target and required
+  credentials; additional targets may fold, but policy-change previews and live
+  Fleet impact/errors stay visible when modifying an existing policy. Folding
+  does not infer broader authorization or supply unknown template-specific bindings.
 - Accepted changes are polled and display their actual state. UI readiness or
   `202` acceptance does not establish runner provisioning or daemon completeness.
 - Credentials/bindings are transient write-only form inputs. They are not stored

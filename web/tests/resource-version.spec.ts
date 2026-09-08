@@ -29,6 +29,7 @@ for (const canonicalVersion of [true, false]) {
     });
     await page.goto("/auth?key=legacy-app");
     await page.getByRole("button", { name: "Rotate credential" }).click();
+    await page.getByRole("button", { name: "Advanced settings" }).click();
     await page.getByLabel("Upgrade to multi-account policy").check();
     await page.getByLabel("App ID").fill("4863460");
     await page.getByLabel("Private key (PEM)").fill("-----BEGIN TEST-----");

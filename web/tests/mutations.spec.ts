@@ -7,9 +7,18 @@ test("new fleet sends the API spec with create precondition", async ({ page }) =
   await page.getByRole("button", { name: "Create fleet" }).click();
   await page.getByLabel("Fleet key", { exact: true }).fill("new-build");
   await page.getByLabel("Owner", { exact: true }).fill("acme");
-  await page.getByLabel("Scale set name", { exact: true }).fill("new-build");
+  await expect(page.getByRole("button", { name: "Advanced settings" })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await expect(page.getByLabel("Scale set name", { exact: true })).toBeHidden();
   await page.getByLabel("GitHub authentication profile", { exact: true }).fill("github-build");
   await page.getByLabel("Template profile", { exact: true }).fill("kubernetes-linux");
+  await page.screenshot({
+    path: "test-results/fleet-dialog-compact.png",
+    fullPage: true,
+    animations: "disabled",
+  });
   await page.route("**/api/v1/fleets/new-build", (route) => {
     const request = route.request();
     expect(request.method()).toBe("PUT");
@@ -19,6 +28,11 @@ test("new fleet sends the API spec with create precondition", async ({ page }) =
     expect(request.headers()["x-shaula-actor"]).toBeUndefined();
     expect(request.postDataJSON().github.target).toEqual({ kind: "organization", owner: "acme" });
     expect(request.postDataJSON().template_profile_ref).toBe("kubernetes-linux");
+    expect(request.postDataJSON().github.scale_set_name).toBe("new-build");
+    expect(request.postDataJSON().github.runner_group).toBe("Default");
+    expect(request.postDataJSON().github.labels).toEqual([]);
+    expect(request.postDataJSON().capacity).toEqual({ min_runners: 0, max_runners: 10 });
+    expect(request.postDataJSON().template_inputs).toEqual({});
     return route.fulfill({
       status: 202,
       json: { changeId: "create-1", state: "Accepted", revision: 1 },
@@ -105,6 +119,8 @@ test("template publication sends only the API-owned inputs", async ({ page }) =>
   await page.goto("/templates");
   await page.getByRole("button", { name: "Publish template" }).click();
   await page.getByLabel("Profile key", { exact: true }).fill("new-template");
+  await expect(page.getByLabel("Bindings (JSON)")).toBeHidden();
+  await page.getByLabel("Template source").selectOption("existing");
   await page
     .getByLabel("Existing artifact digest", { exact: true })
     .fill(`sha256:${"a".repeat(64)}`);

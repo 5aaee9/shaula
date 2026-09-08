@@ -125,6 +125,7 @@ test("legacy upgrade previews retained actual targets and refreshes impact witho
   });
   await page.goto("/auth?key=legacy-app");
   await page.getByRole("button", { name: "Rotate credential" }).click();
+  await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByLabel("Upgrade to multi-account policy").check();
   const preview = page.getByRole("region", { name: "Policy change preview" });
   await expect(preview.getByText(/retained-dependent.*Remains covered/)).toBeVisible();
@@ -195,6 +196,7 @@ test("rejected first upgrade keeps active legacy identity and permits correcting
   await page.getByRole("button", { name: "Rotate credential" }).click();
   await expect(page.getByLabel("App ID")).toBeEnabled();
   await page.getByLabel("App ID").fill("4863460");
+  await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByLabel("Upgrade to multi-account policy").uncheck();
   await expect(page.getByLabel("App ID")).toHaveValue("Iv23legacy");
   await expect(page.getByLabel("Installation ID")).toHaveValue("34");

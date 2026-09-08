@@ -1,7 +1,7 @@
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useRef, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, LoaderCircle, Plus, X } from "lucide-react";
+import { KeyRound, LoaderCircle } from "lucide-react";
 import { api, MutationAttempt, resourcePath, type Resource } from "@/lib/api";
 import type { Accepted, AuthResource, ChangeRef } from "@/lib/types";
 import { targetName } from "@/lib/types";
@@ -14,17 +14,12 @@ import {
   type SelectorRow,
 } from "@/lib/auth-policy";
 import { AuthPolicyPreview } from "./auth-policy-preview";
+import { AuthTargetPolicy } from "./auth-target-policy";
 import { Modal } from "./modal";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { ErrorNotice, Field } from "./status";
-
-const SELECTOR_KIND_LABELS: Record<SelectorRow["kind"], string> = {
-  organization: "Organization runners",
-  repository: "Single repository",
-  account_repositories: "Account repositories",
-};
 
 /**
  * The form mode has ONE source of truth (R9): a NEW GitHub App profile is
@@ -95,9 +90,6 @@ export function AuthForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const attempt = useRef(new MutationAttempt());
-  function updateSelector(index: number, patch: Partial<SelectorRow>) {
-    setSelectors((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
-  }
   function selectorError(rows: SelectorRow[]): string | null {
     if (!rows.length) return "At least one target selector is required.";
     for (const row of rows) {
@@ -195,29 +187,31 @@ export function AuthForm({
     >
       <form className="form-stack" onSubmit={submit}>
         <fieldset disabled={busy} className="form-stack">
-          <Field label="Profile key">
-            <Input
-              required
-              pattern="[a-z0-9][a-z0-9-]*"
-              maxLength={63}
-              disabled={!!snapshot}
-              value={key}
-              onChange={(event) => setKey(event.target.value)}
-            />
-          </Field>
-          <Field label="Credential type">
-            <NativeSelect
-              value={kind}
-              disabled={!!snapshot}
-              onChange={(event) => {
-                setKind(event.target.value);
-                setSecret("");
-              }}
-            >
-              <NativeSelectOption value="github_app">GitHub App</NativeSelectOption>
-              <NativeSelectOption value="pat">Personal access token</NativeSelectOption>
-            </NativeSelect>
-          </Field>
+          <div className="form-grid">
+            <Field label="Profile key">
+              <Input
+                required
+                pattern="[a-z0-9][a-z0-9-]*"
+                maxLength={63}
+                disabled={!!snapshot}
+                value={key}
+                onChange={(event) => setKey(event.target.value)}
+              />
+            </Field>
+            <Field label="Credential type">
+              <NativeSelect
+                value={kind}
+                disabled={!!snapshot}
+                onChange={(event) => {
+                  setKind(event.target.value);
+                  setSecret("");
+                }}
+              >
+                <NativeSelectOption value="github_app">GitHub App</NativeSelectOption>
+                <NativeSelectOption value="pat">Personal access token</NativeSelectOption>
+              </NativeSelect>
+            </Field>
+          </div>
           {kind === "github_app" ? (
             <>
               <div className="form-grid">
@@ -258,140 +252,55 @@ export function AuthForm({
               <Field label="Private key (PEM)">
                 <Textarea
                   required
+                  rows={3}
+                  className="h-24 field-sizing-fixed"
                   autoComplete="off"
                   spellCheck={false}
                   value={secret}
                   onChange={(event) => setSecret(event.target.value)}
                 />
               </Field>
-              {mode === "v2" && (
-                <Field label="Target policy">
-                  <div className="form-stack">
-                    {selectors.map((row, index) => (
-                      <div className="flex items-start gap-2" key={index}>
-                        <NativeSelect
-                          aria-label="Selector type"
-                          value={row.kind}
-                          onChange={(event) =>
-                            updateSelector(index, {
-                              kind: event.target.value as SelectorRow["kind"],
-                            })
-                          }
-                        >
-                          {(
-                            Object.entries(SELECTOR_KIND_LABELS) as [SelectorRow["kind"], string][]
-                          ).map(([value, label]) => (
-                            <NativeSelectOption key={value} value={value}>
-                              {label}
-                            </NativeSelectOption>
-                          ))}
-                        </NativeSelect>
-                        {row.kind === "account_repositories" && (
-                          <NativeSelect
-                            aria-label="Account type"
-                            value={row.account_kind}
-                            onChange={(event) =>
-                              updateSelector(index, {
-                                account_kind: event.target.value as "user" | "organization",
-                              })
-                            }
-                          >
-                            <NativeSelectOption value="user">User</NativeSelectOption>
-                            <NativeSelectOption value="organization">
-                              Organization
-                            </NativeSelectOption>
-                          </NativeSelect>
-                        )}
-                        <Input
-                          required
-                          placeholder="owner"
-                          aria-label="Owner"
-                          value={row.owner}
-                          onChange={(event) => updateSelector(index, { owner: event.target.value })}
-                        />
-                        {row.kind === "repository" && (
-                          <Input
-                            required
-                            placeholder="repository"
-                            aria-label="Repository"
-                            value={row.repository}
-                            onChange={(event) =>
-                              updateSelector(index, { repository: event.target.value })
-                            }
-                          />
-                        )}
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          type="button"
-                          aria-label="Remove selector"
-                          onClick={() => setSelectors((rows) => rows.filter((_, i) => i !== index))}
-                        >
-                          <X />
-                        </Button>
-                      </div>
-                    ))}
-                    <Button
-                      variant="outline"
-                      type="button"
-                      onClick={() =>
-                        setSelectors((rows) => [
-                          ...rows,
-                          { kind: "organization", owner: "", repository: "", account_kind: "user" },
-                        ])
-                      }
-                    >
-                      <Plus />
-                      Add selector
-                    </Button>
-                    <p className="text-sm text-muted-foreground">
-                      Account repositories cover repositories the account owns AND the installed App
-                      may access — future repositories only when the installation uses “All
-                      repositories”. Organization selectors admit the organization runners only;
-                      their repository scope stays governed by the runner group. Live fleets not
-                      covered after this change keep their current access until activation is
-                      refused.
-                    </p>
-                    {snapshot && (
-                      <AuthPolicyPreview
-                        previous={previousPolicy}
-                        next={nextPolicy}
-                        fleets={impact.data}
-                        loading={impact.isPending}
-                        error={impact.isError}
-                      />
-                    )}
-                  </div>
+              {mode === "legacy" && (
+                <Field label="Allowed targets (immutable exact scope)">
+                  <Textarea
+                    required
+                    placeholder={"acme\nacme/build-tools"}
+                    value={targets}
+                    onChange={(event) => setTargets(event.target.value)}
+                  />
                 </Field>
               )}
-              {isLegacySnapshot && (
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={upgradeRequested}
-                    onChange={(event) => {
-                      setUpgradeRequested(event.target.checked);
-                      setAppId(
-                        event.target.checked
-                          ? snapshot?.data.app_id || legacyIdentity.appId
-                          : legacyIdentity.appId,
-                      );
-                    }}
-                  />
-                  Upgrade to multi-account policy
-                </label>
+              {(mode === "v2" || isLegacySnapshot) && (
+                <AuthTargetPolicy
+                  rows={selectors}
+                  onChange={setSelectors}
+                  existing={!!snapshot}
+                  enabled={mode === "v2"}
+                  upgrade={
+                    isLegacySnapshot
+                      ? {
+                          requested: upgradeRequested,
+                          onChange: (requested) => {
+                            setUpgradeRequested(requested);
+                            setAppId(
+                              requested
+                                ? snapshot?.data.app_id || legacyIdentity.appId
+                                : legacyIdentity.appId,
+                            );
+                          },
+                        }
+                      : undefined
+                  }
+                />
               )}
-              {mode === "legacy" && (
-                <>
-                  <Field label="Allowed targets (immutable exact scope)">
-                    <Textarea
-                      required
-                      placeholder={"acme\nacme/build-tools"}
-                      value={targets}
-                      onChange={(event) => setTargets(event.target.value)}
-                    />
-                  </Field>
-                </>
+              {mode === "v2" && snapshot && (
+                <AuthPolicyPreview
+                  previous={previousPolicy}
+                  next={nextPolicy}
+                  fleets={impact.data}
+                  loading={impact.isPending}
+                  error={impact.isError}
+                />
               )}
             </>
           ) : (

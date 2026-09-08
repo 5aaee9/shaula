@@ -5,6 +5,7 @@ import { LoaderCircle, Save } from "lucide-react";
 import { api, MutationAttempt, resourcePath, type Resource } from "@/lib/api";
 import { useTemplates } from "@/lib/queries";
 import type { Accepted, ChangeRef, FleetResource, FleetSpec } from "@/lib/types";
+import { AdvancedSettings } from "./advanced-settings";
 import { Modal } from "./modal";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -41,6 +42,7 @@ export function FleetForm({
   const [labels, setLabels] = useState(spec.github.labels.join(", "));
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const attempt = useRef(new MutationAttempt());
   const templates = useTemplates(scopes.includes("template.read"));
   const currentTemplate =
@@ -51,6 +53,14 @@ export function FleetForm({
   const [revision, setRevision] = useState(
     typeof spec.template_profile_ref === "string" ? "" : String(spec.template_profile_ref.revision),
   );
+  const customSettings = [
+    !!spec.github.scale_set_name && spec.github.scale_set_name !== key,
+    spec.github.runner_group !== "Default",
+    spec.capacity.min_runners !== 0,
+    !!labels.trim(),
+    !!revision,
+    !/^\{\s*\}$/.test(inputs.trim()),
+  ].filter(Boolean).length;
   function github(patch: Partial<FleetSpec["github"]>) {
     setSpec({ ...spec, github: { ...spec.github, ...patch } });
   }
@@ -58,15 +68,22 @@ export function FleetForm({
     event.preventDefault();
     setError(null);
     try {
-      const parsed: unknown = JSON.parse(inputs);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-        throw new Error("Template inputs must be a JSON object.");
-      if (spec.capacity.min_runners > spec.capacity.max_runners)
-        throw new Error("Minimum runners cannot exceed maximum runners.");
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(inputs);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+          throw new Error("Template inputs must be a JSON object.");
+        if (spec.capacity.min_runners > spec.capacity.max_runners)
+          throw new Error("Minimum runners cannot exceed maximum runners.");
+      } catch (error) {
+        setAdvancedOpen(true);
+        throw error;
+      }
       const body = JSON.stringify({
         ...spec,
         github: {
           ...spec.github,
+          scale_set_name: resource ? spec.github.scale_set_name : spec.github.scale_set_name || key,
           labels: labels
             .split(",")
             .map((value) => value.trim())
@@ -159,26 +176,6 @@ export function FleetForm({
               />
             </Field>
           )}
-          <div className="form-grid">
-            <Field label="Scale set name">
-              <Input
-                required
-                disabled={!!resource}
-                maxLength={100}
-                value={spec.github.scale_set_name}
-                onChange={(event) => github({ scale_set_name: event.target.value })}
-              />
-            </Field>
-            <Field label="Runner group">
-              <Input
-                required
-                disabled={!!resource}
-                maxLength={100}
-                value={spec.github.runner_group}
-                onChange={(event) => github({ runner_group: event.target.value })}
-              />
-            </Field>
-          </div>
           <Field label="GitHub authentication profile">
             <Input
               required
@@ -187,81 +184,114 @@ export function FleetForm({
               placeholder="github-build"
             />
           </Field>
-          <div className="form-grid">
-            <Field label="Template profile">
-              <Input
-                required
-                list="template-keys"
-                value={template}
-                onChange={(event) => setTemplate(event.target.value)}
-                placeholder="kubernetes-linux"
-              />
-              <datalist id="template-keys">
-                {templates.data?.data.profiles
-                  .filter((value) => value.activeRevision)
-                  .map((value) => (
-                    <option key={value.key} value={value.key} />
-                  ))}
-              </datalist>
-            </Field>
-            <Field label="Pinned revision">
-              <Input
-                type="number"
-                min={1}
-                step={1}
-                value={revision}
-                placeholder="Current active revision"
-                onChange={(event) => setRevision(event.target.value)}
-              />
-            </Field>
-          </div>
-          <div className="form-grid">
-            <Field label="Minimum runners">
-              <Input
-                required
-                type="number"
-                min={0}
-                step={1}
-                value={spec.capacity.min_runners}
-                onChange={(event) =>
-                  setSpec({
-                    ...spec,
-                    capacity: { ...spec.capacity, min_runners: Number(event.target.value) },
-                  })
-                }
-              />
-            </Field>
-            <Field label="Maximum runners">
-              <Input
-                required
-                type="number"
-                min={0}
-                step={1}
-                value={spec.capacity.max_runners}
-                onChange={(event) =>
-                  setSpec({
-                    ...spec,
-                    capacity: { ...spec.capacity, max_runners: Number(event.target.value) },
-                  })
-                }
-              />
-            </Field>
-          </div>
-          <Field label="Labels">
+          <Field label="Template profile">
             <Input
-              value={labels}
-              onChange={(event) => setLabels(event.target.value)}
-              placeholder="linux, x64"
+              required
+              list="template-keys"
+              value={template}
+              onChange={(event) => setTemplate(event.target.value)}
+              placeholder="kubernetes-linux"
+            />
+            <datalist id="template-keys">
+              {templates.data?.data.profiles
+                .filter((value) => value.activeRevision)
+                .map((value) => (
+                  <option key={value.key} value={value.key} />
+                ))}
+            </datalist>
+          </Field>
+          <Field label="Maximum runners">
+            <Input
+              required
+              type="number"
+              min={0}
+              step={1}
+              value={spec.capacity.max_runners}
+              onChange={(event) =>
+                setSpec({
+                  ...spec,
+                  capacity: { ...spec.capacity, max_runners: Number(event.target.value) },
+                })
+              }
             />
           </Field>
-          <Field label="Template inputs (JSON)">
-            <Textarea
-              spellCheck={false}
-              className="mono"
-              value={inputs}
-              onChange={(event) => setInputs(event.target.value)}
-            />
-          </Field>
+          <AdvancedSettings
+            open={advancedOpen}
+            onOpenChange={setAdvancedOpen}
+            summary={
+              customSettings
+                ? `${customSettings} custom ${customSettings === 1 ? "setting" : "settings"}`
+                : "Default runner group, 0 minimum runners, active template revision"
+            }
+          >
+            <div className="form-grid">
+              <Field label="Scale set name">
+                <Input
+                  disabled={!!resource}
+                  maxLength={100}
+                  value={spec.github.scale_set_name}
+                  placeholder={key || "Fleet key"}
+                  onChange={(event) => github({ scale_set_name: event.target.value })}
+                />
+                {!resource && (
+                  <p className="text-muted-foreground text-sm">
+                    Uses the fleet key when left empty.
+                  </p>
+                )}
+              </Field>
+              <Field label="Runner group">
+                <Input
+                  required
+                  disabled={!!resource}
+                  maxLength={100}
+                  value={spec.github.runner_group}
+                  onChange={(event) => github({ runner_group: event.target.value })}
+                />
+              </Field>
+            </div>
+            <div className="form-grid">
+              <Field label="Minimum runners">
+                <Input
+                  required
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={spec.capacity.min_runners}
+                  onChange={(event) =>
+                    setSpec({
+                      ...spec,
+                      capacity: { ...spec.capacity, min_runners: Number(event.target.value) },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Pinned revision">
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={revision}
+                  placeholder="Current active revision"
+                  onChange={(event) => setRevision(event.target.value)}
+                />
+              </Field>
+            </div>
+            <Field label="Labels">
+              <Input
+                value={labels}
+                onChange={(event) => setLabels(event.target.value)}
+                placeholder="linux, x64"
+              />
+            </Field>
+            <Field label="Template inputs (JSON)">
+              <Textarea
+                spellCheck={false}
+                className="mono"
+                value={inputs}
+                onChange={(event) => setInputs(event.target.value)}
+              />
+            </Field>
+          </AdvancedSettings>
         </fieldset>
         {error !== null && <ErrorNotice error={error} />}
         <div className="dialog-actions">

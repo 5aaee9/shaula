@@ -381,6 +381,19 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
 
 ## Embedded operator UI (2026-09-06)
 
+- Creation dialogs (2026-09-08) show required basics first and keep optional
+  Fleet, Template and GitHub App settings in a shared collapsed Advanced settings
+  section. Hidden values stay mounted; native validation reveals invalid controls,
+  and JSON errors open the relevant settings. Fleet creation defaults scale set
+  name to its key, template source selection retains archive/digest drafts, and
+  additional App targets retain their explicit policy when folded. Existing
+  policy impact previews and mutation version/idempotency checks remain visible
+  or enforced as before. The contract is in spec 0008; regression entrypoints
+  are `web/tests/advanced-forms.spec.ts`, `advanced-auth.spec.ts` and the existing
+  mutation, policy-upgrade and conflict suites. Validation passed: frontend build,
+  lint and 35 browser tests; 2 real HTTPS/OIDC browser tests; strict workspace
+  Clippy, rustfmt and 417 workspace tests (2 ignored).
+
 - `web/` provides React + Vite 8/Oxc and CLI-downloaded shadcn/ui components for
   Fleet management, template publication/revisions, GitHub authentication
   profiles and accepted change status. See spec 0008 and ADR 0012.

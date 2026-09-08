@@ -101,6 +101,7 @@ test("legacy profiles expose an explicit upgrade path seeded from the exact scop
   });
   await page.goto("/auth?key=legacy-app");
   await page.getByRole("button", { name: "Rotate credential" }).click();
+  await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByLabel("Upgrade to multi-account policy").check();
   // The legacy installation input disappears once the upgrade mode is on.
   await expect(page.getByLabel("Installation ID")).toHaveCount(0);
