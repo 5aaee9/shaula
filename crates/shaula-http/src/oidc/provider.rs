@@ -176,17 +176,24 @@ pub(super) async fn json<T: DeserializeOwned>(
 pub(super) async fn bounded(
     request: reqwest::RequestBuilder,
 ) -> Result<http::Response<Vec<u8>>, AuthError> {
-    let mut response = request.send().await.map_err(|_| AuthError::Provider)?;
+    let response = request.send().await.map_err(|_| AuthError::Provider)?;
+    bounded_body(response, AuthError::Provider).await
+}
+
+pub(super) async fn bounded_body(
+    mut response: reqwest::Response,
+    oversized: AuthError,
+) -> Result<http::Response<Vec<u8>>, AuthError> {
     if response
         .content_length()
         .is_some_and(|n| n > MAX_BODY as u64)
     {
-        return Err(AuthError::Provider);
+        return Err(oversized);
     }
     let mut body = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|_| AuthError::Provider)? {
         if body.len().saturating_add(chunk.len()) > MAX_BODY {
-            return Err(AuthError::Provider);
+            return Err(oversized);
         }
         body.extend_from_slice(&chunk);
     }

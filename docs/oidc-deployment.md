@@ -80,16 +80,32 @@ require credentials. All responses are `Cache-Control: private, no-store`.
 Do not configure an anonymous probe exception. Supply a valid API access token
 to `/livez` and `/readyz` through the probe's secret configuration.
 
-Browser sessions last at most one hour or the ID token lifetime, with a
-15-minute idle timeout. Logout and restart invalidate local sessions. The UI
-keeps CSRF only in memory, clears query caches and credential forms after a 401,
-and requires explicit sign-in without replaying a failed write. Logging out of
-Shaula does not terminate the Provider's SSO session.
+When the Provider supplies a refresh token, Shaula keeps it only in daemon memory
+and renews expired browser leases in the authentication guard before executing
+the original request. The short lease is capped at one hour and the supplied
+ID/access-token lifetime; fifteen-minute idle also triggers renewal. The Provider
+controls total renewal lifetime, with no extra Shaula day/hour limit. Refreshable
+cookies are browser session cookies, so browser closure can still discard them.
+Successful renewal preserves the page, open drafts, session ID and CSRF value.
+No frontend refresh/replay or additional `offline_access` request is used.
+
+Without a refresh token, the original one-hour / ID-token expiry and fifteen-minute
+idle limits still require login again. Logout and daemon restart invalidate both
+kinds of local session. A deployment restart requires one full login to obtain
+new refresh material. The UI keeps CSRF only in memory and clears query caches and
+credential forms after a terminal 401 or logout. Temporary renewal failures return
+503 with a ten-second server backoff; they never grant stale access. The existing
+error UI may replace an editor after a failed request. Logging out of Shaula does
+not terminate the Provider's SSO session. See [spec 0013](specs/0013-provider-backed-browser-session-renewal.md)
+for identity validation, rotation, lost responses and Provider compatibility.
 
 Metadata/JWKS are cached for five minutes. Unknown-key refresh is serialized and
 backed off for ten seconds. Network requests have five-second connection and
 ten-second total timeouts and a 1 MiB response limit. Stores hold at most 4,096
-transactions and 4,096 sessions; code exchanges have a concurrency limit of 16.
+transactions and 4,096 sessions; login and refresh exchanges share a concurrency
+limit of 16. Unknown refresh-token expiry is not guessed: retained sessions can
+occupy slots until revoked, replaced, rejected by the Provider or cleared by restart.
+At capacity a new login returns 503 rather than evicting an existing user.
 Valid local sessions and still-valid known keys can survive a Provider outage;
 expired keys never authenticate. Readiness reports observed authentication
 failures while existing resource cleanup continues.
@@ -98,7 +114,8 @@ failures while existing resource cleanup continues.
 
 `npm run test:oidc --prefix web` launches the real debug binary behind a local
 HTTPS test proxy and performs authorization-code login with a TLS-verified
-test Provider. It verifies embedded assets, resource pages, CSRF and logout.
+test Provider. It verifies embedded assets, resource pages, CSRF, logout and
+short-lease renewal while preserving the same page and mounted draft input.
 The Provider fixture exists only in test binaries. Rust tests also cover startup
 failures, grants, JWT rejection, key rotation/outage, cache and session bounds.
 

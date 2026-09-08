@@ -17,9 +17,10 @@ pub(super) struct Claims {
     pub client_id: Option<String>,
     pub jti: Option<String>,
     pub scope: Option<String>,
+    pub auth_time: Option<u64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(untagged)]
 pub(super) enum Audience {
     One(String),
@@ -27,6 +28,12 @@ pub(super) enum Audience {
 }
 
 impl Audience {
+    fn values(&self) -> std::collections::BTreeSet<&str> {
+        match self {
+            Self::One(value) => [value.as_str()].into_iter().collect(),
+            Self::Many(values) => values.iter().map(String::as_str).collect(),
+        }
+    }
     fn matches(&self, expected: &str) -> bool {
         match self {
             Self::One(s) => s == expected,
@@ -38,12 +45,36 @@ impl Audience {
     }
 }
 
+#[derive(Clone)]
+pub(super) struct BrowserBinding {
+    pub subject: String,
+    pub audience: Audience,
+    pub nonce: String,
+    pub auth_time: Option<u64>,
+}
+
+pub(super) struct BrowserLogin {
+    pub identity: Authenticated,
+    pub expiry: u64,
+    pub binding: BrowserBinding,
+}
+
 impl Oidc {
+    #[cfg(test)]
     pub(super) async fn browser_identity(
         &self,
         token: &str,
         nonce: &str,
     ) -> Result<(Authenticated, u64), AuthError> {
+        let login = self.browser_login(token, nonce).await?;
+        Ok((login.identity, login.expiry))
+    }
+
+    pub(super) async fn browser_login(
+        &self,
+        token: &str,
+        nonce: &str,
+    ) -> Result<BrowserLogin, AuthError> {
         let claims = self.claims(token, false).await?;
         if !claims
             .nonce
@@ -52,7 +83,43 @@ impl Oidc {
         {
             return Err(AuthError::Unauthorized);
         }
-        Ok((self.identity(&claims, false)?, claims.exp))
+        Ok(BrowserLogin {
+            identity: self.identity(&claims, false)?,
+            expiry: claims.exp,
+            binding: BrowserBinding {
+                subject: claims.sub,
+                audience: claims.aud,
+                nonce: nonce.to_owned(),
+                auth_time: claims.auth_time,
+            },
+        })
+    }
+
+    pub(super) async fn refreshed_identity(
+        &self,
+        token: Option<&str>,
+        binding: &BrowserBinding,
+        original: &Authenticated,
+    ) -> Result<(Authenticated, Option<u64>), AuthError> {
+        let Some(token) = token else {
+            let mut identity = original.clone();
+            identity.actor.scopes = self.config.scopes(&binding.subject);
+            return Ok((identity, None));
+        };
+        let claims = self.claims(token, false).await?;
+        if claims.sub != binding.subject
+            || claims.aud.values() != binding.audience.values()
+            || claims
+                .nonce
+                .as_deref()
+                .is_some_and(|nonce| !super::sessions::equal(nonce, &binding.nonce))
+            || claims
+                .auth_time
+                .is_some_and(|time| Some(time) != binding.auth_time)
+        {
+            return Err(AuthError::Unauthorized);
+        }
+        Ok((self.identity(&claims, false)?, Some(claims.exp)))
     }
 
     pub(super) async fn claims(&self, token: &str, api: bool) -> Result<Claims, AuthError> {

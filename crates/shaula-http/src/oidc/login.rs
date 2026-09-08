@@ -1,6 +1,6 @@
 use super::{
-    sessions::{self, Transaction, SESSION, TRANSACTION},
-    AuthError, Authenticated, Oidc,
+    sessions::{self, RefreshGrant, Transaction, SESSION, TRANSACTION},
+    token_exchange, AuthError, Authenticated,
 };
 use crate::router::AppState;
 use axum::{
@@ -8,64 +8,10 @@ use axum::{
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
 };
-use oauth2::{
-    basic::{
-        BasicErrorResponse, BasicRevocationErrorResponse, BasicTokenIntrospectionResponse,
-        BasicTokenType,
-    },
-    AuthUrl, AuthorizationCode, Client, ClientId, ClientSecret, CsrfToken, EndpointNotSet,
-    EndpointSet, PkceCodeChallenge, RedirectUrl, Scope, StandardRevocableToken,
-    StandardTokenResponse, TokenUrl,
-};
-use serde::{Deserialize, Serialize};
+use oauth2::{AuthorizationCode, CsrfToken, PkceCodeChallenge, Scope, TokenResponse};
+use serde::Deserialize;
+use shaula_core::secret::SecretString;
 use std::time::{Duration, Instant};
-
-#[derive(Clone, Deserialize, Serialize)]
-struct Extra {
-    id_token: String,
-}
-impl std::fmt::Debug for Extra {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("[REDACTED]")
-    }
-}
-impl oauth2::ExtraTokenFields for Extra {}
-type LoginClient<A = EndpointNotSet, T = EndpointNotSet> = Client<
-    BasicErrorResponse,
-    StandardTokenResponse<Extra, BasicTokenType>,
-    BasicTokenIntrospectionResponse,
-    StandardRevocableToken,
-    BasicRevocationErrorResponse,
-    A,
-    EndpointNotSet,
-    EndpointNotSet,
-    EndpointNotSet,
-    T,
->;
-
-impl Oidc {
-    async fn client(&self) -> Result<LoginClient<EndpointSet, EndpointSet>, AuthError> {
-        let mut provider = self.provider.lock().await;
-        let refresh = provider.failed;
-        provider.current(&self.http, &self.config, refresh).await?;
-        Ok(
-            LoginClient::new(ClientId::new(self.config.client_id.clone()))
-                .set_client_secret(ClientSecret::new(self.config.secret.expose().to_owned()))
-                .set_auth_uri(
-                    AuthUrl::new(provider.metadata.authorization_endpoint.clone())
-                        .map_err(|_| AuthError::Provider)?,
-                )
-                .set_token_uri(
-                    TokenUrl::new(provider.metadata.token_endpoint.clone())
-                        .map_err(|_| AuthError::Provider)?,
-                )
-                .set_redirect_uri(
-                    RedirectUrl::new(format!("{}/auth/oidc/callback", self.config.origin))
-                        .map_err(|_| AuthError::Configuration("redirect URL"))?,
-                ),
-        )
-    }
-}
 
 #[derive(Deserialize, Default)]
 pub(crate) struct LoginQuery {
@@ -95,8 +41,10 @@ pub(crate) async fn login(
         .add_scope(Scope::new("openid".into()))
         .add_extra_param("nonce", &nonce)
         .set_pkce_challenge(challenge);
+    let mut scopes = vec!["openid".to_owned()];
     if profile {
         authorization = authorization.add_scope(Scope::new("profile".into()));
+        scopes.push("profile".to_owned());
     }
     let (url, csrf) = authorization.url();
     let transaction = Transaction {
@@ -105,6 +53,7 @@ pub(crate) async fn login(
         verifier,
         target: return_target(query.return_to.as_deref()),
         expires: Instant::now() + Duration::from_secs(600),
+        scopes,
     };
     oidc.sessions
         .lock()
@@ -145,55 +94,76 @@ pub(crate) async fn callback(
         .exchanges
         .try_acquire()
         .map_err(|_| AuthError::Capacity)?;
-    let client = oidc.client().await?;
-    let transport = |request: oauth2::HttpRequest| {
-        let http = oidc.http.clone();
-        async move {
-            let response = super::provider::bounded(
-                http.request(request.method().clone(), request.uri().to_string())
-                    .headers(request.headers().clone())
-                    .body(request.body().clone()),
-            )
-            .await?;
-            if response.status().is_server_error()
-                || response.status() == StatusCode::TOO_MANY_REQUESTS
-            {
-                return Err(AuthError::Provider);
-            }
-            Ok(response)
-        }
-    };
-    let tokens = client
-        .exchange_code(AuthorizationCode::new(code))
-        .set_pkce_verifier(transaction.verifier)
-        .request_async(&transport)
+    let tokens = oidc
+        .exchange_code(AuthorizationCode::new(code), transaction.verifier)
         .await;
     let tokens = match tokens {
         Ok(tokens) => tokens,
-        Err(oauth2::RequestTokenError::ServerResponse(error))
-            if *error.error() == oauth2::basic::BasicErrorResponseType::InvalidGrant =>
-        {
-            return Err(AuthError::Unauthorized)
-        }
+        Err(AuthError::Unauthorized) => return Err(AuthError::Unauthorized),
         Err(_) => {
             oidc.login_available
                 .store(false, std::sync::atomic::Ordering::Relaxed);
             return Err(AuthError::Provider);
         }
     };
-    let (identity, expiry) = oidc
-        .browser_identity(&tokens.extra_fields().id_token, &transaction.nonce)
+    let received = Instant::now();
+    let login = oidc
+        .browser_login(
+            tokens
+                .extra_fields()
+                .id_token
+                .as_deref()
+                .ok_or(AuthError::Unauthorized)?,
+            &transaction.nonce,
+        )
         .await?;
     oidc.login_available
         .store(true, std::sync::atomic::Ordering::Relaxed);
     let old = sessions::cookie_value(&headers, SESSION)?;
-    let (id, seconds) = oidc
-        .sessions
-        .lock()
-        .await
-        .create(identity, expiry, old.as_deref())?;
+    if tokens
+        .refresh_token()
+        .is_some_and(|token| token.secret().is_empty())
+    {
+        return Err(AuthError::Unauthorized);
+    }
+    let refresh = tokens.refresh_token();
+    let session_cookie = if let Some(refresh) = refresh {
+        let expires = token_exchange::expiry(&tokens, Some(login.expiry), received)?;
+        let scopes = tokens.scopes().map_or(transaction.scopes, |scopes| {
+            scopes
+                .iter()
+                .map(|scope| scope.as_str().to_owned())
+                .collect()
+        });
+        if !scopes.iter().any(|scope| scope == "openid") {
+            return Err(AuthError::Unauthorized);
+        }
+        let grant = RefreshGrant {
+            token: SecretString::new(refresh.secret().as_str()),
+            binding: login.binding,
+            scopes,
+        };
+        let id = oidc.sessions.lock().await.insert(
+            login.identity,
+            expires,
+            Some(grant),
+            old.as_deref(),
+        )?;
+        sessions::session_cookie(id)
+    } else {
+        let (id, seconds) =
+            oidc.sessions
+                .lock()
+                .await
+                .create(login.identity, login.expiry, old.as_deref())?;
+        sessions::cookie(
+            SESSION,
+            id,
+            i64::try_from(seconds).map_err(|_| AuthError::Unauthorized)?,
+        )
+    };
     let mut response = redirect(&transaction.target)?;
-    set_cookie(&mut response, sessions::cookie(SESSION, id, seconds as i64))?;
+    set_cookie(&mut response, session_cookie)?;
     set_cookie(
         &mut response,
         sessions::cookie(TRANSACTION, String::new(), 0),

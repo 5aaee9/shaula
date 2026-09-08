@@ -6,9 +6,20 @@ use axum::{
     body::{to_bytes, Body},
     extract::{Request, State},
     response::{IntoResponse, Response},
-    Router,
+    routing::get,
+    Json, Router,
 };
+use serde_json::{json, Value};
+use std::sync::{Arc, Mutex};
 use support::*;
+
+#[derive(Clone)]
+struct BrowserFixture {
+    client: reqwest::Client,
+    target: String,
+    provider: Arc<Mutex<provider::Control>>,
+    requests: Arc<Mutex<Vec<(String, String)>>>,
+}
 
 #[tokio::test]
 #[ignore = "long-running HTTPS harness owned by web/oidc.playwright.config.ts"]
@@ -43,23 +54,39 @@ async fn oidc_browser_server() {
     )
     .await
     .unwrap();
-    let app = Router::new().fallback(proxy).with_state((client, target));
+    // These controls exist in this explicit test binary, never the daemon Router.
+    let app = Router::new()
+        .route(
+            "/__test/provider",
+            get(provider_status).post(configure_provider),
+        )
+        .fallback(proxy)
+        .with_state(BrowserFixture {
+            client,
+            target,
+            provider: fixture.provider.control.clone(),
+            requests: Arc::default(),
+        });
     axum_server::bind_rustls("127.0.0.1:5181".parse().unwrap(), tls)
         .serve(app.into_make_service())
         .await
         .unwrap();
 }
-async fn proxy(
-    State((client, target)): State<(reqwest::Client, String)>,
-    request: Request,
-) -> Response {
+async fn proxy(State(fixture): State<BrowserFixture>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
+    fixture
+        .requests
+        .lock()
+        .unwrap()
+        .push((parts.method.to_string(), parts.uri.path().to_owned()));
     let body = to_bytes(body, 1024 * 1024).await.unwrap();
-    let response = client
+    let response = fixture
+        .client
         .request(
             parts.method,
             format!(
-                "{target}{}",
+                "{}{}",
+                fixture.target,
                 parts.uri.path_and_query().map_or("/", |p| p.as_str())
             ),
         )
@@ -73,4 +100,18 @@ async fn proxy(
     let mut result = (status, Body::from(response.bytes().await.unwrap())).into_response();
     *result.headers_mut() = headers;
     result
+}
+
+async fn configure_provider(
+    State(fixture): State<BrowserFixture>,
+    Json(tokens): Json<provider::TokenControl>,
+) -> axum::http::StatusCode {
+    fixture.provider.lock().unwrap().tokens = tokens;
+    axum::http::StatusCode::NO_CONTENT
+}
+
+async fn provider_status(State(fixture): State<BrowserFixture>) -> Json<Value> {
+    let refresh_requests = fixture.provider.lock().unwrap().refresh_requests;
+    let requests = fixture.requests.lock().unwrap();
+    Json(json!({"refreshRequests": refresh_requests, "requests": *requests}))
 }

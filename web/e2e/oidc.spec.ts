@@ -4,6 +4,7 @@ test("OIDC login protects embedded bytes and enables session-authorized pages", 
   page,
   request,
 }) => {
+  await request.post("/__test/provider", { data: {} });
   const anonymous = await request.get("/fleets", { maxRedirects: 0 });
   expect(anonymous.status()).toBe(302);
   expect(await anonymous.text()).not.toContain("<html");

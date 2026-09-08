@@ -3,10 +3,13 @@ mod config;
 mod guard;
 mod login;
 mod provider;
+mod renewal;
+mod session_refresh;
 mod sessions;
 #[cfg(test)]
 #[path = "../../tests/support/mod.rs"]
 mod support;
+mod token_exchange;
 mod tokens;
 
 pub use config::{Grant, OidcConfig};
@@ -83,7 +86,7 @@ pub struct Oidc {
     http: reqwest::Client,
     provider: Mutex<provider::ProviderCache>,
     sessions: Mutex<sessions::Sessions>,
-    exchanges: tokio::sync::Semaphore,
+    exchanges: Arc<tokio::sync::Semaphore>,
     login_available: std::sync::atomic::AtomicBool,
 }
 
@@ -113,7 +116,7 @@ impl Oidc {
             http,
             provider: Mutex::new(provider),
             sessions: Mutex::new(sessions::Sessions::default()),
-            exchanges: tokio::sync::Semaphore::new(16),
+            exchanges: Arc::new(tokio::sync::Semaphore::new(16)),
             login_available: std::sync::atomic::AtomicBool::new(true),
         }))
     }

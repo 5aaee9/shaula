@@ -341,9 +341,27 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
 
 ## Mandatory management OIDC: implementation and evidence
 
-- Provider-backed browser session renewal is accepted in spec 0013 / ADR-0017
-  (2026-09-08). The documentation precedes implementation; refresh-token storage,
-  guard renewal and new expiry acceptance are not yet implemented or verified.
+- Provider-backed browser session renewal (2026-09-08, spec 0013 / ADR-0017) is
+  implemented in `shaula-http/src/oidc/`: the guard renews stale leases before
+  admission, keeps refresh tokens only in bounded daemon memory and preserves
+  session ID/CSRF. Provider lifetime governs continued renewal; short expiry and
+  idle require fresh proof. Logout/replacement fence in-flight completion.
+  `token_exchange.rs` shares the code/refresh exchange and absolute expiry logic;
+  `renewal.rs` and `session_refresh.rs` own cancellation-safe singleflight.
+  Regression entrypoints are `shaula/tests/oidc_renewal.rs` (admission, concurrent
+  requests, cancellation, logout/replacement, outage/backoff),
+  `shaula/tests/oidc_refresh_tokens.rs` (optional/rotated tokens, identity and scope
+  binding, malformed/oversized responses, JWKS failure and finite fallback), and
+  internal session/expiry tests. `web/e2e/renewal.spec.ts` uses the real daemon
+  behind HTTPS with a test Provider; it checks URL/hash, the same mounted draft
+  input, stable cookie/CSRF, token rotation and a mutation sent once. No test
+  Provider controls are included in the production router. Actual registered
+  Provider expiry/renewal acceptance must be recorded separately from this fixture.
+  Local validation on 2026-09-08 passed rustfmt, strict workspace/all-target Clippy,
+  417 unfiltered workspace nextest tests (two existing ignored tests), 32 frontend
+  tests, frontend formatting/build/lint, and both real-daemon HTTPS browser tests.
+  The repository's additional `nextest ... workspace test` name-filtered command
+  passed 337 tests; it is not used as a substitute for the full workspace gate.
 
 - `crates/shaula/src/oidc_args.rs` and `main.rs` load required CLI/env settings
   and initialize discovery/JWKS before listeners or resource workers.

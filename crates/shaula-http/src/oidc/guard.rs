@@ -85,7 +85,7 @@ async fn authenticate(
         return state.oidc.identity(&claims, true);
     }
     let session = session.ok_or(AuthError::Unauthorized)?;
-    let identity = state.oidc.sessions.lock().await.get(&session)?;
+    let identity = state.oidc.sessions.lock().await.retained(&session)?;
     if !matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS) {
         let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok());
         let csrf = headers.get("x-csrf-token").and_then(|v| v.to_str().ok());
@@ -99,5 +99,8 @@ async fn authenticate(
             return Err(AuthError::Csrf);
         }
     }
-    Ok(identity)
+    if *method == Method::POST && uri.path() == "/auth/oidc/logout" {
+        return Ok(identity);
+    }
+    state.oidc.session_identity(&session).await
 }

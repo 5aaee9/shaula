@@ -65,8 +65,10 @@ require `openid` and reject expansion beyond the original grant.
 
 A successful response must carry a nonempty access token and a positive bounded
 lease: either positive `expires_in` or a valid new ID Token's future expiry.
-Replace the refresh token atomically when a nonempty new one is supplied; otherwise
-retain the previous token as allowed by RFC 6749 §6. Never expose either token.
+Replace the refresh token atomically when a nonempty new one is supplied; when
+the field is omitted, retain the previous token as allowed by RFC 6749 §6. A
+supplied empty refresh token is malformed and terminates renewal. Never expose
+either token. Login likewise rejects a supplied empty refresh token.
 
 OIDC Core §12.2 permits refresh responses without an ID Token. In that case a
 successful authenticated refresh exchange with positive `expires_in` renews the

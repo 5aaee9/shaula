@@ -17,6 +17,20 @@ fn transaction() -> Transaction {
         verifier: PkceCodeVerifier::new(random()),
         target: "/fleets".into(),
         expires: Instant::now() + Duration::from_secs(600),
+        scopes: vec!["openid".into()],
+    }
+}
+
+fn refresh_grant() -> RefreshGrant {
+    RefreshGrant {
+        token: SecretString::new("test-refresh-token"),
+        binding: BrowserBinding {
+            subject: "ops".into(),
+            audience: crate::oidc::tokens::Audience::One("web".into()),
+            nonce: "login-nonce".into(),
+            auth_time: None,
+        },
+        scopes: vec!["openid".into()],
     }
 }
 
@@ -65,6 +79,8 @@ fn oidc_tests_store_limits_evict_and_transactions_are_one_use() {
                 identity: identity(),
                 expires: Instant::now() + Duration::from_secs(60),
                 idle: Instant::now() + Duration::from_secs(60),
+                refresh: None,
+                renewal: RenewalState::Idle,
             },
         );
     }
@@ -103,4 +119,129 @@ fn oidc_tests_cookie_ambiguity_and_return_targets() {
         crate::oidc::login::return_target(Some("/changes?type=fleet&id=job-1")),
         "/changes?type=fleet&id=job-1"
     );
+}
+
+#[test]
+fn oidc_tests_refreshable_idle_expiry_requires_renewal_without_local_logout() {
+    use crate::oidc::session_refresh::Admission;
+    let mut store = Sessions::default();
+    let id = store
+        .insert(
+            identity(),
+            Instant::now() + Duration::from_secs(60),
+            Some(refresh_grant()),
+            None,
+        )
+        .unwrap();
+    let csrf = store.get(&id).unwrap().csrf;
+    store.sessions.get_mut(&id).unwrap().idle = Instant::now();
+    assert!(
+        store.get(&id).is_err(),
+        "idle identity is not fresh authority"
+    );
+    assert!(matches!(store.admission(&id), Ok(Admission::Renew(_))));
+    assert_eq!(
+        store.retained(&id).unwrap().csrf,
+        csrf,
+        "stale logout keeps its binding"
+    );
+    assert!(
+        store.get(&id).is_err(),
+        "retention/CSRF inspection does not extend idle"
+    );
+    let cookie = session_cookie(id);
+    for attribute in ["Secure", "HttpOnly", "SameSite=Lax", "Path=/"] {
+        assert!(cookie.contains(attribute));
+    }
+    assert!(!cookie.contains("Max-Age"));
+    assert!(!cookie.contains("Expires"));
+}
+
+#[test]
+fn oidc_tests_provider_owned_lifetime_keeps_expired_refreshable_slots_bounded() {
+    use crate::oidc::session_refresh::Admission;
+    let mut store = Sessions::default();
+    let now = Instant::now();
+    // Windows' monotonic clock may not represent a date before system startup.
+    let ancient = now
+        .checked_sub(Duration::from_secs(31 * 24 * 3600))
+        .unwrap_or(now);
+    for i in 0..LIMIT {
+        store.sessions.insert(
+            i.to_string(),
+            Session {
+                identity: identity(),
+                expires: ancient,
+                idle: ancient,
+                refresh: Some(refresh_grant()),
+                renewal: RenewalState::Idle,
+            },
+        );
+    }
+    assert!(
+        matches!(store.admission("0"), Ok(Admission::Renew(_))),
+        "only the Provider may decide that the retained token expired"
+    );
+    assert_eq!(store.sessions.len(), LIMIT);
+    assert!(matches!(
+        store.create(identity(), jsonwebtoken::get_current_timestamp() + 60, None),
+        Err(AuthError::Capacity)
+    ));
+    store.remove("0");
+    assert!(store
+        .create(identity(), jsonwebtoken::get_current_timestamp() + 60, None)
+        .is_ok());
+    assert_eq!(store.sessions.len(), LIMIT);
+    assert!(store.retained("0").is_err());
+    assert!(
+        Sessions::default().retained("1").is_err(),
+        "restart has no retained credentials"
+    );
+}
+
+#[test]
+fn oidc_tests_refresh_success_preserves_csrf_and_removed_sessions_stay_removed() {
+    use crate::oidc::session_refresh::{Flight, Refreshed};
+    let mut store = Sessions::default();
+    let id = store
+        .insert(
+            identity(),
+            Instant::now() + Duration::from_secs(60),
+            Some(refresh_grant()),
+            None,
+        )
+        .unwrap();
+    let csrf = store.get(&id).unwrap().csrf;
+    let flight = Flight::new();
+    store.start(&id, flight.clone()).unwrap();
+    store
+        .finish(
+            &id,
+            &flight,
+            Ok(Refreshed {
+                identity: identity(),
+                expires: Instant::now() + Duration::from_secs(60),
+                token: Some(SecretString::new("rotated-refresh-token")),
+            }),
+        )
+        .unwrap();
+    assert_eq!(store.get(&id).unwrap().csrf, csrf);
+    assert_eq!(
+        store.sessions[&id].refresh.as_ref().unwrap().token.expose(),
+        "rotated-refresh-token"
+    );
+    store.start(&id, flight.clone()).unwrap();
+    store.remove(&id);
+    assert!(store
+        .finish(
+            &id,
+            &flight,
+            Ok(Refreshed {
+                identity: identity(),
+                expires: Instant::now() + Duration::from_secs(60),
+                token: None,
+            })
+        )
+        .is_err());
+    assert!(store.retained(&id).is_err());
 }
