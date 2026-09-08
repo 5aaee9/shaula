@@ -64,6 +64,7 @@ pub(crate) fn template_row(
         platform: r.platform,
         bindings_contract: r.bindings_contract,
         state: r.state,
+        reason: crate::template_activation::public_validation_reason(r.reason),
         bindings_present: r.bindings_json.is_some(),
         bindings_digest: r.bindings_digest,
         fleet_input_policy_json: r.fleet_input_policy_json,

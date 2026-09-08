@@ -17,6 +17,7 @@
 | Fleet Template inputs 可视化编辑 | [spec 0014](specs/0014-visual-template-inputs.md) / [ADR-0018](ard/0018-render-fleet-inputs-from-approved-template-options.md) |
 | 数据库模板库、默认文件导入与 Terraform 变量发现 | [spec 0015](specs/0015-template-library-and-variable-discovery.md) / [ARD-0019](ard/0019-store-template-sources-and-discover-terraform-variables.md) |
 | Fleet authentication/template Profile 服务端列表选择 | [spec 0016](specs/0016-fleet-profile-selection.md) / [ARD-0020](ard/0020-load-fleet-profile-choices-from-registry.md) |
+| Template 静态校验后的自动激活与旧 Ready 升级 | [spec 0017](specs/0017-automatic-template-activation.md) / [ARD-0021](ard/0021-activate-templates-after-static-validation.md) |
 | GitHub authentication 连接列表、搜索、详情发现 | [spec 0012](specs/0012-github-authentication-inventory.md) / [ADR-0016](ard/0016-list-authentication-connections-from-the-profile-registry.md) |
 | 管理 HTTP 的 OIDC、session、CSRF | [spec 0009](specs/0009-mandatory-openid-connect.md) |
 | Browser session 到期后的 Provider 续期、页面保留 | [spec 0013](specs/0013-provider-backed-browser-session-renewal.md) / [ADR-0017](ard/0017-renew-browser-sessions-in-the-authentication-guard.md) |
@@ -36,7 +37,7 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 - Runner Generation 不可变；Create 与 Destroy 是唯一基础设施 mutation，Busy-safe removal、原始 inputs/artifact、worker fencing 和故障时保留证据不因进程拆分而取消。
 - Kubernetes 与 Docker 都是 v1 bundled Template Platforms；GitHub App 与 PAT 都受支持，不做运行时 credential fallback。
 - Fleet Decommission 保留空 Scale Set；Profile DELETE 是异步 retirement，不因正在使用而改成同步删除或 force delete。
-- Template 静态验证只到 Ready；独立 `template.attest` 权限的受信提交、exact subject 校验和不可变审计记录构成 v1 attestation 信任方式，不额外要求独立签名 PKI。
+- Template 当前候选静态校验通过后自动激活，已有 Ready 在扫描时重新校验并激活；独立 `template.attest` 的 exact conformance 记录作为运行验证证据保留，不再控制激活，见 spec 0017。
 - 默认 Docker Runner 不挂载 host socket；JIT 同 Runner Execution Domain 的进程检查风险、Kubernetes name-based deletion 风险和同 OS identity IaC children 的 ambient host-admin 风险按相应 ARD 记录。
 
 以上是设计基线；实现差距必须留在 implementation status，不能通过修改此表宣称已完成。

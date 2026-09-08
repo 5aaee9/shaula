@@ -89,12 +89,16 @@ _Avoid_: Template Provider, executor, backend
 _Avoid_: Tenant sandbox, credential broker, control-plane trust domain
 
 **Template Profile**:
-一个可被 Fleet 选择的稳定 Runner 基础设施契约，其各个 Revision 对同一组输入定义可复现、能力同质的 Runner；static validation 只产生 `Ready`，exact conformance attestation 才能产生 `Active`。
+一个可被 Fleet 选择的稳定 Runner 基础设施契约，其各个 Revision 对同一组输入定义可复现、能力同质的 Runner；当前候选静态校验通过后自动激活，运行验证证据独立保留。
 _Avoid_: Provider, image, template directory
 
 **Template Profile Revision**:
-一个 Template Profile 的不可变版本，固定其 Template Artifact、manifest contracts、bindings、输入契约和被证明的 compatibility tuple，但不内嵌后置 attestation；只有 current Active Revision 可接收新的 Fleet 引用，旧 exact pin 可供已准入 Fleet 正常 reconcile/Create/Destroy/recovery。
+一个 Template Profile 的不可变版本，固定其 Template Artifact、manifest contracts、bindings 和输入契约；只有 current Active Revision 可接收新的 Fleet 引用，旧 exact pin 可供已准入 Fleet 正常 reconcile/Create/Destroy/recovery。
 _Avoid_: Runner Generation, mutable profile, latest template
+
+**Template Activation**:
+当前候选通过静态校验后自动成为可接收新 Fleet 引用的版本；激活不等于完整平台运行验证通过。
+_Avoid_: Conformance result, runner readiness
 
 **Template Artifact**:
 实现一个 Template Profile Revision 的不可变基础设施模板包，其内容身份在整个 Runner Generation 中保持稳定。
@@ -213,8 +217,8 @@ _Avoid_: Parameter schema alone, UI default, free-form input
 _Avoid_: Credential hash, plaintext checksum, secret verifier
 
 **Template Conformance Attestation**:
-引用 Template Profile Revision/canonical subject、证明其精确 artifact、dependency lock、engine binary/provider、Protected Bindings Commitment、runtime/trust policy、Runner image、manifest contracts 和测试套件组合满足平台契约的独立 immutable record；它不修改 Revision，activation transaction 冻结其 ID，并以此作为 Template `Ready -> Active` 的必要门禁。
-_Avoid_: Static validation, latest-provider promise, platform implementation
+引用 Template Profile Revision/canonical subject、记录其精确 artifact、dependency lock、engine binary/provider、Protected Bindings Commitment、runtime/trust policy、Runner image、manifest contracts 和测试套件组合的不可变外部验证结果；它独立于模板激活，不修改 Revision 或 activation ID，也不代表其他版本或运行组合已经通过验证。
+_Avoid_: Activation permission, static validation, latest-provider promise
 
 **Runner Consistency Set**:
 安全恢复 Generation 所需的 SQLite（含 Terraform state/lock、worker/GitHub/terminal facts）、冻结 artifact/inputs，以及未解决的 emergency state 集合；普通 materialized copy 与 provider cache 可重建。

@@ -79,6 +79,7 @@ mod lifecycle_support;
 
 #[path = "scan.rs"]
 mod scan;
+mod template_scan;
 
 pub use scan::ScanReport;
 

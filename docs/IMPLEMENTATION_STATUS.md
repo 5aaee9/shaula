@@ -106,9 +106,9 @@ open. Scripted-server evidence does not establish those end-to-end workflows.
   idempotent replay and conflict, OIDC-derived actors (401/403),
   sanitized problem responses, loopback-only management bind fail-closed.
 - Profile control plane: artifact publication (digest-verified, archive
-  safety, atomic), template publish → static validation (scan-driven
-  Ready) → conformance attestation (subject digest match, fail-closed) →
-  activation, auth rotation with staged activation (prior active kept).
+  safety, atomic), template publish → scan-driven static validation →
+  automatic activation under spec 0017, independent conformance evidence
+  (full subject verification), auth rotation with staged activation (prior active kept).
 - Scale Set wire adapter (reqwest): GitHub App JWT + installation token
   and PAT flows, registration → Actions Service bootstrap with expiry
   refresh, scale set lookup/create, sessions with `X-ScaleSetMaxCapacity`
@@ -304,7 +304,8 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
   Existing persistence primitives alone do not implement these workflows.
 - End-to-end real-GitHub validation and the Go-oracle differential suite
   (`references/scaleset`, pinned commit) have not been executed.
-- Bundled-profile conformance remains an activation gate. The Docker provider
+- Bundled-profile conformance remains a runtime evidence gap, independent of
+  automatic static activation under spec 0017. The Docker provider
   now has a real Terraform-generated lock for `kreuzwerker/docker` 3.0.2 and
   a real, privately imported shim image pin; the Kubernetes lock/image pins
   remain staged.
@@ -317,7 +318,7 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
   completed an actual job, confirmed safe GitHub removal, and verified Terraform
   Destroy/empty state/container absence. This does not implement the independent
   exec Driver or worker/HTTP-backend recovery. Full exact-tuple conformance is
-  still required before activation. See the [harness instructions](../scripts/docker-conformance/README.md).
+  still required to claim that tested runtime guarantee. See the [harness instructions](../scripts/docker-conformance/README.md).
 - OTLP export pipeline and OTel SDK instrumentation (bounded in-process
   counters and their call sites exist; no span/export pipeline yet);
   remaining endpoint surface (notably pagination and artifact metadata GET),
@@ -381,6 +382,31 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
 
 ## Embedded operator UI (2026-09-06)
 
+- Automatic Template activation: [spec 0017](specs/0017-automatic-template-activation.md)
+  and [ARD-0021](ard/0021-activate-templates-after-static-validation.md) are implemented
+  (2026-09-08), after independent specification and implementation reviews.
+  The normal scan revalidates current Validating/Ready candidates and atomically
+  commits the Active head, revision state, immutable activation audit, outbox and
+  matching Publish Change. Incarnation, desired revision, artifact and retirement
+  checks reject stale results. Existing Ready revisions need no republish; repeated
+  scans and historical Active revisions preserve their activation identity.
+  Conformance submission retains exact-subject verification, immutable evidence
+  and replay semantics but never changes activation. Historical attestation field
+  names carry opaque activation provenance; no conformance rows are fabricated.
+  Templates explains automatic activation and shows bounded validation reasons;
+  existing raw parser reasons are sanitized before revision reads.
+  Final local validation passed: 477 unfiltered workspace tests (2 skipped),
+  387 tests in the literal AGENTS filtered command, strict workspace/all-target
+  Clippy, rustfmt, frontend build/lint/format, 72 browser tests and 4 real HTTPS/OIDC
+  browser tests. Store tests cover transaction rollback/retry, stale success and
+  rejection fences, prior Active retention, invalid lock and recoverable reads.
+  HTTP tests prove publication with only `template.publish` automatically activates,
+  Fleet admission needs no attestation, and r2 promotion preserves existing r1 pins.
+  The HTTPS fixture starts with a persisted Ready revision and no activation ID,
+  then verifies real daemon activation, server selection and approved input loading.
+  These checks establish automatic activation and admission, not runner provisioning
+  or complete platform conformance. Deployment is managed by PowerArmor's locked input.
+
 - Stored Template library: [spec 0015](specs/0015-template-library-and-variable-discovery.md)
   and [ADR-0019](ard/0019-store-template-sources-and-discover-terraform-variables.md)
   are implemented (2026-09-08). Migration m0010 stores immutable original archives
@@ -403,7 +429,7 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
   source fixes its digest in the publication draft and exposes scalar binding editors
   and variable descriptions in the main form. Adopting defaults or options requires
   an explicit action and preserves existing drafts; inspection never grants Fleet
-  input permissions or bypasses conformance. Archive inspection reuses the upload.
+  input permissions or activates a Profile. Archive inspection reuses the upload.
   Validation entrypoints include artifact library/store tests, variable parser and
   constraints tests, HTTP read authorization/error tests, `template-library.spec.ts`
   and the real HTTPS/OIDC `library.spec.ts`. Final local validation passed: 465
@@ -445,7 +471,7 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
   The HTTPS fixture selects both real collection entries, loads approved inputs
   automatically, and verifies the exact PUT plus preserved drafts after a local
   target-policy rejection; it does not create a runner or call GitHub. This
-  increment has not been deployed to production.
+  increment was deployed through PowerArmor's locked Shaula input at `0dd546e`.
 
 - Visual Fleet Template inputs: [spec 0014](specs/0014-visual-template-inputs.md)
   and [ADR-0018](ard/0018-render-fleet-inputs-from-approved-template-options.md)

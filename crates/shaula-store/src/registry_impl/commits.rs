@@ -253,13 +253,8 @@ impl SqliteControlPlane {
         Ok(Ok(()))
     }
 
-    /// ONE atomic attestation transition (spec 0005 §5, R5-09/R6-08):
-    /// the stable-identity replay/conflict lookup, the immutable
-    /// attestation row, the audit fact, the outbox marker AND the
-    /// `Ready -> Active` freeze commit or roll back together. A refused
-    /// activation (stale / not Ready / already frozen) does NOT roll the
-    /// evidence back — "cannot activate" is never "cannot record"; only
-    /// genuine storage failures abort the transaction.
+    /// Stores immutable conformance evidence, its audit and outbox together.
+    /// Evidence never changes Template activation (spec 0017).
     pub(crate) async fn commit_attestation_impl(
         &self,
         record: AttestationRecord,
@@ -363,31 +358,9 @@ impl SqliteControlPlane {
             .await
             .map_err(core_err)?;
 
-        let mut activated = false;
-        if record.activate {
-            // The freeze is part of THIS transaction. A refused
-            // activation is a VERDICT, not a storage failure: the
-            // attestation stays durable+audited and the commit proceeds
-            // (R6-08). Any other store error is genuine and aborts.
-            match self
-                .store
-                .template_activate_tx(&tx, &record.profile_key, record.revision, &record.id, now)
-                .await
-            {
-                Ok(()) => activated = true,
-                Err(crate::store::StoreError::Conflict { .. }) => {}
-                Err(e) => return Err(core_err(e)),
-            }
-        }
         tx.commit()
             .await
             .map_err(|e| core_err(crate::store::StoreError::from(e)))?;
-        Ok(Ok(if activated {
-            AttestationCommit::Created
-        } else if record.activate {
-            AttestationCommit::RecordedNotActivated
-        } else {
-            AttestationCommit::Created
-        }))
+        Ok(Ok(AttestationCommit::Created))
     }
 }

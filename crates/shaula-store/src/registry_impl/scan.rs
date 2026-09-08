@@ -1,7 +1,6 @@
 //! Minimal level-triggered reconcile scan (phase-1 scope).
 
 use shaula_core::error::CoreResult;
-use shaula_core::registry::ControlPlaneStore;
 
 use super::core_err;
 use super::SqliteControlPlane;
@@ -10,14 +9,11 @@ impl SqliteControlPlane {
     /// Minimal level-triggered reconcile scan (phase-1 scope):
     ///
     /// 1. consumes processed outbox markers;
-    /// 2. runs static validation over `Validating` Template Candidates —
-    ///    the admitted artifact manifest is the sole authority — moving
-    ///    accepted candidates to `Ready`. Activation still requires an
-    ///    exact conformance attestation.
+    /// 2. validates and automatically activates current Template Candidates
+    ///    from the admitted artifact authority (spec 0017).
     ///
-    /// The scan never advances `observed_revision` or claims `Converged`:
-    /// those facts are only written by a supervisor that has actually
-    /// classified the revision (spec 0002: MUST NOT misreport Converged).
+    /// Template publication may converge here; Fleet `observed_revision`
+    /// and runtime `Converged` remain owned by the actual Fleet supervisor.
     pub async fn periodic_scan(&self, now: i64) -> CoreResult<ScanReport> {
         let outbox_flushed = self.store.outbox_flush(now).await.map_err(core_err)?;
         let mut report = ScanReport {
@@ -25,104 +21,7 @@ impl SqliteControlPlane {
             ..Default::default()
         };
 
-        for profile in self
-            .store
-            .template_profiles_list()
-            .await
-            .map_err(core_err)?
-        {
-            if profile.deletion_requested {
-                continue;
-            }
-            let candidate = self
-                .store
-                .template_revision_get(&profile.key, profile.desired_revision)
-                .await
-                .map_err(core_err)?;
-            let Some(candidate) = candidate else {
-                continue;
-            };
-            if candidate.state != "Validating" {
-                continue;
-            }
-            // Static validation: re-open the published artifact by digest
-            // and verify manifest + shape. No infrastructure mutation.
-            let manifest_yaml =
-                match ControlPlaneStore::artifact_manifest(self, &candidate.artifact_digest).await?
-                {
-                    Some(manifest) => manifest,
-                    None => {
-                        self.store
-                            .template_revision_validated(
-                                shaula_core::template::TemplateValidationRecord {
-                                    key: profile.key.clone(),
-                                    revision: profile.desired_revision,
-                                    ready: false,
-                                    platform: candidate
-                                        .platform
-                                        .clone()
-                                        .unwrap_or_else(|| "other".into()),
-                                    bindings_contract: candidate
-                                        .bindings_contract
-                                        .clone()
-                                        .unwrap_or_else(|| "unknown".into()),
-                                    manifest_json: String::new(),
-                                    lock_digest: String::new(),
-                                    reason: Some("artifact digest is not published".into()),
-                                },
-                            )
-                            .await
-                            .map_err(core_err)?;
-                        report.candidates_rejected += 1;
-                        continue;
-                    }
-                };
-            let validated = shaula_template_manifest::parse_and_validate(&manifest_yaml);
-            match validated {
-                Ok(manifest) => {
-                    self.store
-                        .template_revision_validated(
-                            shaula_core::template::TemplateValidationRecord {
-                                key: profile.key.clone(),
-                                revision: profile.desired_revision,
-                                ready: true,
-                                platform: manifest.platform.clone(),
-                                bindings_contract: manifest.bindings_contract.clone(),
-                                manifest_json: manifest_yaml.clone(),
-                                lock_digest: String::new(),
-                                reason: None,
-                            },
-                        )
-                        .await
-                        .map_err(core_err)?;
-                    // Keep the profile status head in step with the
-                    // revision state so reads observe a single truth.
-                    self.store
-                        .template_profile_set_status(&profile.key, "Ready", now)
-                        .await
-                        .map_err(core_err)?;
-                    report.candidates_ready += 1;
-                }
-                Err(reason) => {
-                    self.store
-                        .template_revision_validated(
-                            shaula_core::template::TemplateValidationRecord {
-                                key: profile.key.clone(),
-                                revision: profile.desired_revision,
-                                ready: false,
-                                platform: "other".into(),
-                                bindings_contract: "unknown".into(),
-                                manifest_json: manifest_yaml.clone(),
-                                lock_digest: String::new(),
-                                reason: Some(reason.clone()),
-                            },
-                        )
-                        .await
-                        .map_err(core_err)?;
-                    report.candidates_rejected += 1;
-                }
-            }
-        }
+        self.scan_templates(now, &mut report).await?;
 
         // Auth candidates: structured credential validation only at this
         // stage (kind/identity/allowlist shape). The real github.com
@@ -189,27 +88,10 @@ impl SqliteControlPlane {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ScanReport {
     pub outbox_flushed: u64,
+    /// Candidates passing static validation during this scan.
     pub candidates_ready: usize,
+    pub candidates_activated: usize,
     pub candidates_rejected: usize,
     pub auth_promoted: usize,
     pub auth_rejected: usize,
-}
-
-/// Thin re-export wrapper so the scan can validate manifests without
-/// importing the whole template runtime.
-mod shaula_template_manifest {
-    pub struct ValidManifest {
-        pub platform: String,
-        pub bindings_contract: String,
-    }
-
-    pub fn parse_and_validate(yaml: &str) -> Result<ValidManifest, String> {
-        let manifest: shaula_core::template::ProfileManifest =
-            serde_yaml::from_str(yaml).map_err(|e| format!("manifest invalid: {e}"))?;
-        manifest.validate().map_err(|e| e.summary)?;
-        Ok(ValidManifest {
-            platform: manifest.platform,
-            bindings_contract: manifest.bindings_contract,
-        })
-    }
 }

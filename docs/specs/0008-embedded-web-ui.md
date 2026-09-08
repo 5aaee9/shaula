@@ -23,6 +23,10 @@ textarea，并将全部模板输入（包括可选参数和 presets）直接展�
 Fleet authentication/template Profile 从服务端列表选择、自动加载模板输入、列表失败时
 保留原引用的行为见 [spec 0016](0016-fleet-profile-selection.md)。
 
+Template 静态校验通过后自动激活的状态和说明遵循
+[spec 0017](0017-automatic-template-activation.md)；详情显示暂时 Ready 的等待说明和
+Revision 的静态校验失败原因，不提供额外 Activate 操作。
+
 - Cargo builds and embeds the frontend into debug and release binaries. A failed
   frontend build fails the binary build. Runtime serving requires no frontend files.
 - UI document routes support refresh and direct links. Unknown API paths and

@@ -1,5 +1,6 @@
 //! Read/admission fixture for the explicit HTTPS browser harness only.
-//! Its seeded Active metadata is not a conformance or provisioning test.
+//! A legacy Ready revision must activate through the real daemon startup scan.
+//! This does not claim conformance or test provisioning.
 use std::path::Path;
 
 use sea_orm::{ConnectionTrait, Database, DatabaseBackend, Statement};
@@ -60,7 +61,8 @@ pub async fn seed(directory: &Path) -> Result<(), Box<dyn std::error::Error>> {
     config["template_source_dirs"] = json!([sources]);
     std::fs::write(config_path, serde_json::to_vec(&config)?)?;
 
-    // No Fleet, validation outbox or infrastructure state is seeded. The Active
+    // No Fleet, validation outbox or infrastructure state is seeded. The Ready
+    // Template exercises upgrade reconciliation without an attestation. The Active
     // auth fixture below has inert bytes and denies the browser test's target,
     // so real admission cannot create a Fleet or invoke GitHub or a platform.
     let database = Database::connect(format!(
@@ -70,13 +72,13 @@ pub async fn seed(directory: &Path) -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     database.execute(Statement::from_sql_and_values(
         DatabaseBackend::Sqlite,
-        "INSERT INTO template_profiles (key,incarnation,desired_revision,active_revision,observed_revision,active_attestation_id,status,deletion_requested,created_at,updated_at) VALUES (?, ?, 1, 1, 1, 'browser-fixture-only', 'Active', 0, 1, 1)",
+        "INSERT INTO template_profiles (key,incarnation,desired_revision,status,deletion_requested,created_at,updated_at) VALUES (?, ?, 1, 'Ready', 0, 1, 1)",
         ["browser-inputs".into(), "browser-template-incarnation".into()],
     )).await?;
     let policy = json!({"runner_image": ["runner:approved"], "cpu_request": ["500m", "1"]});
     database.execute(Statement::from_sql_and_values(
         DatabaseBackend::Sqlite,
-        "INSERT INTO template_profile_revisions (profile_key,revision,artifact_digest,engine_ref,platform,bindings_contract,fleet_input_policy_json,state,created_at) VALUES ('browser-inputs',1,?,'terraform','kubernetes','shaula.bindings.kubernetes/v1',?,'Active',1)",
+        "INSERT INTO template_profile_revisions (profile_key,revision,artifact_digest,engine_ref,platform,bindings_contract,fleet_input_policy_json,state,created_at) VALUES ('browser-inputs',1,?,'terraform','kubernetes','shaula.bindings.kubernetes/v1',?,'Ready',1)",
         [digest.into(), serde_json::to_string(&policy)?.into()],
     )).await?;
     database.execute(Statement::from_string(

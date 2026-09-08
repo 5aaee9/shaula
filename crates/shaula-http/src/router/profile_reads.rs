@@ -156,6 +156,7 @@ pub(crate) async fn template_revision_get(
                 "platform": view.platform,
                 "bindingsContract": view.bindings_contract,
                 "state": view.state,
+                "reason": view.reason,
                 "bindingsPresent": view.bindings_present,
             })),
         )

@@ -98,6 +98,11 @@ async fn unreadable_published_authority_is_retryable_never_a_recorded_mismatch()
     let lock_path = shaula_core::artifact_layout::artifact_dir(&artifact_root, &digest)
         .unwrap()
         .join(".terraform.lock.hcl");
+    let original = control_plane
+        .template_profile_get("k8s-linux")
+        .await
+        .unwrap()
+        .unwrap();
     let backup_path = lock_path.with_extension("hcl.bak");
     std::fs::rename(&lock_path, &backup_path).unwrap();
 
@@ -116,12 +121,18 @@ async fn unreadable_published_authority_is_retryable_never_a_recorded_mismatch()
     );
 
     // The operator restores the published file; the SAME request now
-    // verifies and activates.
+    // verifies and records evidence without changing activation.
     std::fs::rename(&backup_path, &lock_path).unwrap();
     let (status, _) = put_attestation(&app, "k8s-linux", 1, "att-io", attest).await;
     assert_eq!(status, StatusCode::CREATED, "the retry must succeed");
     let view = get_json(&app, "/api/v1/template-profiles/k8s-linux").await;
-    assert_eq!(view["activeRevision"], 1, "the retry must activate");
+    assert_eq!(view["activeRevision"], 1, "the retry preserves activation");
+    let after = control_plane
+        .template_profile_get("k8s-linux")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.active_attestation_id, original.active_attestation_id);
 }
 
 #[tokio::test]
@@ -239,6 +250,11 @@ async fn corrupt_published_manifest_is_retryable_never_a_recorded_mismatch() {
     let manifest_path = shaula_core::artifact_layout::artifact_dir(&artifact_root, &digest)
         .unwrap()
         .join("profile.yaml");
+    let activated = control_plane
+        .template_profile_get("k8s-linux")
+        .await
+        .unwrap()
+        .unwrap();
     let original = std::fs::read_to_string(&manifest_path).unwrap();
     std::fs::write(&manifest_path, "{ not: [valid").unwrap();
 
@@ -261,7 +277,13 @@ async fn corrupt_published_manifest_is_retryable_never_a_recorded_mismatch() {
     let (status, _) = put_attestation(&app, "k8s-linux", 1, "att-corrupt", attest).await;
     assert_eq!(status, StatusCode::CREATED, "the retry must succeed");
     let view = get_json(&app, "/api/v1/template-profiles/k8s-linux").await;
-    assert_eq!(view["activeRevision"], 1, "the retry must activate");
+    assert_eq!(view["activeRevision"], 1, "the retry preserves activation");
+    let after = control_plane
+        .template_profile_get("k8s-linux")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.active_attestation_id, activated.active_attestation_id);
 }
 
 #[tokio::test]

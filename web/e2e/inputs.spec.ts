@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("real daemon projects approved inputs into the authenticated Fleet editor", async ({
+test("real daemon activates a legacy Ready template and loads its approved Fleet inputs", async ({
   page,
   request,
 }) => {
@@ -9,6 +9,16 @@ test("real daemon projects approved inputs into the authenticated Fleet editor",
   expect((await request.get(path)).status()).toBe(401);
   await page.goto("/fleets");
   await expect(page.getByRole("heading", { name: "Fleets", exact: true })).toBeVisible();
+  // The SQLite fixture starts at Ready with no activation ID or attestation.
+  // Only the production daemon scan may make it available to this editor.
+  await expect
+    .poll(async () => {
+      const profile = await page.request.get("/api/v1/template-profiles/browser-inputs");
+      return (await profile.json()).activeRevision;
+    })
+    .toBe(1);
+  const revision = await page.request.get("/api/v1/template-profiles/browser-inputs/revisions/1");
+  expect(await revision.json()).toMatchObject({ state: "Active", reason: null });
   const contract = await page.request.get(path);
   expect(contract.status()).toBe(200);
   expect(contract.headers()["cache-control"]).toBe("private, no-store");

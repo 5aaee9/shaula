@@ -144,7 +144,7 @@ Production Shaula does not issue Pod/Secret delete or absence requests, compare 
 
 Trusted Destroy classification plus exact state-empty completion is the provider-neutral proof available to core；it is not independently asserted to be a Kubernetes live-absence proof. The external conformance harness MUST verify Pod-before-Secret name-based deletion and final live absence for every exact attested compatibility tuple.
 
-Core may rely on a Kubernetes Profile only after its activation attestation binds the exact engine binary, provider lock/checksums, artifact naming algorithm, protected bindings/namespace, runtime trust policy, Runner/init/shim images and suite, and proves stable same-Generation names, cross-Generation non-reuse, collision failure and original-state-only Destroy. No UID-precondition claim is made. A same-name different-UID replacement may be deleted when target/namespace continuity or trusted name reservation is violated；this accepted risk does not prevent activation.
+Claims of verified Kubernetes behavior require a conformance attestation binding the exact engine binary, provider lock/checksums, artifact naming algorithm, protected bindings/namespace, runtime trust policy, Runner/init/shim images and suite, and proving stable same-Generation names, cross-Generation non-reuse, collision failure and original-state-only Destroy. Profile activation instead follows automatic static validation under [spec 0017](0017-automatic-template-activation.md) and does not assert those runtime guarantees. No UID-precondition claim is made. A same-name different-UID replacement may be deleted when target/namespace continuity or trusted name reservation is violated；this accepted risk does not prevent activation.
 
 ## 9. Drift and recovery
 
@@ -204,7 +204,7 @@ The external Kubernetes conformance harness MUST prove for every supported tuple
 
 The conformance harness MAY inspect Kubernetes API audit evidence or use a fake provider to establish delete-call order while `JobStillRunning`; those inspection capabilities remain outside production Shaula.
 
-Spec 0005 §5.1's authenticated, independently authorized and immutably audited attestation binds this exact tuple and retained conformance report; a separate signing PKI is not required. Without it the Profile cannot become Active, accept a new Fleet reference or advertise capability. Existing pins follow spec 0002's retained-reference rules.
+Spec 0005 §5.1's authenticated, independently authorized and immutably audited attestation binds this exact tuple and retained conformance report; a separate signing PKI is not required. It supports claims of tested platform capability but is not an activation or Fleet-admission prerequisite. Static validation automatically activates the Profile under spec 0017; existing pins follow spec 0002's retained-reference rules.
 
 A placeholder `.terraform.lock.hcl` is not a verified provider pin. Release requires real checksums and passing engine/provider/image/GitHub/HTTP-backend tests; the checked-in artifact's evidence status lives in [implementation status](../IMPLEMENTATION_STATUS.md).
 
@@ -214,4 +214,4 @@ The [central decision register](../README.md#仍需决定或冻结) owns R1/R3: 
 
 The Runner process-inspection choice is resolved as an accepted v1 trust limitation, not a compatibility gate. A future guarantee against same-domain `/proc` or memory inspection requires a new hardening decision and conformance contract.
 
-The init-only Secret-to-memory handoff and state-bound name-based Destroy under a continuously reserved target/namespace are accepted v1 choices. Activation must attest the exact `metadata.name` algorithm, non-reuse/collision behavior, namespace binding and provider tuple；Kubernetes UID preconditions are not required. Object or namespace same-name replacement remains an explicit residual risk.
+The init-only Secret-to-memory handoff and state-bound name-based Destroy under a continuously reserved target/namespace are accepted v1 choices. Conformance evidence must attest the exact `metadata.name` algorithm, non-reuse/collision behavior, namespace binding and provider tuple；Kubernetes UID preconditions are not required. Object or namespace same-name replacement remains an explicit residual risk.

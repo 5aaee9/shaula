@@ -177,19 +177,6 @@ impl ShaulaResultEnvelope {
     }
 }
 
-/// Parameter object for recording static-validation results.
-#[derive(Debug, Clone)]
-pub struct TemplateValidationRecord {
-    pub key: String,
-    pub revision: i64,
-    pub ready: bool,
-    pub platform: String,
-    pub bindings_contract: String,
-    pub manifest_json: String,
-    pub lock_digest: String,
-    pub reason: Option<String>,
-}
-
 /// Parameter object for storing one conformance attestation.
 #[derive(Debug, Clone)]
 pub struct AttestationInsert {

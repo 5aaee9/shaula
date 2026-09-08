@@ -54,8 +54,8 @@ Auth:     Pending -> Validating --------> Active -> Retiring -> Retired
 
 - `desired_revision` is the latest conditionally accepted mutation.
 - `observed_revision` is the latest asynchronously classified revision.
-- `Ready` is Template-only and means built-in static validation passed；it is not selectable.
-- A Template Candidate needs an accepted exact conformance attestation for `Ready -> Active`；an Auth Candidate instead needs successful identity/access validation for `Validating -> Active` and never consumes a Template attestation.
+- `Ready` is Template-only and means built-in static validation passed and automatic activation is pending；new references wait for `Active`.
+- A still-current Template Candidate automatically advances `Ready -> Active` under spec 0017, without a conformance request；an Auth Candidate instead needs successful identity/access validation for `Validating -> Active` and never consumes a Template attestation.
 - The current `active_revision` is the only Revision that may receive a new Fleet reference, including an explicit exact-revision reference.
 - A rejected or superseded Candidate never replaces the previous active Revision.
 - An already-admitted Fleet's exact Template reference remains usable for normal reconciliation, future Create, Destroy and recovery during controlled retirement until the Fleet releases it.
@@ -125,12 +125,12 @@ Asynchronous static validation：
 1. Re-open the already published artifact by digest.
 2. Verify archive containment, manifest version, manifest-derived `platform`/`bindings_contract`, declared inputs/outputs, provider lock checksums and engine constraints.
 3. Reject undeclared files, missing lock file, arbitrary executable hooks, Profile-owned backend configuration/overrides, reserved worker-file collisions, a caller-supplied platform authority and Profile/Fleet input confusion according to policy.
-4. Run isolated non-mutating Terraform initialization/validation with bounded output and no infrastructure credentials.
-5. If this Candidate is still desired and all checks pass, transition it to `Ready`；static validation alone never activates it.
+4. Retain publication-time engine, protected-binding and Fleet-input-policy admission checks. This activation scan does not run Terraform apply, call GitHub or create a Runner; actual engine/platform conformance remains separate evidence.
+5. If this Candidate is still desired and all checks pass, automatically transition it through `Ready` to `Active` in the fenced transaction defined by [spec 0017](0017-automatic-template-activation.md). The same revalidation path processes existing Ready candidates after upgrade; rejected or retired candidates cannot replace the prior Active.
 
-### 5.1 Conformance attestation and activation
+### 5.1 Independent conformance evidence
 
-A `Ready` Template Candidate is not selectable until a trusted external harness tests the exact runtime subject and an authorized caller submits a durable immutable attestation such as：
+Template publication authorizes automatic activation after static validation under spec 0017. A trusted external harness separately tests the exact runtime subject, and an authorized caller may submit durable immutable conformance evidence such as：
 
 ```json
 {
@@ -158,7 +158,7 @@ The canonical attestation subject binds the artifact digest, dependency lock, ex
 
 Attestation PUT requires `template.attest`, `If-None-Match: *`, bounded idempotency and an authenticated request-context actor. It atomically stores the attestation, canonical subject digest, Profile Change/outbox and an audit fact containing actor, Profile Revision, attestation key, subject digest, suite version and sanitized result；raw test output, bindings and credentials are excluded. An exact replay returns the original result；the same key with a different canonical body conflicts.
 
-Only a `passed` attestation whose subject exactly matches the still-current desired `Ready` Candidate may gate an atomic `Ready -> Active` transition and freeze its `active_attestation_id`. A failed, mismatched or stale attestation remains durable and audited but cannot activate the Candidate or replace the previous active Revision.
+No attestation result changes a Profile head or activation ID. Passed, failed, mismatched and stale attestations all remain durable and audited independently of activation. Automatic `Ready -> Active` freezes a separate `static-validation-v1:` opaque activation provenance ID and immutable activation audit in one transaction. Legacy `active_attestation_id`, `template_attestation_id`, `attestation_id` and related wire names carry that provenance while retaining historical conformance IDs unchanged; their presence does not imply a passing runtime suite. Spec 0017 owns this compatibility contract.
 
 A Fleet may submit a bare Profile key or exact `{key, revision}`. A new or changed reference must resolve the current `active_revision`; an unchanged existing pin in a capacity/inputs update or no-op is not new-reference admission. Spec 0002 §4.1 owns that distinction. An already-admitted Fleet may keep using an older retained exact pin for normal reconciliation, future Create, Destroy and recovery until it releases that reference. Publishing or attesting a newer Revision never changes an existing Fleet/Runner；switching a Fleet follows the zero-Resource-Occupancy rule.
 
@@ -241,7 +241,7 @@ The conceptual schema adds typed tables：
 - `github_auth_profiles`, `github_auth_profile_revisions`, `github_auth_profile_status`；
 - `profile_changes`, `profile_outbox`, `profile_idempotency_records`, `profile_audit_records`；
 - `template_artifacts` and reference counts/retention metadata；
-- explicit Fleet-to-Template-Revision-and-attestation relations plus `fleet_auth_handoffs` containing desired/observed Auth `(profile_key, revision)` tuples, fences, classifications and exact references held by in-flight effects, sessions, Decommission cleanup and recovery.
+- explicit Fleet-to-Template-Revision-and-activation-provenance relations (retaining legacy attestation field names under spec 0017) plus `fleet_auth_handoffs` containing desired/observed Auth `(profile_key, revision)` tuples, fences, classifications and exact references held by in-flight effects, sessions, Decommission cleanup and recovery.
 
 Auth Revision rows contain PAT/App private-key plaintext, and Template Revision rows contain plaintext values for schema-sensitive bindings. SQLite main/page files, WAL/SHM, online and migration copies, crash dumps and backups MUST receive credential-grade access, retention and disposal. Application-level encryption is not a v1 requirement；deployment-level full-disk/filesystem/backup encryption is strongly recommended.
 
@@ -268,7 +268,7 @@ At minimum, management authorization separates：
 - `auth.read` and high-trust `auth.write`；
 - each resource's retirement capability.
 
-Template publication is equivalent to deploying reviewed code that can execute provider plugins with infrastructure credentials. Attestation independently asserts that one exact runtime subject passed the accepted suite, so `template.attest` MUST remain separately grantable from both `template.publish` and `fleet.write`. Auth writes disclose reusable GitHub credentials to Shaula, and Template publication may disclose sensitive platform bindings. All three capabilities require stronger controls than ordinary Fleet capacity changes.
+Template publication is equivalent to deploying reviewed code that can execute provider plugins with infrastructure credentials, and authorizes automatic activation after validation. Attestation independently asserts that one exact runtime subject passed the accepted suite, so `template.attest` MUST remain separately grantable from both `template.publish` and `fleet.write`; it is not required for activation. Auth writes disclose reusable GitHub credentials to Shaula, and Template publication may disclose sensitive platform bindings. All three capabilities require stronger controls than ordinary Fleet capacity changes.
 
 The supported v1 Shaula listener binds loopback only; a configured non-loopback address fails startup. The reverse proxy terminates HTTPS, while Shaula itself owns mandatory OIDC verification, authorization and audit under spec 0009. Provider/client configuration is required through clap/env before startup. Every Profile/artifact API, including reads, uploads and attestation, requires an OIDC-derived session or verified API access token, even over direct loopback. Authentication precedes upload processing; cookie mutations also require Origin/CSRF validation. Legacy backend tokens and caller identity/scope headers cannot establish an actor. Native inbound HTTP TLS/mTLS remains outside v1. Loopback is not a tenant boundary.
 
@@ -285,7 +285,7 @@ The database ownership lock prevents a second Shaula writer but is not encryptio
 | Artifact durable but Profile transaction absent | Retain as grace-period orphan, then GC after a reference check |
 | Candidate validation interrupted | Lease expires and outbox/periodic scan resumes it |
 | Template static validation rejected | Keep prior active Revision, never enter `Ready`, and expose a sanitized reason |
-| Conformance result failed, mismatched or stale | Preserve the immutable audited attestation, keep the Candidate non-active and leave the prior active Revision selectable |
+| Conformance result passed, failed, mismatched or stale | Preserve the immutable audited attestation without changing Profile head or activation provenance |
 | Auth Candidate has bad syntax, identity or access | Classify separately as `CredentialMalformed`, `Unauthenticated`, `PermissionDenied` or `TargetHiddenOrNotFound`；keep prior active credential |
 | GitHub returns a rate-limit response | Classify `RateLimited` from status/headers, honor the bounded retry time and do not misreport it as permission denial |
 | Auth handoff cannot prove bound ownership/access | Mark the Fleet `Blocked`/degraded, retain old and desired tuple references, and never request-time fallback |
@@ -319,10 +319,10 @@ Implementation is incomplete until：
 2. Artifact upload is digest-idempotent and rejects traversal, link/device entries, expansion bombs, content mismatch and oversize input without a published partial artifact.
 3. Every effective Profile-spec PUT atomically commits Revision, Change, audit and outbox；every effective attestation/retirement mutation instead commits its endpoint-specific immutable record or state plus Change/audit/outbox, without creating or modifying a Template Profile Revision. All commit before returning, and no handler makes a Terraform/GitHub call.
 4. Concurrent conditional writes have one winner；lost response retries return the original sanitized response.
-5. Static validation can move a Template Candidate only to `Ready`；it cannot activate it, and a rejected replacement leaves the previous active Revision selectable.
-6. An authorized `template.attest` request durably binds artifact, dependency lock, exact providers, engine binary, runner images, protected `bindings_digest`, runtime/trust policy with accepted limitations, manifest-derived `platform`/`bindings_contract` and suite version；only an exact passing subject gates a Template `Ready -> Active`, while Auth activation remains identity/access-validation gated.
-7. A failed, mismatched or stale attestation remains audited and cannot activate or replace the previous active Revision；`template.publish`, `template.attest` and `fleet.write` are independently testable permissions.
-8. New/changed Fleet Template references resolve current Active and pin its digest/attestation; unchanged pins in capacity/inputs/no-op requests are retained under spec 0002. Later publication/attestation changes neither Fleet nor Generation.
+5. Static validation automatically moves the still-current Candidate through `Ready` to `Active` with durable activation provenance; rejected replacements leave the previous active Revision selectable. Existing Ready candidates use the same revalidation path after upgrade, and repeated scans are idempotent.
+6. An authorized `template.attest` request durably binds artifact, dependency lock, exact providers, engine binary, runner images, protected `bindings_digest`, runtime/trust policy with accepted limitations, manifest-derived `platform`/`bindings_contract` and suite version as independent conformance evidence；it does not gate Template activation. Auth activation remains identity/access-validation gated.
+7. Passed, failed, mismatched and stale attestations remain audited and cannot activate or replace any Profile head/activation ID；`template.publish`, `template.attest` and `fleet.write` are independently testable permissions.
+8. New/changed Fleet Template references resolve current Active and pin its digest/activation provenance; unchanged pins in capacity/inputs/no-op requests are retained under spec 0002. Later publication, activation or attestation changes neither Fleet nor Generation.
 9. PAT/App private-key bytes and sensitive Template binding bytes survive daemon restart from their immutable SQLite Revisions and reconstruct the exact client or IaC input, but never appear in any GET/list/status/revision/attestation response, audit, error, log, trace, metric or diagnostic representation；GitHub credentials never enter IaC/Runner, and Template binding secrets never enter Runner/workflow.
 10. The Rust `shaula-scaleset` implementation passes the GitHub App/PAT × organization/repository matrix against real `github.com` and differential conformance against the fixed Go `github.com/actions/scaleset` oracle.
 11. Wrong principal, App/installation mismatch, `401`, `403` and access-filtered `404` reject the Auth Candidate and never cause fallback or Scale Set Create.

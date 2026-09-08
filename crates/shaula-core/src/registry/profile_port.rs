@@ -18,6 +18,8 @@ pub struct TemplateRevisionView {
     pub platform: Option<String>,
     pub bindings_contract: Option<String>,
     pub state: String,
+    /// Bounded static-validation reason; never raw artifact or binding content.
+    pub reason: Option<String>,
     pub bindings_present: bool,
 }
 

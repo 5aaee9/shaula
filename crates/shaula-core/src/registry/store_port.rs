@@ -254,11 +254,9 @@ pub trait ControlPlaneStore: crate::registry::AuthExecutionStore + Send + Sync {
         revision: i64,
         attestation_key: &str,
     ) -> CoreResult<Option<AttestationReplayRow>>;
-    /// Stores an immutable attestation and optionally activates it, in
-    /// ONE transaction (spec 0005 §5): replay by stable identity returns
-    /// the original record, a conflicting body is refused, the
-    /// `Ready -> Active` freeze happens atomically with the insert, and
-    /// a refused activation still leaves the evidence durable+audited.
+    /// Stores immutable conformance evidence in one transaction: replay by
+    /// stable identity returns the original record, a conflicting body is
+    /// refused. Evidence cannot change activation (spec 0017).
     async fn commit_attestation(
         &self,
         record: AttestationRecord,
@@ -306,6 +304,7 @@ pub struct ProfileHead {
     pub incarnation: String,
     pub desired_revision: i64,
     pub active_revision: Option<i64>,
+    /// Opaque activation provenance; legacy name retained for stored/wire pins.
     pub active_attestation_id: Option<String>,
     pub status: String,
 }
@@ -321,6 +320,7 @@ pub struct TemplateRevisionRow {
     pub platform: Option<String>,
     pub bindings_contract: Option<String>,
     pub state: String,
+    pub reason: Option<String>,
     pub bindings_present: bool,
     pub bindings_digest: Option<String>,
     pub fleet_input_policy_json: Option<String>,

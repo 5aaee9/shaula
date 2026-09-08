@@ -127,7 +127,7 @@ Installing/replacing a session takes the exclusive side of a per-Fleet session-e
 
 This crate owns artifact validation, CoW/copy materialization, exclusive Workspaces, protected inputs/emergency state, child env/supervision, exact engine hashing, Terraform initialization, saved-plan policy, output classification and state-empty proof. For Generation lifecycles it runs inside `job`; Profile static validation may still call its isolated, non-mutating validation Interface from the daemon. Authoritative state is not its local file store: Terraform uses spec 0010's HTTP backend, configured through a fixed worker-owned backend file and minimal `TF_HTTP_*` env.
 
-It has no Kubernetes/Docker client or platform dispatch. The artifact manifest is the sole authority for the bounded opaque `platform` and `bindings_contract` labels；resource type strings are used only for policy equality/cardinality. Platform artifacts and external conformance harnesses own actual object semantics. Every Template activation requires a durable conformance attestation bound to the exact artifact digest, dependency lock, IaC engine binary/provider, protected `bindings_digest`, runtime/trust policy including accepted limitations, Runner image, manifest contracts and suite version；static validation alone only reaches `Ready`.
+It has no Kubernetes/Docker client or platform dispatch. The artifact manifest is the sole authority for the bounded opaque `platform` and `bindings_contract` labels；resource type strings are used only for policy equality/cardinality. Platform artifacts and external conformance harnesses own actual object semantics. Under [spec 0017](0017-automatic-template-activation.md), static validation automatically activates the current Template candidate with durable activation provenance. Independent conformance evidence binds the exact artifact digest, dependency lock, IaC engine binary/provider, protected `bindings_digest`, runtime/trust policy including accepted limitations, Runner image, manifest contracts and suite version; Active alone makes no conformance claim.
 
 ### 3.8 `shaula-observability`
 
@@ -178,7 +178,7 @@ Implementation is incomplete until：
 10. Persist-before-ACK, duplicate delivery, truncated/missing events, `202` polls, acquire uncertainty and session restart all converge without event counting.
 11. Tokio task, exec worker/descendant, backend outage and exporter failure injection proves Fleet isolation and spec 0010's fencing/state/lock/recovery/shutdown contract; worker exit alone never releases capacity.
 12. In-memory OTel tests observe HTTP, SQL/use-case boundaries, Scale Set, reconcile and Template lifecycle without secrets or unbounded labels.
-13. A Template Profile cannot become Active unless every required external safety claim has a current conformance attestation for its exact immutable compatibility tuple.
+13. A current Template candidate automatically becomes Active after static validation under spec 0017. Required external safety claims still need conformance evidence for the exact immutable compatibility tuple; Active alone does not establish them.
 14. Axum startup rejects every non-loopback bind and missing/invalid CLI/env OIDC configuration or failed discovery initialization. Tests enforce spec 0009 across proxied/direct requests, UI/assets/API/health/fallback, CSRF, session expiry, token/key validation and forged legacy headers. The production binary must include OIDC verification and must not expose native inbound HTTP TLS/mTLS serving.
 
 ## 7. Delivery order

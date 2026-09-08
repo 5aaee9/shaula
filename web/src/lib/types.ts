@@ -89,6 +89,7 @@ export interface TemplateRevision {
   engineRef: string;
   platform: string;
   state: string;
+  reason: string | null;
 }
 export interface AuthResource extends TemplateSummary {
   kind: string | null;

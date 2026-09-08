@@ -26,7 +26,7 @@ Fleet-level replacement 不是 Runner Update primitive。每个既有 Runner Gen
 - Fleet 创建、容量调整和 Decommission 不需要 daemon restart。
 - SQLite 在同一个 single-writer ownership boundary 内保存 Fleet revisions、Changes、status、idempotency records 和 Runner lifecycle ledger。
 - HTTP Adapter、未来 remote CLI 和测试必须使用相同 Fleet Registry Interface，不得直接编辑 SQLite。
-- Fleet Spec 使用 typed `github.com` organization/repository Target、稳定 Auth Profile key，以及新引用时 current Active、后续保留 exact pin 的已 attested Template Profile Revision；它不接受 `config_url`、platform-specific raw target、attestation 或 credential。Fleet Revision 记录 admission-time Auth tuple，独立 Auth Handoff state 保存并推进当前完整 desired/observed Auth Revision Refs，因此 same-Profile promotion 不改写 Fleet Spec、Revision 或 ETag。
+- Fleet Spec 使用 typed `github.com` organization/repository Target、稳定 Auth Profile key，以及新引用时 current Active、后续保留 exact pin 和 activation provenance 的 Template Profile Revision；激活由 [spec 0017](../specs/0017-automatic-template-activation.md) 的静态校验自动触发，无须独立 attestation。Fleet 不接受 `config_url`、platform-specific raw target、attestation 或 credential。Fleet Revision 记录 admission-time Auth tuple，独立 Auth Handoff state 保存并推进当前完整 desired/observed Auth Revision Refs，因此 same-Profile promotion 不改写 Fleet Spec、Revision 或 ETag。
 - GitHub access、Profile readiness 和 Template Platform prerequisites 是异步 status Conditions，不得让 HTTP transaction 调用远端系统。
 - YAML 或 Git 可以产生 HTTP requests，但 daemon 不监视它们作为第二个 desired-state source。
 - HTTP request cancellation 不会取消已提交的 Fleet Change 或其产生的 Runner Operation。

@@ -203,6 +203,7 @@ impl ProfileRegistryPort for ControlPlane {
             platform: row.platform,
             bindings_contract: row.bindings_contract,
             state: row.state,
+            reason: row.reason,
             bindings_present: row.bindings_present,
         }))
     }

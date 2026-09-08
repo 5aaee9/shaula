@@ -56,7 +56,7 @@ async fn idempotency_replay_and_conflict() {
         .await
         .unwrap();
 
-    // Activate via attestation (admission requires an Active revision).
+    // Record independent evidence after the scan activated the revision.
     let expected = expected_bindings_digest("k8s-linux", 1);
     let attest = attest_body(&control_plane, &digest, &expected, &engine).await;
     let response = app

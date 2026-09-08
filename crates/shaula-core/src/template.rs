@@ -107,10 +107,8 @@ pub const MANIFEST_KIND: &str = "RunnerTemplateProfile";
 pub const SUPPORTED_PROTOCOL: &str = "terraform-cli/v1";
 pub const SUPPORTED_ENGINE: &str = "terraform";
 
-/// The only conformance suite whose `passed` result can activate a
-/// Template Candidate (spec 0005 §5.1). The attestation subject and the
-/// envelope suite must BOTH name exactly this suite; anything else is a
-/// foreign harness and cannot gate activation.
+/// The accepted suite for conformance evidence. Subject and envelope must
+/// both name it to verify; conformance does not control activation (spec 0017).
 pub const ACCEPTED_CONFORMANCE_SUITE: (&str, &str) = ("shaula-template-conformance", "v1");
 
 impl ProfileManifest {
@@ -272,8 +270,7 @@ impl BindingsDigest {
 pub mod envelope;
 pub use envelope::{
     AttestationInsert, GenerationIdentity, ResultResource, ShaulaInputEnvelope,
-    ShaulaResultEnvelope, TemplateValidationRecord, INPUT_CONTRACT_VERSION, MAX_RESULT_RESOURCES,
-    RESULT_CONTRACT_VERSION,
+    ShaulaResultEnvelope, INPUT_CONTRACT_VERSION, MAX_RESULT_RESOURCES, RESULT_CONTRACT_VERSION,
 };
 
 #[cfg(test)]

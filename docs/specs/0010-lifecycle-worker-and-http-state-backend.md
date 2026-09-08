@@ -26,7 +26,7 @@ v1 不交付 Kubernetes/remote Executor Driver，不引入 Kubernetes client、�
 
 `shaula job` 是内部执行子命令，不是绕过 Registry 的 operator Create/Destroy CLI。未经 daemon 准入的调用无权通过内部 Interface 获取材料、JIT、state 或副作用许可；直接手工执行不能创建第二个 Generation 或绕过 Fleet fences。
 
-启动前 daemon 在一个短事务中记录 Generation identity、创建时的 Fleet Revision、exact Template/attestation/input refs、stable Runner name、Resource Occupancy slot 与 Worker Claim。Claim 含单调递增的 worker epoch、唯一 attempt、Executor identity 和可验证的进程归属；worker epoch 与 Fleet session epoch、Terraform lock ID 是不同身份。
+启动前 daemon 在一个短事务中记录 Generation identity、创建时的 Fleet Revision、exact Template/activation provenance/input refs、stable Runner name、Resource Occupancy slot 与 Worker Claim。兼容的 `attestation_id` 等历史字段承载 [spec 0017](0017-automatic-template-activation.md) 定义的 opaque activation ID；自动静态激活不伪造 conformance record。Claim 含单调递增的 worker epoch、唯一 attempt、Executor identity 和可验证的进程归属；worker epoch 与 Fleet session epoch、Terraform lock ID 是不同身份。
 
 v1 通过受保护的 inherited pipe/file descriptor 或等价 exec handoff 交付启动材料：Generation/epoch、批准的 artifact/input locations、内部地址及分权 capabilities。argv 只能包含非 secret identity；不能放 credential、JIT、bindings 或 token。不从 caller 提供的 argv/env/path 选择可执行模板。
 
@@ -122,7 +122,7 @@ Lock 不设置“超时即自动接管”语义。恢复必须先通过 Executor
 
 Backup consistency set 是 SQLite（含 state/locks/Generation/worker/GitHub facts）、immutable artifact/retained protected-input store，以及所有尚未上传/解决的 emergency state。普通 materialized copy 和 provider cache 可重建。备份与恢复要同时处理正在进行的 backend commit/worker effects，不支持只恢复部分成员。任意旧 snapshot 不是当前外部资源真相：若 checkpoint 后还可能产生效果，必须保留后续证据并分类，否则保持隔离。恢复不能复活旧 capability/自动抢占 Claim，仍先证明旧执行者已被 fence；DB/WAL/SHM、备份、state、JIT、bindings 和 emergency files 都是 credential-grade。
 
-从旧 local-state 实现迁移时先停止新 claims 并证明旧 Terraform descendants 静止，再将每个 exact Generation 的原始 state/lineage/serial 和 inputs/ownership 一致导入。未迁移的 Generation 必须 fail closed，不能在新 backend 中作为 fresh 404 重新 Create。导入不能改写原 Profile/attestation/input 身份。若新 worker 无法遵守旧的 attested runtime tuple，必须由原经验证 Runtime 安全清退或保持隔离；不能伪造兼容性。新 runtime/trust policy 需要对应新 attestation。本轮文档不授予丢弃或重建旧 ledger 的许可；实现迁移及其 crash tests 是发布门槛。
+从旧 local-state 实现迁移时先停止新 claims 并证明旧 Terraform descendants 静止，再将每个 exact Generation 的原始 state/lineage/serial 和 inputs/ownership 一致导入。未迁移的 Generation 必须 fail closed，不能在新 backend 中作为 fresh 404 重新 Create。导入不能改写原 Profile/activation provenance/input 身份，历史 attestation pin 也保持原样。若新 worker 无法遵守旧的 pinned runtime tuple，必须由原 Runtime 安全清退或保持隔离；不能伪造兼容性。对新 runtime/trust policy 声称原 conformance 保证需要对应新证据，但 conformance 不控制 spec 0017 的自动激活。本轮文档不授予丢弃或重建旧 ledger 的许可；实现迁移及其 crash tests 是发布门槛。
 
 ## 8. Scheduling and shutdown
 

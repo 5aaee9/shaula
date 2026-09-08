@@ -142,10 +142,9 @@ impl ControlPlane {
             .template_revision_get(&key, active)
             .await?
             .ok_or_else(|| CoreError::new(ReasonCode::Internal, "active revision row missing"))?;
-        let attestation_id = profile
-            .active_attestation_id
-            .clone()
-            .ok_or_else(|| CoreError::new(ReasonCode::Internal, "active attestation missing"))?;
+        let attestation_id = profile.active_attestation_id.clone().ok_or_else(|| {
+            CoreError::new(ReasonCode::Internal, "active template provenance missing")
+        })?;
         Ok((key, active, revision.artifact_digest, attestation_id))
     }
 

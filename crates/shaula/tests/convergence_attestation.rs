@@ -1,15 +1,13 @@
-//! Attestation replay/freeze semantics at the HTTP boundary (R6-01 /
-//! R6-06 / R6-07 / R6-08): the attestation identity is the FULL path
-//! scope (Profile, Revision, key); an exact replay returns the original
-//! record BEFORE the current engine authority is consulted; the freeze
-//! is one-time PER REVISION so a new desired Ready candidate can
-//! promote; and refused activations stay durable+audited. The R7-03/04/05
-//! request-boundary semantics live in convergence_attestation_boundary.rs.
+//! Conformance evidence remains immutable and independent of automatic
+//! activation: exact replay precedes current authority checks, and neither
+//! new evidence nor replay can overwrite frozen activation provenance.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
 
 use axum::http::StatusCode;
+use shaula_core::registry::ControlPlaneStore;
+use tower::ServiceExt;
 
 use common::attestation_harness::{put_attestation, put_template_profile, seed_profile};
 use common::*;
@@ -19,7 +17,12 @@ async fn identical_attestation_replay_never_overwrites_the_frozen_active_id() {
     let (app, control_plane, engine) = build_app_with_scan().await;
     let digest = seed_profile(&app, &control_plane, "k8s-linux", true).await;
 
-    // First attestation activates and freezes the active id (R5-09).
+    let original = control_plane
+        .template_profile_get("k8s-linux")
+        .await
+        .unwrap()
+        .unwrap();
+    // Static validation already froze activation; conformance is independent.
     let expected = expected_bindings_digest("k8s-linux", 1);
     let attest = attest_body(&control_plane, &digest, &expected, &engine).await;
     let (status, replay) = put_attestation(&app, "k8s-linux", 1, "att-1", attest.clone()).await;
@@ -43,9 +46,7 @@ async fn identical_attestation_replay_never_overwrites_the_frozen_active_id() {
     let (status, _) = put_attestation(&app, "k8s-linux", 1, "att-1", conflicting).await;
     assert_eq!(status, StatusCode::CONFLICT);
 
-    // A different key on the ALREADY-ACTIVE revision is durable
-    // evidence that cannot replace the frozen attestation (R6-08: 201,
-    // RecordedNotActivated; the one-time-per-revision freeze holds).
+    // Another evidence key cannot replace the frozen activation provenance.
     let (status, _) = put_attestation(&app, "k8s-linux", 1, "att-2", attest).await;
     assert_eq!(
         status,
@@ -57,22 +58,40 @@ async fn identical_attestation_replay_never_overwrites_the_frozen_active_id() {
     let view = get_json(&app, "/api/v1/template-profiles/k8s-linux").await;
     assert_eq!(view["status"], "Active");
     assert_eq!(view["activeRevision"], 1);
+    let current = control_plane
+        .template_profile_get("k8s-linux")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        current.active_attestation_id,
+        original.active_attestation_id
+    );
 }
 
 #[tokio::test]
-async fn a_new_desired_ready_revision_can_promote_after_r1_was_active() {
-    // R6-01: the freeze is one-time PER REVISION — publishing r2,
-    // scanning it to Ready and attesting it with a fresh key must
-    // PROMOTE it over r1 instead of conflicting forever.
-    let (app, control_plane, engine) = build_app_with_scan().await;
+async fn automatic_promotion_keeps_existing_fleet_pin_and_input_contract() {
+    let (app, control_plane, _engine) = build_app_with_scan().await;
     let digest = seed_profile(&app, &control_plane, "k8s-linux", true).await;
-
-    let expected1 = expected_bindings_digest("k8s-linux", 1);
-    let attest1 = attest_body(&control_plane, &digest, &expected1, &engine).await;
-    let (status, _) = put_attestation(&app, "k8s-linux", 1, "ci-r1", attest1).await;
-    assert_eq!(status, StatusCode::CREATED);
     let view = get_json(&app, "/api/v1/template-profiles/k8s-linux").await;
     assert_eq!(view["activeRevision"], 1);
+    let created = app
+        .clone()
+        .oneshot(put_with_idempotency(
+            "/api/v1/fleets/linux-x64",
+            "automatic-r1",
+            FLEET_BODY.into(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::ACCEPTED);
+    let etag = created.headers()["etag"].clone();
+    let original = get_json(&app, "/api/v1/fleets/linux-x64").await;
+    let original_contract = get_json(
+        &app,
+        "/api/v1/template-profiles/k8s-linux/revisions/1/input-contract",
+    )
+    .await;
 
     // Publish r2 (same artifact, CHANGED input policy): identical
     // content would be a durable NoOp under R9-02, so a genuine r2
@@ -87,18 +106,31 @@ async fn a_new_desired_ready_revision_can_promote_after_r1_was_active() {
         .await
         .unwrap();
 
-    // A new attestation with a fresh key activates r2 (upgrade path).
-    let expected2 = expected_bindings_digest("k8s-linux", 2);
-    let attest2 = attest_body(&control_plane, &digest, &expected2, &engine).await;
-    let (status, _) = put_attestation(&app, "k8s-linux", 2, "ci-r2", attest2).await;
-    assert_eq!(
-        status,
-        StatusCode::CREATED,
-        "the new desired Ready candidate must be able to promote"
-    );
+    // No conformance requests are needed for either revision's activation.
     let view = get_json(&app, "/api/v1/template-profiles/k8s-linux").await;
     assert_eq!(view["activeRevision"], 2, "r2 promotes over r1");
     assert_eq!(view["status"], "Active");
+    let retained = get_json(&app, "/api/v1/fleets/linux-x64").await;
+    assert_eq!(retained["resolved"], original["resolved"]);
+    assert_eq!(retained["resolved"]["template"]["revision"], 1);
+    assert_eq!(
+        get_json(
+            &app,
+            "/api/v1/template-profiles/k8s-linux/revisions/1/input-contract"
+        )
+        .await,
+        original_contract
+    );
+    let mut noop = authorized("PUT", "/api/v1/fleets/linux-x64", Some(FLEET_BODY.into()));
+    noop.headers_mut().remove("if-none-match");
+    noop.headers_mut().insert("if-match", etag.clone());
+    let response = app.clone().oneshot(noop).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["etag"], etag);
+    assert_eq!(
+        get_json(&app, "/api/v1/fleets/linux-x64").await["resolved"],
+        original["resolved"]
+    );
 }
 
 #[tokio::test]
@@ -125,9 +157,14 @@ async fn stale_attestation_stays_durable_and_cannot_promote() {
         .periodic_scan(1_800_000_002_000)
         .await
         .unwrap();
+    let promoted = control_plane
+        .template_profile_get("k8s-linux")
+        .await
+        .unwrap()
+        .unwrap();
 
     // A LATE, correct r1 attestation (fresh key): recorded evidence,
-    // but r1 is no longer desired — activation refused, revision stays.
+    // but r1 is no longer desired and the active r2 identity cannot change.
     let expected1 = expected_bindings_digest("k8s-linux", 1);
     let late = attest_body(&control_plane, &digest, &expected1, &engine).await;
     let (status, _) = put_attestation(&app, "k8s-linux", 1, "ci-r1-late", late).await;
@@ -137,8 +174,54 @@ async fn stale_attestation_stays_durable_and_cannot_promote() {
         "stale but correct evidence stays durable (R6-08)"
     );
     let view = get_json(&app, "/api/v1/template-profiles/k8s-linux").await;
-    assert_eq!(view["activeRevision"], 1);
+    assert_eq!(view["activeRevision"], 2);
     assert_eq!(view["desiredRevision"], 2);
+    let evidence = get_json(
+        &app,
+        "/api/v1/template-profiles/k8s-linux/revisions/1/attestations/ci-r1-late",
+    )
+    .await;
+    assert_eq!(evidence["subjectVerified"], true);
+    let after = control_plane
+        .template_profile_get("k8s-linux")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.active_attestation_id, promoted.active_attestation_id);
+}
+
+#[tokio::test]
+async fn failed_conformance_remains_readable_without_downgrading_activation() {
+    let (app, control_plane, engine) = build_app_with_scan().await;
+    let digest = seed_profile(&app, &control_plane, "k8s-linux", true).await;
+    let original = control_plane
+        .template_profile_get("k8s-linux")
+        .await
+        .unwrap()
+        .unwrap();
+    let expected = expected_bindings_digest("k8s-linux", 1);
+    let mut body: serde_json::Value =
+        serde_json::from_str(&attest_body(&control_plane, &digest, &expected, &engine).await)
+            .unwrap();
+    body["result"] = serde_json::json!("failed");
+    let (status, _) =
+        put_attestation(&app, "k8s-linux", 1, "failed-runtime", body.to_string()).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let evidence = get_json(
+        &app,
+        "/api/v1/template-profiles/k8s-linux/revisions/1/attestations/failed-runtime",
+    )
+    .await;
+    assert_eq!(evidence["result"], "failed");
+    assert_eq!(evidence["subjectVerified"], true);
+    let after = control_plane
+        .template_profile_get("k8s-linux")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.active_revision, Some(1));
+    assert_eq!(after.active_attestation_id, original.active_attestation_id);
+    assert_eq!(after.status, "Active");
 }
 
 #[tokio::test]

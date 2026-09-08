@@ -125,96 +125,6 @@ impl Store {
         Ok(())
     }
 
-    /// Records static-validation results for a candidate revision. Only the
-    /// manifest-derived platform/bindings contract is frozen here.
-    pub(crate) async fn template_revision_validated(
-        &self,
-        record: shaula_core::template::TemplateValidationRecord,
-    ) -> StoreResult<()> {
-        let key = &record.key;
-        let revision = record.revision;
-        let row = template_profile_revisions::Entity::find()
-            .filter(template_profile_revisions::Column::ProfileKey.eq(key))
-            .filter(template_profile_revisions::Column::Revision.eq(revision))
-            .one(self.connection())
-            .await?
-            .ok_or_else(|| {
-                StoreError::Corrupt(format!("template revision {key}/{revision} missing"))
-            })?;
-        let mut updated: template_profile_revisions::ActiveModel = row.into();
-        updated.platform = Set(Some(record.platform.clone()));
-        updated.bindings_contract = Set(Some(record.bindings_contract.clone()));
-        updated.manifest_json = Set(Some(record.manifest_json.clone()));
-        updated.lock_digest = Set(Some(record.lock_digest.clone()));
-        updated.state = Set(if record.ready {
-            "Ready".to_string()
-        } else {
-            "Rejected".to_string()
-        });
-        updated.reason = Set(record.reason.clone());
-        template_profile_revisions::Entity::update(updated)
-            .exec(self.connection())
-            .await?;
-        Ok(())
-    }
-
-    /// Atomic `Ready -> Active` transition freezing the accepted
-    /// attestation, executed INSIDE the attestation's transaction
-    /// (R5-09, spec 0005 §5). Fails when the revision is not Ready or no
-    /// longer desired. The freeze is ONE-TIME PER REVISION (R6-01): the
-    /// active attestation of the currently active revision is immutable,
-    /// but a NEW desired Ready candidate PROMOTES over the previous
-    /// active revision — the spec's upgrade path — while existing fleet
-    /// pins keep their retained references.
-    pub(crate) async fn template_activate_tx(
-        &self,
-        tx: &DatabaseTransaction,
-        key: &str,
-        revision: i64,
-        attestation_id: &str,
-        now: i64,
-    ) -> StoreResult<()> {
-        let candidate = template_profile_revisions::Entity::find()
-            .filter(template_profile_revisions::Column::ProfileKey.eq(key))
-            .filter(template_profile_revisions::Column::Revision.eq(revision))
-            .one(tx)
-            .await?
-            .ok_or_else(|| {
-                StoreError::Corrupt(format!("template revision {key}/{revision} missing"))
-            })?;
-        if candidate.state != "Ready" {
-            return Err(StoreError::Conflict {
-                resource: format!("{key}/{revision} is not Ready"),
-            });
-        }
-        let profile = template_profiles::Entity::find_by_id(key.to_string())
-            .one(tx)
-            .await?
-            .ok_or_else(|| StoreError::Corrupt(format!("template profile {key} missing")))?;
-        if profile.desired_revision != revision || profile.deletion_requested {
-            return Err(StoreError::Conflict {
-                resource: format!("{key}/{revision} is no longer desired"),
-            });
-        }
-        // One-time freeze PER REVISION (R6-01): the attestation frozen
-        // for the ACTIVE revision is immutable — a different key must
-        // never replace it. Promoting a different (desired) revision is
-        // the upgrade path, not a freeze violation.
-        if profile.active_revision == Some(revision) {
-            return Err(StoreError::Conflict {
-                resource: format!("{key}/{revision} already has a frozen active attestation"),
-            });
-        }
-        let mut updated: template_profiles::ActiveModel = profile.into();
-        updated.active_revision = Set(Some(revision));
-        updated.observed_revision = Set(Some(revision));
-        updated.active_attestation_id = Set(Some(attestation_id.to_string()));
-        updated.status = Set("Active".to_string());
-        updated.updated_at = Set(now);
-        template_profiles::Entity::update(updated).exec(tx).await?;
-        Ok(())
-    }
-
     /// Looks up an attestation by its STABLE composite identity inside
     /// a transaction — the in-commit replay/conflict authority for
     /// attestation PUT (R5-09).
@@ -357,30 +267,6 @@ impl Store {
 }
 
 impl Store {
-    /// Synchronizes the profile status head after a revision-level state
-    /// change (e.g. scan-driven Validating -> Ready).
-    pub(crate) async fn template_profile_set_status(
-        &self,
-        key: &str,
-        status: &str,
-        now: i64,
-    ) -> StoreResult<()> {
-        template_profiles::Entity::update_many()
-            .col_expr(
-                template_profiles::Column::Status,
-                sea_orm::sea_query::Expr::value(status),
-            )
-            .col_expr(
-                template_profiles::Column::UpdatedAt,
-                sea_orm::sea_query::Expr::value(now),
-            )
-            .filter(template_profiles::Column::Key.eq(key))
-            .filter(template_profiles::Column::DeletionRequested.eq(false))
-            .exec(self.connection())
-            .await?;
-        Ok(())
-    }
-
     /// Applies the structured credential validation outcome for an Auth
     /// Candidate: promote to Active (staged activation) or reject while
     /// keeping the prior active revision untouched. Delegates to the full

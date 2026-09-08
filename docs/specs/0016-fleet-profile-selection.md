@@ -14,6 +14,9 @@
 
 ## 2. Read contract and eligibility
 
+Template 的自动激活与已有 Ready 的升级由 [spec 0017](0017-automatic-template-activation.md)
+定义；本选择器继续依据服务端 Active revision，不能在浏览器提前把 Ready 当成可选。
+
 - 复用 `GET /api/v1/github-auth-profiles` 和 `GET /api/v1/template-profiles`，响应均为
   `{profiles: [...]}`，当前不分页。分别要求 `auth.read` 和 `template.read`。
   不增加 API、数据库实体、GitHub 探测或平台请求。

@@ -19,6 +19,7 @@ pub mod registry_impl;
 pub mod scaleset_ownership_repo;
 pub mod shared_repo;
 pub mod store;
+mod template_activation;
 pub mod template_repo;
 
 pub use store::{Store, StoreError, StoreResult};
@@ -38,4 +39,7 @@ mod tests {
     mod persistence;
     mod profiles;
     mod profiles_attestation;
+    mod template_activation;
+    mod template_activation_support;
+    mod template_scan;
 }

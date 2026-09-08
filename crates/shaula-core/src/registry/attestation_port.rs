@@ -42,11 +42,9 @@ pub struct AttestationRecord {
     pub suite: (String, String),
     pub completed_at: i64,
     /// Whether the submitted subject matched the recomputed authority.
-    /// A mismatched attestation is stored and audited but can never
-    /// activate (spec 0005 §5, R6-08).
+    /// Mismatched attestations remain durable evidence. All conformance
+    /// submissions are independent of activation (spec 0017).
     pub subject_verified: bool,
-    /// When set, atomically freeze this attestation as the active one.
-    pub activate: bool,
 }
 
 /// The persisted attestation row as seen by the replay pre-check
@@ -69,14 +67,8 @@ pub struct AttestationReplayRow {
 /// Outcome of one attestation commit (spec 0005 §5 replay semantics).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttestationCommit {
-    /// The attestation was newly recorded and (being eligible) froze
-    /// itself as the active one.
+    /// The conformance evidence was newly recorded without changing activation.
     Created,
-    /// The attestation was recorded and audited but its activation was
-    /// refused — stale (no longer desired), candidate not Ready, or the
-    /// revision's attestation is already frozen. "Cannot activate" is
-    /// never "cannot record" (R6-08).
-    RecordedNotActivated,
     /// An exact replay of the same attestation identity: the ORIGINAL
     /// record stands, nothing was re-activated or overwritten.
     Replayed,

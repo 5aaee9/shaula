@@ -23,7 +23,7 @@ async fn stale_attestation_commits_durable_evidence_and_audit() {
         "target/test-artifacts".into(),
     );
 
-    // Seed revision 1 and activate it (att A).
+    // Seed revision 1 and activate it through static validation.
     let tx = store.begin().await.unwrap();
     store
         .template_commit_revision(
@@ -57,19 +57,27 @@ async fn stale_attestation_commits_durable_evidence_and_audit() {
         .await
         .unwrap();
     tx.commit().await.unwrap();
+    let profile = store.template_profile_get("tpl").await.unwrap().unwrap();
+    let candidate = store
+        .template_revision_get("tpl", 1)
+        .await
+        .unwrap()
+        .unwrap();
     store
-        .template_revision_validated(shaula_core::template::TemplateValidationRecord {
-            key: "tpl".into(),
-            revision: 1,
-            ready: true,
-            platform: "kubernetes".into(),
-            bindings_contract: "shaula.bindings.kubernetes/v1".into(),
-            manifest_json: "{}".into(),
-            lock_digest: "sha256:lock".into(),
-            reason: None,
-        })
+        .template_validation_commit(
+            &profile,
+            &candidate,
+            Ok(super::template_activation_support::validated()),
+            2,
+        )
         .await
         .unwrap();
+    let original_pin = store
+        .template_profile_get("tpl")
+        .await
+        .unwrap()
+        .unwrap()
+        .active_attestation_id;
 
     let record = |key: &str| shaula_core::registry::AttestationRecord {
         id: shaula_core::registry::attestation_record_id("tpl", 1, key),
@@ -83,7 +91,6 @@ async fn stale_attestation_commits_durable_evidence_and_audit() {
         suite: ("suite".into(), "v1".into()),
         completed_at: 1,
         subject_verified: true,
-        activate: true,
     };
     let committed = control_plane
         .commit_attestation(record("att-a"), "ops".into(), 5)
@@ -121,8 +128,8 @@ async fn stale_attestation_commits_durable_evidence_and_audit() {
         .unwrap();
     assert_eq!(
         committed,
-        shaula_core::registry::AttestationCommit::RecordedNotActivated,
-        "a stale activation refusal is a verdict, not a storage failure"
+        shaula_core::registry::AttestationCommit::Created,
+        "stale conformance remains durable evidence"
     );
 
     // The late attestation row SURVIVED (durable evidence) and the audit
@@ -143,7 +150,7 @@ async fn stale_attestation_commits_durable_evidence_and_audit() {
     assert_eq!(profile.active_revision, Some(1));
     assert_eq!(
         profile.active_attestation_id.as_deref(),
-        Some(shaula_core::registry::attestation_record_id("tpl", 1, "att-a").as_str()),
-        "the frozen id is the STABLE composite identity, not the raw URI key"
+        original_pin.as_deref(),
+        "conformance must never replace the automatic activation identity"
     );
 }

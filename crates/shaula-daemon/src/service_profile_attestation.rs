@@ -73,7 +73,7 @@ impl ControlPlane {
         // Recompute the expected subject from stored authority; a submitted
         // field can only MATCH it, never redefine it (spec 0005 §5.1). A
         // MISMATCH is durable evidence now (R6-08): it is stored and
-        // audited with `subject_verified=false`, never activated. A
+        // audited with `subject_verified=false`. A
         // genuine STORAGE failure is NOT a verdict — it propagates as a
         // 5xx instead of being recorded as a lie about why verification
         // failed.
@@ -110,22 +110,14 @@ impl ControlPlane {
             suite: payload.suite.clone(),
             completed_at: payload.completed_at,
             subject_verified,
-            // Only a passed, subject-VERIFIED attestation on the
-            // still-desired Ready candidate may gate Ready -> Active;
-            // the in-commit activation is best-effort so a stale (no
-            // longer desired) but correct attestation stays durable and
-            // audited instead of vanishing (R6-08).
-            activate: subject_verified && payload.result == "passed",
         };
         match self
             .store
             .commit_attestation(record, actor.name.clone(), now)
             .await?
         {
-            // Created, RecordedNotActivated and Replayed all answer with
-            // the same stable attestation key — the replay never
-            // re-activates and a non-activatable record is still 201
-            // evidence.
+            // Created and Replayed return the same stable evidence key;
+            // neither can change Template activation.
             Ok(_) => Ok(Ok(payload.attestation_key.clone())),
             Err(mutation) => Ok(Err(mutation)),
         }

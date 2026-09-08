@@ -247,7 +247,7 @@ Fleet mutation 使用 conditional request 与 idempotency key；effective mutati
 
 ### 6.2 Template Profile
 
-Template Profile 是 HTTP-managed logical resource。异步静态验证只把 Candidate 推进到 `Ready`；只有绑定 exact compatibility tuple 的独立 immutable conformance attestation 才能推进到 `Active`。只有 current Active Revision 可接收新的 Fleet 引用。Revision 固定被证明的 compatibility tuple：
+Template Profile 是 HTTP-managed logical resource。异步静态验证通过后自动把仍为 desired 的 Candidate 经 `Ready` 推进到 `Active`，完整状态机与升级规则由 [spec 0017](0017-automatic-template-activation.md) 维护。只有 current Active Revision 可接收新的 Fleet 引用；Active 不声明完整运行验证通过。Revision 固定运行配置 tuple：
 
 - content-addressed Terraform artifact 和 dependency lock；
 - manifest-derived Template Platform、engine constraints、固定 input/output protocol 与 managed-plan shape；
@@ -255,7 +255,7 @@ Template Profile 是 HTTP-managed logical resource。异步静态验证只把 Ca
 - Fleet 可提供的 bounded input policy；
 - artifact 和规范化非 credential material 的 digest。
 
-Attestation 是引用 Template Revision/canonical subject 的独立 immutable record；它的 PUT 不创建或修改 Revision，`Ready -> Active` transaction 只在 Profile activation state 中冻结 `active_attestation_id`。Artifact upload 是独立的 digest-idempotent HTTP operation。`template.publish` 拥有等同部署 IaC code 的高权限，`template.attest` 独立控制 attestation acceptance；普通 `fleet.write` 两者皆无。新增或改变 Template reference 的 admission 只解析 current Active subject，并冻结 revision/artifact/attestation；capacity/inputs/no-op 中未改变的旧 pin 按 spec 0002 保留，不重新准入或升级。以后发布或 attestation 新 Template Revision 不改变该 Fleet；切换必须显式 Fleet replacement，且 v1 仅在 Resource Occupancy 与 active Runner Operations 都为零时允许。Template Platform 只能来自 admitted artifact manifest，HTTP body、bindings 或 attestation 均不得覆盖。
+Attestation 是引用 Template Revision/canonical subject 的独立 immutable 运行证据；它的 PUT 不创建或修改 Revision、Profile head 或 activation ID。自动 `Ready -> Active` transaction 冻结 opaque activation provenance；兼容字段 `active_attestation_id` 不再表示新版本必有 conformance record，详见 spec 0017。Artifact upload 是独立的 digest-idempotent HTTP operation。`template.publish` 拥有等同部署 IaC code 的高权限并授权通过校验后的自动激活，`template.attest` 独立控制 attestation acceptance；普通 `fleet.write` 两者皆无。新增或改变 Template reference 的 admission 只解析 current Active subject，并冻结 revision/artifact/activation provenance；capacity/inputs/no-op 中未改变的旧 pin 按 spec 0002 保留，不重新准入或升级。以后发布、激活或 attestation 新 Template Revision 不改变该 Fleet；切换必须显式 Fleet replacement，且 v1 仅在 Resource Occupancy 与 active Runner Operations 都为零时允许。Template Platform 只能来自 admitted artifact manifest，HTTP body、bindings 或 attestation 均不得覆盖。
 
 ### 6.3 GitHub Auth Profile
 
@@ -547,7 +547,7 @@ PAT/App private key 与 schema-sensitive Template bindings 可以明文存入各
 - GitHub control-plane credential 从 SQLite 解出后只经过 GitHub Access Module，永不进入 Template/Terraform/Runner/workflow；`shaula-scaleset` 派生的短期 token 同样受保护；
 - sensitive Template binding 只从 exact Revision 解析到获准 IaC child，永不进入 Runner/workflow。
 
-Template artifact publication 等价于部署可运行 provider plugin 并持有平台权限的代码。`template.publish`、`template.attest`、`fleet.write`、`auth.write`、read 和 retirement 必须独立分权；artifact streaming 需 digest、size、expansion、path/link/device、atomic publication 和 GC 安全检查。Static validation 只能到 `Ready`，exact accepted attestation 才可到 `Active`，且 Template Platform 只从 artifact manifest 派生。
+Template artifact publication 等价于部署可运行 provider plugin 并持有平台权限的代码。`template.publish`、`template.attest`、`fleet.write`、`auth.write`、read 和 retirement 必须独立分权；artifact streaming 需 digest、size、expansion、path/link/device、atomic publication 和 GC 安全检查。Static validation 通过后自动激活；独立 conformance evidence 不控制 Active，且 Template Platform 只从 artifact manifest 派生。
 
 v1 管理 HTTP listener 只支持 loopback；non-loopback startup fail closed，远程 proxy 终止 TLS，Shaula 自行执行 spec 0009 的 OIDC/authz/audit。所有管理 UI、assets、API、health 均认证，仅 exact login/callback 可匿名完成认证流程。Direct loopback/development 无例外，legacy actor/backend token 不是管理身份。
 
@@ -594,7 +594,7 @@ Implementation is incomplete until：
 2. Daemon 在 bootstrap 不含任何 Fleet/Profile resource catalog 的情况下启动；三类 resources 均通过 HTTP 创建并跨重启恢复。启动必须通过 spec 0009 的 OIDC 配置/discovery gate，所有 UI/assets/API/health routes 通过其认证验收。
 3. `cargo metadata`/`cargo tree` architecture gate 证明 production binary 是 pure Rust，不含 Go bridge/FFI 或 Kubernetes/Docker client；framework/Adapter concrete types 与平台分支不进入 `shaula-core`。
 4. Template artifact HTTP publication 对 digest idempotent，并拒绝 traversal、link/device、expansion bomb、digest mismatch 和 oversize；`template.publish`、`template.attest` 与 `fleet.write` 权限彼此独立。
-5. Static validation 只产生 `Ready`；exact accepted conformance attestation 才产生 `Active`。新增或改变 Template reference 的 admission 只解析 current Active subject 并冻结 artifact/attestation，未改变的旧 pin 按 spec 0002 保留；新 Profile Revision 或 attestation 不改变 Fleet 和既有 Generation，Platform authority 只来自 artifact manifest。
+5. Static validation 通过后自动产生 `Active`，无须 conformance PUT；已有 Ready 经重新校验自动激活。新增或改变 Template reference 的 admission 只解析 current Active subject 并冻结 artifact/activation provenance，未改变的旧 pin 按 spec 0002 保留；新 Profile Revision、激活或 attestation 不改变 Fleet 和既有 Generation，Platform authority 只来自 artifact manifest。
 6. PAT/App private-key 与 sensitive Template binding bytes 能从 exact SQLite Revision 跨重启重建 client 或 IaC input，但任何 GET/list/status/revision/attestation、audit、error、log、trace、metric 或 diagnostic 中均找不到原值或可推导表示；两类 secret 都不进入 Runner/workflow，GitHub credential 也不进入 Terraform。
 7. same-key credential promotion 为每个依赖 Fleet 写入完整 desired/observed Auth Revision Refs；normal handoff 只做 quiesce、read-only ownership/absence classification 与 observed-ref acknowledgement，再由普通 reconcile 独占 create/adopt、ID binding 和 session establish/replace。Decommission cleanup-only handoff 不建 session/acquire/Create；跨 Profile key replacement 只在零 Occupancy且无 active acquisition/GitHub/Runner Operation 时接受，`Blocked` 不释放任何 exact reference。
 8. pinned Go-oracle differential suite 与 organization/repository × GitHub App/PAT 的真实 `github.com` matrix 都通过 create-or-adopt、session、ACK/acquire、JIT、inventory、safe removal 和 restart。

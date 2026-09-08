@@ -39,7 +39,7 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
       <div className="page-heading">
         <div>
           <h1>Templates</h1>
-          <p>Immutable template revisions and their activation status.</p>
+          <p>Templates activate automatically after validation.</p>
         </div>
         <Button
           onClick={() => {
@@ -209,6 +209,11 @@ function TemplateDetails({
           <StatusBadge value={data.status} />
         </KeyValue>
       </dl>
+      {data.status === "Ready" && (
+        <p className="mt-4 text-sm text-muted-foreground" role="status">
+          Validation passed. Waiting for automatic activation.
+        </p>
+      )}
       <div className="mt-6 flex items-center gap-3">
         <h3 className="text-sm font-medium">Revision</h3>
         <Input
@@ -232,6 +237,9 @@ function TemplateDetails({
           <KeyValue label="Revision status">
             <StatusBadge value={revisionQuery.data.data.state} />
           </KeyValue>
+          {revisionQuery.data.data.reason && (
+            <KeyValue label="Validation reason">{revisionQuery.data.data.reason}</KeyValue>
+          )}
         </dl>
       ) : (
         <Loading />
