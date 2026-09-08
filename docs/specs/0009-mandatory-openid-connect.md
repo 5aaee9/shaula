@@ -63,7 +63,7 @@ Shaula 是 server-side OIDC relying party。使用 Authorization Code + PKCE S25
 
 ID Token MUST 校验签名及允许的 asymmetric algorithm、exact `iss`、web client `aud`、适用时的 `azp`、`exp`、`iat`、`nbf`（若存在）和 transaction nonce，允许至多 60 秒 clock skew。拒绝 `none`、不兼容 key/algorithm、未知 issuer/audience 和无有效 `sub`。使用成熟 Rust OIDC/OAuth2/JWT 库处理协议与密码学，不手写 verifier。
 
-登录后 cookie 只包含高熵 opaque session ID；ID/access tokens、client secret、PKCE verifier 与 identity claims 留在 server。Session store 只保留授权所需身份、scope 和有效期；v1 不持久化 refresh token，不申请 `offline_access`，也不自动延长认证期限。Session 绝对期限不晚于 ID Token `exp` 且不超过 1 小时，idle timeout 15 分钟；到期后重新走登录。进程重启清除 sessions，logout 立即撤销当前 session，登录成功轮换 session ID 防止 fixation。
+登录后 cookie 只包含高熵 opaque session ID；OIDC tokens、client secret、PKCE verifier 与 identity claims 留在 server。[spec 0013](0013-provider-backed-browser-session-renewal.md) / [ADR-0017](../ard/0017-renew-browser-sessions-in-the-authentication-guard.md) 修订原有不自动续期的决定：Provider 提供 refresh token 时仅在内存保管，短期 lease/idle 到期先向 Provider 续期，成功继续原请求，总续期时长由 Provider 决定。没有 refresh token 时维持绝对期限不晚于 ID Token `exp` 且不超过 1 小时、idle timeout 15 分钟的登录回退。进程重启清除 sessions，logout 立即撤销当前 session，登录成功轮换 session ID 防止 fixation。Cookie 寿命、并发与失败规则由 spec 0013 统一定义。
 
 Session cookie 使用 `__Host-shaula-session`、`HttpOnly`、`Secure`、`SameSite=Lax`、`Path=/`，无 `Domain`。Login transaction cookie 同样受保护。部署浏览器入口始终 HTTPS；本地开发也使用 HTTPS 入口和实际测试 Provider，不提供 production 可启用的 insecure/no-auth 开关。
 
@@ -85,7 +85,7 @@ Actor 的稳定身份是 `(iss, sub)`，使用 versioned、无歧义编码传递
 
 Discovery/JWKS refresh 使用 bounded cache、有限 timeout/backoff 和 unknown-key refresh 去重。Provider outage 时只有仍在有效期内的已验证本地 session、或能通过仍有效 cached metadata/key 验证的 token 可继续访问；新登录、未知 key、过期 cache/token/session 必须拒绝，不能无限使用 stale key 或降级为未验证 claims。Auth service 无法建立/验证新身份时 readiness 为 false，但已提交资源的安全 recovery/cleanup 不因身份服务 outage 被丢弃。`/livez` 的业务检查仍只反映 supervision，HTTP 认证先行。
 
-`shaula` 负责 clap/env 配置与启动顺序；`shaula-http` 内聚 discovery、verifier、login/session/CSRF 与 route guard。Core/Registry 只接收已认证 actor 和有效权限，不依赖 OIDC wire DTO 或前端状态。In-memory login/session stores 必须有容量上限、expiry eviction 与 shutdown cleanup；认证失败不得记录 secret，bounded telemetry 不以 issuer URL、subject、email 或 token 为 metric label。
+`shaula` 负责 clap/env 配置与启动顺序；`shaula-http` 内聚 discovery、verifier、login/session/CSRF 与 route guard。Core/Registry 只接收已认证 actor 和有效权限，不依赖 OIDC wire DTO 或前端状态。In-memory login/session stores 必须有容量上限、expiry eviction 与 shutdown cleanup；spec 0013 定义 refreshable session 在短期 lease 过期后的受限保留与续期，未取得新验证前不得授予访问。认证失败不得记录 secret，bounded telemetry 不以 issuer URL、subject、email 或 token 为 metric label。
 
 ## 7. Acceptance criteria
 

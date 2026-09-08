@@ -16,6 +16,7 @@
 | UI 行为 | [spec 0008](specs/0008-embedded-web-ui.md) |
 | GitHub authentication 连接列表、搜索、详情发现 | [spec 0012](specs/0012-github-authentication-inventory.md) / [ADR-0016](ard/0016-list-authentication-connections-from-the-profile-registry.md) |
 | 管理 HTTP 的 OIDC、session、CSRF | [spec 0009](specs/0009-mandatory-openid-connect.md) |
+| Browser session 到期后的 Provider 续期、页面保留 | [spec 0013](specs/0013-provider-backed-browser-session-renewal.md) / [ADR-0017](ard/0017-renew-browser-sessions-in-the-authentication-guard.md) |
 | Worker/Executor、内部 control/state HTTP、locks/CAS、恢复与备份 | [spec 0010](specs/0010-lifecycle-worker-and-http-state-backend.md)；理由见 [ADR-0014](ard/0014-run-lifecycle-workers-with-a-database-http-state-backend.md) |
 | 多账户 GitHub App authentication、动态仓库 selector、installation routing | [spec 0011](specs/0011-multi-account-github-authentication.md) / [ADR-0015](ard/0015-route-one-github-app-profile-to-multiple-accounts.md)；已有本地实现，运行时集成边界见 implementation status，真实 GitHub 路由验收与生产迁移未执行 |
 | 已实现、未接线、未验证与迁移缺口 | [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) |

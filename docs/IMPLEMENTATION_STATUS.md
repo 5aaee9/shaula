@@ -341,6 +341,10 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
 
 ## Mandatory management OIDC: implementation and evidence
 
+- Provider-backed browser session renewal is accepted in spec 0013 / ADR-0017
+  (2026-09-08). The documentation precedes implementation; refresh-token storage,
+  guard renewal and new expiry acceptance are not yet implemented or verified.
+
 - `crates/shaula/src/oidc_args.rs` and `main.rs` load required CLI/env settings
   and initialize discovery/JWKS before listeners or resource workers.
 - `crates/shaula-http/src/oidc/` owns verification, browser login, opaque sessions,

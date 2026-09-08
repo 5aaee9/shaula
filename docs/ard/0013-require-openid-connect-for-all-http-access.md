@@ -3,10 +3,12 @@ status: accepted
 date: 2026-09-06
 supersedes: 0011
 amends: [0005, 0009, 0012]
-amended-by: 0014
+amended-by: [0014, 0017]
 ---
 
 # Require OpenID Connect for all HTTP access
+
+> Session expiry amended by [ADR-0017](0017-renew-browser-sessions-in-the-authentication-guard.md): renewable browser sessions first obtain fresh Provider authorization in the guard; successful renewal preserves the current page.
 
 > Scope amended by [ADR-0014](0014-run-lifecycle-workers-with-a-database-http-state-backend.md): 本决定继续覆盖所有管理 UI/API/health；新增的独立内部 worker/state listener 使用 spec 0010 的分权 capabilities，不是管理认证回退。
 
@@ -28,7 +30,7 @@ Shaula MUST 在 daemon 内实现 OIDC relying party 和 API token verification�
 
 - 本 ADR supersedes ADR-0011 的认证设计，并在此重申其 loopback/TLS exposure 限制；修订 ADR-0005 / ADR-0009 的认证责任和 ADR-0012 的 public-shell 决定。
 - 移除 legacy backend token / actor/scopes headers 和 Vite actor injection；部署需注册 Provider client、配置 callback/API audience、显式授予 principal 权限，并让 HTTP probes 携带凭据。
-- 未登录用户不能取得 UI bundle；session 到期后不能从服务器继续取得 UI/API/asset 内容。已交付给浏览器的字节无法撤回，因此禁止持久/共享缓存与离线 service worker。
+- 未登录用户不能取得 UI bundle；session lease 到期后须按 ADR-0017 成功续期，或重新登录，才能继续取得 UI/API/asset 内容。已交付给浏览器的字节无法撤回，因此禁止持久/共享缓存与离线 service worker。
 - Identity-provider availability、discovery/JWKS rotation、session/CSRF lifecycle 成为 HTTP Adapter 的责任；使用成熟 Rust 库，限制网络重试和内存状态。暂时 outage 不授权 anonymous access，也不遗忘已有 Runner cleanup intent。
 - 不引入多租户隔离、本地密码账户、自动首次登录 admin 或 GitHub credential 复用。现有资源 scope、conditional writes、audit、redaction 和 asynchronous convergence 语义继续适用。
 - 实现进度与本地/真实 Provider 验收证据仅在 [implementation status](../IMPLEMENTATION_STATUS.md) 维护；本 ADR 的 accepted 状态不等于发布验收通过。

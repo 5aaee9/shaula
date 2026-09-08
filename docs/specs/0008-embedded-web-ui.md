@@ -34,8 +34,11 @@ status belongs in [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md).
 - `GET /api/v1/session` returns `{name, scopes}` and `X-CSRF-Token` in a response
   header. UI mutations echo the CSRF header; the server validates it together
   with Origin. A session menu supports authenticated, CSRF-protected logout.
-  Session expiry requires login again and clears in-memory resource/query and
-  credential form state; authentication failure must not replay a mutation.
+  Lease expiry first renews through the Provider in the server guard under
+  [spec 0013](0013-provider-backed-browser-session-renewal.md). Successful renewal
+  preserves the mounted page, URL and draft state. Terminal 401 or logout clears
+  in-memory resource/query and credential form state; authentication failure must
+  not replay a mutation. Temporary renewal 503 does not mark authentication expired.
 - UI creates, edits and retirement preserve conditional mutation and idempotency
   semantics. An editor keeps the version originally displayed even as background
   queries refresh. Conflicts retain user input and require explicit reload/review.
