@@ -416,7 +416,13 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
   null input defaults for both modules. Independent storage and variable reviews
   found issues in error classification, source filtering/removal, numeric fidelity,
   sensitive inheritance and nested null; fixes and regression coverage were verified.
-  Nix/Linux gates and production deployment of this increment remain pending.
+  The production Nix package also passed 457 Linux workspace tests (2 skipped),
+  strict Clippy and both real Terraform HTTP-state protocol checks. The NixOS
+  module evaluation and full treefmt gate passed; the existing Docker conformance
+  and bootstrap Python suites passed 29 and 11 tests. The custom Docker smoke
+  runner label is declared in `.github/actionlint.yaml` and explicitly loaded by
+  actionlint in Nix source archives. Production deployment is managed by
+  PowerArmor's locked `shaula` input.
 
 - Visual Fleet Template inputs: [spec 0014](specs/0014-visual-template-inputs.md)
   and [ADR-0018](ard/0018-render-fleet-inputs-from-approved-template-options.md)

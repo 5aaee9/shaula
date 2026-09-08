@@ -1,11 +1,11 @@
 """Source-integrity and bounded protected subprocess-diagnostic regressions."""
 
 import os
-from pathlib import Path
 import stat
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 from safety import Rejected
 from support import Commands, source_digest
@@ -36,10 +36,14 @@ class SourceTests(unittest.TestCase):
             (root / ".docker-conformance" / "journal.json").write_text("protected")
             self.assertEqual(source_digest(root), original)
             (root / "nested").mkdir()
-            (root / "nested" / "terraform.tfstate").write_text("source, not root runtime state")
+            (root / "nested" / "terraform.tfstate").write_text(
+                "source, not root runtime state"
+            )
             self.assertNotEqual(source_digest(root), original)
 
-    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux source symlink semantics")
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"), "Linux source symlink semantics"
+    )
     def test_source_file_and_directory_symlinks_rejected(self):
         for directory in (False, True):
             with tempfile.TemporaryDirectory() as temporary:
@@ -51,7 +55,10 @@ class SourceTests(unittest.TestCase):
                     source_digest(root)
 
 
-@unittest.skipUnless(sys.platform.startswith("linux"), "Linux process groups, pipes and private permissions")
+@unittest.skipUnless(
+    sys.platform.startswith("linux"),
+    "Linux process groups, pipes and private permissions",
+)
 class CommandTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -63,7 +70,9 @@ class CommandTests(unittest.TestCase):
         self.commands.env = {"PATH": os.defpath}
 
     def logs(self, suffix):
-        return list((self.root / ".docker-conformance" / "commands").glob("*." + suffix))
+        return list(
+            (self.root / ".docker-conformance" / "commands").glob("*." + suffix)
+        )
 
     def test_nonzero_exit_keeps_both_streams_without_exposing_canary(self):
         code = "import sys; print('stdout-canary'); print('stderr-canary', file=sys.stderr); sys.exit(7)"
@@ -77,19 +86,25 @@ class CommandTests(unittest.TestCase):
     def test_stream_limit_retains_bounded_prefix_and_fails_uncertain(self):
         self.commands.OUTPUT_LIMIT = 1024
         code = "import os; os.write(1, b'x' * 65536)"
-        with self.assertRaisesRegex(Rejected, "^test_output_output_limit_outcome_uncertain$"):
+        with self.assertRaisesRegex(
+            Rejected, "^test_output_output_limit_outcome_uncertain$"
+        ):
             self.commands.run([sys.executable, "-c", code], "test_output")
         self.assertEqual(self.logs("stdout")[0].stat().st_size, 1024)
 
     def test_timeout_retains_flushed_diagnostic(self):
         code = "import os, time; os.write(2, b'failure-context'); time.sleep(10)"
-        with self.assertRaisesRegex(Rejected, "^test_timeout_timeout_outcome_uncertain$"):
+        with self.assertRaisesRegex(
+            Rejected, "^test_timeout_timeout_outcome_uncertain$"
+        ):
             self.commands.run([sys.executable, "-c", code], "test_timeout", timeout=0.5)
         self.assertEqual(self.logs("stderr")[0].read_bytes(), b"failure-context")
 
     def test_both_large_streams_are_drained_without_deadlock(self):
         code = "import os; os.write(2, b'e' * 262144); os.write(1, b'o' * 262144)"
-        output = self.commands.run([sys.executable, "-c", code], "test_drains", timeout=5)
+        output = self.commands.run(
+            [sys.executable, "-c", code], "test_drains", timeout=5
+        )
         self.assertEqual(output, b"o" * 262144)
         self.assertEqual(self.logs("stderr")[0].stat().st_size, 262144)
 

@@ -3,7 +3,6 @@
 import datetime
 import json
 import os
-from pathlib import Path
 import re
 import selectors
 import signal
@@ -11,6 +10,7 @@ import stat
 import subprocess
 import time
 import uuid
+from pathlib import Path
 
 from safety import Rejected, digest, require
 
@@ -19,7 +19,9 @@ def private_directory(path):
     path = Path(path)
     require(not path.is_symlink(), "directory_symlink")
     info = path.stat()
-    require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid(), "directory_owner")
+    require(
+        stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid(), "directory_owner"
+    )
     require(info.st_mode & 0o077 == 0, "directory_permissions_require_0700")
     return path.resolve()
 
@@ -28,7 +30,9 @@ def private_bytes(path):
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     with os.fdopen(fd, "rb") as stream:
         info = os.fstat(stream.fileno())
-        require(stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid(), "input_owner")
+        require(
+            stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid(), "input_owner"
+        )
         require(info.st_mode & 0o077 == 0, "input_permissions_require_0600")
         require(info.st_size <= 8 * 1024 * 1024, "input_size")
         return stream.read()
@@ -58,14 +62,21 @@ def source_digest(workspace):
     # Only fixed generated root entries are excluded. Helpers, binaries and
     # extensionless files are source too; never silently follow a source link.
     generated_directories = {".terraform", ".docker-conformance"}
-    generated_files = {"terraform.tfstate", "terraform.tfstate.backup", "errored.tfstate",
-                       ".terraform.tfstate.lock.info", "crash.log"}
+    generated_files = {
+        "terraform.tfstate",
+        "terraform.tfstate.backup",
+        "errored.tfstate",
+        ".terraform.tfstate.lock.info",
+        "crash.log",
+    }
     files = []
 
     def unreadable(_error):
         raise Rejected("template_directory_unreadable")
 
-    for current, directories, names in os.walk(workspace, followlinks=False, onerror=unreadable):
+    for current, directories, names in os.walk(
+        workspace, followlinks=False, onerror=unreadable
+    ):
         current = Path(current)
         for name in directories[:]:
             child = current / name
@@ -97,10 +108,18 @@ class Commands:
         self.terraform = str(Path(terraform).resolve(strict=True))
         self.docker = str(Path(docker).resolve(strict=True))
         require(socket.startswith("unix:///"), "docker_socket_must_be_local_unix")
-        require(stat.S_ISSOCK(os.stat(socket.removeprefix("unix://")).st_mode), "docker_socket_missing")
+        require(
+            stat.S_ISSOCK(os.stat(socket.removeprefix("unix://")).st_mode),
+            "docker_socket_missing",
+        )
         self.socket = socket
-        self.env = {"PATH": os.environ.get("PATH", os.defpath), "HOME": str(workspace / ".docker-conformance"),
-                    "LANG": "C.UTF-8", "TF_IN_AUTOMATION": "1", "CHECKPOINT_DISABLE": "1"}
+        self.env = {
+            "PATH": os.environ.get("PATH", os.defpath),
+            "HOME": str(workspace / ".docker-conformance"),
+            "LANG": "C.UTF-8",
+            "TF_IN_AUTOMATION": "1",
+            "CHECKPOINT_DISABLE": "1",
+        }
         for key in ("SSL_CERT_FILE", "SSL_CERT_DIR", "NIX_SSL_CERT_FILE"):
             if key in os.environ:
                 self.env[key] = os.environ[key]
@@ -121,12 +140,15 @@ class Commands:
                     if not chunk:
                         selector.unregister(pipe)
                         continue
-                    retained = chunk[:self.OUTPUT_LIMIT - counts[pipe]]
+                    retained = chunk[: self.OUTPUT_LIMIT - counts[pipe]]
                     logs[pipe].write(retained)
                     counts[pipe] += len(retained)
                     if pipe is child.stdout:
                         output.extend(retained)
-                    require(len(retained) == len(chunk), phase + "_output_limit_outcome_uncertain")
+                    require(
+                        len(retained) == len(chunk),
+                        phase + "_output_limit_outcome_uncertain",
+                    )
             try:
                 child.wait(timeout=max(0.001, deadline - time.monotonic()))
             except subprocess.TimeoutExpired:
@@ -145,23 +167,37 @@ class Commands:
         out_fd = os.open(directory / (basename + ".stdout"), flags, 0o600)
         with os.fdopen(out_fd, "wb", buffering=0) as out_log:
             err_fd = os.open(directory / (basename + ".stderr"), flags, 0o600)
-            with os.fdopen(err_fd, "wb", buffering=0) as err_log:
-                with subprocess.Popen(arguments, cwd=self.workspace, env=self.env, stdin=subprocess.DEVNULL,
-                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True) as child:
+            with (
+                os.fdopen(err_fd, "wb", buffering=0) as err_log,
+                subprocess.Popen(
+                    arguments,
+                    cwd=self.workspace,
+                    env=self.env,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    start_new_session=True,
+                ) as child,
+            ):
+                try:
+                    stdout = self._drain(
+                        child,
+                        {child.stdout: out_log, child.stderr: err_log},
+                        phase,
+                        timeout,
+                    )
+                except BaseException:
+                    # Outcome stays uncertain; this is not a lifecycle
+                    # fencing proof for any descendant that escaped PGID.
                     try:
-                        stdout = self._drain(child, {child.stdout: out_log, child.stderr: err_log}, phase, timeout)
-                    except BaseException:
-                        # Outcome stays uncertain; this is not a lifecycle
-                        # fencing proof for any descendant that escaped PGID.
-                        try:
-                            os.killpg(child.pid, signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
-                        child.wait()
-                        raise
-                    finally:
-                        os.fsync(out_log.fileno())
-                        os.fsync(err_log.fileno())
+                        os.killpg(child.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    child.wait()
+                    raise
+                finally:
+                    os.fsync(out_log.fileno())
+                    os.fsync(err_log.fileno())
         require(child.returncode in accepted, phase + "_exit_" + str(child.returncode))
         return stdout
 
@@ -172,7 +208,12 @@ class Commands:
         return json.loads(self.tf(*arguments, phase=phase))
 
     def docker_run(self, *arguments, phase, accepted=(0,)):
-        return self.run([self.docker, "--host", self.socket, *arguments], phase, timeout=60, accepted=accepted)
+        return self.run(
+            [self.docker, "--host", self.socket, *arguments],
+            phase,
+            timeout=60,
+            accepted=accepted,
+        )
 
     def docker_json(self, *arguments, phase):
         return json.loads(self.docker_run(*arguments, phase=phase))

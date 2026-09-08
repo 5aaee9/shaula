@@ -31,6 +31,11 @@ _: {
           "web/package-lock.json"
         ];
         formatter = {
+          # Nix checks run from source archives without a .git directory.
+          actionlint.options = [
+            "-config-file"
+            ".github/actionlint.yaml"
+          ];
           # Auto-fix linters run first; whitespace formatters run last.
           nixfmt.priority = 10;
           ruff-format.priority = 10;

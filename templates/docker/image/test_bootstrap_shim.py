@@ -5,13 +5,12 @@ import importlib.machinery
 import importlib.util
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
-
 
 SHIM_PATH = Path(__file__).with_name("bootstrap-shim")
 loader = importlib.machinery.SourceFileLoader("bootstrap_shim", str(SHIM_PATH))
@@ -42,14 +41,19 @@ class EncodingTests(unittest.TestCase):
 
     def test_rejects_malformed_envelopes(self):
         invalid = [
-            b"", b"not base64!", VALID_JIT + b"\n", VALID_JIT + b"=",
-            base64.b64encode(b"not json"), encoded([]), encoded({}),
-            encoded({".runner": 7}), b"A" * (shim.MAX_JIT_BYTES + 1),
+            b"",
+            b"not base64!",
+            VALID_JIT + b"\n",
+            VALID_JIT + b"=",
+            base64.b64encode(b"not json"),
+            encoded([]),
+            encoded({}),
+            encoded({".runner": 7}),
+            b"A" * (shim.MAX_JIT_BYTES + 1),
         ]
         for raw in invalid:
-            with self.subTest(size=len(raw)):
-                with self.assertRaises(ValueError):
-                    shim.validate_jit(raw)
+            with self.subTest(size=len(raw)), self.assertRaises(ValueError):
+                shim.validate_jit(raw)
 
     def test_rejects_path_injection_and_bad_configuration_values(self):
         cases = []
@@ -62,9 +66,8 @@ class EncodingTests(unittest.TestCase):
             value[".credentials"] = bad
             cases.append(value)
         for value in cases:
-            with self.subTest():
-                with self.assertRaises((ValueError, TypeError)):
-                    shim.validate_jit(encoded(value))
+            with self.subTest(), self.assertRaises((ValueError, TypeError)):
+                shim.validate_jit(encoded(value))
 
     def test_rejects_duplicate_outer_members(self):
         raw = json.dumps(fixture())
@@ -132,9 +135,20 @@ class HandoffTests(unittest.TestCase):
         environment["actions_runner_input_URL"] = "must-not-reach-listener"
         environment["ACTIONS_RUNNER_INPUT_JITCONFIG"] = "must-be-replaced"
         return subprocess.run(
-            [sys.executable, "-I", "-c", harness, str(SHIM_PATH),
-             str(self.jit_path), str(self.root), str(listener)],
-            env=environment, capture_output=True, timeout=10, check=False,
+            [
+                sys.executable,
+                "-I",
+                "-c",
+                harness,
+                str(SHIM_PATH),
+                str(self.jit_path),
+                str(self.root),
+                str(listener),
+            ],
+            env=environment,
+            capture_output=True,
+            timeout=10,
+            check=False,
         )
 
     def test_fake_listener_observes_handoff_and_propagates_exit_status(self):
@@ -179,15 +193,19 @@ class HandoffTests(unittest.TestCase):
                 result = self.launch(listener)
                 self.assertEqual(result.returncode, 78)
                 self.assertEqual(result.stdout, b"")
-                self.assertEqual(result.stderr, b"bootstrap-shim: JIT bootstrap failed\n")
+                self.assertEqual(
+                    result.stderr, b"bootstrap-shim: JIT bootstrap failed\n"
+                )
                 self.assertFalse((self.root / "unexpected-execution").exists())
 
     def test_unlink_failure_prevents_exec(self):
-        with mock.patch.object(shim, "JIT_PATH", self.jit_path), \
-             mock.patch.object(shim.Path, "unlink", side_effect=PermissionError), \
-             mock.patch.object(shim.os, "execve") as execute, \
-             mock.patch.object(shim.sys, "argv", ["bootstrap-shim"]), \
-             mock.patch.object(shim.sys, "stderr"):
+        with (
+            mock.patch.object(shim, "JIT_PATH", self.jit_path),
+            mock.patch.object(shim.Path, "unlink", side_effect=PermissionError),
+            mock.patch.object(shim.os, "execve") as execute,
+            mock.patch.object(shim.sys, "argv", ["bootstrap-shim"]),
+            mock.patch.object(shim.sys, "stderr"),
+        ):
             self.assertEqual(shim.main(), 78)
         execute.assert_not_called()
 
