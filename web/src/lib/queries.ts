@@ -1,7 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, resourcePath } from "./api";
 import { authenticationExpired } from "./authentication";
-import type { FleetResource, FleetStatus, FleetSummary, Session, TemplateSummary } from "./types";
+import type {
+  AuthResource,
+  FleetResource,
+  FleetStatus,
+  FleetSummary,
+  Session,
+  TemplateSummary,
+} from "./types";
 
 export function useSession() {
   return useQuery({
@@ -39,6 +46,17 @@ export function useTemplates(enabled = true) {
     queryKey: ["templates"],
     queryFn: ({ signal }) => api<{ profiles: TemplateSummary[] }>("/template-profiles", { signal }),
     enabled,
+    refetchOnMount: "always",
+    refetchInterval: 10_000,
+  });
+}
+
+export function useAuthProfiles(enabled = true) {
+  return useQuery({
+    queryKey: ["auth-profiles"],
+    queryFn: ({ signal }) => api<{ profiles: AuthResource[] }>("/github-auth-profiles", { signal }),
+    enabled,
+    refetchOnMount: "always",
     refetchInterval: 10_000,
   });
 }

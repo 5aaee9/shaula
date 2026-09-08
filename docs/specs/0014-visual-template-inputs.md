@@ -125,6 +125,9 @@ PUT 必须继续在服务端对完整对象执行 required、nested object、roo
 
 ## 4. Revision selection, drafts and submission
 
+Profile key 的服务端列表选择和选择后自动加载遵循
+[spec 0016](0016-fleet-profile-selection.md)；下列 exact pin 与原引用保留语义不变。
+
 | 场景 | 使用的输入契约 | 提交的 Template reference |
 | --- | --- | --- |
 | 新建 Fleet，或明确改用其他 Template / Revision | 已读取的 current Active exact Revision | `{key, revision}`，明确固定本次展示的版本 |

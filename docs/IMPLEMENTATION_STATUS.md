@@ -424,6 +424,29 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
   actionlint in Nix source archives. Production deployment is managed by
   PowerArmor's locked `shaula` input.
 
+- Fleet Profile selection: [spec 0016](specs/0016-fleet-profile-selection.md)
+  and [ARD-0020](ard/0020-load-fleet-profile-choices-from-registry.md) are implemented
+  (2026-09-08), following independent specification review and a separate final
+  implementation review. Both fields read the existing server collections and
+  present sorted, unselected dropdowns with Active revision/status, per-list refresh,
+  and explicit loading, permission, empty, unavailable and failure states. New
+  references require a successful list and an eligible current choice; an older
+  Active remains selectable while its desired candidate is validating.
+  Selecting a Template immediately loads its exact Active input contract. List
+  refreshes preserve captured versions, input drafts and the Fleet write version.
+  Unchanged original references survive missing permissions or list failures, and
+  explicit restore actions return to the original authentication or Template/inputs.
+  Template collection reads now propagate stored-row faults instead of returning
+  a partial successful list, with real HTTP/SQLite regression coverage.
+  Final local verification passed: 468 unfiltered workspace tests (2 skipped),
+  379 tests in the literal AGENTS filtered command, strict workspace/all-target
+  Clippy, rustfmt, frontend build/lint/format, 70 browser tests and 4 real
+  HTTPS/OIDC browser tests. The 390px dialog screenshot was visually inspected.
+  The HTTPS fixture selects both real collection entries, loads approved inputs
+  automatically, and verifies the exact PUT plus preserved drafts after a local
+  target-policy rejection; it does not create a runner or call GitHub. This
+  increment has not been deployed to production.
+
 - Visual Fleet Template inputs: [spec 0014](specs/0014-visual-template-inputs.md)
   and [ADR-0018](ard/0018-render-fleet-inputs-from-approved-template-options.md)
   are implemented (2026-09-08). The exact-revision input-contract read projects
@@ -441,7 +464,7 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
   name-filter command also passed (341 tests); the unfiltered run is the full gate.
   The HTTPS input test uses an isolated seeded Template read fixture, exercises
   the real daemon projection/editor and verifies the exact PUT plus an expected
-  missing-auth rejection without creating a Fleet. Router/SQLite integration tests
+  local admission rejection without creating a Fleet. Router/SQLite integration tests
   separately cover successful admission and preset rejection. These checks do not
   claim real template activation or runner provisioning. Independent frontend and
   backend review found no blocking defects.

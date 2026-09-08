@@ -20,6 +20,9 @@ textarea，并将全部模板输入（包括可选参数和 presets）直接展�
 默认模板来源库、从 Terraform 声明发现 variables，以及发布草稿显式采用默认值/批准选项，
 遵循 [spec 0015](0015-template-library-and-variable-discovery.md)。来源库不代表 Active Profiles。
 
+Fleet authentication/template Profile 从服务端列表选择、自动加载模板输入、列表失败时
+保留原引用的行为见 [spec 0016](0016-fleet-profile-selection.md)。
+
 - Cargo builds and embeds the frontend into debug and release binaries. A failed
   frontend build fails the binary build. Runtime serving requires no frontend files.
 - UI document routes support refresh and direct links. Unknown API paths and

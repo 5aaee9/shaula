@@ -12,6 +12,24 @@ export const scopes = [
   "auth.retire",
 ];
 export const fleetKeys = ["linux-build", "release-runners", "integration-tests"];
+export function profile(key: string, activeRevision: number | null = 3, status = "Active") {
+  return {
+    key,
+    incarnation: "template-inc",
+    desiredRevision: 3,
+    activeRevision,
+    status,
+  };
+}
+export const authProfile = {
+  ...profile("github-build", 1),
+  incarnation: "auth-inc",
+  desiredRevision: 1,
+  kind: "pat",
+  credential_present: true,
+  identity: "build-bot",
+  target_allowlist: ["acme"],
+};
 export function fleet(key: string, revision = 2) {
   return {
     key,
@@ -79,15 +97,7 @@ export async function mockApi(page: Page, permissions = scopes) {
     if (path === "/template-profiles")
       return route.fulfill({
         json: {
-          profiles: [
-            {
-              key: "kubernetes-linux",
-              incarnation: "template-inc",
-              desiredRevision: 3,
-              activeRevision: 3,
-              status: "Active",
-            },
-          ],
+          profiles: [profile("kubernetes-linux")],
         },
       });
     if (path.startsWith("/template-profiles/") && path.endsWith("/input-contract"))
@@ -119,7 +129,8 @@ export async function mockApi(page: Page, permissions = scopes) {
           state: "Active",
         },
       });
-    if (path === "/github-auth-profiles") return route.fulfill({ json: { profiles: [] } });
+    if (path === "/github-auth-profiles")
+      return route.fulfill({ json: { profiles: [authProfile] } });
     if (path.startsWith("/github-auth-profiles/") && path.endsWith("/impact"))
       return route.fulfill({ json: { desiredRevision: 1, liveFleets: [] } });
     if (path.startsWith("/github-auth-profiles/"))

@@ -3,7 +3,8 @@ import { useRef, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, Save } from "lucide-react";
 import { api, MutationAttempt, resourcePath, type Resource } from "@/lib/api";
-import { useTemplates } from "@/lib/queries";
+import { useAuthProfiles, useTemplates } from "@/lib/queries";
+import { canChooseProfile, sameTemplateReference } from "@/lib/profile-choice";
 import type { Accepted, ChangeRef, FleetResource, FleetSpec } from "@/lib/types";
 import { AdvancedSettings } from "./advanced-settings";
 import { Modal } from "./modal";
@@ -12,6 +13,7 @@ import { Input } from "./ui/input";
 import { useFleetInputs } from "@/lib/use-fleet-inputs";
 import { FleetTemplateInputs } from "./fleet-template-inputs";
 import { FleetTemplateSelection } from "./fleet-template-selection";
+import { ProfileSelector } from "./profile-selector";
 import { ErrorNotice, Field } from "./status";
 const initial: FleetSpec = {
   github: {
@@ -46,7 +48,16 @@ export function FleetForm({
   const [busy, setBusy] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const attempt = useRef(new MutationAttempt());
-  const templates = useTemplates(scopes.includes("template.read"));
+  const canReadAuth = scopes.includes("auth.read");
+  const templates = useTemplates(editor.canRead);
+  const authProfiles = useAuthProfiles(canReadAuth);
+  const originalAuth = resource?.data.spec.github.auth_profile_ref;
+  const authAllowed =
+    (!!resource && spec.github.auth_profile_ref === originalAuth) ||
+    canChooseProfile(authProfiles, spec.github.auth_profile_ref, canReadAuth);
+  const templateAllowed =
+    sameTemplateReference(editor.reference, resource?.data.spec.template_profile_ref) ||
+    canChooseProfile(templates, editor.template, editor.canRead);
   const customSettings = [
     !!spec.github.scale_set_name && spec.github.scale_set_name !== key,
     spec.github.runner_group !== "Default",
@@ -62,6 +73,10 @@ export function FleetForm({
     try {
       if (!editor.canSubmit)
         throw new Error("Load and review the template input contract before submitting.");
+      if (!authAllowed || !templateAllowed)
+        throw new Error(
+          "Choose available profiles from a successfully loaded list before submitting.",
+        );
       if (spec.capacity.min_runners > spec.capacity.max_runners) {
         setAdvancedOpen(true);
         throw new Error("Minimum runners cannot exceed maximum runners.");
@@ -164,15 +179,24 @@ export function FleetForm({
               />
             </Field>
           )}
-          <Field label="GitHub authentication profile">
-            <Input
-              required
-              value={spec.github.auth_profile_ref}
-              onChange={(event) => github({ auth_profile_ref: event.target.value })}
-              placeholder="github-build"
-            />
-          </Field>
-          <FleetTemplateSelection editor={editor} templates={templates.data?.data.profiles ?? []} />
+          <ProfileSelector
+            label="GitHub authentication profile"
+            value={spec.github.auth_profile_ref}
+            query={authProfiles}
+            canRead={canReadAuth}
+            permission="auth.read"
+            onChange={(value) => github({ auth_profile_ref: value })}
+          />
+          {originalAuth && spec.github.auth_profile_ref !== originalAuth && (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => github({ auth_profile_ref: originalAuth })}
+            >
+              Restore original authentication
+            </Button>
+          )}
+          <FleetTemplateSelection editor={editor} templates={templates} />
           <FleetTemplateInputs editor={editor} />
           <Field label="Maximum runners">
             <Input
@@ -275,7 +299,10 @@ export function FleetForm({
           <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button disabled={busy || !editor.canSubmit} type="submit">
+          <Button
+            disabled={busy || !editor.canSubmit || !authAllowed || !templateAllowed}
+            type="submit"
+          >
             {busy ? <LoaderCircle className="animate-spin" /> : <Save />}
             {resource ? "Save changes" : "Create fleet"}
           </Button>

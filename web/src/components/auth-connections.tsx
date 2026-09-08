@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { RefreshCw, Search, ShieldCheck } from "lucide-react";
-import { api } from "@/lib/api";
+import { useAuthProfiles } from "@/lib/queries";
 import { selectorKey } from "@/lib/auth-policy";
 import { selectorLabel, type AuthResource } from "@/lib/types";
 import { Empty, ErrorNotice, Loading, StatusBadge } from "./status";
@@ -17,11 +16,7 @@ export function AuthConnections({
   onSelect: (key: string) => void;
 }) {
   const [search, setSearch] = useState("");
-  const query = useQuery({
-    queryKey: ["auth-profiles"],
-    queryFn: ({ signal }) => api<{ profiles: AuthResource[] }>("/github-auth-profiles", { signal }),
-    refetchInterval: 10_000,
-  });
+  const query = useAuthProfiles();
   const profiles = query.data?.data.profiles || [];
   const items = profiles.filter((profile) =>
     profile.key.toLowerCase().includes(search.trim().toLowerCase()),

@@ -60,8 +60,9 @@ pub async fn seed(directory: &Path) -> Result<(), Box<dyn std::error::Error>> {
     config["template_source_dirs"] = json!([sources]);
     std::fs::write(config_path, serde_json::to_vec(&config)?)?;
 
-    // No credential, Fleet, worker, validation outbox or infrastructure state is seeded.
-    // This fixture never invokes a platform or marks a real template conformant.
+    // No Fleet, validation outbox or infrastructure state is seeded. The Active
+    // auth fixture below has inert bytes and denies the browser test's target,
+    // so real admission cannot create a Fleet or invoke GitHub or a platform.
     let database = Database::connect(format!(
         "sqlite://{}?mode=rw",
         database_path.to_string_lossy().replace('\\', "/")
@@ -77,6 +78,17 @@ pub async fn seed(directory: &Path) -> Result<(), Box<dyn std::error::Error>> {
         DatabaseBackend::Sqlite,
         "INSERT INTO template_profile_revisions (profile_key,revision,artifact_digest,engine_ref,platform,bindings_contract,fleet_input_policy_json,state,created_at) VALUES ('browser-inputs',1,?,'terraform','kubernetes','shaula.bindings.kubernetes/v1',?,'Active',1)",
         [digest.into(), serde_json::to_string(&policy)?.into()],
+    )).await?;
+    database.execute(Statement::from_string(
+        DatabaseBackend::Sqlite,
+        "INSERT INTO github_auth_profiles (key,incarnation,desired_revision,active_revision,observed_revision,status,deletion_requested,created_at,updated_at) VALUES ('browser-auth','browser-auth-incarnation',1,1,1,'Active',0,1,1)",
+    )).await?;
+    let allowlist =
+        json!({"targets": [{"kind": "organization", "owner": "fixture-authorized-org"}]});
+    database.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "INSERT INTO github_auth_profile_revisions (profile_key,revision,kind,pat_principal,allowlist_json,credential_bytes,state,created_at) VALUES ('browser-auth',1,'pat','browser-fixture',?,?,'Active',1)",
+        [serde_json::to_string(&allowlist)?.into(), b"browser-fixture-inert-credential".to_vec().into()],
     )).await?;
     database.close().await?;
     Ok(())

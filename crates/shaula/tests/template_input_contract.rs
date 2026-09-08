@@ -4,6 +4,8 @@
 mod common;
 #[path = "support/template_library_reads.rs"]
 mod library_reads;
+#[path = "support/template_profile_list.rs"]
+mod profile_list;
 #[path = "support/input_contract.rs"]
 mod support;
 

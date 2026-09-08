@@ -6,6 +6,7 @@ import {
   field,
   loadTemplate,
   mockContract,
+  mockTemplateChoices,
   openCreate,
 } from "./visual-input-fixtures";
 
@@ -88,6 +89,7 @@ test("failed template switches retain input drafts and cancelling returns to the
   page,
 }) => {
   await mockApi(page);
+  await mockTemplateChoices(page, ["kubernetes-linux", "broken-template"]);
   await mockContract(page, imageContract());
   await page.route("**/api/v1/template-profiles/broken-template", (route) =>
     route.fulfill({
@@ -119,6 +121,7 @@ test("failed template switches retain input drafts and cancelling returns to the
 
 test("late contract responses cannot overwrite a newer template selection", async ({ page }) => {
   await mockApi(page);
+  await mockTemplateChoices(page, ["slow-template", "fast-template"]);
   let releaseSlow!: () => void;
   const slow = new Promise<void>((resolve) => {
     releaseSlow = resolve;

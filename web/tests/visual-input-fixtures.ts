@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { profile } from "./fixtures";
 
 export const artifactDigest = `sha256:${"a".repeat(64)}`;
 
@@ -47,12 +48,19 @@ export async function openCreate(page: Page) {
   await page.getByRole("button", { name: "Create fleet" }).click();
   await page.getByLabel("Fleet key", { exact: true }).fill("visual-build");
   await page.getByLabel("Owner", { exact: true }).fill("acme");
-  await page.getByLabel("GitHub authentication profile", { exact: true }).fill("github-build");
+  await page
+    .getByLabel("GitHub authentication profile", { exact: true })
+    .selectOption("github-build");
 }
 
 export async function loadTemplate(page: Page, key = "kubernetes-linux") {
-  await page.getByLabel("Template profile", { exact: true }).fill(key);
-  await page.getByLabel("Template profile", { exact: true }).press("Tab");
+  await page.getByLabel("Template profile", { exact: true }).selectOption(key);
+}
+
+export async function mockTemplateChoices(page: Page, keys: string[]) {
+  await page.route("**/api/v1/template-profiles", (route) =>
+    route.fulfill({ json: { profiles: keys.map((key) => profile(key)) } }),
+  );
 }
 
 export async function acceptCreate(page: Page, check: (body: string) => void) {

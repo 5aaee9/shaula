@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, resourcePath, type Resource } from "./api";
 import { checkInputContract, type InputContract } from "./input-contract";
 import { fleetInputsJson, inputEntries, inputsJson } from "./input-values";
+import { profileUnavailableReason, sameTemplateReference } from "./profile-choice";
 import type { FleetResource, FleetSpec, TemplateResource } from "./types";
 
 type Selection = { contract: InputContract; reference: FleetSpec["template_profile_ref"] };
@@ -34,6 +35,7 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
     ),
   );
   const [selection, setSelection] = useState<Selection>();
+  const originalSelection = useRef<Selection | undefined>(undefined);
   const [pending, setPending] = useState<Selection>();
   const [error, setError] = useState<unknown>(
     !canRead ? new Error("Template read permission is required to edit template inputs.") : null,
@@ -47,7 +49,12 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
   const currentKey = selection?.contract.profileKey ?? originalKey;
   const locked = !!resource && !selection;
 
-  async function load(useOriginal = false, useLatest = false, retry = false) {
+  async function load({
+    original: useOriginal = false,
+    latest: useLatest = false,
+    retry = false,
+    key = template.trim(),
+  }: { original?: boolean; latest?: boolean; retry?: boolean; key?: string } = {}) {
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
@@ -60,7 +67,7 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
     try {
       if (!canRead)
         throw new Error("Template read permission is required to edit template inputs.");
-      let selectedKey = template.trim();
+      let selectedKey = key;
       let selectedRevision: number;
       let digest: string | undefined;
       let reference: FleetSpec["template_profile_ref"];
@@ -85,9 +92,9 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
           resourcePath("template-profiles", selectedKey),
           { signal: controller.signal },
         );
-        const active = profile.data.activeRevision;
-        if (!active)
-          throw new Error("This template has no Active revision. Choose an Active template.");
+        const unavailable = profileUnavailableReason(profile.data);
+        if (unavailable) throw new Error(`This template cannot be selected: ${unavailable}.`);
+        const active = profile.data.activeRevision!;
         if (!useLatest && revision && Number(revision) !== active)
           throw new Error(
             `Revision ${revision} is not current Active. The current Active revision is ${active}.`,
@@ -118,6 +125,7 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
       const next = { contract, reference };
       setFailedSwitch(false);
       if (useOriginal) {
+        originalSelection.current = next;
         setSelection(next);
         setTemplate(selectedKey);
       } else if (selection && identity(selection.contract) === identity(contract)) {
@@ -143,7 +151,7 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
   }
 
   useEffect(() => {
-    if (resource) void load(true);
+    if (resource) void load({ original: true });
     return () => {
       sequence.current++;
       request.current?.abort();
@@ -173,13 +181,31 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
     setPending(undefined);
     setError(null);
   }
+  function restoreOriginal() {
+    if (!resource) return;
+    cancelSwitch();
+    setSelection(originalSelection.current);
+    setTemplate(originalKey);
+    setValues(
+      inputEntries(
+        resource.rawJson
+          ? fleetInputsJson(resource.rawJson)
+          : JSON.stringify(resource.data.spec.template_inputs),
+      ),
+    );
+    setPresetChosen(true);
+  }
   function changeTemplate(key: string) {
     sequence.current++;
     request.current?.abort();
     setLoading(false);
     setPending(undefined);
     setTemplate(key);
+    setRevision("");
+    setError(null);
+    setFailedSwitch(false);
     lastRead.current = undefined;
+    if (key) void load({ key, latest: true });
   }
   function changeRevision(value: string) {
     sequence.current++;
@@ -220,9 +246,12 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
       !loading && !pending && !dirtyReference && !failedSwitch && (!!selection || !!resource),
     needsCancel: !!pending || failedSwitch || dirtyReference,
     load,
-    retry: () => load(locked, false, true),
+    retry: () => load({ original: locked, retry: true }),
     cancelSwitch,
     confirmSwitch,
+    canRestoreOriginal:
+      !!resource && !sameTemplateReference(selection?.reference ?? originalRef ?? "", originalRef),
+    restoreOriginal,
     reference: selection?.reference ?? originalRef ?? "",
     json: inputsJson(values),
   };

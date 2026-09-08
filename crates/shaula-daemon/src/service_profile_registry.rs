@@ -76,10 +76,18 @@ impl ProfileRegistryPort for ControlPlane {
     async fn template_list(&self, actor: &Actor) -> CoreResult<Vec<TemplateProfileView>> {
         let mut views = Vec::new();
         for key in self.store.template_profile_keys().await? {
-            if let Ok(Ok(view)) = self.template_get(actor, &key).await {
-                views.push(view);
+            match self.template_get(actor, &key).await? {
+                Ok(view) => views.push(view),
+                Err(MutationError::NotFound) => {}
+                Err(_) => {
+                    return Err(CoreError::new(
+                        ReasonCode::Internal,
+                        "template profile could not be read",
+                    ));
+                }
             }
         }
+        views.sort_unstable_by(|left, right| left.key.cmp(&right.key));
         Ok(views)
     }
 
