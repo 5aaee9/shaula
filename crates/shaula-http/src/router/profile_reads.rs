@@ -236,18 +236,28 @@ pub(crate) async fn auth_revision_get(
         .auth_revision_get(&actor, &profile_key, revision)
         .await
     {
-        Ok(Ok(view)) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
+        Ok(Ok(view)) => {
+            // F9 (spec 0011 §6): historical reads use the versioned
+            // rendering contract — v2 revisions carry schema_version, the
+            // structured policy and non-secret bindings, not a legacy
+            // installation projection.
+            let mut body = serde_json::json!({
                 "profileKey": view.profile_key,
                 "revision": view.revision,
                 "kind": view.kind,
                 "appId": view.app_id,
                 "installationId": view.installation_id,
                 "patPrincipal": view.pat_principal,
-            })),
-        )
-            .into_response(),
+                "schema_version": view.schema_version,
+                "state": view.state,
+                "reason": view.reason,
+            });
+            if view.schema_version >= 2 {
+                body["target_policy"] = serde_json::json!(view.target_policy);
+                body["bindings"] = serde_json::json!(view.bindings);
+            }
+            (StatusCode::OK, Json(body)).into_response()
+        }
         Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
         Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
     }

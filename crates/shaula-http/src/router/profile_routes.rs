@@ -242,7 +242,7 @@ pub(crate) fn build_auth_payload(dto: AuthProfilePutDto) -> Result<AuthProfilePu
             .into_response())
         }
     };
-    let secret = match (&dto.private_key, &dto.token) {
+    let secret = match (&dto.private_key.flatten(), &dto.token.flatten()) {
         (Some(_), Some(_)) => {
             return Err(problem(
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -266,45 +266,32 @@ pub(crate) fn build_auth_payload(dto: AuthProfilePutDto) -> Result<AuthProfilePu
             .into_response())
         }
     };
+    // F10: a v2 payload carrying ANY legacy member — value, empty, or
+    // null — is a forbidden-member violation detected at this boundary.
+    if dto.schema_version.flatten() == Some(2)
+        && (dto.target_allowlist.is_present()
+            || dto.installation_id.is_present()
+            || dto.pat_principal.is_present())
+    {
+        return Err(problem(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "SpecInvalid",
+            "schema_version 2 forbids installation_id, pat and target_allowlist fields",
+        )
+        .into_response());
+    }
+    // F10: legacy members flatten (null == absent, baseline behavior);
+    // the v2 format validates presence itself inside service_auth_format.
     Ok(AuthProfilePut {
         kind,
-        app_id: dto.app_id,
-        installation_id: dto.installation_id,
-        pat_identity: dto.pat_principal,
+        app_id: dto.app_id.flatten(),
+        installation_id: dto.installation_id.flatten(),
+        pat_identity: dto.pat_principal.flatten(),
         secret,
-        allowlist: dto.target_allowlist,
+        allowlist: dto.target_allowlist.flatten(),
+        schema_version: dto.schema_version.flatten(),
+        target_policy: dto.target_policy.0.flatten(),
     })
-}
-
-pub(crate) async fn auth_profile_get(
-    State(state): State<AppState>,
-    Path(profile_key): Path<String>,
-    auth: crate::oidc::Authenticated,
-) -> Response {
-    let actor = auth.actor;
-    if let Err(response) = require_scope(&actor, Scope::AuthRead) {
-        return response;
-    }
-    match state.profiles.auth_get(&actor, &profile_key).await {
-        Ok(Ok(view)) => (
-            StatusCode::OK,
-            [(axum::http::header::ETAG, format!("\"{}:{}\"", view.incarnation, view.desired_revision))],
-            Json(serde_json::json!({
-                "key": view.key,
-                "incarnation": view.incarnation,
-                "desiredRevision": view.desired_revision,
-                "activeRevision": view.active_revision,
-                "status": view.status,
-                "kind": view.kind.map(|k| if k == shaula_core::auth::AuthKind::Pat { "pat".to_string() } else { "github_app".to_string() }),
-                "identity": view.identity,
-                "credential_present": view.credential_present,
-                "target_allowlist": view.target_allowlist,
-            })),
-        )
-            .into_response(),
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
 }
 
 pub(crate) async fn template_profile_get(

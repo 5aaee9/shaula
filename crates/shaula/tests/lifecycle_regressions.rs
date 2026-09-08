@@ -113,7 +113,7 @@ async fn setup() -> (
             store: store.clone(),
             handoff: store.clone(),
             github: github.clone(),
-            runtime: Arc::new(fakes::Runtime),
+            runtime: Arc::new(GatedRuntime),
         },
         FleetSupervisorConfig {
             fleet_key: "f1".into(),
@@ -142,6 +142,25 @@ async fn setup() -> (
         },
     );
     (store, github, supervisor, digest)
+}
+
+struct GatedRuntime;
+#[async_trait::async_trait]
+impl shaula_core::ports::TemplateRuntimePort for GatedRuntime {
+    async fn create(
+        &self,
+        _: shaula_core::ports::TemplateCreateRequest,
+    ) -> Result<shaula_core::ports::TemplateCreateResult, shaula_core::ports::TemplateOutcomeError>
+    {
+        panic!("Create must be gated")
+    }
+    async fn destroy(
+        &self,
+        _: shaula_core::ports::TemplateDestroyRequest,
+    ) -> Result<shaula_core::ports::DestroyClassification, shaula_core::ports::TemplateOutcomeError>
+    {
+        panic!("Destroy must be gated")
+    }
 }
 
 async fn seed_idle(store: &impl LifecycleStore, digest: &str) {
@@ -178,6 +197,7 @@ async fn seed_idle(store: &impl LifecycleStore, digest: &str) {
 async fn retiring_retries_removal_even_at_zero_excess() {
     let (store, github, supervisor, digest) = setup().await;
     seed_idle(store.as_ref(), &digest).await;
+    supervisor.tick(5).await.unwrap(); // G3: settle the Pending handoff first.
     github.busy.store(true, Ordering::SeqCst);
     supervisor.tick(10).await.unwrap();
     assert_eq!(
@@ -196,6 +216,7 @@ async fn retiring_retries_removal_even_at_zero_excess() {
 async fn destroy_pending_is_reclassified_without_excess() {
     let (store, _, supervisor, digest) = setup().await;
     seed_idle(store.as_ref(), &digest).await;
+    supervisor.tick(5).await.unwrap(); // G3: settle the Pending handoff first.
     for state in [G::Retiring, G::DestroyPending] {
         store.generation_advance("gen1", state, 4).await.unwrap();
     }
@@ -210,6 +231,10 @@ async fn destroy_pending_is_reclassified_without_excess() {
 #[tokio::test]
 async fn adopted_access_failure_and_unknown_inventory_block_effects() {
     let (store, github, supervisor, _) = setup().await;
+    // G3: the first pass settles the Pending handoff; effects reconcile
+    // from the acknowledged snapshot on the following pass.
+    let settled = supervisor.tick(9).await.unwrap();
+    assert!(settled.handoff_acknowledged);
     assert!(supervisor.tick(10).await.unwrap().scale_set_bound);
     github.denied.store(true, Ordering::SeqCst);
     store.demand_snapshot("f1", 1, 11).await.unwrap();
@@ -234,4 +259,34 @@ async fn adopted_access_failure_and_unknown_inventory_block_effects() {
         "UnknownRemoteRunner"
     );
     assert_eq!(github.effects.load(Ordering::SeqCst), 0);
+}
+
+/// R4 (spec 0011 §5.3): a stale/unprovable route proof blocks NEW
+/// management effects (create-or-adopt and Creates) while safe cleanup of
+/// existing generations still proceeds; when the route re-proves, effects
+/// resume. No fallback to another credential ever happens.
+#[tokio::test]
+async fn route_proof_denial_blocks_ownership_and_creates_only() {
+    let (store, github, supervisor, _digest) = setup().await;
+    // G3: settle the Pending handoff first (settlement tick stops before
+    // effects); the next pass reconciles from the acknowledged snapshot.
+    let settled = supervisor.tick(9).await.unwrap();
+    assert!(settled.handoff_acknowledged);
+    assert!(supervisor.tick(10).await.unwrap().scale_set_bound);
+    store.demand_snapshot("f1", 1, 11).await.unwrap();
+
+    // Route unprovable: no new ownership effects and no Creates; the tick
+    // reports blocked instead of proceeding on stale authorization.
+    github.proof_denied.store(true, Ordering::SeqCst);
+    let report = supervisor.tick(20).await.unwrap();
+    assert!(report.blocked);
+    assert!(!report.scale_set_bound);
+    assert_eq!(report.created, 0);
+    assert_eq!(github.effects.load(Ordering::SeqCst), 0);
+
+    // Route re-proven: create effects are allowed again.
+    github.proof_denied.store(false, Ordering::SeqCst);
+    let report = supervisor.tick(30).await.unwrap();
+    assert!(!report.blocked);
+    assert!(report.scale_set_bound);
 }

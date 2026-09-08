@@ -300,10 +300,13 @@ impl Store {
     ) -> StoreResult<Vec<runner_operations::Model>> {
         Ok(runner_operations::Entity::find()
             .filter(runner_operations::Column::GenerationId.eq(generation_id))
-            .filter(
-                runner_operations::Column::State
-                    .is_in(["Pending", "Starting", "Running", "Blocked"]),
-            )
+            .filter(runner_operations::Column::State.is_in([
+                "Pending",
+                "Starting",
+                "ApplyStarting",
+                "Running",
+                "Blocked",
+            ]))
             .all(self.connection())
             .await?)
     }

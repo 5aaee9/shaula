@@ -27,6 +27,8 @@ async fn auth_credential_plaintext_round_trip() {
                 installation_id: None,
                 pat_principal: Some("octocat".into()),
                 allowlist_json: r#"[{"kind":"organization","owner":"example-org"}]"#.into(),
+                schema_version: 1,
+                policy_json: None,
             },
             b"github_pat_SECRETBYTES",
             1,
@@ -36,7 +38,7 @@ async fn auth_credential_plaintext_round_trip() {
     tx.commit().await.unwrap();
 
     store
-        .auth_apply_validation("prod-app", 1, true, None, 2)
+        .auth_apply_full("prod-app", 1, true, None, 2, None)
         .await
         .unwrap();
 
@@ -63,6 +65,8 @@ async fn auth_credential_plaintext_round_trip() {
                 installation_id: None,
                 pat_principal: Some("octocat".into()),
                 allowlist_json: r#"[{"kind":"organization","owner":"example-org"}]"#.into(),
+                schema_version: 1,
+                policy_json: None,
             },
             b"github_pat_NEW",
             3,
@@ -71,7 +75,7 @@ async fn auth_credential_plaintext_round_trip() {
         .unwrap();
     tx.commit().await.unwrap();
     store
-        .auth_apply_validation("prod-app", 2, false, Some("Unauthenticated"), 4)
+        .auth_apply_full("prod-app", 2, false, Some("Unauthenticated"), 4, None)
         .await
         .unwrap();
 
@@ -264,6 +268,8 @@ async fn auth_rotation_retargets_pinned_fleet_handoffs() {
                     installation_id: None,
                     pat_principal: Some("octocat".into()),
                     allowlist_json: r#"[{"kind":"organization","owner":"example-org"}]"#.into(),
+                    schema_version: 1,
+                    policy_json: None,
                 },
                 format!("cred-{revision}").as_bytes(),
                 revision,
@@ -331,7 +337,7 @@ async fn auth_rotation_retargets_pinned_fleet_handoffs() {
     // Rotating the active revision to 2 must retarget ONLY the live fleet,
     // in the same transaction as the head advance.
     store
-        .auth_apply_validation("prod-app", 2, true, None, 9)
+        .auth_apply_full("prod-app", 2, true, None, 9, None)
         .await
         .unwrap();
 

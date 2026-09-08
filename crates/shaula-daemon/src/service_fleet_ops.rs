@@ -41,10 +41,39 @@ impl ControlPlane {
             // observable target.
             None => occupancy,
         };
+        let auth_context = self.store.fleet_auth_context_get(key).await?.map(|c| {
+            let route = |json: &Option<String>, reference: &Option<(String, i64)>| {
+                let context: shaula_core::auth_context::ResolvedAuthContext = serde_json::from_str(json.as_deref()?).ok()?;
+                if reference.as_ref() != Some(&(context.profile_key.clone(), context.revision)) {
+                    return None;
+                }
+                Some(serde_json::json!({
+                    "profileKey": context.profile_key, "revision": context.revision,
+                    "githubHost": context.github_host, "appId": context.app_id,
+                    "account": { "login": context.login, "id": context.account_id, "kind": context.account_kind },
+                    "installationId": context.installation_id, "target": context.target,
+                    "organizationId": context.organization_id, "repositoryId": context.repository_id,
+                    "repositoryOwnerId": context.repository_owner_id,
+                }))
+            };
+            let desired_route = route(&c.desired_context_json, &c.desired);
+            let observed_route = route(&c.observed_context_json, &c.observed);
+            let route_missing = c.desired.is_some() && desired_route.is_none()
+                || c.observed.is_some() && observed_route.is_none();
+            shaula_core::registry::AuthContextSummary {
+                desired: c.desired,
+                observed: c.observed,
+                state: if route_missing && c.state != "Blocked" { "Unknown".into() } else { c.state },
+                reason: c.reason.or_else(|| route_missing.then(|| "AuthContextUnavailable".into())),
+                desired_route,
+                observed_route,
+            }
+        });
         let auth = handoff.map(|h| AuthRolloutSummary {
             desired: h.desired.clone(),
             observed: h.observed.clone(),
             handoff_state: h.state,
+            context: auth_context,
         });
         let auth_observed_matches = auth
             .as_ref()

@@ -51,24 +51,66 @@ impl ApplyIntentSink for LedgerApplyIntentSink {
         // set; a Destroy is fenced only on generation existence so a
         // DELETE/replacement can never block cleanup of the generation's
         // own original resources (spec 0002 §8.330/§8.334).
-        let kind = match provenance.intent {
-            shaula_core::plan::PlanIntent::Create => "Create",
-            shaula_core::plan::PlanIntent::Destroy => "Destroy",
-        };
-        let provenance_json =
-            serde_json::to_string(provenance).map_err(|e| format!("provenance serialize: {e}"))?;
-        let saved_plan_path = "tfplan".to_string();
         self.store
             .operation_record_apply_starting(
-                &provenance.generation_id,
-                kind,
-                &provenance_json,
-                &saved_plan_path,
-                &provenance.saved_plan_digest,
+                provenance,
+                "tfplan",
                 chrono::Utc::now().timestamp_millis(),
             )
             .await
             .map_err(|e| e.summary)?;
         Ok(Box::new(claim))
+    }
+}
+
+/// One runtime call's admitted intents. A definite result closes only these
+/// exact attempts; an error, cancellation or crash leaves their durable rows open.
+pub(crate) struct TrackedApplyIntentSink {
+    inner: Arc<dyn ApplyIntentSink>,
+    attempts: std::sync::Mutex<Vec<String>>,
+}
+
+impl TrackedApplyIntentSink {
+    pub(crate) fn new(inner: Arc<dyn ApplyIntentSink>) -> Arc<Self> {
+        Arc::new(Self {
+            inner,
+            attempts: std::sync::Mutex::new(Vec::new()),
+        })
+    }
+
+    pub(crate) async fn complete(
+        &self,
+        store: &dyn LifecycleStore,
+        now: i64,
+    ) -> shaula_core::error::CoreResult<()> {
+        let attempts = self
+            .attempts
+            .lock()
+            .map_err(|_| {
+                shaula_core::error::CoreError::new(
+                    shaula_core::error::ReasonCode::Internal,
+                    "apply attempt tracking unavailable",
+                )
+            })?
+            .clone();
+        for id in attempts {
+            store.operation_update_state(&id, "Succeeded", now).await?;
+        }
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl ApplyIntentSink for TrackedApplyIntentSink {
+    async fn persist_apply_starting(
+        &self,
+        provenance: &PlanProvenance,
+    ) -> Result<ApplyClaim, String> {
+        let claim = self.inner.persist_apply_starting(provenance).await?;
+        self.attempts
+            .lock()
+            .map_err(|_| "apply attempt tracking unavailable".to_string())?
+            .push(provenance.attempt_id.clone());
+        Ok(claim)
     }
 }

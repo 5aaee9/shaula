@@ -94,6 +94,24 @@ pub struct AuthRolloutSummary {
     pub desired: (String, i64),
     pub observed: Option<(String, i64)>,
     pub handoff_state: String,
+    /// Exact Resolved Auth Context rollout (spec 0011 §6): the desired
+    /// and observed context refs with the durable state/reason. `None`
+    /// for legacy profiles without a context model.
+    pub context: Option<AuthContextSummary>,
+}
+
+/// Non-secret context rollout summary for the fleet status surface.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AuthContextSummary {
+    pub desired: Option<(String, i64)>,
+    pub observed: Option<(String, i64)>,
+    /// Pending / Observed / Blocked.
+    pub state: String,
+    pub reason: Option<String>,
+    /// Non-secret route metadata: account/login, installation id and the
+    /// target address (parsed from the context payload).
+    pub desired_route: Option<serde_json::Value>,
+    pub observed_route: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -149,20 +167,6 @@ pub struct TemplateProfileView {
     pub bindings_present: bool,
 }
 
-/// Non-secret Auth Profile summary; only `credential_present` metadata.
-#[derive(Debug, Clone, PartialEq)]
-pub struct AuthProfileView {
-    pub key: String,
-    pub incarnation: String,
-    pub desired_revision: i64,
-    pub active_revision: Option<i64>,
-    pub status: String,
-    pub kind: Option<AuthKind>,
-    pub identity: Option<String>,
-    pub credential_present: bool,
-    pub target_allowlist: Vec<String>,
-}
-
 /// Submission payload for a Template Profile Candidate revision.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TemplateProfilePut {
@@ -174,6 +178,9 @@ pub struct TemplateProfilePut {
 
 /// Submission payload for a GitHub Auth Candidate revision. Secret bytes
 /// are carried as [`crate::secret::SecretString`] and never logged.
+/// `schema_version == Some(2)` selects the multi-account policy format
+/// (target_policy, GitHub App only); `None` is the legacy single-
+/// installation/exact-allowlist format and must never be version-guessed.
 #[derive(Clone)]
 pub struct AuthProfilePut {
     pub kind: AuthKind,
@@ -181,7 +188,11 @@ pub struct AuthProfilePut {
     pub installation_id: Option<i64>,
     pub pat_identity: Option<String>,
     pub secret: crate::secret::SecretString,
-    pub allowlist: Vec<crate::github::GitHubTarget>,
+    /// Presence-preserving: `None` = member absent; `Some(vec![])` = the
+    /// member appeared with an empty value (forbidden in v2).
+    pub allowlist: Option<Vec<crate::github::GitHubTarget>>,
+    pub schema_version: Option<i64>,
+    pub target_policy: Option<Vec<crate::auth_policy::TargetSelector>>,
 }
 
 impl std::fmt::Debug for AuthProfilePut {
@@ -302,17 +313,25 @@ pub trait HealthPort: Send + Sync {
     async fn ready(&self) -> bool;
 }
 
+pub mod attestation_port;
+pub mod auth_port;
 pub mod lifecycle_port;
 pub mod store_port;
+pub use attestation_port::{
+    attestation_record_id, AttestationCommit, AttestationRecord, AttestationReplayRow,
+};
+pub use auth_port::{
+    auth_context_pins_agree, auth_dependent_set_fingerprint, AuthBindingHealth, AuthCheckedFleet,
+    AuthDependentTarget, AuthExecutionStore, AuthHandoffExpectation, AuthHandoffRow,
+    AuthIdentityProof, AuthLiveFleet, AuthProfileView, AuthPromotion, AuthPromotionOutcome,
+    AuthRepoProof, AuthRevisionRow, AuthRevisionState, AuthRouteObservation,
+    AuthValidationSnapshot, FleetAuthContextRow, FleetContextAck,
+};
 pub use lifecycle_port::{FleetHeadGuard, LifecycleStore};
 pub use lifecycle_port::{GenerationRecord, OperationRow, ScaleSetRow};
-pub use store_port::attestation_record_id;
 pub use store_port::ControlPlaneStore;
 pub use store_port::MutationFacts;
-pub use store_port::{
-    AttestationCommit, AttestationRecord, AttestationReplayRow, AuthHandoffRow, AuthRevisionRow,
-    FleetHead, FleetRevisionRow, ProfileHead, TemplateRevisionRow,
-};
+pub use store_port::{FleetHead, FleetRevisionRow, ProfileHead, TemplateRevisionRow};
 
 /// Parameter object for recording a runner operation.
 #[derive(Debug, Clone)]

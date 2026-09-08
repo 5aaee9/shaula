@@ -30,6 +30,7 @@ async fn server(installation_app_id: i64) -> (String, tokio::task::JoinHandle<()
         .route("/app", get(|| async { Json(serde_json::json!({"id": 12, "client_id": "Iv1.test"})) }))
         .route("/app/installations/34", get(move || async move { Json(serde_json::json!({"id": 34, "app_id": installation_app_id})) }))
         .route("/app/installations/34/access_tokens", post(|| async { (axum::http::StatusCode::CREATED, Json(serde_json::json!({"token": "installation", "expires_at": "2027-01-01T00:00:00Z"}))) }))
+        .route("/repos/example/repo", get(|| async { Json(serde_json::json!({"id": 700, "name": "repo", "owner": {"id": 100, "login": "example"}})) }))
         .route("/orgs/example/actions/runners/registration-token", post(|| async { (axum::http::StatusCode::CREATED, Json(serde_json::json!({"token": "registration"}))) }))
         .route("/repos/example/repo/actions/runners/registration-token", post(|| async { (axum::http::StatusCode::CREATED, Json(serde_json::json!({"token": "registration"}))) }))
         .route("/actions/runner-registration", post(move || {
@@ -58,11 +59,16 @@ async fn auth_validation_checks_identity_and_both_target_kinds() {
             let row = AuthRevisionRow {
                 profile_key: "profile".into(),
                 revision: 1,
+                state: "Validated".into(),
+                reason: None,
                 kind: if app { "github_app" } else { "pat" }.into(),
                 app_id: app.then(|| "Iv1.test".into()),
                 installation_id: app.then_some(34),
                 pat_principal: (!app).then(|| "octocat".into()),
                 allowlist_json: "{}".into(),
+                schema_version: 1,
+                policy_json: None,
+                validation_snapshot_json: None,
             };
             let credential = if app {
                 Credential::GitHubApp {

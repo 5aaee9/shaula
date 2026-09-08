@@ -3,9 +3,25 @@
 //! GitHub protocol or Terraform plan logic.
 
 mod auth_worker;
+#[cfg(test)]
+#[path = "auth_worker_continuity_tests.rs"]
+pub(crate) mod auth_worker_continuity_tests;
+#[cfg(test)]
+#[path = "auth_worker_mock.rs"]
+pub(crate) mod auth_worker_mock;
+#[cfg(test)]
+mod auth_worker_mock_routes;
+mod auth_worker_predecessor;
+mod auth_worker_probe;
+#[cfg(test)]
+#[path = "auth_worker_scheduling_tests.rs"]
+pub(crate) mod auth_worker_scheduling_tests;
+mod auth_worker_selectors;
+mod auth_worker_v2;
 mod fleet_tasks;
 mod oidc_args;
 mod wiring;
+mod wiring_credential;
 
 use clap::{Parser, Subcommand};
 use shaula_core::ports::Clock;

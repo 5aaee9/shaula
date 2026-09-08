@@ -1,9 +1,12 @@
 # Implementation Status (Phase Boundary)
 
-Status: Partial implementation; HTTP state backend and explicit Runtime adapter implemented,
-production lifecycle-worker integration and migration pending.
-Evidence baseline: `b007fbc` (HTTP-backend increment) plus the Nix packaging and
-NixOS deployment increment of 2026-09-07; historical review reports dated 2026-09-06.
+Status: Partial implementation; multi-account GitHub authentication (spec 0011 /
+ADR-0015), the HTTP state backend adapter and the explicit Runtime adapter are
+implemented with local verification; production lifecycle-worker integration,
+real-GitHub multi-account acceptance and the production migration pending.
+Evidence baseline: `b007fbc` (HTTP-backend increment), the Nix packaging and
+NixOS deployment increment of 2026-09-07, and the multi-account authentication
+increment of 2026-09-07; historical review reports dated 2026-09-06.
 
 This is the sole implementation-progress record. [The documentation index](README.md)
 separates accepted contracts, open decisions and release gates. A specification or
@@ -13,21 +16,76 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
-## Proposed multi-account GitHub authentication (2026-09-07)
+## Multi-account GitHub authentication (spec 0011 / ADR-0015): local implementation (2026-09-07)
 
-[Spec 0011](specs/0011-multi-account-github-authentication.md) and
-[ADR-0015](ard/0015-route-one-github-app-profile-to-multiple-accounts.md) are
-documentation-only proposals. The current `shaula-core/src/auth.rs` stores one
-installation ID and an exact Target allowlist; `shaula-daemon/src/service_auth.rs`
-rejects same-key installation/policy changes. `shaula/src/auth_worker.rs` and
-`wiring.rs` still construct clients from that single installation. The web form
-likewise accepts one installation and explicit targets.
+The authentication increment extends the existing control plane, supervisor and
+GitHub adapter. It does not close the production lifecycle integration gaps
+listed below. The accepted spec remains the release contract.
 
-Dynamic account-repository selectors, multiple account bindings per App Profile,
-target-aware installation resolution, durable Auth Context refs and the new
-schema/migration/UI have not been implemented or externally validated. The
-existing GitHub App installations and active organization-only authentication
-do not establish support for these proposed features.
+- **Policy and publication:** one numeric GitHub App identity and credential per
+  profile, with typed organization, exact repository and user/organization
+  account-repository selectors. Policies use case-insensitive canonical matching,
+  reject ambiguous routes and remain intersected with installation access and
+  runner permissions. Account selectors admit future owned repositories on demand;
+  they neither create Fleets nor expand GitHub installation permissions.
+- **Validation and promotion:** every declared account and exact target is checked
+  through the GitHub API adapter. Numeric App/account/repository/owner identity,
+  permissions and installation suspension are verified. Legacy client-ID upgrades
+  prove same-App continuity through `/app`. Candidate rejection leaves the active
+  revision untouched; transient and rate-limit failures retry with per-revision
+  deadlines. Promotion atomically freezes bindings and the validation snapshot,
+  rechecks all live dependencies and their mutation fences, and retargets handoffs.
+- **Persistence and retention:** migrations m0008/m0009 add versioned policies,
+  frozen bindings, Fleet contexts, immutable context history and session auth
+  references. Legacy credential and replay encodings keep their original meaning;
+  older binaries refuse the new durable format. Dependencies include desired and
+  observed Fleet references, sessions, generations and unfinished operations.
+  Cleanup resolves each generation's original credential and context; missing or
+  corrupt authority keeps the resource occupied instead of selecting a fallback.
+- **Handoff and execution:** the desired credential proves a new route while the
+  current execution client stays bound to its observed revision. Success and
+  failure updates compare the captured auth reference, mutation fence and complete
+  desired context. A stale result is discarded. Acknowledgement ends the tick;
+  wiring rebuilds from the persisted observed context before new effects. Exact
+  repository pins apply from first admission, and transfer or same-name recreation
+  cannot silently replace an existing identity.
+- **Runtime access:** per-route singleflight proofs have at most 60 seconds of
+  positive and 15 seconds of negative freshness. Refresh verifies installation,
+  numeric target identity and runner access; time spent waiting or refreshing does
+  not extend old evidence. Observed access failures invalidate proofs. Requests
+  recheck authorization after credential/connection waits and retries. Repository
+  administration tokens are narrowed by the proven numeric repository ID.
+- **HTTP and UI:** versioned views attribute active and desired policy, validation
+  state, reasons and bindings to their exact revisions. Pure legacy reads keep
+  their original shape. Typed policy previews include actual live Fleet coverage;
+  unavailable impact data blocks publication rather than claiming no impact.
+  Explicit legacy upgrades require the numeric App ID. Fleet details show the
+  full desired/observed route identity and handoff status. Bounded, process-local
+  runtime observations provide per-binding health; expired evidence or restart
+  returns Unknown. Candidate validation is shown separately from current access.
+
+Local verification covers real HTTP admission, the scheduled worker, SQLite
+promotion and handoff transactions, supervisor-to-GitHub-adapter composition,
+scripted GitHub responses, token request bodies, delayed-response races, legacy
+migration/replay and browser interactions. Required verification commands are
+`cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo nextest run --manifest-path Cargo.toml --workspace test` and the full
+unfiltered `cargo nextest run --manifest-path Cargo.toml --workspace`; the trailing
+`test` is a name filter. Web gates are `npm run fmt:check`, `npm run lint`,
+`npm run build` and `npm test`.
+
+Final local results (2026-09-07): full workspace 382 passed, 2 ignored;
+the required filtered run 312 passed, 72 skipped; web 24 passed. Strict
+all-target Clippy, rustfmt, web formatting/lint/build and the 400-line Rust
+module limit passed. The two ignored Rust tests require a verified Terraform
+1.9.8 binary and the separate long-running HTTPS/OIDC browser harness.
+
+Open release gates: real GitHub multi-account acceptance under spec 0011 section 9,
+Go-oracle protocol acceptance and migration of the existing production
+`indexyz-org` profile. No production credentials or deployment were used for the
+local checks. The pre-existing production session listener, message acquisition
+and ingestion, recovery and decommission integration gaps recorded below remain
+open. Scripted-server evidence does not establish those end-to-end workflows.
 
 ## Existing implementation and local test coverage
 

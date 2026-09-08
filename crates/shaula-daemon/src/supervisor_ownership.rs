@@ -118,6 +118,19 @@ impl FleetSupervisor {
     /// every tick — a moved or vanished id re-opens classification
     /// instead of silently succeeding.
     pub(crate) async fn ensure_ownership(&self, now: i64) -> CoreResult<bool> {
+        // Route-proof gate (spec 0011 §5.3): create-or-adopt is a new
+        // management effect; it waits for fresh authorization evidence and
+        // fails closed while the route is unprovable.
+        let proof = self.github.ensure_route_proof().await;
+        self.record_route_health(&proof, now).await?;
+        if let Err(failure) = proof {
+            tracing::warn!(
+                fleet = %self.config.fleet_key,
+                summary = %failure.summary(),
+                "route proof unavailable; ownership effects blocked"
+            );
+            return Ok(false);
+        }
         let existing = self.store.scale_set_get(&self.config.fleet_key).await?;
         if let Some(row) = &existing {
             if matches!(

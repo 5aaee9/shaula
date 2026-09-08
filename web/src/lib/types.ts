@@ -44,6 +44,32 @@ export interface FleetStatus {
   conditions: { type: string; status: boolean; reason: string | null }[];
   capacity: { assignedDemand: number; target: number; effective: number; occupancy: number };
   lastError: string | null;
+  githubAuth?: {
+    desired: { profileKey: string; revision: number };
+    observed: { profileKey: string; revision: number } | null;
+    handoffState: string;
+    /** Exact Resolved Auth Context rollout (spec 0011 §6). */
+    context?: {
+      desired: { profileKey: string; revision: number } | null;
+      observed: { profileKey: string; revision: number } | null;
+      state: string;
+      reason: string | null;
+      desiredRoute?: AuthRoute | null;
+      observedRoute?: AuthRoute | null;
+    };
+  };
+}
+export interface AuthRoute {
+  profileKey: string;
+  revision: number;
+  githubHost: string;
+  appId: string;
+  account: { login: string; id: number; kind: "user" | "organization" };
+  installationId: number;
+  target: GitHubTarget;
+  organizationId: number | null;
+  repositoryId: number | null;
+  repositoryOwnerId: number | null;
 }
 export interface TemplateSummary {
   key: string;
@@ -66,9 +92,64 @@ export interface TemplateRevision {
 }
 export interface AuthResource extends TemplateSummary {
   kind: string | null;
-  identity: string | null;
   credential_present: boolean;
-  target_allowlist: string[];
+  /**
+   * Revision-attributed GET shape (spec 0011 §6): legacy members
+   * (identity/target_allowlist) come from the still-effective ACTIVE
+   * revision; the active/desired objects carry per-revision policy and
+   * bindings for v2 profiles or staged upgrades. Legacy members are
+   * absent once the active revision is v2.
+   */
+  identity?: string | null;
+  target_allowlist?: string[];
+  schema_version?: number;
+  app_id?: string;
+  active?: AuthRevisionState;
+  desired?: AuthRevisionState;
+  /** Live fleet targets desiring this profile (spec 0011 §6). */
+  liveFleets?: AuthLiveFleet[];
+}
+/** One live fleet target desiring the profile: the impact surface. */
+export interface AuthLiveFleet {
+  fleetKey: string;
+  phase: string;
+  target: GitHubTarget | null;
+}
+export type TargetSelector =
+  | { kind: "organization"; owner: string }
+  | { kind: "repository"; owner: string; repository: string }
+  | { kind: "account_repositories"; account_kind: "user" | "organization"; owner: string };
+export interface AccountBinding {
+  account_id: number;
+  account_kind: "user" | "organization";
+  login: string;
+  installation_id: number;
+  repository_selection: "all" | "selected";
+  validated_at_ms: number;
+  /** Bounded per-account health (spec 0011 §6). */
+  health: "Validated" | "Unknown" | "Blocked" | "Degraded" | "Healthy";
+  checked_at_ms: number | null;
+  valid_until_ms: number | null;
+  affected_fleets: string[];
+  reason: string | null;
+}
+export interface AuthRevisionState {
+  revision: number | null;
+  state: string;
+  reason: string | null;
+  schema_version: number;
+  identity?: string | null;
+  target_allowlist?: string[];
+  app_id?: string | null;
+  target_policy?: TargetSelector[];
+  bindings?: AccountBinding[];
+}
+export function selectorLabel(selector: TargetSelector): string {
+  if (selector.kind === "repository")
+    return `${selector.owner}/${selector.repository} (repo runners)`;
+  if (selector.kind === "account_repositories")
+    return `${selector.owner} (${selector.account_kind} repositories)`;
+  return `${selector.owner} (org runners)`;
 }
 export interface Accepted {
   changeId: string;

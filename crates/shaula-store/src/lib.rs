@@ -2,8 +2,14 @@
 //! typed repositories. No `DatabaseConnection`, entity or ORM error escapes
 //! this crate.
 
+mod auth_dependents_repo;
+mod auth_execution_repo;
+pub mod auth_policy_repo;
 pub mod auth_repo;
+pub mod auth_v2_repo;
 mod entities;
+mod fleet_auth_ack;
+pub mod fleet_auth_context_repo;
 pub mod fleet_auth_repo;
 pub mod fleet_repo;
 pub mod http_state;
@@ -20,7 +26,14 @@ pub use store::{Store, StoreError, StoreResult};
 mod tests {
     mod apply_fence;
     mod auth_concurrency;
+    mod auth_execution;
+    mod auth_execution_guards;
+    mod auth_handoff_failures;
     mod auth_rotation;
+    mod auth_v2;
+    mod auth_v2_context;
+    mod auth_validation_results;
+    mod migration_format;
     mod persistence;
     mod profiles;
     mod profiles_attestation;

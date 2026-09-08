@@ -19,6 +19,8 @@ fn revision(revision: i64) -> AuthRevisionInsert {
         installation_id: None,
         pat_principal: Some("test-principal".into()),
         allowlist_json: "[]".into(),
+        schema_version: 1,
+        policy_json: None,
     }
 }
 

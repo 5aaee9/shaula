@@ -7,7 +7,6 @@ use shaula_core::registry::{MutationError, MutationFacts};
 use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
 
 use crate::entities::fleet::fleet_revisions;
-use crate::entities::fleet::fleets;
 use crate::entities::lifecycle::{runner_generations, runner_operations};
 
 use super::lifecycle_support::fence_conflict;
@@ -33,10 +32,13 @@ async fn fleet_replacement_occupancy_in_tx(
     if !ids.is_empty() {
         occupancy += runner_operations::Entity::find()
             .filter(runner_operations::Column::GenerationId.is_in(ids))
-            .filter(
-                runner_operations::Column::State
-                    .is_in(["Pending", "Starting", "Running", "Blocked"]),
-            )
+            .filter(runner_operations::Column::State.is_in([
+                "Pending",
+                "Starting",
+                "ApplyStarting",
+                "Running",
+                "Blocked",
+            ]))
             .count(tx)
             .await? as i64;
     }
@@ -138,6 +140,37 @@ impl SqliteControlPlane {
                 .handoff_set_desired(&tx, &facts.resource_key, profile_key, resolved)
                 .await
                 .map_err(core_err)?;
+            // Desired Resolved Auth Context (spec 0011 §4.2): derived from
+            // the ACTIVE revision's frozen bindings in this same
+            // transaction. A structural denial (no selector, ambiguous
+            // installation) rolls the whole mutation back as a 422.
+            match self
+                .store
+                .fleet_auth_context_commit_tx(
+                    &tx,
+                    &facts.resource_key,
+                    profile_key,
+                    resolved,
+                    &facts.spec_json,
+                    facts.now,
+                )
+                .await
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(reason)) => {
+                    let _ = tx.rollback().await;
+                    return Ok(Err(MutationError::Unprocessable {
+                        reason: if reason == "TargetNotAllowed" {
+                            shaula_core::error::ReasonCode::TargetNotAllowed
+                        } else {
+                            shaula_core::error::ReasonCode::AmbiguousInstallation
+                        },
+                        summary: "auth profile target policy does not cover the fleet target"
+                            .into(),
+                    }));
+                }
+                Err(e) => return Err(core_err(e)),
+            }
         }
         self.store
             .change_insert(
@@ -293,70 +326,6 @@ impl SqliteControlPlane {
                         now: facts.now,
                     },
                 )
-                .await
-                .map_err(core_err)?;
-        }
-        tx.commit()
-            .await
-            .map_err(|e| core_err(crate::store::StoreError::from(e)))?;
-        Ok(Ok(()))
-    }
-}
-
-impl SqliteControlPlane {
-    pub(crate) async fn commit_fleet_noop_impl(
-        &self,
-        key: &str,
-        incarnation: &str,
-        revision: i64,
-        actor: &str,
-        idempotency: Option<shaula_core::registry::IdempotencyInsert>,
-        now: i64,
-    ) -> CoreResult<Result<(), MutationError>> {
-        let tx = self.store.begin().await.map_err(core_err)?;
-        // In-tx CAS against the caller's read (spec 0002 §5.3): a newer
-        // PUT or a DELETE that landed since the no-op was classified must
-        // never have its precondition silently ignored — the no-op record
-        // would then pin a stale (incarnation, revision).
-        let Some(current) = fleets::Entity::find_by_id(key.to_string())
-            .one(&tx)
-            .await
-            .map_err(|e| core_err(crate::store::StoreError::from(e)))?
-        else {
-            let _ = tx.rollback().await;
-            return Ok(Err(MutationError::NotFound));
-        };
-        if current.deletion_marker || current.tombstone {
-            let _ = tx.rollback().await;
-            return Ok(Err(MutationError::Gone {
-                tombstone: key.to_string(),
-            }));
-        }
-        if current.incarnation != incarnation || current.desired_revision != revision {
-            let _ = tx.rollback().await;
-            return Ok(Err(MutationError::PreconditionFailed {
-                current: (current.incarnation.clone(), current.desired_revision),
-            }));
-        }
-        self.store
-            .audit_append(
-                &tx,
-                shaula_core::registry::AuditAppend {
-                    resource_kind: "fleet".to_string(),
-                    action: "put".into(),
-                    actor: actor.to_string(),
-                    resource_key: key.to_string(),
-                    revision: Some(revision),
-                    outcome: "noop".into(),
-                    detail_json: None,
-                    now,
-                },
-            )
-            .await
-            .map_err(core_err)?;
-        if let Some(insert) = idempotency {
-            self.store
-                .idempotency_store(&tx, insert)
                 .await
                 .map_err(core_err)?;
         }

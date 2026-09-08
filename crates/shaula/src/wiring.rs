@@ -13,14 +13,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use shaula_core::error::CoreResult;
-use shaula_core::github::ScaleSetIdentity;
-use shaula_core::ports::{Clock, GitHubAccessPort, TemplateRuntimePort};
+use shaula_core::ports::{Clock, TemplateRuntimePort};
 use shaula_core::registry::{Actor, ControlPlaneStore, LifecycleStore, Scope};
-use shaula_core::secret::SecretString;
-use shaula_daemon::apply_intent::LedgerApplyIntentSink;
 use shaula_daemon::effect_gate::FleetEffectGates;
-use shaula_daemon::supervisor::{FleetSupervisor, FleetSupervisorConfig, FleetSupervisorDeps};
-use shaula_scaleset::ScalesetClient;
+use shaula_daemon::supervisor::FleetSupervisor;
 
 /// The daemon-side reconcile loop. Constructed by the composition root
 /// with THE shared effect-gate arc so apply admission and capacity
@@ -38,8 +34,15 @@ pub struct SupervisorWiring {
     /// Cached supervisors keyed by (fleet, phase, desired revision, auth
     /// revision): a credential rotation, fleet replacement or phase
     /// change rebuilds the client.
-    cache: HashMap<(String, String, i64, i64), Arc<FleetSupervisor>>,
+    cache: HashMap<supervisor::SupervisorCacheKey, Arc<FleetSupervisor>>,
     tasks: crate::fleet_tasks::FleetTasks,
+    /// Per-profile auth-worker deferral deadlines (F8): a rate-limited
+    /// validation carries GitHub's Retry-After; the next attempt waits
+    /// until the deadline instead of polling every scan interval.
+    auth_worker_deferred_until: Arc<tokio::sync::Mutex<HashMap<(String, i64), i64>>>,
+    /// Transport seam for the auth worker (G1): production wiring pins
+    /// the fixed github.com endpoints; tests inject a scripted server.
+    auth_worker_endpoints: crate::auth_worker_probe::WorkerEndpoints,
 }
 
 impl SupervisorWiring {
@@ -67,7 +70,20 @@ impl SupervisorWiring {
             operation_timeout,
             cache: HashMap::new(),
             tasks: crate::fleet_tasks::FleetTasks::default(),
+            auth_worker_deferred_until: Arc::default(),
+            auth_worker_endpoints: crate::auth_worker_probe::WorkerEndpoints::production(),
         }
+    }
+
+    /// Injects auth-worker endpoints (composition/test seam; production
+    /// keeps the fixed github.com configuration).
+    #[cfg(test)]
+    pub(crate) fn with_auth_worker_endpoints(
+        mut self,
+        endpoints: crate::auth_worker_probe::WorkerEndpoints,
+    ) -> Self {
+        self.auth_worker_endpoints = endpoints;
+        self
     }
 
     /// Runs the reconcile loop until shutdown. Level-triggered like the
@@ -104,13 +120,78 @@ impl SupervisorWiring {
 
     async fn tick_all(&mut self, now: i64) -> CoreResult<()> {
         for key in self.store.auth_profile_keys().await? {
-            let worker_key = format!("auth/{key}");
-            if !self.tasks.contains(&worker_key) {
-                self.tasks.spawn(
-                    worker_key,
-                    crate::auth_worker::validate(self.store.clone(), self.clock.clone(), key),
-                );
+            // G1: the REAL Profile key reaches the worker — the namespaced
+            // `auth/{key}` string is only the internal task identity. The
+            // deferral gate is keyed by the CANDIDATE REF (profile +
+            // desired revision, G2), so a new publication is never
+            // stranded by an old revision's deadline.
+            let Some(head) = self.store.auth_profile_get(&key).await? else {
+                continue;
+            };
+            if head.status != "Validating" {
+                continue;
             }
+            let worker_key = format!("auth/{key}");
+            if self.tasks.contains(&worker_key) {
+                continue;
+            }
+            let gate_key = (key.clone(), head.desired_revision);
+            if let Some(retry_at) = self.auth_worker_deferred_until.lock().await.get(&gate_key) {
+                if now < *retry_at {
+                    continue;
+                }
+            }
+            // A new desired revision invalidates stale deferral state from
+            // earlier revisions of this profile.
+            self.auth_worker_deferred_until
+                .lock()
+                .await
+                .retain(|(profile, revision), _| {
+                    profile != &key || *revision == head.desired_revision
+                });
+            let deferred = self.auth_worker_deferred_until.clone();
+            let store = self.store.clone();
+            let clock = self.clock.clone();
+            let endpoints = self.auth_worker_endpoints.clone();
+            let real_key = key.clone();
+            self.tasks.spawn(worker_key, async move {
+                let flow = crate::auth_worker::validate(
+                    store,
+                    clock.clone(),
+                    real_key,
+                    gate_key.1,
+                    &endpoints,
+                )
+                .await;
+                let mut gate = deferred.lock().await;
+                match &flow {
+                    Ok(crate::auth_worker::WorkerFlow::Deferred { retry_at_unix_ms }) => {
+                        // G2: None means bounded normal backoff — never an
+                        // infinite deadline. Deadlines are ABSOLUTE unix
+                        // ms, so the default backoff anchors at `now`.
+                        gate.insert(
+                            gate_key,
+                            retry_at_unix_ms.unwrap_or_else(|| {
+                                clock
+                                    .now_unix_ms()
+                                    .saturating_add(crate::auth_worker::DEFAULT_RETRY_BACKOFF_MS)
+                            }),
+                        );
+                    }
+                    Err(_) => {
+                        gate.insert(
+                            gate_key,
+                            clock
+                                .now_unix_ms()
+                                .saturating_add(crate::auth_worker::DEFAULT_RETRY_BACKOFF_MS),
+                        );
+                    }
+                    Ok(crate::auth_worker::WorkerFlow::Done) => {
+                        gate.remove(&gate_key);
+                    }
+                }
+                flow.map(|_| ())
+            });
         }
         let mut live_keys = std::collections::HashSet::new();
         let actor = Actor {
@@ -147,119 +228,35 @@ impl SupervisorWiring {
         }
         // R10-01: evict supervisors for revisions that no longer exist —
         // the cache stays bounded by live fleet revisions only.
-        self.cache.retain(|k, _| live_keys.contains(&k.0));
+        self.cache.retain(|k, _| live_keys.contains(&k.fleet));
         Ok(())
-    }
-    async fn supervisor_for(
-        &mut self,
-        key: &str,
-        revision: i64,
-        phase: &str,
-    ) -> CoreResult<Option<Arc<FleetSupervisor>>> {
-        let Some(latest) = self.store.fleet_revision_latest(key).await? else {
-            return Ok(None);
-        };
-        let Ok(spec) = serde_json::from_str::<shaula_core::fleet::FleetSpec>(&latest.spec_json)
-        else {
-            return Ok(None);
-        };
-        // The CURRENT active credential revision decides the client —
-        // a rotation rebinds the supervisor to the new credential.
-        let Some(auth) = self
-            .store
-            .auth_revision_active(&spec.github.auth_profile_ref)
-            .await?
-        else {
-            return Ok(None);
-        };
-        let auth_profile_key = auth.profile_key.to_string();
-        let auth_revision = auth.revision;
-        let cache_key = (key.to_string(), phase.to_string(), revision, auth.revision);
-        if !self.cache.contains_key(&cache_key) {
-            let Some(credential) =
-                build_credential(&self.store, &auth.profile_key, auth.revision).await?
-            else {
-                return Ok(None);
-            };
-            let Ok(client) = ScalesetClient::production(
-                spec.github.target.clone(),
-                credential,
-                self.clock.clone(),
-            ) else {
-                return Ok(None);
-            };
-            let github: Arc<dyn GitHubAccessPort> = Arc::new(client);
-            let identity = ScaleSetIdentity {
-                target: spec.github.target.clone(),
-                runner_group: spec.github.runner_group.clone(),
-                scale_set_name: spec.github.scale_set_name.clone(),
-            };
-            let labels = spec
-                .github
-                .labels
-                .iter()
-                .map(|name| shaula_core::github::Label {
-                    name: name.clone(),
-                    label_type: "Customer".to_string(),
-                })
-                .collect();
-            let supervisor = FleetSupervisor::new(
-                FleetSupervisorDeps {
-                    limits: self.limits.clone(),
-                    store: self.lifecycle.clone(),
-                    handoff: self.store.clone(),
-                    github,
-                    runtime: self.runtime.clone(),
-                },
-                FleetSupervisorConfig {
-                    fleet_key: key.to_string(),
-                    capacity: shaula_core::capacity::CapacityPolicy {
-                        min_runners: spec.capacity.min_runners,
-                        max_runners: spec.capacity.max_runners,
-                    },
-                    work_root: self.work_root.clone(),
-                    operation_timeout: self.operation_timeout,
-                    artifact_root: self.artifact_root.clone(),
-                    apply_intent_sink: Arc::new(LedgerApplyIntentSink {
-                        store: self.lifecycle.clone(),
-                        gates: self.gates.clone(),
-                    }),
-                    labels,
-                    auth_profile_key: auth_profile_key.clone(),
-                    auth_revision,
-                },
-                identity,
-            );
-            self.cache.retain(|k, _| k.0 != key);
-            self.cache.insert(cache_key.clone(), Arc::new(supervisor));
-        }
-        let supervisor = self.cache[&cache_key].clone();
-        Ok(Some(supervisor))
     }
 }
 
-/// Loads the exact accepted credential for the ACTIVE auth revision
-/// (bytes never leave the store seam until this protected handoff).
-pub(super) async fn build_credential(
-    store: &Arc<dyn ControlPlaneStore>,
-    profile_key: &str,
-    revision: i64,
-) -> CoreResult<Option<shaula_scaleset::Credential>> {
-    let Some(bytes) = store.auth_credential_bytes(profile_key, revision).await? else {
-        return Ok(None);
-    };
-    let Some(row) = store.auth_revision_get(profile_key, revision).await? else {
-        return Ok(None);
-    };
-    let secret = SecretString::new(String::from_utf8_lossy(&bytes).into_owned());
-    let credential = match row.kind.as_str() {
-        "pat" => shaula_scaleset::Credential::Pat(secret),
-        "github_app" => shaula_scaleset::Credential::GitHubApp {
-            client_id: row.app_id.clone().unwrap_or_default(),
-            installation_id: row.installation_id.unwrap_or_default(),
-            private_key: secret,
-        },
-        _ => return Ok(None),
-    };
-    Ok(Some(credential))
+#[cfg(test)]
+impl SupervisorWiring {
+    /// Test-only drain: WAITS for all spawned worker/fleet tasks to
+    /// complete (no aborts) so a scheduling test can observe their
+    /// outcomes deterministically.
+    pub(crate) async fn drain_for_tests(&mut self) {
+        while !self.tasks.is_empty() {
+            let _ = self.tasks.join_next().await;
+        }
+    }
 }
+
+/// Composition tests (real scheduling loop + handoff→execution authority)
+/// live in `wiring_tests.rs`, declared as this module's child so they can
+/// reach private internals like `tick_all` and `supervisor_for`.
+#[cfg(test)]
+#[path = "wiring_tests.rs"]
+pub(crate) mod wiring_tests;
+
+/// G9 end-to-end composition (HTTP publication → real scheduler → real
+/// worker → HTTP correction), also a child module of `wiring`.
+#[cfg(test)]
+#[path = "wiring_http_tests.rs"]
+pub(crate) mod http_tests;
+
+#[path = "wiring_supervisor.rs"]
+mod supervisor;

@@ -4,6 +4,9 @@ import { Plus, RotateCw, Search, ShieldCheck, Trash2 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { api, resourcePath } from "@/lib/api";
 import type { AuthResource, ChangeRef } from "@/lib/types";
+import { selectorLabel } from "@/lib/types";
+import { selectorKey } from "@/lib/auth-policy";
+import { AuthBindings } from "@/components/auth-bindings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Empty, ErrorNotice, KeyValue, Loading, StatusBadge } from "@/components/status";
@@ -133,22 +136,68 @@ function AuthDetails({
               ? "Personal access token"
               : "--"}
         </KeyValue>
-        <KeyValue label="Identity">{data.identity || "--"}</KeyValue>
+        {data.active?.schema_version === 2 ||
+        (!data.activeRevision && data.schema_version === 2) ? (
+          <KeyValue label="App ID">{data.active?.app_id || data.app_id || "--"}</KeyValue>
+        ) : (
+          <KeyValue label="Identity">{data.active?.identity || data.identity || "--"}</KeyValue>
+        )}
         <KeyValue label="Credential">{data.credential_present ? "Configured" : "Absent"}</KeyValue>
         <KeyValue label="Active revision">
           {data.activeRevision ? `r${data.activeRevision}` : "--"}
         </KeyValue>
         <KeyValue label="Desired revision">r{data.desiredRevision}</KeyValue>
-        <KeyValue label="Allowed targets">
-          <div className="flex flex-wrap gap-2">
-            {data.target_allowlist.map((target) => (
-              <span className="label-chip" key={target}>
-                {target}
-              </span>
-            ))}
-          </div>
-        </KeyValue>
+        {data.active?.schema_version === 2 || data.active?.target_policy ? (
+          <KeyValue label="Active target policy">
+            {data.active.target_policy?.length ? (
+              <div className="flex flex-wrap gap-2">
+                {data.active.target_policy.map((selector) => (
+                  <span className="label-chip" key={selectorKey(selector)}>
+                    {selectorLabel(selector)}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              "--"
+            )}
+          </KeyValue>
+        ) : (
+          <KeyValue label="Allowed targets">
+            <div className="flex flex-wrap gap-2">
+              {(data.active?.target_allowlist || data.target_allowlist || []).map((target) => (
+                <span className="label-chip" key={target}>
+                  {target}
+                </span>
+              ))}
+            </div>
+          </KeyValue>
+        )}
+        {data.desired && (
+          <KeyValue label={`Candidate r${data.desired.revision}: ${data.desired.state}`}>
+            {data.desired.reason && <p className="text-red-600">{data.desired.reason}</p>}
+            {data.desired.target_policy?.length ? (
+              <div className="flex flex-wrap gap-2">
+                {data.desired.target_policy.map((selector) => (
+                  <span className="label-chip" key={selectorKey(selector)}>
+                    {selectorLabel(selector)}
+                  </span>
+                ))}
+              </div>
+            ) : data.desired.target_allowlist?.length ? (
+              <div className="flex flex-wrap gap-2">
+                {data.desired.target_allowlist.map((target) => (
+                  <span className="label-chip" key={target}>
+                    {target}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              "--"
+            )}
+          </KeyValue>
+        )}
       </dl>
+      {data.active?.schema_version === 2 && <AuthBindings revision={data.active} />}
       {retire && (
         <RetireDialog
           name={profileKey}

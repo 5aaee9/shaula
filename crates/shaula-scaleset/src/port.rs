@@ -34,6 +34,9 @@ impl ScalesetClient {
     }
 
     async fn parse_error(response: reqwest::Response) -> ScalesetError {
+        if let Some(error) = crate::client::rate_limit_error(&response, "request rate limited") {
+            return error;
+        }
         let status = response.status().as_u16();
         let content_type = response
             .headers()
@@ -197,13 +200,7 @@ impl GitHubAccessPort for ScalesetClient {
             "RunnerSetting": {"disableUpdate": true},
         });
         let response = self
-            .actions_service_request(
-                reqwest::Method::POST,
-                wire::SCALE_SET_ENDPOINT,
-                &[],
-                Some(body),
-                crate::client::DEFAULT_REQUEST_TIMEOUT,
-            )
+            .new_effect_request(wire::SCALE_SET_ENDPOINT, body)
             .await;
         let outcome = definite_or_uncertain::<wire::RunnerScaleSet>(response)
             .await
@@ -218,15 +215,7 @@ impl GitHubAccessPort for ScalesetClient {
     ) -> Result<EffectOutcome<SessionHandle>, shaula_core::ports::AccessFailure> {
         let path = format!("{}/{scale_set_id}/sessions", wire::SCALE_SET_ENDPOINT);
         let body = serde_json::json!({ "ownerName": owner });
-        let response = self
-            .actions_service_request(
-                reqwest::Method::POST,
-                &path,
-                &[],
-                Some(body),
-                crate::client::DEFAULT_REQUEST_TIMEOUT,
-            )
-            .await;
+        let response = self.new_effect_request(&path, body).await;
         // R10-11: the session fields the listener DEPENDS on are required —
         // a response missing any of them is a malformed response, never a
         // silently defaulting empty id/url/token.
@@ -283,6 +272,10 @@ impl GitHubAccessPort for ScalesetClient {
         request_ids: &[i64],
     ) -> Result<shaula_core::ports::EffectOutcome<Vec<i64>>, shaula_core::ports::AccessFailure>
     {
+        // F5 (spec 0011 §5.3): fresh exact authority is enforced AT the
+        // effect boundary — the internal probe cannot recurse into this
+        // gate.
+        self.ensure_route_proof_impl().await?;
         self.acquire_jobs_impl(scale_set_id, session, request_ids)
             .await
     }
@@ -295,6 +288,7 @@ impl GitHubAccessPort for ScalesetClient {
         shaula_core::ports::EffectOutcome<shaula_core::ports::JitConfig>,
         shaula_core::ports::AccessFailure,
     > {
+        self.ensure_route_proof_impl().await?;
         self.generate_jit_impl(scale_set_id, runner_name).await
     }
 
@@ -342,6 +336,29 @@ impl GitHubAccessPort for ScalesetClient {
     fn allows_target(&self, target: &shaula_core::github::GitHubTarget) -> bool {
         self.config.target == *target
     }
+
+    async fn ensure_route_proof(
+        &self,
+    ) -> Result<shaula_core::ports::RouteProof, shaula_core::ports::AccessFailure> {
+        self.ensure_route_proof_impl().await
+    }
+
+    async fn route_proof_failure_window(
+        &self,
+        failure: &shaula_core::ports::AccessFailure,
+    ) -> Option<(i64, i64)> {
+        self.route_proof_failure_window_impl(failure).await
+    }
+
+    /// Verified numeric identity of the Target (spec 0011 §4.2): the
+    /// org id, or repository id + owner id, resolved through the
+    /// installation credential. Body in `port_identity.rs`.
+    async fn resolve_target_identity(
+        &self,
+        target: &shaula_core::github::GitHubTarget,
+    ) -> Result<shaula_core::ports::TargetIdentity, shaula_core::ports::AccessFailure> {
+        self.resolve_target_identity_impl(target).await
+    }
 }
 
 #[path = "port_jobs.rs"]
@@ -353,3 +370,6 @@ use port_jobs::{scale_set_view, stats_from_wire};
 
 #[path = "port_ops.rs"]
 mod port_ops;
+
+#[path = "port_identity.rs"]
+mod port_identity;

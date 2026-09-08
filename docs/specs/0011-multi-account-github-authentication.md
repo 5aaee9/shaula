@@ -1,11 +1,11 @@
 # Multi-account GitHub Authentication Specification
 
-- Status: Draft — proposed extension, not implemented
+- Status: Accepted — local implementation and remaining integration boundaries are recorded in [the implementation status](../IMPLEMENTATION_STATUS.md); real-GitHub multi-account acceptance and the legacy-production migration remain open release gates
 - Date: 2026-09-07
 - Decision: [ADR-0015](../ard/0015-route-one-github-app-profile-to-multiple-accounts.md)
 - Scope: 一个 GitHub App Auth Profile 覆盖多个组织及个人账户的仓库，按具体 Fleet Target 选择 installation
 
-本规范是待审提案。通过后，它替代 [spec 0001 §6.3](0001-shaula-runner-scale-set.md#63-github-auth-profile)、[spec 0005 §6](0005-profile-http-control-plane.md#6-github-auth-profile-resource) 中 GitHub App 的单 installation / 固定 exact allowlist 模型，并扩展 [spec 0002 §6–7](0002-fleet-http-control-plane.md#7-auth-revision-handoff) 的 mutation / Auth Handoff。其余 Fleet identity、conditional mutation、credential redaction、Busy-safe removal 与 retirement 契约继续适用。当前实现仍使用旧模型；见 [实现状态](../IMPLEMENTATION_STATUS.md)。
+本规范已被接受；本地实现与现有运行时集成边界见 implementation status，真实 GitHub 路由验收待执行，替代 [spec 0001 §6.3](0001-shaula-runner-scale-set.md#63-github-auth-profile)、[spec 0005 §6](0005-profile-http-control-plane.md#6-github-auth-profile-resource) 中 GitHub App 的单 installation / 固定 exact allowlist 模型，并扩展 [spec 0002 §6–7](0002-fleet-http-control-plane.md#7-auth-revision-handoff) 的 mutation / Auth Handoff。其余 Fleet identity、conditional mutation、credential redaction、Busy-safe removal 与 retirement 契约继续适用；legacy 数据按 §7 的迁移契约保持原语义。
 
 ## 1. Outcome and boundaries
 

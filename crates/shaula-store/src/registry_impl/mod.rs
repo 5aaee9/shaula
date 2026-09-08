@@ -18,6 +18,7 @@ pub(crate) fn core_err(e: crate::store::StoreError) -> CoreError {
 pub struct SqliteControlPlane {
     store: Store,
     artifact_root: PathBuf,
+    auth_observations: auth_observations::RouteObservations,
 }
 
 impl SqliteControlPlane {
@@ -25,6 +26,7 @@ impl SqliteControlPlane {
         Self {
             store,
             artifact_root,
+            auth_observations: auth_observations::RouteObservations::default(),
         }
     }
 
@@ -36,6 +38,7 @@ impl SqliteControlPlane {
 #[path = "artifacts.rs"]
 mod artifacts;
 
+mod auth_execution;
 #[path = "control_plane_store.rs"]
 mod control_plane_store;
 
@@ -44,6 +47,7 @@ mod commits;
 
 #[path = "commits_fleet.rs"]
 mod commits_fleet;
+mod commits_fleet_noop;
 mod commits_noop;
 mod retirement;
 
@@ -58,3 +62,5 @@ mod lifecycle_support;
 mod scan;
 
 pub use scan::ScanReport;
+
+mod auth_observations;

@@ -31,6 +31,8 @@ pub fn classify_exception(type_name: &str) -> ActionsException {
 /// An HTTP failure observed while talking to GitHub or the Actions Service.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScalesetError {
+    /// A new effect was refused before dispatch because route proof failed.
+    Authorization { failure: AccessFailure },
     /// Transport-level: request may or may not have been processed.
     RequestUncertain { summary: String },
     /// Typed service exception with bounded context.
@@ -41,6 +43,12 @@ pub enum ScalesetError {
     },
     /// Plain status failure without a known exception body.
     Status { status: u16, summary: String },
+    /// Primary/secondary rate limiting: always a bounded retry, never a
+    /// terminal credential or permission verdict (spec 0011 §4.1).
+    RateLimited {
+        retry_after_secs: Option<i64>,
+        summary: String,
+    },
     /// Response body could not be parsed as the expected DTO.
     MalformedResponse { summary: String },
     /// Client-side configuration or construction error.
@@ -50,6 +58,7 @@ pub enum ScalesetError {
 impl ScalesetError {
     pub fn summary(&self) -> String {
         match self {
+            ScalesetError::Authorization { failure } => failure.summary(),
             ScalesetError::RequestUncertain { summary } => summary.clone(),
             ScalesetError::Service {
                 exception, status, ..
@@ -57,6 +66,13 @@ impl ScalesetError {
                 format!("service {exception:?} status={status}")
             }
             ScalesetError::Status { status, summary } => format!("status={status}: {summary}"),
+            ScalesetError::RateLimited {
+                retry_after_secs,
+                summary,
+            } => match retry_after_secs {
+                Some(secs) => format!("rate limited retry_after={secs}s: {summary}"),
+                None => format!("rate limited: {summary}"),
+            },
             ScalesetError::MalformedResponse { summary } => summary.clone(),
             ScalesetError::Configuration { summary } => summary.clone(),
         }
@@ -64,9 +80,17 @@ impl ScalesetError {
 
     pub fn status(&self) -> Option<u16> {
         match self {
+            ScalesetError::Authorization { failure } => match failure {
+                AccessFailure::Unauthenticated | AccessFailure::SessionExpired => Some(401),
+                AccessFailure::PermissionDenied => Some(403),
+                AccessFailure::TargetHiddenOrNotFound => Some(404),
+                AccessFailure::RateLimited { .. } => Some(429),
+                _ => None,
+            },
             ScalesetError::Service { status, .. } | ScalesetError::Status { status, .. } => {
                 Some(*status)
             }
+            ScalesetError::RateLimited { .. } => Some(403),
             _ => None,
         }
     }
@@ -76,8 +100,15 @@ impl ScalesetError {
     /// absence proofs.
     pub fn to_access_failure(&self) -> AccessFailure {
         match self {
+            ScalesetError::Authorization { failure } => failure.clone(),
             ScalesetError::RequestUncertain { summary } => AccessFailure::RequestUncertain {
                 summary: summary.clone(),
+            },
+            ScalesetError::RateLimited {
+                retry_after_secs, ..
+            } => AccessFailure::RateLimited {
+                retry_after: retry_after_secs
+                    .map(|s| std::time::Duration::from_secs(s.max(0) as u64)),
             },
             ScalesetError::Service { status, .. } | ScalesetError::Status { status, .. } => {
                 match *status {

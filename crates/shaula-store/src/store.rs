@@ -12,6 +12,8 @@ pub enum StoreError {
     Unavailable(String),
     #[error("conflicting concurrent write on {resource}")]
     Conflict { resource: String },
+    #[error("policy denied: {reason}")]
+    PolicyDenied { reason: &'static str },
     #[error("{0}")]
     Corrupt(String),
 }
@@ -90,16 +92,24 @@ impl Store {
             .transpose()
             .map_err(StoreError::from)?;
         match version {
-            Some(v) if v == migration::m0005_durable_format::DURABLE_FORMAT_VERSION => Ok(()),
+            Some(v) if v == migration::m0008_auth_multi_account::DURABLE_FORMAT_VERSION_V2 => {
+                Ok(())
+            }
             Some(v) if v == migration::m0005_durable_format::DURABLE_FORMAT_LEGACY => {
                 Err(StoreError::Corrupt(
                     "data directory was written by an unsupported pre-release build (legacy durable identity encoding); no compatibility path exists — rebuild the data directory"
                         .to_string(),
                 ))
             }
+            Some(v) if v < migration::m0008_auth_multi_account::DURABLE_FORMAT_VERSION_V2 => Err(
+                StoreError::Corrupt(
+                    "data directory predates the multi-account auth format and did not migrate; upgrade through a build that migrates it"
+                        .to_string(),
+                ),
+            ),
             Some(v) => Err(StoreError::Corrupt(format!(
                 "data directory durable-format version {v} is newer than this build ({}); upgrade the binary",
-                migration::m0005_durable_format::DURABLE_FORMAT_VERSION
+                migration::m0008_auth_multi_account::DURABLE_FORMAT_VERSION_V2
             ))),            None => Err(StoreError::Corrupt(
                 "data directory has no durable-format marker; rebuild the data directory"
                     .to_string(),

@@ -152,9 +152,18 @@ impl SqliteControlPlane {
             // parsed is rejected. Structurally valid candidates STAY in
             // Validating — promotion to Active requires real GitHub
             // identity/access validation (spec 0005 section 6, phase 3),
-            // never an offline heuristic. Fail closed.
-            let structurally_valid =
-                !candidate.allowlist_json.is_empty() && !candidate.credential_bytes.is_empty();
+            // never an offline heuristic. Fail closed. A v2 Candidate's
+            // authority is its Target policy, not the (empty) legacy
+            // allowlist; an unknown schema version never passes.
+            let structurally_valid = !candidate.credential_bytes.is_empty()
+                && match candidate.schema_version {
+                    1 => !candidate.allowlist_json.is_empty(),
+                    2 => candidate
+                        .policy_json
+                        .as_deref()
+                        .is_some_and(|p| !p.is_empty()),
+                    _ => false,
+                };
             if !structurally_valid {
                 self.store
                     .auth_scan_apply(

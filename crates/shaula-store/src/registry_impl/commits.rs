@@ -165,6 +165,8 @@ impl SqliteControlPlane {
                     installation_id: credential.installation_id,
                     pat_principal: credential.pat_principal.clone(),
                     allowlist_json: credential.allowlist_json.clone(),
+                    schema_version: credential.schema_version,
+                    policy_json: credential.policy_json.clone(),
                 },
                 secret_bytes,
                 facts.now,

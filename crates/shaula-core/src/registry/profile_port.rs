@@ -41,10 +41,18 @@ pub struct AttestationView {
 pub struct AuthRevisionView {
     pub profile_key: String,
     pub revision: i64,
+    pub state: String,
+    pub reason: Option<String>,
     pub kind: String,
     pub app_id: Option<String>,
     pub installation_id: Option<i64>,
     pub pat_principal: Option<String>,
+    /// 1 = legacy, 2 = multi-account policy format.
+    pub schema_version: i64,
+    /// Non-secret selectors of a v2 revision.
+    pub target_policy: Option<Vec<crate::auth_policy::TargetSelector>>,
+    /// Frozen Account Bindings of a v2 revision (non-secret).
+    pub bindings: Vec<crate::auth_context::AccountBinding>,
 }
 
 /// The Profile Registry driving port.

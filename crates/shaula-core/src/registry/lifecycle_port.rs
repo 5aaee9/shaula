@@ -76,14 +76,12 @@ pub trait LifecycleStore: Send + Sync {
     /// single transaction: a Create is refused when the fleet head moved
     /// or the deletion marker is set; a Destroy is refused only when the
     /// generation row is missing — decommission must never block cleanup
-    /// (spec 0002 §8).
+    /// (spec 0002 §8). The operation ID is the provenance's attempt ID, so
+    /// completion can address exactly the effect that returned a result.
     async fn operation_record_apply_starting(
         &self,
-        generation_id: &str,
-        kind: &str,
-        provenance_json: &str,
+        provenance: &crate::ports::PlanProvenance,
         saved_plan_path: &str,
-        saved_plan_digest: &str,
         now: i64,
     ) -> CoreResult<()>;
     /// The durable ORIGINAL provenance of the generation's Create — the

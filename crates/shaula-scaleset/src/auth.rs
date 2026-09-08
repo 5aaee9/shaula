@@ -14,6 +14,8 @@ use wire::{ActionsServiceAdminConnection, InstallationAccessToken, RegistrationT
 
 use crate::error::ScalesetError;
 use crate::wire;
+#[path = "auth_repository.rs"]
+mod repository;
 #[path = "auth_validation.rs"]
 mod validation;
 
@@ -85,8 +87,8 @@ impl std::fmt::Debug for Credential {
     }
 }
 
-/// Manages the registration-token → admin-connection chain with expiry-based
-/// refresh. One instance per authenticated target/context.
+/// Manages the registration-token → admin-connection chain with
+/// expiry-based refresh. One instance per authenticated target/context.
 pub struct AdminTokenManager {
     credential: Credential,
     github_api_base: String,
@@ -94,6 +96,7 @@ pub struct AdminTokenManager {
     http: reqwest::Client,
     clock: Arc<dyn Clock>,
     state: Mutex<Option<AdminConnection>>,
+    repository_id: std::sync::atomic::AtomicI64,
 }
 
 /// Minimum remaining lifetime before a proactive refresh (matches the Go
@@ -122,11 +125,11 @@ impl AdminTokenManager {
             http,
             clock,
             state: Mutex::new(None),
+            repository_id: std::sync::atomic::AtomicI64::new(0),
         }
     }
 
-    /// Returns a valid admin connection, refreshing when expired or close
-    /// to expiry. Serialized to avoid refresh storms.
+    /// Returns a valid admin connection, refreshing when near expiry.
     pub async fn connection(&self) -> Result<AdminConnection, ScalesetError> {
         let mut guard = self.state.lock().await;
         if let Some(existing) = guard.as_ref() {
@@ -138,6 +141,40 @@ impl AdminTokenManager {
         let refreshed = self.bootstrap().await?;
         *guard = Some(refreshed.clone());
         Ok(refreshed)
+    }
+
+    /// A fresh GitHub REST installation token (metadata reads such as
+    /// `GET /repos/{owner}/{repo}` for the target identity proof).
+    pub(crate) async fn installation_token(&self) -> Result<String, ScalesetError> {
+        match &self.credential {
+            Credential::Pat(pat) => Ok(pat.expose().to_string()),
+            Credential::GitHubApp {
+                client_id,
+                installation_id,
+                private_key,
+            } => {
+                let now = self.clock.now_unix_ms() / 1000;
+                let jwt = app_jwt(client_id, private_key.expose(), now)?;
+                let token = self
+                    .fetch_installation_token(
+                        &jwt,
+                        *installation_id,
+                        &serde_json::json!({"permissions": {"metadata": "read"}}),
+                    )
+                    .await?;
+                Ok(token.token)
+            }
+        }
+    }
+
+    /// Read access to the exact credential this manager authenticates.
+    pub(crate) fn credential(&self) -> &Credential {
+        &self.credential
+    }
+
+    /// The REST API base for authenticated metadata reads.
+    pub(crate) fn api_base(&self) -> &str {
+        &self.github_api_base
     }
 
     /// Forces a full refresh (used on 401 from the Actions Service).
@@ -185,7 +222,10 @@ impl AdminTokenManager {
                     } => *installation_id,
                     _ => unreachable!("guarded by match above"),
                 };
-                let token = self.fetch_installation_token(&jwt, installation_id).await?;
+                let scope = self.runner_token_scope().await?;
+                let token = self
+                    .fetch_installation_token(&jwt, installation_id, &scope)
+                    .await?;
                 format!("Bearer {}", token.token)
             }
         };
@@ -198,10 +238,13 @@ impl AdminTokenManager {
             .send()
             .await
             .map_err(transport_error)?;
-        let status = response.status().as_u16();
-        if status != 201 {
+        // Rate-limited bootstrap requests classify as bounded retries
+        // (headers inspected before the body) instead of terminal 403s.
+        let response =
+            crate::client::classify_response(response, "registration token request failed")?;
+        if response.status().as_u16() != 201 {
             return Err(ScalesetError::Status {
-                status,
+                status: response.status().as_u16(),
                 summary: "registration token request failed".into(),
             });
         }
@@ -210,38 +253,6 @@ impl AdminTokenManager {
             .await
             .map_err(|e| ScalesetError::MalformedResponse {
                 summary: format!("registration token body invalid: {e}"),
-            })
-    }
-
-    async fn fetch_installation_token(
-        &self,
-        app_jwt: &str,
-        installation_id: i64,
-    ) -> Result<InstallationAccessToken, ScalesetError> {
-        let url = format!(
-            "{}/app/installations/{installation_id}/access_tokens",
-            self.github_api_base.trim_end_matches('/')
-        );
-        let response = self
-            .http
-            .post(&url)
-            .header("Authorization", format!("Bearer {app_jwt}"))
-            .header("Accept", "application/vnd.github+json")
-            .send()
-            .await
-            .map_err(transport_error)?;
-        let status = response.status().as_u16();
-        if status != 201 {
-            return Err(ScalesetError::Status {
-                status,
-                summary: "installation token request failed".into(),
-            });
-        }
-        response
-            .json::<InstallationAccessToken>()
-            .await
-            .map_err(|e| ScalesetError::MalformedResponse {
-                summary: format!("installation token body invalid: {e}"),
             })
     }
 
@@ -266,6 +277,8 @@ impl AdminTokenManager {
             .send()
             .await
             .map_err(transport_error)?;
+        let response =
+            crate::client::classify_response(response, "runner-registration request failed")?;
         let status = response.status().as_u16();
         if !(200..300).contains(&status) {
             return Err(ScalesetError::Status {
@@ -340,54 +353,5 @@ pub fn parse_jwt_exp(jwt: &str) -> Option<i64> {
 pub(crate) mod auth_url_validation;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn jwt_claims_match_go_client_windows() {
-        // Signing requires a real RSA key; use a small generated one via
-        // jsonwebtoken is heavyweight. Instead validate claim math and
-        // parsing round-trip with a synthetic token.
-        let exp = 1_800_000_000i64;
-        use base64::Engine;
-        let payload =
-            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(format!(r#"{{"exp":{exp}}}"#));
-        let synthetic = format!("header.{payload}.signature");
-        assert_eq!(parse_jwt_exp(&synthetic), Some(exp));
-        assert_eq!(parse_jwt_exp("not-a-jwt"), None);
-    }
-
-    #[test]
-    fn registration_token_path_parsing() {
-        assert_eq!(
-            registration_token_path("https://github.com/example-org"),
-            Some("/orgs/example-org/actions/runners/registration-token".to_string())
-        );
-        assert_eq!(
-            registration_token_path("https://github.com/example-org/example-repo"),
-            Some("/repos/example-org/example-repo/actions/runners/registration-token".to_string())
-        );
-        assert_eq!(
-            registration_token_path("https://evil.example.com/org"),
-            None
-        );
-        assert_eq!(
-            registration_token_path("http://github.com/org"),
-            None,
-            "plain http is never accepted"
-        );
-    }
-
-    #[test]
-    fn credential_debug_redacts() {
-        let pat = Credential::Pat(SecretString::new("github_pat_x"));
-        assert!(!format!("{pat:?}").contains("github_pat_x"));
-        let app = Credential::GitHubApp {
-            client_id: "123".into(),
-            installation_id: 456,
-            private_key: SecretString::new("-----BEGIN"),
-        };
-        let rendered = format!("{app:?}");
-        assert!(!rendered.contains("BEGIN"));
-    }
-}
+#[path = "auth_tests.rs"]
+mod tests;

@@ -3,10 +3,13 @@
 //! the 400-line limit while methods keep private-field access.
 
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
-use shaula_core::ports::{EffectOutcome, JitConfig, TemplateCreateRequest};
+use shaula_core::ports::TemplateCreateRequest;
 use shaula_core::registry::{GenerationRecord, ScaleSetRow};
 
 use super::{fingerprint, FleetSupervisor};
+
+#[path = "supervisor_operations.rs"]
+mod operations;
 
 impl FleetSupervisor {
     pub(crate) async fn upsert_ownership(
@@ -40,6 +43,17 @@ impl FleetSupervisor {
             .acquire()
             .await
             .map_err(|_| CoreError::new(ReasonCode::Internal, "create scheduler stopped"))?;
+        // Route-proof gate (spec 0011 §5.3): a new Create/JIT effect runs
+        // only on fresh authorization evidence; unprovable routes fail
+        // closed without touching safe cleanup.
+        if let Err(failure) = self.github.ensure_route_proof().await {
+            tracing::warn!(
+                fleet = %self.config.fleet_key,
+                summary = %failure.summary(),
+                "route proof unavailable; create effects blocked"
+            );
+            return Ok(false);
+        }
         // Create-claim admission gate: a decommissioning or tombstoned
         // fleet must never spawn new Creates.
         let head = self.handoff.fleet_get(&self.config.fleet_key).await?;
@@ -236,57 +250,19 @@ impl FleetSupervisor {
             "identity_fingerprint": fingerprint(&self.identity),
             "jit_attempt_id": jit_attempt_id,
         });
-        let request_digest = format!("sha256:{}", {
-            use sha2::Digest as _;
-            let mut hasher = sha2::Sha256::new();
-            hasher.update(jit_context.to_string().as_bytes());
-            hex::encode(hasher.finalize())
-        });
-        self.store
-            .generation_set_jit_phase(&generation_id, "JITStarting", now)
-            .await?;
-        self.store
-            .operation_insert(shaula_core::registry::OperationInsert {
-                id: format!("jit-{generation_id}"),
-                generation_id: generation_id.clone(),
-                kind: "JitStarting".to_string(),
-                state: "Pending".to_string(),
-                provenance_json: Some(
-                    serde_json::json!({
-                        "context": jit_context,
-                        "request_digest": request_digest,
-                        "jit_attempt_id": jit_attempt_id,
-                    })
-                    .to_string(),
-                ),
-                saved_plan_path: None,
-                saved_plan_digest: None,
+        let Some(jit) = self
+            .acquire_generation_jit(
+                &generation_id,
+                scale_set_id,
+                &runner_name,
+                jit_context,
+                jit_attempt_id,
                 now,
-            })
-            .await?;
-
-        // JIT: exactly one POST per generation name; uncertainty
-        // quarantines instead of re-POSTing.
-        let jit: JitConfig = match self.github.generate_jit(scale_set_id, &runner_name).await {
-            Ok(EffectOutcome::Definite(jit)) => jit,
-            Ok(EffectOutcome::Uncertain { .. }) | Err(_) => {
-                self.store
-                    .generation_advance(
-                        &generation_id,
-                        shaula_core::lifecycle::GenerationState::Quarantined,
-                        now,
-                    )
-                    .await?;
-                return Ok(false);
-            }
+            )
+            .await?
+        else {
+            return Ok(false);
         };
-        self.store
-            .generation_set_jit_phase(&generation_id, "JITAcquired", now)
-            .await?;
-        self.store
-            .generation_set_github_runner(&generation_id, jit.runner.id, now)
-            .await?;
-
         // The frozen protected envelope: bindings come from the ADMITTED
         // Template Revision (protected-memory handoff), parameters from the
         // SAME admitted Fleet Revision snapshot that populated the ledger
@@ -316,6 +292,8 @@ impl FleetSupervisor {
         );
         input.bindings = bindings;
         input.parameters = parameters;
+        let apply_intent =
+            crate::apply_intent::TrackedApplyIntentSink::new(self.config.apply_intent_sink.clone());
         let request = TemplateCreateRequest {
             workspace_path: workspace,
             artifact_dir,
@@ -327,7 +305,7 @@ impl FleetSupervisor {
             managed_shape,
             environment: Vec::new(),
             timeout: self.config.operation_timeout,
-            apply_intent_sink: Some(self.config.apply_intent_sink.clone()),
+            apply_intent_sink: Some(apply_intent.clone()),
         };
         match self.runtime.create(request).await {
             Ok(result) => {
@@ -344,6 +322,7 @@ impl FleetSupervisor {
                 self.store
                     .generation_set_result(&generation_id, &body, "sha256:result", now)
                     .await?;
+                apply_intent.complete(self.store.as_ref(), now).await?;
                 self.store
                     .generation_advance(
                         &generation_id,

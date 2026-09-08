@@ -16,7 +16,7 @@
 | UI 行为 | [spec 0008](specs/0008-embedded-web-ui.md) |
 | 管理 HTTP 的 OIDC、session、CSRF | [spec 0009](specs/0009-mandatory-openid-connect.md) |
 | Worker/Executor、内部 control/state HTTP、locks/CAS、恢复与备份 | [spec 0010](specs/0010-lifecycle-worker-and-http-state-backend.md)；理由见 [ADR-0014](ard/0014-run-lifecycle-workers-with-a-database-http-state-backend.md) |
-| 待审：多账户 GitHub App authentication、动态仓库 selector、installation routing | [spec 0011](specs/0011-multi-account-github-authentication.md) / [ADR-0015](ard/0015-route-one-github-app-profile-to-multiple-accounts.md)；尚未实施，不替代已接受基线 |
+| 多账户 GitHub App authentication、动态仓库 selector、installation routing | [spec 0011](specs/0011-multi-account-github-authentication.md) / [ADR-0015](ard/0015-route-one-github-app-profile-to-multiple-accounts.md)；已有本地实现，运行时集成边界见 implementation status，真实 GitHub 路由验收与生产迁移未执行 |
 | 已实现、未接线、未验证与迁移缺口 | [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) |
 | OIDC 部署操作 | [oidc-deployment.md](oidc-deployment.md) |
 | Nix 开发、打包、NixOS 部署与 VM 测试 | [nix.md](nix.md) |
@@ -52,9 +52,9 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 
 代码或 manifest 已选择某个库/字段，不自动等于其兼容性验收通过；已有实现也不应继续作为“完全未实现”记录。
 
-## 候选扩展，不属于当前基线
+## 多账户认证与后续扩展
 
-多账户 GitHub authentication 的具体提案见 [spec 0011](specs/0011-multi-account-github-authentication.md) 与 [ADR-0015](ard/0015-route-one-github-app-profile-to-multiple-accounts.md)：一份 App credential、多个明确账户/Target selector、个人未来仓库的按需验证。它提议修订单 installation、同 key policy 不可变和 Auth context 契约；其 Draft/proposed 状态不是当前已支持能力。接受时需同步修订 spec 0001/0002/0005、UI spec 0008 与 ARD 0007/0009 的相应条款。
+多账户 GitHub authentication 已按 [spec 0011](specs/0011-multi-account-github-authentication.md) 与 [ADR-0015](ard/0015-route-one-github-app-profile-to-multiple-accounts.md) 接受并完成本地实现：一份 App credential、多个明确账户/Target selector、个人未来仓库的按需验证。它替代单 installation、同 key policy 不可变的旧基线条款；真实 GitHub 路由验收与生产迁移仍未执行，当前能力边界以 [implementation status](IMPLEMENTATION_STATUS.md) 为准。
 
 以下需要新的决定和对应验收，不阻塞按现有基线实现：额外 high-trust Runner-socket Profile、Docker memory-only JIT、pre-JIT provider-backed namespace preflight、每 Profile 独立 OS identity/sandbox、OpenTofu advertisement、远程 Executor Driver、多主/HA、自动删除 Scale Set、Quarantine force-recovery。它们不能作为匿名认证、跳过 locking 或丢弃可能残留资源的理由。
 

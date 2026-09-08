@@ -232,7 +232,11 @@ async fn durable_format_marker_is_current_on_a_fresh_database() {
         .unwrap()
         .unwrap();
     let version: i64 = row.try_get("", "version").unwrap();
-    assert_eq!(version, 1, "a fresh database is stamped the current format");
+    assert_eq!(
+        version,
+        shaula_store_migration::m0008_auth_multi_account::DURABLE_FORMAT_VERSION_V2,
+        "a fresh database is stamped the current format"
+    );
 }
 
 #[tokio::test]

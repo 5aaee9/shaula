@@ -64,7 +64,7 @@ impl ScalesetClient {
             .await
             .map_err(crate::auth::transport_error_pub)
             .map_err(|e| e.to_access_failure())?;
-
+        self.observe_response(&response);
         match response.status().as_u16() {
             202 => Ok(PollOutcome::NoMessage),
             200 => {
@@ -84,9 +84,7 @@ impl ScalesetClient {
                 Ok(PollOutcome::Message(message))
             }
             401 => Ok(PollOutcome::SessionExpired),
-            status => Err(shaula_core::ports::AccessFailure::Unavailable {
-                summary: format!("poll status={status}"),
-            }),
+            _ => Err(Self::parse_error(response).await.to_access_failure()),
         }
     }
 
@@ -111,14 +109,13 @@ impl ScalesetClient {
             .await
             .map_err(crate::auth::transport_error_pub)
             .map_err(|e| e.to_access_failure())?;
+        self.observe_response(&response);
         match response.status().as_u16() {
             204 => Ok(()),
             // Queue-token expiry: the caller re-establishes the session and
             // retries once (Go SDK parity), never falling back to credentials.
             401 => Err(shaula_core::ports::AccessFailure::SessionExpired),
-            status => Err(shaula_core::ports::AccessFailure::Unavailable {
-                summary: format!("ack status={status}"),
-            }),
+            _ => Err(Self::parse_error(response).await.to_access_failure()),
         }
     }
 
@@ -133,12 +130,14 @@ impl ScalesetClient {
             .admin
             .connection()
             .await
+            .inspect_err(|e| self.invalidate_route_proof(e))
             .map_err(|e| e.to_access_failure())?;
         let mut url = self
             .service_url(&conn.actions_service_url, &path)
             .map_err(|e| e.to_access_failure())?;
         url.query_pairs_mut()
             .append_pair("api-version", wire::API_VERSION);
+        self.ensure_route_proof_impl().await?;
         let response = self
             .http
             .post(url)
@@ -153,6 +152,7 @@ impl ScalesetClient {
             .await
             .map_err(crate::auth::transport_error_pub)
             .map_err(|e| e.to_access_failure())?;
+        self.observe_response(&response);
         // Queue-token expiry: surface as SessionExpired so the caller
         // re-establishes the session and retries once (Go SDK parity).
         if response.status().as_u16() == 401 {
@@ -174,15 +174,7 @@ impl ScalesetClient {
             wire::SCALE_SET_ENDPOINT
         );
         let body = serde_json::json!({ "name": runner_name, "workFolder": "/_work" });
-        let response = self
-            .actions_service_request(
-                reqwest::Method::POST,
-                &path,
-                &[],
-                Some(body),
-                crate::client::DEFAULT_REQUEST_TIMEOUT,
-            )
-            .await;
+        let response = self.new_effect_request(&path, body).await;
         let outcome = definite_or_uncertain::<wire::RunnerScaleSetJitRunnerConfig>(response)
             .await
             .map_err(|e| e.to_access_failure())?;
@@ -251,15 +243,11 @@ impl ScalesetClient {
         &self,
         runner_id: i64,
     ) -> Result<RemovalOutcome, shaula_core::ports::AccessFailure> {
+        // Cleanup uses its retained revision/context, and must still prove
+        // the target identity before deleting a runner through that route.
         let path = format!("{}/{runner_id}", wire::RUNNER_ENDPOINT);
         let response = match self
-            .actions_service_request(
-                reqwest::Method::DELETE,
-                &path,
-                &[],
-                None,
-                crate::client::DEFAULT_REQUEST_TIMEOUT,
-            )
+            .authorized_effect_request(reqwest::Method::DELETE, &path, None)
             .await
         {
             Ok(response) => response,

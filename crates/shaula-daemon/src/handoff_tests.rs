@@ -11,7 +11,10 @@ pub mod memory_store;
 pub use memory_store::MemoryStore;
 
 // Fake GitHub port reporting a healthy authenticated read with no scale set.
-pub struct HealthyGitHub;
+#[derive(Default)]
+pub struct HealthyGitHub {
+    pub proof_calls: std::sync::atomic::AtomicUsize,
+}
 
 #[async_trait::async_trait]
 impl GitHubAccessPort for HealthyGitHub {
@@ -103,6 +106,29 @@ impl GitHubAccessPort for HealthyGitHub {
     fn allows_target(&self, _: &shaula_core::github::GitHubTarget) -> bool {
         true
     }
+    async fn ensure_route_proof(&self) -> Result<shaula_core::ports::RouteProof, AccessFailure> {
+        self.proof_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(shaula_core::ports::RouteProof {
+            checked_at_unix_ms: 1_800_000_000_000,
+            valid_until_unix_ms: 1_800_000_060_000,
+            installation_id: 1,
+            account_id: 1,
+            organization_id: Some(1),
+            repository_id: None,
+            repository_owner_id: None,
+        })
+    }
+    async fn resolve_target_identity(
+        &self,
+        _: &shaula_core::github::GitHubTarget,
+    ) -> Result<shaula_core::ports::TargetIdentity, AccessFailure> {
+        Ok(shaula_core::ports::TargetIdentity {
+            organization_id: Some(1),
+            repository_id: None,
+            repository_owner_id: None,
+        })
+    }
 }
 
 #[tokio::test]
@@ -126,10 +152,18 @@ async fn handoff_advances_observed_tuple_without_remote_effects() {
         scale_set_name: "shaula-x64".into(),
     };
     let store_dyn: Arc<dyn ControlPlaneStore> = store.clone();
-    let github: Arc<dyn GitHubAccessPort> = Arc::new(HealthyGitHub);
-    let progress = run_handoff(&store_dyn, "f1", &github, &identity, None, 100, 30)
-        .await
-        .unwrap();
+    let github: Arc<dyn GitHubAccessPort> = Arc::new(HealthyGitHub::default());
+    let progress = run_handoff(
+        &store_dyn,
+        "f1",
+        &github,
+        &("prod-app".into(), 3),
+        &identity,
+        None,
+        100,
+    )
+    .await
+    .unwrap();
     assert_eq!(progress, HandoffProgress::Acknowledged);
 
     let row = store.handoff_get("f1").await.unwrap().unwrap();
@@ -230,6 +264,17 @@ async fn handoff_blocks_without_fallback() {
         fn allows_target(&self, _: &shaula_core::github::GitHubTarget) -> bool {
             false
         }
+        async fn ensure_route_proof(
+            &self,
+        ) -> Result<shaula_core::ports::RouteProof, AccessFailure> {
+            Err(AccessFailure::PermissionDenied)
+        }
+        async fn resolve_target_identity(
+            &self,
+            _: &shaula_core::github::GitHubTarget,
+        ) -> Result<shaula_core::ports::TargetIdentity, AccessFailure> {
+            unreachable!("group resolution failed first");
+        }
     }
 
     let store = Arc::new(MemoryStore::default());
@@ -252,9 +297,17 @@ async fn handoff_blocks_without_fallback() {
     };
     let store_dyn: Arc<dyn ControlPlaneStore> = store.clone();
     let github: Arc<dyn GitHubAccessPort> = Arc::new(DeniedGitHub);
-    let progress = run_handoff(&store_dyn, "f1", &github, &identity, None, 500, 30)
-        .await
-        .unwrap();
+    let progress = run_handoff(
+        &store_dyn,
+        "f1",
+        &github,
+        &("prod-app".into(), 3),
+        &identity,
+        None,
+        500,
+    )
+    .await
+    .unwrap();
     assert_eq!(progress, HandoffProgress::Blocked);
     let row = store.handoff_get("f1").await.unwrap().unwrap();
     assert_eq!(

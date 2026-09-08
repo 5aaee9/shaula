@@ -1,5 +1,6 @@
 use super::mapping::{
-    auth_profile_head, auth_row, fleet_head, fleet_revision_row, template_row, tpl_profile_head,
+    auth_handoff_row, auth_profile_head, auth_row, fleet_change_row, fleet_head,
+    fleet_revision_row, profile_change_row, template_row, tpl_profile_head,
 };
 use super::{artifacts, core_err, SqliteControlPlane};
 use async_trait::async_trait;
@@ -51,6 +52,7 @@ impl ControlPlaneStore for SqliteControlPlane {
             .map(fleet_revision_row))
     }
     async fn generations_occupancy(&self, fleet_key: &str) -> CoreResult<i64> {
+        use shaula_core::lifecycle::GenerationState;
         Ok(self
             .store
             .generations_for_fleet(fleet_key)
@@ -58,30 +60,23 @@ impl ControlPlaneStore for SqliteControlPlane {
             .map_err(core_err)?
             .iter()
             .filter(|g| {
-                shaula_core::lifecycle::GenerationState::from_str_repr(&g.state)
-                    .map(|s| s.counts_occupancy())
-                    .unwrap_or(false)
+                GenerationState::from_str_repr(&g.state).is_ok_and(|s| s.counts_occupancy())
             })
             .count() as i64)
     }
     async fn capacity_counters(&self, fleet_key: &str) -> CoreResult<(i64, i64)> {
-        let generations = self
+        use shaula_core::lifecycle::GenerationState;
+        let mut effective = 0i64;
+        let mut occupancy = 0i64;
+        for generation in self
             .store
             .generations_for_fleet(fleet_key)
             .await
-            .map_err(core_err)?;
-        let mut effective = 0i64;
-        let mut occupancy = 0i64;
-        for generation in &generations {
-            if let Ok(state) =
-                shaula_core::lifecycle::GenerationState::from_str_repr(&generation.state)
-            {
-                if state.counts_effective() {
-                    effective += 1;
-                }
-                if state.counts_occupancy() {
-                    occupancy += 1;
-                }
+            .map_err(core_err)?
+        {
+            if let Ok(state) = GenerationState::from_str_repr(&generation.state) {
+                effective += i64::from(state.counts_effective());
+                occupancy += i64::from(state.counts_occupancy());
             }
         }
         Ok((effective, occupancy))
@@ -92,17 +87,7 @@ impl ControlPlaneStore for SqliteControlPlane {
             .handoff_get(fleet_key)
             .await
             .map_err(core_err)?
-            .map(|h| AuthHandoffRow {
-                fleet_key: h.fleet_key,
-                desired: (h.desired_profile_key, h.desired_revision),
-                observed: h
-                    .observed_profile_key
-                    .map(|k| (k, h.observed_revision.unwrap_or_default())),
-                state: h.state,
-                cleanup_only: h.cleanup_only,
-                blocked_reason: h.reason.clone(),
-                retry_at: h.next_retry_at,
-            }))
+            .map(auth_handoff_row))
     }
     async fn template_profile_get(&self, key: &str) -> CoreResult<Option<ProfileHead>> {
         Ok(self
@@ -172,16 +157,56 @@ impl ControlPlaneStore for SqliteControlPlane {
             .map_err(core_err)?
             .map(auth_row))
     }
-    async fn auth_apply_validation(
+    async fn auth_apply_validation_v2(
         &self,
         key: &str,
         revision: i64,
         accepted: bool,
         reason: Option<&str>,
         now: i64,
+        promotion: Option<shaula_core::registry::AuthPromotion>,
+    ) -> CoreResult<shaula_core::registry::AuthPromotionOutcome> {
+        self.store
+            .auth_apply_full(key, revision, accepted, reason, now, promotion)
+            .await
+            .map_err(core_err)
+    }
+    async fn auth_bindings_get(
+        &self,
+        key: &str,
+        revision: i64,
+    ) -> CoreResult<Vec<shaula_core::auth_context::AccountBinding>> {
+        self.store
+            .auth_bindings_get(key, revision)
+            .await
+            .map_err(core_err)
+    }
+    async fn auth_live_dependents(
+        &self,
+        key: &str,
+    ) -> CoreResult<Vec<shaula_core::registry::AuthDependentTarget>> {
+        self.store.auth_live_dependents(key).await.map_err(core_err)
+    }
+    async fn fleet_auth_context_get(
+        &self,
+        fleet_key: &str,
+    ) -> CoreResult<Option<shaula_core::registry::FleetAuthContextRow>> {
+        Ok(self
+            .store
+            .fleet_auth_context_get(fleet_key)
+            .await
+            .map_err(core_err)?
+            .map(crate::auth_policy_repo::fleet_auth_context_row))
+    }
+    async fn fleet_auth_context_block(
+        &self,
+        fleet_key: &str,
+        reason: &str,
+        retry_at: i64,
+        now: i64,
     ) -> CoreResult<()> {
         self.store
-            .auth_scan_apply(key, revision, accepted, reason, now)
+            .fleet_auth_context_block(fleet_key, reason, retry_at, now)
             .await
             .map_err(core_err)
     }
@@ -218,20 +243,24 @@ impl ControlPlaneStore for SqliteControlPlane {
         fleet_key: &str,
         profile_key: &str,
         revision: i64,
-    ) -> CoreResult<()> {
+        context_json: Option<&str>,
+        expectation: &shaula_core::registry::AuthHandoffExpectation,
+    ) -> CoreResult<shaula_core::registry::FleetContextAck> {
         self.store
-            .handoff_acknowledge(fleet_key, profile_key, revision)
+            .handoff_acknowledge(fleet_key, profile_key, revision, context_json, expectation)
             .await
             .map_err(core_err)
     }
     async fn handoff_mark_blocked(
         &self,
         fleet_key: &str,
+        authority: &(String, i64),
+        expectation: &shaula_core::registry::AuthHandoffExpectation,
         reason: &str,
         retry_at: i64,
-    ) -> CoreResult<()> {
+    ) -> CoreResult<bool> {
         self.store
-            .handoff_mark_blocked(fleet_key, reason, retry_at)
+            .handoff_mark_blocked(fleet_key, authority, expectation, reason, retry_at)
             .await
             .map_err(core_err)
     }
@@ -241,15 +270,7 @@ impl ControlPlaneStore for SqliteControlPlane {
             .change_get(change_id)
             .await
             .map_err(core_err)?
-            .map(|c| ChangeView {
-                id: c.id,
-                resource_kind: "fleet".to_string(),
-                resource_key: c.fleet_key,
-                revision: c.revision,
-                kind: c.kind,
-                state: c.state,
-                reason: c.reason,
-            }))
+            .map(fleet_change_row))
     }
     async fn profile_change_get(&self, change_id: &str) -> CoreResult<Option<ChangeView>> {
         Ok(self
@@ -257,15 +278,7 @@ impl ControlPlaneStore for SqliteControlPlane {
             .profile_change_get(change_id)
             .await
             .map_err(core_err)?
-            .map(|c| ChangeView {
-                id: c.id,
-                resource_kind: c.resource_kind,
-                resource_key: c.profile_key,
-                revision: c.revision.unwrap_or_default(),
-                kind: c.kind,
-                state: c.state,
-                reason: c.reason,
-            }))
+            .map(profile_change_row))
     }
     async fn idempotency_find(
         &self,

@@ -38,6 +38,9 @@ pub struct FleetSupervisorConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ReconcileReport {
     pub handoff_acknowledged: bool,
+    /// G3: the handoff settled THIS tick — no effects may run until the
+    /// wiring re-reads the acknowledged context (next pass).
+    pub settled_this_tick: bool,
     pub scale_set_bound: bool,
     pub created: u32,
     pub destroyed: u32,
@@ -46,9 +49,14 @@ pub struct ReconcileReport {
 }
 
 pub struct FleetSupervisor {
+    clock: Option<Arc<dyn shaula_core::ports::Clock>>,
     limits: LifecycleLimits,
     store: Arc<dyn LifecycleStore>,
     github: Arc<dyn GitHubAccessPort>,
+    handoff_github: Arc<dyn GitHubAccessPort>,
+    handoff_authority: (String, i64),
+    execution_ready: bool,
+    revision_clients: std::collections::HashMap<(String, i64), Arc<dyn GitHubAccessPort>>,
     runtime: Arc<dyn TemplateRuntimePort>,
     handoff: Arc<dyn shaula_core::registry::ControlPlaneStore>,
     config: FleetSupervisorConfig,
@@ -70,14 +78,52 @@ impl FleetSupervisor {
             limits,
         } = deps;
         Self {
+            clock: None,
             limits,
             store,
             handoff,
+            handoff_github: Arc::clone(&github),
+            handoff_authority: (config.auth_profile_key.clone(), config.auth_revision),
+            execution_ready: true,
+            revision_clients: std::collections::HashMap::new(),
             github,
             runtime,
             config,
             identity,
         }
+    }
+
+    #[must_use]
+    pub fn with_clock(mut self, clock: Arc<dyn shaula_core::ports::Clock>) -> Self {
+        self.clock = Some(clock);
+        self
+    }
+
+    #[must_use]
+    pub fn with_handoff_github(mut self, github: Arc<dyn GitHubAccessPort>) -> Self {
+        self.handoff_github = github;
+        self
+    }
+
+    #[must_use]
+    pub fn with_handoff_authority(mut self, authority: (String, i64)) -> Self {
+        self.handoff_authority = authority;
+        self
+    }
+
+    #[must_use]
+    pub fn with_execution_ready(mut self, ready: bool) -> Self {
+        self.execution_ready = ready;
+        self
+    }
+
+    #[must_use]
+    pub fn with_revision_clients(
+        mut self,
+        clients: std::collections::HashMap<(String, i64), Arc<dyn GitHubAccessPort>>,
+    ) -> Self {
+        self.revision_clients = clients;
+        self
     }
 
     /// One level-triggered reconcile pass.
@@ -93,18 +139,53 @@ impl FleetSupervisor {
         let progress = crate::handoff::run_handoff(
             &self.handoff,
             &self.config.fleet_key,
-            &self.github,
+            &self.handoff_github,
+            &self.handoff_authority,
             &self.identity,
             bound_scale_set_id,
             now,
-            30,
         )
         .await?;
-        report.handoff_acknowledged = !matches!(progress, crate::handoff::HandoffProgress::Blocked);
-        if matches!(progress, crate::handoff::HandoffProgress::Blocked) {
-            // Quiesced: acquisition, create-or-adopt and lifecycle effects
-            // stay stopped until the handoff classifies (0002 §7.5). Never
-            // fall back to the previous credential.
+        report.handoff_acknowledged = matches!(
+            progress,
+            crate::handoff::HandoffProgress::Acknowledged
+                | crate::handoff::HandoffProgress::UpToDate
+        );
+        if matches!(
+            progress,
+            crate::handoff::HandoffProgress::Blocked
+                | crate::handoff::HandoffProgress::Acknowledged
+                | crate::handoff::HandoffProgress::Retry
+        ) {
+            // Blocked: quiesced until classification (0002 §7.5).
+            // Acknowledged (G3): the JUST-acknowledged context must be
+            // re-read by wiring before any new effect runs — this tick
+            // stops after settlement and reconciles from the acknowledged
+            // snapshot on the next pass.
+            // Retry (G5): a stale CAS is NOT settlement — abort this tick
+            // and retry from current authority, never continue effects.
+            match progress {
+                crate::handoff::HandoffProgress::Blocked => {
+                    report.blocked = true;
+                }
+                crate::handoff::HandoffProgress::Acknowledged => {
+                    report.settled_this_tick = true;
+                }
+                _ => {}
+            }
+            return Ok(report);
+        }
+
+        let execution_ref = (
+            self.config.auth_profile_key.clone(),
+            self.config.auth_revision,
+        );
+        let observed = self
+            .handoff
+            .handoff_get(&self.config.fleet_key)
+            .await?
+            .and_then(|handoff| handoff.observed);
+        if !self.execution_ready || observed.as_ref() != Some(&execution_ref) {
             report.blocked = true;
             return Ok(report);
         }
@@ -218,6 +299,9 @@ pub(crate) fn fingerprint(identity: &shaula_core::github::ScaleSetIdentity) -> S
 
 #[path = "supervisor_ownership.rs"]
 mod ownership_impl;
+
+#[path = "supervisor_health.rs"]
+mod health_impl;
 
 #[path = "supervisor_lifecycle.rs"]
 mod lifecycle_impl;

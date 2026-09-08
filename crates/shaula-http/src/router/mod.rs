@@ -3,6 +3,7 @@
 //! headers before delegating to registry ports.
 
 pub mod fleet_routes;
+pub mod profile_auth_reads;
 pub mod profile_reads;
 pub mod profile_routes;
 
@@ -219,6 +220,10 @@ pub fn build_router(state: AppState) -> Router {
             get(profile_reads::auth_profile_status),
         )
         .route(
+            "/api/v1/github-auth-profiles/{profileKey}/impact",
+            get(profile_auth_reads::auth_profile_impact),
+        )
+        .route(
             "/api/v1/github-auth-profiles/{profileKey}/revisions/{revision}",
             get(profile_reads::auth_revision_get),
         )
@@ -230,7 +235,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/api/v1/github-auth-profiles/{profileKey}",
-            put(profile_routes::auth_profile_put).get(profile_routes::auth_profile_get)
+            put(profile_routes::auth_profile_put).get(profile_auth_reads::auth_profile_get)
                 .delete(profile_reads::auth_profile_delete),
         )
         .layer(DefaultBodyLimit::max(state.request_body_limit))

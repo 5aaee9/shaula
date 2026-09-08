@@ -18,10 +18,37 @@ impl Store {
         scale_set_id: i64,
         now: i64,
     ) -> StoreResult<i64> {
-        let previous = fleet_sessions::Entity::find_by_id(fleet_key.to_string())
-            .one(self.connection())
+        let tx = self.begin().await?;
+        let handoff = crate::entities::fleet::fleet_auth_handoffs::Entity::find_by_id(fleet_key)
+            .one(&tx)
             .await?;
-        match previous {
+        if let Some(handoff) = handoff {
+            let reference = handoff
+                .observed_profile_key
+                .as_deref()
+                .zip(handoff.observed_revision);
+            let (key, revision) =
+                reference.unwrap_or((&handoff.desired_profile_key, handoff.desired_revision));
+            let auth = self
+                .auth_revision_get_tx(&tx, key, revision)
+                .await?
+                .ok_or_else(|| StoreError::Corrupt("session auth revision missing".into()))?;
+            if auth.schema_version >= 2
+                && (reference.is_none()
+                    || self
+                        .auth_execution_context_tx(&tx, fleet_key, key, revision)
+                        .await?
+                        .is_none())
+            {
+                return Err(StoreError::Corrupt(
+                    "session requires observed exact auth context".into(),
+                ));
+            }
+        }
+        let previous = fleet_sessions::Entity::find_by_id(fleet_key.to_string())
+            .one(&tx)
+            .await?;
+        let epoch = match previous {
             None => {
                 let row = fleet_sessions::ActiveModel {
                     fleet_key: Set(fleet_key.to_string()),
@@ -33,10 +60,8 @@ impl Store {
                     last_message_id: Set(0),
                     created_at: Set(now),
                 };
-                fleet_sessions::Entity::insert(row)
-                    .exec(self.connection())
-                    .await?;
-                Ok(1)
+                fleet_sessions::Entity::insert(row).exec(&tx).await?;
+                1
             }
             Some(row) => {
                 let epoch = row.epoch + 1;
@@ -47,12 +72,24 @@ impl Store {
                 updated.message_queue_url = Set(None);
                 updated.queue_token = Set(None);
                 updated.last_message_id = Set(0);
-                fleet_sessions::Entity::update(updated)
-                    .exec(self.connection())
-                    .await?;
-                Ok(epoch)
+                fleet_sessions::Entity::update(updated).exec(&tx).await?;
+                epoch
             }
-        }
+        };
+        use sea_orm::{ConnectionTrait, DbBackend, Statement};
+        tx.execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "DELETE FROM fleet_session_auth WHERE fleet_key=?",
+            [fleet_key.into()],
+        ))
+        .await?;
+        tx.execute(Statement::from_sql_and_values(DbBackend::Sqlite,
+            "INSERT OR REPLACE INTO fleet_session_auth(fleet_key,profile_key,revision)
+             SELECT fleet_key,observed_profile_key,observed_revision FROM fleet_auth_handoffs
+             WHERE fleet_key=? AND observed_profile_key IS NOT NULL AND observed_revision IS NOT NULL",
+            [fleet_key.into()])).await?;
+        tx.commit().await?;
+        Ok(epoch)
     }
 
     pub(crate) async fn session_get(

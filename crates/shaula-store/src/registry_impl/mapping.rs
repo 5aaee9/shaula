@@ -1,6 +1,8 @@
 //! Entity→row mapping helpers, split to keep files within 400 lines.
 
-use shaula_core::registry::{AuthRevisionRow, FleetHead, ProfileHead, TemplateRevisionRow};
+use shaula_core::registry::{
+    AuthHandoffRow, AuthRevisionRow, ChangeView, FleetHead, ProfileHead, TemplateRevisionRow,
+};
 
 pub(crate) fn fleet_head(f: crate::entities::fleet::fleets::Model) -> FleetHead {
     FleetHead {
@@ -11,6 +13,7 @@ pub(crate) fn fleet_head(f: crate::entities::fleet::fleets::Model) -> FleetHead 
         tombstone: f.tombstone,
         deletion_marker: f.deletion_marker,
         phase: f.phase,
+        mutation_fence: f.mutation_fence,
     }
 }
 
@@ -37,11 +40,16 @@ pub(crate) fn auth_row(
     AuthRevisionRow {
         profile_key: r.profile_key,
         revision: r.revision,
+        state: r.state,
+        reason: r.reason,
         kind: r.kind,
         app_id: r.app_id,
         installation_id: r.installation_id,
         pat_principal: r.pat_principal,
         allowlist_json: r.allowlist_json,
+        schema_version: r.schema_version,
+        policy_json: r.policy_json,
+        validation_snapshot_json: r.validation_snapshot_json,
     }
 }
 
@@ -85,5 +93,47 @@ pub(crate) fn auth_profile_head(
         active_revision: p.active_revision,
         active_attestation_id: None,
         status: p.status,
+    }
+}
+
+pub(crate) fn auth_handoff_row(
+    h: crate::entities::fleet::fleet_auth_handoffs::Model,
+) -> AuthHandoffRow {
+    AuthHandoffRow {
+        fleet_key: h.fleet_key,
+        desired: (h.desired_profile_key, h.desired_revision),
+        observed: h
+            .observed_profile_key
+            .map(|k| (k, h.observed_revision.unwrap_or_default())),
+        state: h.state,
+        cleanup_only: h.cleanup_only,
+        blocked_reason: h.reason.clone(),
+        retry_at: h.next_retry_at,
+    }
+}
+
+pub(crate) fn fleet_change_row(c: crate::entities::fleet::fleet_changes::Model) -> ChangeView {
+    ChangeView {
+        id: c.id,
+        resource_kind: "fleet".to_string(),
+        resource_key: c.fleet_key,
+        revision: c.revision,
+        kind: c.kind,
+        state: c.state,
+        reason: c.reason,
+    }
+}
+
+pub(crate) fn profile_change_row(
+    c: crate::entities::template::profile_changes::Model,
+) -> ChangeView {
+    ChangeView {
+        id: c.id,
+        resource_kind: c.resource_kind,
+        resource_key: c.profile_key,
+        revision: c.revision.unwrap_or_default(),
+        kind: c.kind,
+        state: c.state,
+        reason: c.reason,
     }
 }

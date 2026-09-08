@@ -9,8 +9,12 @@ pub mod m0004_lifecycle_tables;
 pub mod m0005_durable_format;
 pub mod m0006_attestation_subject_verified;
 pub mod m0007_http_state;
+pub mod m0008_auth_multi_account;
+pub mod m0009_auth_execution_contexts;
 
 use sea_orm_migration::prelude::*;
+
+pub use sea_orm_migration::MigratorTrait;
 
 pub struct Migrator;
 
@@ -25,6 +29,8 @@ impl MigratorTrait for Migrator {
             Box::new(m0005_durable_format::Migration),
             Box::new(m0006_attestation_subject_verified::Migration),
             Box::new(m0007_http_state::Migration),
+            Box::new(m0008_auth_multi_account::Migration),
+            Box::new(m0009_auth_execution_contexts::Migration),
         ]
     }
 }

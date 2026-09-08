@@ -268,6 +268,8 @@ mod auth;
 mod profile_conditions;
 #[path = "service_profile_retirement.rs"]
 mod profile_retirement;
+#[path = "service_auth_view.rs"]
+pub mod service_auth_view;
 
 impl ControlPlane {
     /// No-op detection: identical canonical spec AND identical resolved

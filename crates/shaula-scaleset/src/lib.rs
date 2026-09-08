@@ -9,12 +9,17 @@ pub mod auth;
 pub mod client;
 pub mod config;
 pub mod error;
+pub mod installation;
+pub mod installation_tokens;
 pub mod port;
+mod route_identity;
+pub mod route_proof;
 pub mod wire;
 
 pub use auth::Credential;
 pub use client::ScalesetClient;
 pub use error::ScalesetError;
+pub use installation::{AppInstallationResolver, InstallationLookup};
 
 /// The pinned upstream oracle commit this adapter is written against.
 /// Upgrading requires reviewing the Go source diff and re-running the

@@ -124,11 +124,25 @@ pub(crate) async fn fleet_status(
     match state.fleets.fleet_status_get(&actor, &fleet_key).await {
         Ok(Ok(status)) => {
             let desired_auth = status.dependencies.auth.as_ref().map(|auth| {
-                serde_json::json!({
+                let mut auth_json = serde_json::json!({
                     "desired": {"profileKey": auth.desired.0, "revision": auth.desired.1},
                     "observed": auth.observed.as_ref().map(|o| serde_json::json!({"profileKey": o.0, "revision": o.1})),
                     "handoffState": auth.handoff_state,
-                })
+                });
+                // Exact Resolved Auth Context rollout (spec 0011 §6): the
+                // fleet page shows the per-target resolution result — the
+                // profile's Active status never substitutes for it.
+                if let Some(context) = &auth.context {
+                    auth_json["context"] = serde_json::json!({
+                        "desired": context.desired.as_ref().map(|(k, r)| serde_json::json!({"profileKey": k, "revision": r})),
+                        "observed": context.observed.as_ref().map(|(k, r)| serde_json::json!({"profileKey": k, "revision": r})),
+                        "state": context.state,
+                        "reason": context.reason,
+                        "desiredRoute": context.desired_route,
+                        "observedRoute": context.observed_route,
+                    });
+                }
+                auth_json
             });
             let body = serde_json::json!({
                 "fleetKey": status.fleet_key,

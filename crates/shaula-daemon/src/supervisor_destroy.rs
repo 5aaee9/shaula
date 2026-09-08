@@ -70,7 +70,23 @@ impl FleetSupervisor {
                 let Some(runner_id) = generation.github_runner_id else {
                     continue;
                 };
-                match self.github.remove_runner(runner_id).await {
+                let Some(reference) = self.handoff.auth_generation_ref(&generation.id).await?
+                else {
+                    continue;
+                };
+                let current = (
+                    self.config.auth_profile_key.clone(),
+                    self.config.auth_revision,
+                );
+                let github = if reference == current {
+                    Some(&self.github)
+                } else {
+                    self.revision_clients.get(&reference)
+                };
+                let Some(github) = github else {
+                    continue;
+                };
+                match github.remove_runner(runner_id).await {
                     Ok(RemovalOutcome::Removed) | Ok(RemovalOutcome::AlreadyAbsent) => {}
                     // Authoritative safety gate: keep the resource, retry
                     // next tick — the durable Retiring state makes this
@@ -180,6 +196,9 @@ impl FleetSupervisor {
                     .store
                     .generation_destroy_attempted(&generation.id)
                     .await?;
+                let apply_intent = crate::apply_intent::TrackedApplyIntentSink::new(
+                    self.config.apply_intent_sink.clone(),
+                );
                 let request = TemplateDestroyRequest {
                     pinned_artifact_digest: generation.template_artifact_digest.clone(),
                     workspace_path: std::path::PathBuf::from(&generation.workspace_path),
@@ -195,10 +214,11 @@ impl FleetSupervisor {
                         serial: state_serial,
                         allow_serial_advance,
                     },
-                    apply_intent_sink: Some(self.config.apply_intent_sink.clone()),
+                    apply_intent_sink: Some(apply_intent.clone()),
                 };
                 match self.runtime.destroy(request).await {
                     Ok(_) => {
+                        apply_intent.complete(self.store.as_ref(), now).await?;
                         self.store
                             .generation_advance(
                                 &generation.id,

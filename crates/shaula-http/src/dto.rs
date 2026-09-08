@@ -170,24 +170,102 @@ pub struct TemplateProfileViewDto {
     pub bindings_present: bool,
 }
 
+/// Presence-preserving optional member (F10, spec 0011 §6/§7): absent →
+/// `Field(None)`, explicit `null` → `Field(Some(None))`, value →
+/// `Field(Some(Some(v)))`. LEGACY bodies keep baseline semantics (null
+/// behaves as absent, so historical requests and replays still parse),
+/// while the v2 format validates presence itself and rejects forbidden
+/// or null members at the format boundary.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Field<T>(pub Option<Option<T>>);
+
+impl<T> Default for Field<T> {
+    fn default() -> Self {
+        Field(None)
+    }
+}
+
+impl<T> Field<T> {
+    /// Null and absent both collapse to `None` — the LEGACY reading.
+    pub fn flatten(&self) -> Option<T>
+    where
+        T: Clone,
+    {
+        self.0.clone().flatten()
+    }
+
+    /// Whether the member appeared in the payload AT ALL (value or null).
+    pub fn is_present(&self) -> bool {
+        self.0.is_some()
+    }
+}
+
+impl<'de, T> serde::Deserialize<'de> for Field<T>
+where
+    T: serde::Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct FieldVisitor<T>(std::marker::PhantomData<T>);
+        impl<'de, T> serde::de::Visitor<'de> for FieldVisitor<T>
+        where
+            T: serde::Deserialize<'de>,
+        {
+            type Value = Field<T>;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("an optional field value")
+            }
+            fn visit_some<D>(self, d: D) -> Result<Self::Value, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                Option::<T>::deserialize(d).map(|inner| Field(Some(inner)))
+            }
+            fn visit_none<E>(self) -> Result<Self::Value, E> {
+                Ok(Field(Some(None)))
+            }
+            fn visit_unit<E>(self) -> Result<Self::Value, E> {
+                Ok(Field(Some(None)))
+            }
+        }
+        deserializer.deserialize_option(FieldVisitor(std::marker::PhantomData))
+    }
+}
+
 /// Auth Profile request bodies: discriminated, strict, write-only secrets.
+/// `schema_version: 2` selects the multi-account GitHub App policy format;
+/// an absent version is parsed as legacy and NEVER version-guessed from
+/// payload shape (spec 0011 §6). Every optional member uses [`Field`] so
+/// legacy bodies keep baseline null semantics while the v2 format can
+/// enforce its own presence restrictions.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AuthProfilePutDto {
     pub kind: String,
     #[serde(default)]
-    pub app_id: Option<String>,
+    pub schema_version: Field<i64>,
     #[serde(default)]
-    pub installation_id: Option<i64>,
+    pub app_id: Field<String>,
+    #[serde(default)]
+    pub installation_id: Field<i64>,
     /// Write-only GitHub App private key bytes.
     #[serde(default)]
-    pub private_key: Option<String>,
+    pub private_key: Field<String>,
     /// Write-only PAT bytes.
     #[serde(default)]
-    pub token: Option<String>,
+    pub token: Field<String>,
     #[serde(default)]
-    pub pat_principal: Option<String>,
-    pub target_allowlist: Vec<GitHubTarget>,
+    pub pat_principal: Field<String>,
+    /// Legacy exact allowlist (schema_version absent). Presence is
+    /// preserved: a v2 payload carrying this member — even `[]` or
+    /// `null` — is a forbidden-member violation, not an empty allowlist.
+    #[serde(default)]
+    pub target_allowlist: Field<Vec<GitHubTarget>>,
+    /// v2 Target policy selectors (schema_version 2).
+    #[serde(default)]
+    pub target_policy: Field<Vec<shaula_core::auth_policy::TargetSelector>>,
 }
 
 #[derive(Debug, Clone, Serialize)]

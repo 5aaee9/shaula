@@ -1,13 +1,13 @@
 ---
-status: proposed
+status: accepted
 date: 2026-09-07
 ---
 
 # Route one GitHub App Profile to multiple explicitly selected accounts
 
-一个 GitHub App 可以安装到个人账户和多个组织，但每次 installation 都有独立身份与权限范围。Shaula 当前把 installation ID 固定在 Auth Profile identity 中，并只允许 exact Target allowlist，导致同一个 App private key 必须重复配置，且个人新仓库需要新 Profile。这里提议让 Profile 固定 **App identity**，Auth Revision 保存 credential、明确的 Target policy 和验证后冻结的多个 account/installation bindings；具体 Fleet Target 在使用凭据前解析到唯一 context。
+一个 GitHub App 可以安装到个人账户和多个组织，但每次 installation 都有独立身份与权限范围。Shaula 当前把 installation ID 固定在 Auth Profile identity 中，并只允许 exact Target allowlist，导致同一个 App private key 必须重复配置，且个人新仓库需要新 Profile。这里决定让 Profile 固定 **App identity**，Auth Revision 保存 credential、明确的 Target policy 和验证后冻结的多个 account/installation bindings；具体 Fleet Target 在使用凭据前解析到唯一 context。
 
-这是待审架构决定，未实施。接受后部分替代 [ADR-0007](0007-use-target-bound-github-auth-profiles.md) 与 [ADR-0009](0009-manage-profile-resources-through-http-and-sqlite.md) 中“单 installation / policy 在 Profile incarnation 内固定”的选择。详细协议唯一维护于 [spec 0011](../specs/0011-multi-account-github-authentication.md)；旧基线在提案接受前继续有效。
+已接受。本地实现与现有运行时集成边界见 [implementation status](../IMPLEMENTATION_STATUS.md)；真实 GitHub 路由验收由 spec 0011 §9 定义，尚未执行。本决定部分替代 [ADR-0007](0007-use-target-bound-github-auth-profiles.md) 与 [ADR-0009](0009-manage-profile-resources-through-http-and-sqlite.md) 中“单 installation / policy 在 Profile incarnation 内固定”的选择。详细协议唯一维护于 [spec 0011](../specs/0011-multi-account-github-authentication.md)。
 
 ## Decision
 

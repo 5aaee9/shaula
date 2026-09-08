@@ -177,11 +177,8 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
 
     async fn operation_record_apply_starting(
         &self,
-        generation_id: &str,
-        kind: &str,
-        provenance_json: &str,
+        provenance: &shaula_core::ports::PlanProvenance,
         saved_plan_path: &str,
-        saved_plan_digest: &str,
         now: i64,
     ) -> CoreResult<()> {
         // The fence and the durable record share ONE transaction: a
@@ -189,14 +186,24 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
         // the check and the spawn-eligibility record can never diverge
         // (F05; spec 0002 §8.334).
         let tx = self.store.begin().await.map_err(core_err)?;
+        let kind = match provenance.intent {
+            shaula_core::plan::PlanIntent::Create => "Create",
+            shaula_core::plan::PlanIntent::Destroy => "Destroy",
+        };
+        let provenance_json = serde_json::to_string(provenance).map_err(|e| {
+            CoreError::new(
+                shaula_core::error::ReasonCode::Internal,
+                format!("apply provenance serialize failed: {e}"),
+            )
+        })?;
         let insert = shaula_core::registry::OperationInsert {
-            id: shaula_core::auth::new_attempt_id(),
-            generation_id: generation_id.to_string(),
+            id: provenance.attempt_id.clone(),
+            generation_id: provenance.generation_id.clone(),
             kind: kind.to_string(),
             state: "ApplyStarting".to_string(),
-            provenance_json: Some(provenance_json.to_string()),
+            provenance_json: Some(provenance_json),
             saved_plan_path: Some(saved_plan_path.to_string()),
-            saved_plan_digest: Some(saved_plan_digest.to_string()),
+            saved_plan_digest: Some(provenance.saved_plan_digest.clone()),
             now,
         };
         match self

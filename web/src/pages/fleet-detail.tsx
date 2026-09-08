@@ -1,3 +1,4 @@
+import { AuthRouteDetails } from "@/components/auth-route-details";
 import {
   Table,
   TableHeader,
@@ -147,6 +148,29 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
                   {data.resolved.authDesired.profileKey} / r{data.resolved.authDesired.revision}
                 </Link>
               </KeyValue>
+              {status.data?.data.githubAuth?.context && (
+                <KeyValue label="Auth context (this target)">
+                  <p>
+                    {status.data.data.githubAuth.context.state}
+                    {status.data.data.githubAuth.context.reason &&
+                      `: ${status.data.data.githubAuth.context.reason}`}
+                  </p>
+                  <AuthRouteDetails
+                    label="Desired route"
+                    route={status.data.data.githubAuth.context.desiredRoute}
+                    reference={status.data.data.githubAuth.context.desired}
+                  />
+                  <AuthRouteDetails
+                    label="Observed route"
+                    route={status.data.data.githubAuth.context.observedRoute}
+                    reference={status.data.data.githubAuth.context.observed}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Observed records the last accepted route. Access is verified again before GitHub
+                    operations.
+                  </p>
+                </KeyValue>
+              )}
               <KeyValue label="Labels">
                 <div className="flex flex-wrap gap-1">
                   {data.spec.github.labels.length

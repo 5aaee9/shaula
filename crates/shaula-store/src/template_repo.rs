@@ -383,7 +383,8 @@ impl Store {
 
     /// Applies the structured credential validation outcome for an Auth
     /// Candidate: promote to Active (staged activation) or reject while
-    /// keeping the prior active revision untouched.
+    /// keeping the prior active revision untouched. Delegates to the full
+    /// v2-aware promotion in `auth_v2_repo`.
     pub(crate) async fn auth_scan_apply(
         &self,
         key: &str,
@@ -392,7 +393,8 @@ impl Store {
         reason: Option<&str>,
         now: i64,
     ) -> StoreResult<()> {
-        self.auth_apply_validation(key, revision, accepted, reason, now)
+        self.auth_apply_full(key, revision, accepted, reason, now, None)
             .await
+            .map(|_| ())
     }
 }

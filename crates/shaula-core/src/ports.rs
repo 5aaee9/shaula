@@ -10,7 +10,6 @@ use crate::auth::AuthKind;
 use crate::github::GitHubTarget;
 use crate::github::Label;
 use crate::github::ScaleSetIdentity;
-use crate::plan::PlanIntent;
 use crate::template::BindingsDigest;
 use crate::template::ShaulaInputEnvelope;
 use crate::template::ShaulaResultEnvelope;
@@ -275,6 +274,50 @@ pub trait GitHubAccessPort: Send + Sync {
     /// Validates the target allowlist for the credential; used by auth
     /// candidate validation and handoff classification.
     fn allows_target(&self, target: &GitHubTarget) -> bool;
+
+    /// Verified numeric identity of a concrete Target (spec 0011 §4.2):
+    /// organization id, or repository id + owner id. Powers the
+    /// durable-pin check against same-name rebuilds.
+    async fn resolve_target_identity(
+        &self,
+        target: &GitHubTarget,
+    ) -> Result<TargetIdentity, AccessFailure>;
+
+    /// Fresh bounded route proof for THIS port's exact target + context
+    /// (spec 0011 §5.3): positive evidence reused ≤60s, negative ≤15s; a
+    /// refresh RE-CHECKS installation identity/suspension, account
+    /// ownership and target numeric identity — a new token alone never
+    /// extends a proof. New Creates/adopts/acquisitions gate on this.
+    async fn ensure_route_proof(&self) -> Result<RouteProof, AccessFailure>;
+
+    /// Original cache window for a returned denial, for display only. Reading
+    /// a cached failure must not present it as a new remote access check.
+    async fn route_proof_failure_window(&self, _failure: &AccessFailure) -> Option<(i64, i64)> {
+        None
+    }
+}
+
+/// Numeric remote identity of a Fleet Target (authenticated read).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TargetIdentity {
+    /// `GET /orgs/{org}` id for organization Targets.
+    pub organization_id: Option<i64>,
+    /// `GET /repos/{owner}/{repo}` id for repository Targets.
+    pub repository_id: Option<i64>,
+    /// The repository owner's account id for repository Targets.
+    pub repository_owner_id: Option<i64>,
+}
+
+/// Positive route evidence with an explicit freshness window (§5.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RouteProof {
+    pub checked_at_unix_ms: i64,
+    pub valid_until_unix_ms: i64,
+    pub installation_id: i64,
+    pub account_id: i64,
+    pub organization_id: Option<i64>,
+    pub repository_id: Option<i64>,
+    pub repository_owner_id: Option<i64>,
 }
 
 /// One-time JIT bootstrap payload. Secret-classified.
@@ -320,37 +363,9 @@ impl<T> EffectOutcome<T> {
     }
 }
 
-/// State serial or explicit empty-state sentinel.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum StateLineage {
-    Empty,
-    /// The applied state identity: Terraform's own lineage UUID and
-    /// serial, captured read-only from `state pull` — never a proxy.
-    Serial {
-        lineage: String,
-        serial: u64,
-    },
-}
-
-/// Provenance binding persisted before any mutating apply (spec 0004 §5).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PlanProvenance {
-    pub intent: PlanIntent,
-    pub saved_plan_digest: String,
-    pub engine_kind: String,
-    pub engine_version: String,
-    pub engine_binary_digest: String,
-    pub artifact_digest: String,
-    /// Digest of normalized executable files, distinct from the archive identity.
-    #[serde(default)]
-    pub template_material_digest: String,
-    pub protected_input_digest: String,
-    /// State serial or explicit empty-state sentinel.
-    pub state_lineage: StateLineage,
-    pub generation_id: String,
-    pub attempt_id: String,
-}
+#[path = "ports/provenance.rs"]
+mod provenance;
+pub use provenance::{PlanProvenance, StateLineage};
 
 #[path = "ports/template_runtime.rs"]
 pub mod template_runtime;

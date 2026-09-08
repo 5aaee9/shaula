@@ -7,9 +7,11 @@
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
-use axum::routing::{delete, get, post};
+use axum::routing::get;
 use axum::{Json, Router};
-use base64::Engine;
+#[path = "wire_protocol/wire_mock_router.rs"]
+mod wire_mock_router;
+
 use shaula_core::github::GitHubTarget;
 use shaula_core::ports::Clock;
 use shaula_core::ports::GitHubAccessPort;
@@ -33,136 +35,6 @@ fn fixed_clock() -> Arc<FixedClock> {
     Arc::new(FixedClock(AtomicI64::new(1_800_000_000_000)))
 }
 
-/// Builds a syntactically valid unsigned JWT with the given `exp`.
-fn fake_jwt(exp: i64) -> String {
-    let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"alg":"RS256"}"#);
-    let payload =
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(format!(r#"{{"exp":{exp}}}"#));
-    format!("{header}.{payload}.not-a-real-signature")
-}
-
-async fn spawn_mock_github() -> String {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-
-    let actions_url = format!("http://{addr}/actions-service");
-    let app: Router = Router::new()
-        .route(
-            "/orgs/example-org/actions/runners/registration-token",
-            post(|| async {
-                (
-                    axum::http::StatusCode::CREATED,
-                    Json(serde_json::json!({"token": "reg-token-1"})),
-                )
-            }),
-        )
-        .route(
-            "/actions/runner-registration",
-            post(move |headers: axum::http::HeaderMap| {
-                let actions_url = actions_url.clone();
-                async move {
-                    let auth = headers
-                        .get("authorization")
-                        .and_then(|v| v.to_str().ok())
-                        .unwrap_or_default()
-                        .to_string();
-                    assert!(
-                        auth.starts_with("RemoteAuth reg-token"),
-                        "runner-registration must use RemoteAuth scheme"
-                    );
-                    Json(serde_json::json!({
-                        "url": actions_url,
-                        "token": fake_jwt(1_800_000_600),
-                    }))
-                }
-            }),
-        )
-        .route(
-            "/actions-service/_apis/runtime/runnergroups/",
-            get(|| async {
-                Json(serde_json::json!({
-                    "count": 1,
-                    "value": [{"id": 7, "name": "Default", "size": 0, "isDefaultGroup": true}]
-                }))
-            }),
-        )
-        .route(
-            "/actions-service/_apis/runtime/runnerscalesets",
-            get(|| async {
-                Json(serde_json::json!({
-                    "count": 1,
-                    "value": [{
-                        "id": 42,
-                        "name": "shaula-x64",
-                        "runnerGroupId": 7,
-                        "runnerGroupName": "Default",
-                        "labels": [],
-                        "RunnerSetting": {},
-                        "createdOn": "2026-01-01T00:00:00Z"
-                    }]
-                }))
-            })
-            .post(|| async {
-                Json(serde_json::json!({
-                    "id": 43,
-                    "name": "shaula-x64",
-                    "runnerGroupId": 7,
-                    "runnerGroupName": "Default",
-                    "labels": [],
-                    "RunnerSetting": {},
-                    "createdOn": "2026-01-01T00:00:00Z"
-                }))
-            }),
-        )
-        .route(
-            "/actions-service/_apis/runtime/runnerscalesets/42/sessions",
-            post(|| async {
-                Json(serde_json::json!({
-                    "sessionId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
-                    "ownerName": "shaula",
-                    "messageQueueUrl": "https://queue.actions.githubusercontent.com/queues/42",
-                    "messageQueueAccessToken": "queue-token",
-                    "statistics": {
-                        "totalAvailableJobs": 0,
-                        "totalAcquiredJobs": 0,
-                        "totalAssignedJobs": 2,
-                        "totalRunningJobs": 0,
-                        "totalRegisteredRunners": 1,
-                        "totalBusyRunners": 0,
-                        "totalIdleRunners": 1
-                    }
-                }))
-            }),
-        )
-        .route(
-            "/actions-service/_apis/runtime/runnerscalesets/42/generatejitconfig",
-            post(|| async {
-                Json(serde_json::json!({
-                    "runner": {"id": 9001, "name": "shaula-gen-1", "runnerScaleSetId": 42},
-                    "encodedJITConfig": "super-secret-jit"
-                }))
-            }),
-        )
-        .route(
-            "/actions-service/_apis/distributedtask/pools/0/agents",
-            get(|| async {
-                Json(serde_json::json!({
-                    "count": 1,
-                    "value": [{"id": 9001, "name": "shaula-gen-1", "runnerScaleSetId": 42}]
-                }))
-            }),
-        )
-        .route(
-            "/actions-service/_apis/distributedtask/pools/0/agents/{id}",
-            delete(|| async { axum::http::StatusCode::NO_CONTENT }),
-        )
-        .with_state(());
-    tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
-    });
-    format!("http://{addr}")
-}
-
 fn pat_client(github_base: String) -> ScalesetClient {
     let http = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
@@ -180,7 +52,7 @@ fn pat_client(github_base: String) -> ScalesetClient {
 
 #[tokio::test]
 async fn full_auth_chain_and_port_operations() {
-    let github_base = spawn_mock_github().await;
+    let github_base = wire_mock_router::spawn_mock_github().await;
     let client = pat_client(github_base);
 
     // 1. Runner group resolution through the admin token chain.
@@ -250,7 +122,7 @@ async fn poll_202_maps_to_no_message() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    let github_base = spawn_mock_github().await;
+    let github_base = wire_mock_router::spawn_mock_github().await;
     let client = pat_client(github_base);
     let session = shaula_core::ports::SessionHandle {
         session_id: "s".into(),
@@ -278,7 +150,7 @@ async fn poll_401_maps_to_session_expired_not_create() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    let github_base = spawn_mock_github().await;
+    let github_base = wire_mock_router::spawn_mock_github().await;
     let client = pat_client(github_base);
     let session = shaula_core::ports::SessionHandle {
         session_id: "s".into(),
@@ -326,7 +198,7 @@ async fn poll_message_batch_parses_typed_job_messages() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    let github_base = spawn_mock_github().await;
+    let github_base = wire_mock_router::spawn_mock_github().await;
     let client = pat_client(github_base);
     let session = shaula_core::ports::SessionHandle {
         session_id: "s".into(),

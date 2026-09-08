@@ -7,6 +7,10 @@
 use async_trait::async_trait;
 
 use crate::error::CoreResult;
+use crate::registry::attestation_port::{
+    AttestationCommit, AttestationRecord, AttestationReplayRow,
+};
+use crate::registry::auth_port::{AuthPromotion, AuthPromotionOutcome, FleetContextAck};
 use crate::registry::{Actor, ChangeView, IdempotencyLookup, MutationError};
 
 /// One accepted effective mutation with all its durable facts.
@@ -32,7 +36,7 @@ pub struct MutationFacts {
 
 /// Read side of the desired-state store used by admission.
 #[async_trait]
-pub trait ControlPlaneStore: Send + Sync {
+pub trait ControlPlaneStore: crate::registry::AuthExecutionStore + Send + Sync {
     async fn commit_profile_retirement(
         &self,
         facts: MutationFacts,
@@ -61,8 +65,31 @@ pub trait ControlPlaneStore: Send + Sync {
         revision: i64,
     ) -> CoreResult<Option<AuthRevisionRow>>;
     async fn auth_revision_active(&self, key: &str) -> CoreResult<Option<AuthRevisionRow>>;
+    async fn auth_bindings_get(
+        &self,
+        key: &str,
+        revision: i64,
+    ) -> CoreResult<Vec<crate::auth_context::AccountBinding>>;
+    /// Live Fleet Targets currently desiring this auth profile (active,
+    /// blocked and decommissioning phases; tombstones excluded).
+    async fn auth_live_dependents(&self, key: &str) -> CoreResult<Vec<AuthDependentTarget>>;
+    /// The persisted desired/observed Resolved Auth Context of a fleet.
+    async fn fleet_auth_context_get(
+        &self,
+        fleet_key: &str,
+    ) -> CoreResult<Option<FleetAuthContextRow>>;
+    /// Marks the context resolution blocked with a sanitized reason and
+    /// bounded retry deadline.
+    async fn fleet_auth_context_block(
+        &self,
+        fleet_key: &str,
+        reason: &str,
+        retry_at: i64,
+        now: i64,
+    ) -> CoreResult<()>;
     /// Applies GitHub identity/access validation outcome for an Auth
-    /// Candidate (staged activation; false keeps prior active).
+    /// Candidate (staged activation; false keeps prior active). Legacy
+    /// entry point delegating to [`ControlPlaneStore::auth_apply_validation_v2`].
     async fn auth_apply_validation(
         &self,
         key: &str,
@@ -70,7 +97,23 @@ pub trait ControlPlaneStore: Send + Sync {
         accepted: bool,
         reason: Option<&str>,
         now: i64,
-    ) -> CoreResult<()>;
+    ) -> CoreResult<()> {
+        self.auth_apply_validation_v2(key, revision, accepted, reason, now, None)
+            .await
+            .map(|_| ())
+    }
+    /// v2-aware promotion: the bindings + snapshot commit ATOMICALLY with
+    /// the head advance, after the coverage and fingerprint gates (spec
+    /// 0011 §4.1/§5.1).
+    async fn auth_apply_validation_v2(
+        &self,
+        key: &str,
+        revision: i64,
+        accepted: bool,
+        reason: Option<&str>,
+        now: i64,
+        promotion: Option<AuthPromotion>,
+    ) -> CoreResult<AuthPromotionOutcome>;
     /// Protected-memory handoff of credential bytes for the EXACT
     /// revision; used for idempotency comparison, never persisted or
     /// logged. Returns None when the revision does not exist.
@@ -86,21 +129,29 @@ pub trait ControlPlaneStore: Send + Sync {
 
     async fn demand_get(&self, fleet_key: &str) -> CoreResult<Option<i64>>;
 
-    /// Durably advances the observed auth tuple to the full desired tuple
-    /// after successful classification.
+    /// Durably advances the observed auth tuple after successful
+    /// classification. With `context_json` (a v2 exact Resolved Auth
+    /// Context), the observed context advances in the SAME transaction
+    /// after the durable-pin check; a pin conflict writes NOTHING and
+    /// reports [`FleetContextAck::IdentityDrift`].
     async fn handoff_acknowledge(
         &self,
         fleet_key: &str,
         profile_key: &str,
         revision: i64,
-    ) -> CoreResult<()>;
-    /// Marks the handoff blocked with a sanitized reason and retry deadline.
+        context_json: Option<&str>,
+        expectation: &crate::registry::AuthHandoffExpectation,
+    ) -> CoreResult<FleetContextAck>;
+    /// Records a failed proof only while its captured authority is current.
+    /// False means stale work was discarded without changing either rollout.
     async fn handoff_mark_blocked(
         &self,
         fleet_key: &str,
+        authority: &(String, i64),
+        expectation: &crate::registry::AuthHandoffExpectation,
         reason: &str,
         retry_at: i64,
-    ) -> CoreResult<()>;
+    ) -> CoreResult<bool>;
 
     async fn fleet_change_get(&self, change_id: &str) -> CoreResult<Option<ChangeView>>;
     async fn profile_change_get(&self, change_id: &str) -> CoreResult<Option<ChangeView>>;
@@ -221,6 +272,9 @@ pub struct FleetHead {
     pub tombstone: bool,
     pub deletion_marker: bool,
     pub phase: String,
+    /// G5: the fence captured BEFORE network validation is the
+    /// precondition the acknowledgement must still satisfy.
+    pub mutation_fence: i64,
 }
 
 /// One immutable fleet revision row.
@@ -267,107 +321,7 @@ pub struct TemplateRevisionRow {
     pub fleet_input_policy_json: Option<String>,
 }
 
-/// One immutable auth revision row. Credential bytes never leave the
-/// GitHub Access Module seam; this read model carries only metadata.
-#[derive(Debug, Clone)]
-pub struct AuthRevisionRow {
-    pub profile_key: String,
-    pub revision: i64,
-    pub kind: String,
-    pub app_id: Option<String>,
-    pub installation_id: Option<i64>,
-    pub pat_principal: Option<String>,
-    pub allowlist_json: String,
-}
-
-/// Persisted auth handoff state for one fleet.
-#[derive(Debug, Clone)]
-pub struct AuthHandoffRow {
-    pub fleet_key: String,
-    pub desired: (String, i64),
-    pub observed: Option<(String, i64)>,
-    pub state: String,
-    pub cleanup_only: bool,
-    pub blocked_reason: Option<String>,
-    pub retry_at: Option<i64>,
-}
-
-/// Derives the STABLE persisted identity of an attestation from its
-/// FULL path scope (R6-06): Profile, Revision and the URI attestation
-/// key. The single hashing authority — the service derives record ids
-/// with it and the store looks replays up with it, so the two can never
-/// diverge. The part encoding is length-prefixed (R7-05), so distinct
-/// (profile, revision, key) tuples can never collide on the same digest
-/// even around embedded separator bytes.
-pub fn attestation_record_id(profile_key: &str, revision: i64, attestation_key: &str) -> String {
-    crate::auth::request_hash_parts(&[
-        profile_key.as_bytes(),
-        revision.to_string().as_bytes(),
-        attestation_key.as_bytes(),
-    ])
-}
-
-/// One immutable conformance attestation to store (R6-06). The STABLE
-/// resource identity is the FULL path scope — Profile, Revision and the
-/// attestation key from the request URI — hashed into `id`, so
-/// unrelated profiles (or a new revision) reusing the same URI key never
-/// collide. An exact replay of the same identity and canonical body
-/// returns the original record; the same identity with a different body
-/// conflicts.
-#[derive(Debug, Clone)]
-pub struct AttestationRecord {
-    /// sha256 over (profile_key, revision, attestation_key).
-    pub id: String,
-    /// The attestation key exactly as it appeared in the request URI —
-    /// for the audit fact, never persisted as the record identity.
-    pub attestation_key: String,
-    pub profile_key: String,
-    pub revision: i64,
-    pub subject_json: String,
-    pub subject_digest: String,
-    /// The result AS CLAIMED by the submitter ("passed"/"failed"/...).
-    /// The verification verdict lives in the audit fact, not here.
-    pub result: String,
-    pub evidence_digest: Option<String>,
-    pub suite: (String, String),
-    pub completed_at: i64,
-    /// Whether the submitted subject matched the recomputed authority.
-    /// A mismatched attestation is stored and audited but can never
-    /// activate (spec 0005 §5, R6-08).
-    pub subject_verified: bool,
-    /// When set, atomically freeze this attestation as the active one.
-    pub activate: bool,
-}
-
-/// The persisted attestation row as seen by the replay pre-check
-/// (R6-07): the service compares the canonical request members against
-/// it BEFORE touching the current engine authority.
-#[derive(Debug, Clone)]
-pub struct AttestationReplayRow {
-    pub profile_key: String,
-    pub revision: i64,
-    pub subject_json: String,
-    pub result: String,
-    pub evidence_digest: Option<String>,
-    pub suite_name: Option<String>,
-    pub suite_version: Option<String>,
-    pub completed_at: i64,
-    /// R10-05: whether the subject matched the recomputed authority.
-    pub subject_verified: bool,
-}
-
-/// Outcome of one attestation commit (spec 0005 §5 replay semantics).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AttestationCommit {
-    /// The attestation was newly recorded and (being eligible) froze
-    /// itself as the active one.
-    Created,
-    /// The attestation was recorded and audited but its activation was
-    /// refused — stale (no longer desired), candidate not Ready, or the
-    /// revision's attestation is already frozen. "Cannot activate" is
-    /// never "cannot record" (R6-08).
-    RecordedNotActivated,
-    /// An exact replay of the same attestation identity: the ORIGINAL
-    /// record stands, nothing was re-activated or overwritten.
-    Replayed,
-}
+/// One immutable auth revision row lives in [`super::auth_port`].
+pub use super::auth_port::{
+    AuthDependentTarget, AuthHandoffRow, AuthRevisionRow, FleetAuthContextRow,
+};

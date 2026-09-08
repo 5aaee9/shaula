@@ -151,6 +151,22 @@ pub enum CredentialValidationOutcome {
     PermissionDenied,
     TargetHiddenOrNotFound,
     RateLimited,
+    /// A concrete Fleet Target matches no selector of the Candidate policy.
+    TargetNotAllowed,
+    /// No installation exists for a declared account (terminal).
+    InstallationNotFound,
+    /// The installation is suspended (terminal).
+    InstallationSuspended,
+    /// The installation id/account identity drifted from a previously
+    /// frozen binding without an explicit republication.
+    InstallationChanged,
+    /// A live Target's remote numeric identity no longer matches the
+    /// pinned Fleet identity.
+    TargetIdentityChanged,
+    /// A policy shrink would strand live dependent Fleets (terminal).
+    TargetPolicyInUse,
+    /// One account's selectors resolve to different installations.
+    AmbiguousInstallation,
 }
 
 impl CredentialValidationOutcome {
@@ -163,6 +179,13 @@ impl CredentialValidationOutcome {
             CredentialValidationOutcome::PermissionDenied => R::PermissionDenied,
             CredentialValidationOutcome::TargetHiddenOrNotFound => R::TargetHiddenOrNotFound,
             CredentialValidationOutcome::RateLimited => R::RateLimited,
+            CredentialValidationOutcome::TargetNotAllowed => R::TargetNotAllowed,
+            CredentialValidationOutcome::InstallationNotFound => R::InstallationNotFound,
+            CredentialValidationOutcome::InstallationSuspended => R::InstallationSuspended,
+            CredentialValidationOutcome::InstallationChanged => R::InstallationChanged,
+            CredentialValidationOutcome::TargetIdentityChanged => R::TargetIdentityChanged,
+            CredentialValidationOutcome::TargetPolicyInUse => R::TargetPolicyInUse,
+            CredentialValidationOutcome::AmbiguousInstallation => R::AmbiguousInstallation,
         }
     }
 }
@@ -335,4 +358,9 @@ pub struct AuthRevisionInsert {
     pub installation_id: Option<i64>,
     pub pat_principal: Option<String>,
     pub allowlist_json: String,
+    /// 1 for the legacy single-installation format; 2 for the
+    /// multi-account policy format (spec 0011).
+    pub schema_version: i64,
+    /// Canonical `TargetPolicy` JSON when `schema_version == 2`.
+    pub policy_json: Option<String>,
 }

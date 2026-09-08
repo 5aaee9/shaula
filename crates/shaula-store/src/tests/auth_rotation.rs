@@ -24,6 +24,8 @@ async fn auth_rotation_retarget_ignores_fleet_revision_collision() {
                 installation_id: None,
                 pat_principal: Some("octocat".into()),
                 allowlist_json: r#"[{"kind":"organization","owner":"example-org"}]"#.into(),
+                schema_version: 1,
+                policy_json: None,
             },
             b"cred-1",
             1,
@@ -32,7 +34,7 @@ async fn auth_rotation_retarget_ignores_fleet_revision_collision() {
         .unwrap();
     tx.commit().await.unwrap();
     store
-        .auth_apply_validation("prod-app", 1, true, None, 8)
+        .auth_apply_full("prod-app", 1, true, None, 8, None)
         .await
         .unwrap();
 
@@ -82,6 +84,8 @@ async fn auth_rotation_retarget_ignores_fleet_revision_collision() {
                 installation_id: None,
                 pat_principal: Some("octocat".into()),
                 allowlist_json: r#"[{"kind":"organization","owner":"example-org"}]"#.into(),
+                schema_version: 1,
+                policy_json: None,
             },
             b"cred-2",
             9,
@@ -90,7 +94,7 @@ async fn auth_rotation_retarget_ignores_fleet_revision_collision() {
         .unwrap();
     tx.commit().await.unwrap();
     store
-        .auth_apply_validation("prod-app", 2, true, None, 10)
+        .auth_apply_full("prod-app", 2, true, None, 10, None)
         .await
         .unwrap();
 
@@ -121,6 +125,8 @@ async fn auth_rotation_never_undoes_cross_profile_switch() {
                     installation_id: None,
                     pat_principal: Some("octocat".into()),
                     allowlist_json: r#"[{"kind":"organization","owner":"example-org"}]"#.into(),
+                    schema_version: 1,
+                    policy_json: None,
                 },
                 b"cred",
                 1,
@@ -130,11 +136,11 @@ async fn auth_rotation_never_undoes_cross_profile_switch() {
     }
     tx.commit().await.unwrap();
     store
-        .auth_apply_validation("old-app", 1, true, None, 6)
+        .auth_apply_full("old-app", 1, true, None, 6, None)
         .await
         .unwrap();
     store
-        .auth_apply_validation("other-app", 1, true, None, 8)
+        .auth_apply_full("other-app", 1, true, None, 8, None)
         .await
         .unwrap();
 
@@ -183,6 +189,8 @@ async fn auth_rotation_never_undoes_cross_profile_switch() {
                 installation_id: None,
                 pat_principal: Some("octocat".into()),
                 allowlist_json: r#"[{"kind":"organization","owner":"example-org"}]"#.into(),
+                schema_version: 1,
+                policy_json: None,
             },
             b"cred-old-2",
             9,
@@ -191,7 +199,7 @@ async fn auth_rotation_never_undoes_cross_profile_switch() {
         .unwrap();
     tx.commit().await.unwrap();
     store
-        .auth_apply_validation("old-app", 2, true, None, 10)
+        .auth_apply_full("old-app", 2, true, None, 10, None)
         .await
         .unwrap();
 
