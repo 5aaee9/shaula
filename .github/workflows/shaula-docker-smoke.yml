@@ -1,0 +1,27 @@
+name: Shaula Docker smoke
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  smoke:
+    name: Verify the Shaula Docker runner
+    runs-on: shaula-codex-docker
+    timeout-minutes: 5
+    steps:
+      - name: Check runner and bootstrap isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "5aaee9/shaula"
+          test "$RUNNER_OS" = "Linux"
+          test -f /.dockerenv
+          test ! -e /var/run/docker.sock
+          test ! -e /run/docker.sock
+          test -z "${ACTIONS_RUNNER_INPUT_JITCONFIG+x}"
+          test ! -e /shaula/jit_config
+          printf 'runner=%s os=%s arch=%s\n' "$RUNNER_NAME" "$RUNNER_OS" "$RUNNER_ARCH"
+          printf 'repository=%s run=%s attempt=%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+          printf 'Shaula Docker smoke passed: socket and bootstrap credentials are absent\n'
