@@ -47,7 +47,10 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<R
       data.code || "RequestFailed",
       data.detail || `Request failed (${response.status}).`,
     );
-  return { data, etag: response.headers.get("etag") };
+  // Compression proxies can weaken ETag without changing the desired revision.
+  // The origin supplies its opaque write version separately from that validator.
+  const version = response.headers.get("shaula-resource-version") ?? response.headers.get("etag");
+  return { data, etag: version && /^"[\x21\x23-\x7e]+"$/.test(version) ? version : null };
 }
 
 export const resourcePath = (kind: string, key: string) => `/${kind}/${encodeURIComponent(key)}`;

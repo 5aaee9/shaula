@@ -8,7 +8,7 @@ use axum::response::{IntoResponse, Response};
 use shaula_core::registry::Scope;
 
 use crate::problem::{mutation_problem, problem};
-use crate::router::{require_scope, AppState};
+use crate::router::{require_scope, resource_version_headers, AppState};
 
 /// Current dependency inventory for an explicit policy preview. Kept separate
 /// from the legacy resource so legacy GET/replay representations stay stable.
@@ -47,10 +47,10 @@ pub(crate) async fn auth_profile_get(
             let body = auth_profile_body(&view);
             (
                 StatusCode::OK,
-                [(
-                    axum::http::header::ETAG,
-                    format!("\"{}:{}\"", view.incarnation, view.desired_revision),
-                )],
+                resource_version_headers(&format!(
+                    "{}:{}",
+                    view.incarnation, view.desired_revision
+                )),
                 axum::Json(body),
             )
                 .into_response()

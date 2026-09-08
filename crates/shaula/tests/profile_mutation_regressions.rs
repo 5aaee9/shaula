@@ -35,6 +35,14 @@ async fn profile_create_replays_before_preconditions_and_retirement_is_durable()
             .unwrap();
         assert_eq!(first.status(), StatusCode::ACCEPTED);
         let etag = first.headers()["etag"].clone();
+        assert_eq!(first.headers().get("shaula-resource-version"), Some(&etag));
+        let view = app
+            .clone()
+            .oneshot(authorized("GET", &uri, None))
+            .await
+            .unwrap();
+        assert_eq!(view.headers().get("shaula-resource-version"), Some(&etag));
+        assert_eq!(view.headers().get("etag"), Some(&etag));
         let first_body = axum::body::to_bytes(first.into_body(), 1 << 20)
             .await
             .unwrap();
@@ -44,6 +52,7 @@ async fn profile_create_replays_before_preconditions_and_retirement_is_durable()
             .await
             .unwrap();
         assert_eq!(replay.status(), StatusCode::ACCEPTED);
+        assert_eq!(replay.headers().get("shaula-resource-version"), Some(&etag));
         assert_eq!(
             axum::body::to_bytes(replay.into_body(), 1 << 20)
                 .await
@@ -105,6 +114,74 @@ async fn profile_create_replays_before_preconditions_and_retirement_is_durable()
         .await
         .unwrap()
         .is_some());
+}
+
+#[tokio::test]
+async fn auth_resource_version_allows_strong_writes_but_never_weak_or_stale_ones() {
+    let (app, store, _) = build_app_with_scan().await;
+    let uri = "/api/v1/github-auth-profiles/prod-app";
+    let created = app
+        .clone()
+        .oneshot(authorized("PUT", uri, Some(AUTH_PUT_BODY.into())))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::ACCEPTED);
+    store
+        .auth_apply_validation("prod-app", 1, true, None, 1)
+        .await
+        .unwrap();
+    let mut view = app
+        .clone()
+        .oneshot(authorized("GET", uri, None))
+        .await
+        .unwrap();
+    let strong = view.headers()["etag"].clone();
+    let weak = HeaderValue::from_str(&format!("W/{}", strong.to_str().unwrap())).unwrap();
+    // Model a compression proxy: ETag changes, the resource version does not.
+    view.headers_mut().insert("etag", weak.clone());
+    assert_eq!(view.headers().get("shaula-resource-version"), Some(&strong));
+    let update = |version: HeaderValue| {
+        let mut request = authorized(
+            "PUT",
+            uri,
+            Some(AUTH_PUT_BODY.replace("github_pat_test_token_bytes", "rotated-test-token")),
+        );
+        request.headers_mut().remove("if-none-match");
+        request.headers_mut().insert("if-match", version);
+        request
+    };
+    let rejected = app.clone().oneshot(update(weak)).await.unwrap();
+    assert_eq!(rejected.status(), StatusCode::PRECONDITION_FAILED);
+    assert_eq!(
+        store
+            .auth_profile_get("prod-app")
+            .await
+            .unwrap()
+            .unwrap()
+            .desired_revision,
+        1
+    );
+    let accepted = app.clone().oneshot(update(strong.clone())).await.unwrap();
+    assert_eq!(accepted.status(), StatusCode::ACCEPTED);
+    assert_ne!(
+        accepted.headers().get("shaula-resource-version"),
+        Some(&strong)
+    );
+    assert_eq!(
+        accepted.headers().get("shaula-resource-version"),
+        accepted.headers().get("etag")
+    );
+    let stale = app.clone().oneshot(update(strong)).await.unwrap();
+    assert_eq!(stale.status(), StatusCode::PRECONDITION_FAILED);
+    assert_eq!(
+        store
+            .auth_profile_get("prod-app")
+            .await
+            .unwrap()
+            .unwrap()
+            .desired_revision,
+        2
+    );
 }
 
 #[tokio::test]

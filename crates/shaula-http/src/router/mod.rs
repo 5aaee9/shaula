@@ -103,11 +103,21 @@ pub(crate) fn if_none_match_star(headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
+/// Keep the origin's mutation version available when a proxy weakens ETag
+/// during compression. Clients copy this quoted value into If-Match.
+pub(crate) fn resource_version_headers(version: &str) -> [(&'static str, String); 2] {
+    let quoted = format!("\"{version}\"");
+    [
+        ("etag", quoted.clone()),
+        ("shaula-resource-version", quoted),
+    ]
+}
+
 pub(crate) fn accepted_response(accepted: &MutationAccepted) -> Response {
     if accepted.no_op {
         return (
             StatusCode::OK,
-            [("etag", format!("\"{}\"", accepted.etag))],
+            resource_version_headers(&accepted.etag),
             Json(serde_json::json!({
                 "changeId": accepted.change.id,
                 "state": accepted.change.state,
@@ -119,7 +129,7 @@ pub(crate) fn accepted_response(accepted: &MutationAccepted) -> Response {
     }
     (
         StatusCode::ACCEPTED,
-        [("etag", format!("\"{}\"", accepted.etag))],
+        resource_version_headers(&accepted.etag),
         Json(serde_json::json!({
             "changeId": accepted.change.id,
             "state": accepted.change.state,

@@ -160,6 +160,34 @@ async fn attestation_activates_then_fleet_admission_binds_exact_pin() {
         StatusCode::ACCEPTED,
         "admission with resolved pin must succeed"
     );
+    let etag = response.headers()["etag"].clone();
+    assert_eq!(
+        response.headers().get("shaula-resource-version"),
+        Some(&etag)
+    );
+
+    let response = app
+        .clone()
+        .oneshot(authorized("GET", "/api/v1/fleets/linux-x64", None))
+        .await
+        .unwrap();
+    assert_eq!(
+        response.headers().get("shaula-resource-version"),
+        Some(&etag)
+    );
+    assert_eq!(response.headers().get("etag"), Some(&etag));
+
+    // No-op responses must expose the same version for a subsequent edit.
+    let mut noop = authorized("PUT", "/api/v1/fleets/linux-x64", Some(FLEET_BODY.into()));
+    noop.headers_mut().remove("if-none-match");
+    noop.headers_mut().insert("if-match", etag.clone());
+    let response = app.clone().oneshot(noop).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get("shaula-resource-version"),
+        Some(&etag)
+    );
+    assert_eq!(response.headers().get("etag"), Some(&etag));
 
     let fleet = get_json(&app, "/api/v1/fleets/linux-x64").await;
     assert_eq!(fleet["resolved"]["authDesired"]["profileKey"], "prod-app");

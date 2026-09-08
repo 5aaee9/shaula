@@ -272,6 +272,8 @@ v1 不提供 `PATCH`、writable status、raw Runner lifecycle、manual reconcile
 
 Desired ETag 只包含 opaque Fleet incarnation/revision，不含 status、secret 或同 Profile Auth promotion revision。Status churn 和同 Profile promotion 不造成虚假 desired-state conflict；跨 Profile replacement 是真实 Fleet mutation并推进 ETag。
 
+Versioned resource GET 和 mutation 的 `202` / no-op `200` response 同时返回 `Shaula-Resource-Version`，其值为 origin strong ETag 的完整 quoted value（例如 `"opaque-id:7"`）。该 header 承载用于条件写入的 opaque resource version；压缩代理可能将 representation `ETag` 改成 `W/"opaque-id:7"`，但 MUST 原样转发 `Shaula-Resource-Version`。Client 优先把读取 snapshot 的 `Shaula-Resource-Version` 原样放入 `If-Match`；旧 server 缺少该 header 时，仅可 fallback 到 strong ETag。不得去掉 `W/` 将 weak ETag 当作 strong validator。缺少可用版本时拒绝发起 replacement / decommission；stale version 仍返回 `412`。
+
 ### 5.2 Idempotency
 
 每个 mutation 需要 bounded `Idempotency-Key`，scope 包含 authenticated principal、method 和 canonical Fleet resource。Canonical request hash 包含 method、resource、normalized body 和 normalized precondition；key 本身不是 credential，仍不得写入 log/telemetry。

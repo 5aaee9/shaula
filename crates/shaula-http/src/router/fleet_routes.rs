@@ -12,7 +12,7 @@ use crate::dto::FleetSpecDto;
 use crate::problem::{mutation_problem, problem};
 use crate::router::{
     accepted_response, idempotency_header, if_none_match_star, parse_if_match, require_scope,
-    AppState,
+    resource_version_headers, AppState,
 };
 
 pub(crate) async fn fleet_put(
@@ -80,7 +80,7 @@ pub(crate) async fn fleet_get(
     }
     match state.fleets.fleet_get(&actor, &fleet_key).await {
         Ok(Ok(resource)) => {
-            let etag = format!("\"{}:{}\"", resource.incarnation, resource.revision);
+            let version = format!("{}:{}", resource.incarnation, resource.revision);
             let spec_json = serde_json::to_value(&resource.spec).unwrap_or(serde_json::Value::Null);
             let resolved_template = resource.resolved_template.as_ref().map(|t| {
                 serde_json::json!({
@@ -105,7 +105,7 @@ pub(crate) async fn fleet_get(
                     }
                 }
             });
-            ([(axum::http::header::ETAG, etag)], Json(body)).into_response()
+            (resource_version_headers(&version), Json(body)).into_response()
         }
         Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
         Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),

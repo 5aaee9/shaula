@@ -12,7 +12,7 @@ use crate::dto::{AttestationPutDto, AuthProfilePutDto, TemplateProfilePutDto};
 use crate::problem::{mutation_problem, problem};
 use crate::router::{
     accepted_response, idempotency_header, if_none_match_star, parse_if_match, require_scope,
-    AppState,
+    resource_version_headers, AppState,
 };
 
 pub(crate) async fn template_artifact_put(
@@ -306,10 +306,7 @@ pub(crate) async fn template_profile_get(
     match state.profiles.template_get(&actor, &profile_key).await {
         Ok(Ok(view)) => (
             StatusCode::OK,
-            [(
-                axum::http::header::ETAG,
-                format!("\"{}:{}\"", view.incarnation, view.desired_revision),
-            )],
+            resource_version_headers(&format!("{}:{}", view.incarnation, view.desired_revision)),
             Json(serde_json::json!({
                 "key": view.key,
                 "incarnation": view.incarnation,
