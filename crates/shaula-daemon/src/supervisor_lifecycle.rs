@@ -186,6 +186,9 @@ impl FleetSupervisor {
         // remote effect, so a materialization failure can never burn a
         // JIT token. The runtime's later `create` re-verifies the
         // prepared material.
+        self.handoff
+            .ensure_artifact_cached(&record.template_artifact_digest)
+            .await?;
         let artifact_dir = shaula_core::artifact_layout::artifact_dir(
             &self.config.artifact_root,
             &record.template_artifact_digest,

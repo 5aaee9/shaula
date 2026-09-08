@@ -13,6 +13,7 @@ let
     lib.recursiveUpdate {
       version = 1;
       storage.data_dir = dataDir;
+      template_source_dirs = cfg.templateSourceDirectories;
       http.listen = "127.0.0.1:8080";
       execution.engines.terraform.executable = lib.getExe cfg.terraformPackage;
     } cfg.settings
@@ -53,6 +54,16 @@ in
         Exact Terraform CLI, defaulting to the verified 1.9.8 release binary
         under BUSL-1.1. Changing it changes attestation authority and requires
         renewed compatibility acceptance. OpenTofu is not a supported substitute.
+      '';
+    };
+    templateSourceDirectories = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ "${cfg.package}/share/shaula/templates" ];
+      defaultText = lib.literalExpression ''[ "''${config.services.shaula.package}/share/shaula/templates" ]'';
+      description = ''
+        Trusted read-only directories of default template sources. Missing source
+        keys are imported into SQLite once; package changes never replace an
+        existing database source or activate a Profile. Use [] to disable import.
       '';
     };
     stateDirectory = lib.mkOption {
@@ -133,6 +144,10 @@ in
       {
         assertion = !(cfg.settings ? storage.data_dir) && !(cfg.settings ? execution.engines);
         message = "Use services.shaula.stateDirectory and terraformPackage for module-owned storage and engine paths.";
+      }
+      {
+        assertion = !(cfg.settings ? template_source_dirs);
+        message = "Use services.shaula.templateSourceDirectories for module-owned template sources.";
       }
     ];
     systemd.services.shaula = {

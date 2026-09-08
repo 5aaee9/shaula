@@ -18,6 +18,8 @@ pub(crate) fn core_err(e: crate::store::StoreError) -> CoreError {
 pub struct SqliteControlPlane {
     store: Store,
     artifact_root: PathBuf,
+    artifact_cache:
+        Option<std::sync::Arc<dyn shaula_core::registry::template_library::ArtifactCache>>,
     auth_observations: auth_observations::RouteObservations,
 }
 
@@ -26,6 +28,7 @@ impl SqliteControlPlane {
         Self {
             store,
             artifact_root,
+            artifact_cache: None,
             auth_observations: auth_observations::RouteObservations::default(),
         }
     }
@@ -33,8 +36,24 @@ impl SqliteControlPlane {
     pub fn store(&self) -> &Store {
         &self.store
     }
+
+    pub fn with_artifact_cache(
+        mut self,
+        cache: std::sync::Arc<dyn shaula_core::registry::template_library::ArtifactCache>,
+    ) -> Self {
+        self.artifact_cache = Some(cache);
+        self
+    }
+
+    async fn artifact_available(&self, digest: &str) -> shaula_core::error::CoreResult<bool> {
+        match &self.artifact_cache {
+            Some(cache) => cache.ensure_cached(digest).await,
+            None => Ok(true),
+        }
+    }
 }
 
+mod artifact_reads;
 #[path = "artifacts.rs"]
 mod artifacts;
 

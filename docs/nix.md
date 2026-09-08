@@ -107,6 +107,27 @@ secret values. `DynamicUser`, private state/runtime directory permissions,
 it across service restarts and OS reboots. The module owns `storage.data_dir`
 and `execution.engines`; use `stateDirectory` and `terraformPackage` instead.
 
+The package also installs default Docker and Kubernetes template sources under
+`share/shaula/templates`. `services.shaula.templateSourceDirectories` defaults to
+that package directory; set it to `[]` to disable startup import, or provide trusted
+absolute source directories whose direct children contain template modules. Outside
+NixOS, the equivalent bootstrap setting is `template_source_dirs` (default `[]`).
+Missing directories add no new sources; other read or validation errors fail startup.
+
+Sources are imported once per source key into SQLite. Rebuilding the package or
+removing an import directory does not overwrite the database selection or publish
+a Profile. Select a source in **Templates → Default templates** to inspect its
+Terraform declarations, configure bindings and publish normally. New source contents
+can still be adopted explicitly through archive upload. Import does not supply a
+conformance attestation or activate a Runner template.
+
+SQLite now owns complete immutable template archives, including migrated original
+archive sidecars. The execution cache is verified against those bytes and can be
+reconstructed when missing. Backups must still preserve the complete data directory
+and bindings key: Runner ledger/state and credential bindings remain required.
+Do not replace a missing legacy archive by repacking its extracted directory, which
+would change the existing artifact identity.
+
 The daemon currently handles SIGINT for graceful shutdown. The module sets
 `KillSignal=SIGINT`, retains control-group termination for descendants, and uses
 a bounded stop timeout. A forced stop is not proof of infrastructure destruction.

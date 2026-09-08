@@ -100,6 +100,10 @@ _Avoid_: Runner Generation, mutable profile, latest template
 实现一个 Template Profile Revision 的不可变基础设施模板包，其内容身份在整个 Runner Generation 中保持稳定。
 _Avoid_: Local template path, mutable directory, Runner Workspace
 
+**Template Source**:
+供 Template publisher 选择并配置的模板来源，指向一个不可变 Template Artifact；它本身不代表已发布、已激活或已获准运行的 Template Profile。
+_Avoid_: Active template, bootstrap profile
+
 **Profile Change**:
 一次已接受 Template Profile 或 GitHub Auth Profile mutation 的异步进度记录。
 _Avoid_: Fleet Change, Runner Operation, request

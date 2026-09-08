@@ -75,6 +75,7 @@ export async function mockApi(page: Page, permissions = scopes) {
         },
       });
     if (path.startsWith("/fleets/")) return route.fulfill({ headers, json: fleet(key) });
+    if (path === "/template-sources") return route.fulfill({ json: { sources: [] } });
     if (path === "/template-profiles")
       return route.fulfill({
         json: {

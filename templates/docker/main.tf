@@ -27,7 +27,7 @@ provider "docker" {
 
 locals {
   runner_images = { for image in yamldecode(file("${path.module}/profile.yaml")).runner_image_digests : split("@", image)[0] => image }
-  runner_image  = local.runner_images[try(var.shaula.parameters.runner_image, "localhost:5001/shaula-runner:2.337.0-bootstrap-v1")]
+  runner_image  = local.runner_images[var.shaula.parameters.runner_image]
   # Deterministic container name derived from the already-persisted
   # Generation identity; never randomized per attempt.
   container_name = "shaula-${var.shaula.generation.fleet_key}-${substr(var.shaula.generation.id, 0, 24)}"
@@ -106,6 +106,18 @@ output "shaula_result" {
 
 variable "shaula" {
   description = "Fixed Shaula system input envelope; the whole variable is sensitive and the Profile cannot rename or extend it."
-  type        = any
-  sensitive   = true
+  type = object({
+    contract_version = number
+    generation       = any
+    jit_config       = string
+    bindings_digest  = string
+    bindings = object({
+      docker_host   = optional(string, "unix:///var/run/docker.sock")
+      registry_auth = optional(string)
+    })
+    parameters = object({
+      runner_image = optional(string, "localhost:5001/shaula-runner:2.337.0-bootstrap-v1")
+    })
+  })
+  sensitive = true
 }

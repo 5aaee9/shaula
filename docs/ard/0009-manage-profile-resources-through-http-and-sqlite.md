@@ -5,6 +5,9 @@ date: 2026-09-04
 
 # Manage Template and GitHub Auth Profiles through HTTP and SQLite
 
+Artifact 存储与默认来源导入已由 [ARD-0019](0019-store-template-sources-and-discover-terraform-variables.md)
+修订：原始 archive 持久化到 SQLite，文件系统材料是可重建缓存；Profile lifecycle 决定保持有效。
+
 待审修订：[ADR-0015](0015-route-one-github-app-profile-to-multiple-accounts.md) / [spec 0011](../specs/0011-multi-account-github-authentication.md) 提议允许同 App 的 policy/installation bindings 通过新 Revision 演进；这将部分替代下述必须新 Profile 的规则。提案尚未接受，持久化、secret 与 retirement 决定继续有效。
 
 Shaula 通过同一个 HTTP control plane 管理 Fleet、Template Profile 和 GitHub Auth Profile。Profile 使用不可变 Revision，SQLite 保存 desired state、validation status 与 active heads；Template Artifact 通过 HTTP 发布到 content-addressed artifact store。`shaula serve --config` 不再包含 `template_profiles` 或 `github_auth_catalog` 真相源。

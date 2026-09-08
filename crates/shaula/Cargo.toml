@@ -26,6 +26,12 @@ serde_yaml = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 reqwest = { workspace = true }
+async-trait = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+tempfile = "3"
 
 [dev-dependencies]
 uuid = { workspace = true }
@@ -37,14 +43,8 @@ rcgen = "0.13"
 jsonwebtoken = { workspace = true }
 reqwest = { workspace = true }
 url = { workspace = true }
-async-trait = { workspace = true }
 axum = { workspace = true }
-flate2 = { workspace = true }
-tar = { workspace = true }
-sha2 = { workspace = true }
 hmac = { workspace = true }
-hex = { workspace = true }
-tempfile = "3"
 tower = { workspace = true, features = ["util"] }
 toml = "0.8"
 

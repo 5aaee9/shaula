@@ -37,6 +37,11 @@ pub struct MutationFacts {
 /// Read side of the desired-state store used by admission.
 #[async_trait]
 pub trait ControlPlaneStore: crate::registry::AuthExecutionStore + Send + Sync {
+    /// Production restores missing cache material from the DB before any read/effect.
+    /// Filesystem-only test adapters have no external cache authority to restore.
+    async fn ensure_artifact_cached(&self, _digest: &str) -> CoreResult<()> {
+        Ok(())
+    }
     async fn commit_profile_retirement(
         &self,
         facts: MutationFacts,

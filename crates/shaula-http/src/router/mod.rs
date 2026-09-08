@@ -7,6 +7,7 @@ mod input_contract;
 pub mod profile_auth_reads;
 pub mod profile_reads;
 pub mod profile_routes;
+mod template_library;
 
 use std::sync::Arc;
 
@@ -41,8 +42,24 @@ pub struct AppState {
 
 /// Artifact upload seam; `shaula-template`'s store backs the production
 /// implementation.
+#[async_trait::async_trait]
 pub trait ArtifactPublisher: Send + Sync {
-    fn publish(&self, bytes: &[u8], declared_digest: &str) -> shaula_core::error::CoreResult<u64>;
+    async fn publish(
+        &self,
+        bytes: &[u8],
+        declared_digest: &str,
+    ) -> shaula_core::error::CoreResult<u64>;
+    async fn sources(
+        &self,
+    ) -> shaula_core::error::CoreResult<Vec<shaula_core::registry::TemplateSource>> {
+        Ok(Vec::new())
+    }
+    async fn variables(
+        &self,
+        _digest: &str,
+    ) -> shaula_core::error::CoreResult<Option<shaula_core::registry::TemplateVariables>> {
+        Ok(None)
+    }
 }
 
 pub(crate) fn require_scope(actor: &Actor, scope: Scope) -> Result<(), Response> {
@@ -183,6 +200,8 @@ pub fn build_router(state: AppState) -> Router {
     use axum::extract::DefaultBodyLimit;
     Router::new()
         .route("/api/v1/session", get(session))
+        .route("/api/v1/template-sources", get(template_library::sources))
+        .route("/api/v1/template-artifacts/{digest}/variables", get(template_library::variables))
         .route("/auth/oidc/login", get(crate::oidc::login))
         .route("/auth/oidc/callback", get(crate::oidc::callback))
         .route("/auth/oidc/logout", axum::routing::post(crate::oidc::logout))

@@ -1,9 +1,9 @@
 //! Bounded, non-secret projection of one exact Template Revision's input authority.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// An approved complete JSON value encoded without a browser Number round-trip.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InputOption {
     pub value_json: String,

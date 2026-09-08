@@ -12,7 +12,6 @@ pub async fn seed(directory: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let database_path = data.join("shaula.db");
     let store = shaula_store::Store::open(&database_path).await?;
     store.migrate().await?;
-    drop(store);
 
     let schema = json!({
         "type": "object", "additionalProperties": false, "required": ["runner_image"],
@@ -21,16 +20,45 @@ pub async fn seed(directory: &Path) -> Result<(), Box<dyn std::error::Error>> {
             "cpu_request": {"type": "string", "title": "CPU request", "enum": ["500m", "1", "2"]}
         }
     });
-    let schema_bytes = serde_json::to_vec(&schema)?;
-    let digest = format!("sha256:{}", hex::encode(Sha256::digest(&schema_bytes)));
-    let artifact =
-        shaula_core::artifact_layout::artifact_dir(&data.join("template-artifacts"), &digest)
-            .ok_or("invalid test digest")?;
-    std::fs::create_dir_all(artifact.join("schemas"))?;
-    std::fs::write(
-        artifact.join("schemas/parameters.schema.json"),
-        schema_bytes,
-    )?;
+    let sources = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../templates");
+    let mut archive = tar::Builder::new(Vec::new());
+    for (name, content) in [
+        (
+            "profile.yaml",
+            std::fs::read(sources.join("kubernetes/profile.yaml"))?,
+        ),
+        (
+            ".terraform.lock.hcl",
+            std::fs::read(sources.join("kubernetes/.terraform.lock.hcl"))?,
+        ),
+        ("schemas/bindings.schema.json", b"{}".to_vec()),
+        (
+            "schemas/parameters.schema.json",
+            serde_json::to_vec(&schema)?,
+        ),
+        (
+            "main.tf",
+            b"variable \"shaula\" {\n  type = any\n  sensitive = true\n}\n".to_vec(),
+        ),
+    ] {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(content.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        archive.append_data(&mut header, name, content.as_slice())?;
+    }
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    std::io::Write::write_all(&mut encoder, &archive.into_inner()?)?;
+    let bytes = encoder.finish()?;
+    let digest = format!("sha256:{}", hex::encode(Sha256::digest(&bytes)));
+    store.artifact_archive_put(&digest, &bytes, 1).await?;
+    drop(store);
+
+    // Exercise real startup import from the bundled filesystem sources.
+    let config_path = directory.join("bootstrap.json");
+    let mut config: serde_json::Value = serde_json::from_slice(&std::fs::read(&config_path)?)?;
+    config["template_source_dirs"] = json!([sources]);
+    std::fs::write(config_path, serde_json::to_vec(&config)?)?;
 
     // No credential, Fleet, worker, validation outbox or infrastructure state is seeded.
     // This fixture never invokes a platform or marks a real template conformant.

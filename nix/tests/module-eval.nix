@@ -42,6 +42,7 @@ assert !((evaluate { }).config.systemd.services ? shaula);
 assert lib.all (a: a.assertion) valid.assertions;
 assert valid.services.shaula.package.drvPath == shaula.drvPath;
 assert valid.services.shaula.terraformPackage.drvPath == terraform.drvPath;
+assert valid.services.shaula.templateSourceDirectories == [ "${shaula}/share/shaula/templates" ];
 assert valid.systemd.services.shaula.serviceConfig.KillSignal == "SIGINT";
 assert rejects { bindingsKeyFile = "/nix/store/not-a-secret"; } "absolute runtime paths";
 assert rejects { oidc.clientSecretFile = "relative-secret"; } "absolute runtime paths";
@@ -50,6 +51,7 @@ assert rejects {
 } "plaintext bindings key";
 assert rejects { settings.storage.data_dir = "/tmp/escape"; } "module-owned storage";
 assert rejects { settings.execution.engines = { }; } "module-owned storage";
+assert rejects { settings.template_source_dirs = [ ]; } "module-owned template sources";
 pkgs.runCommand "shaula-nixos-module-check" { } ''
   touch "$out"
 ''

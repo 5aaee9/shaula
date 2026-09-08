@@ -20,11 +20,14 @@ import { Empty, ErrorNotice, KeyValue, Loading, StatusBadge } from "@/components
 import { ChangeNotice } from "@/components/change-notice";
 import { RetireDialog } from "@/components/retire-dialog";
 import { TemplateForm } from "@/components/template-form";
+import { TemplateLibrary } from "@/components/template-library";
+import type { TemplateSource } from "@/lib/template-variables";
 export function TemplatesPage({ scopes }: { scopes: string[] }) {
   const templates = useTemplates(scopes.includes("template.read"));
   const [search, setSearch] = useState("");
   const [params, setParams] = useSearchParams();
   const [publish, setPublish] = useState(false);
+  const [source, setSource] = useState<TemplateSource>();
   const [change, setChange] = useState<ChangeRef | null>(null);
   const key = params.get("key");
   const items =
@@ -38,7 +41,13 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
           <h1>Templates</h1>
           <p>Immutable template revisions and their activation status.</p>
         </div>
-        <Button onClick={() => setPublish(true)} disabled={!scopes.includes("template.publish")}>
+        <Button
+          onClick={() => {
+            setSource(undefined);
+            setPublish(true);
+          }}
+          disabled={!scopes.includes("template.publish")}
+        >
           <Upload />
           Publish template
         </Button>
@@ -48,6 +57,13 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
         <ErrorNotice error={new Error("Template read permission is required.")} />
       ) : (
         <>
+          <TemplateLibrary
+            canPublish={scopes.includes("template.publish")}
+            onUse={(source) => {
+              setSource(source);
+              setPublish(true);
+            }}
+          />
           <div className="toolbar">
             <div className="search-input">
               <Search />
@@ -119,7 +135,14 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
           )}
         </>
       )}
-      {publish && <TemplateForm onClose={() => setPublish(false)} onAccepted={setChange} />}
+      {publish && (
+        <TemplateForm
+          initialSource={source}
+          scopes={scopes}
+          onClose={() => setPublish(false)}
+          onAccepted={setChange}
+        />
+      )}
     </>
   );
 }
@@ -226,6 +249,7 @@ function TemplateDetails({
       {publish && (
         <TemplateForm
           resource={query.data}
+          scopes={scopes}
           onClose={() => setPublish(false)}
           onAccepted={onAccepted}
         />

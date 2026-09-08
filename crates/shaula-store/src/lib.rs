@@ -2,6 +2,7 @@
 //! typed repositories. No `DatabaseConnection`, entity or ORM error escapes
 //! this crate.
 
+pub mod artifact_library;
 mod auth_dependents_repo;
 mod auth_execution_repo;
 pub mod auth_policy_repo;

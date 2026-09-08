@@ -2,6 +2,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
+#[path = "support/template_library_reads.rs"]
+mod library_reads;
 #[path = "support/input_contract.rs"]
 mod support;
 

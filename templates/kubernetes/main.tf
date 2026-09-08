@@ -38,7 +38,7 @@ data "kubernetes_namespace" "target" {
 
 locals {
   runner_images = { for image in yamldecode(file("${path.module}/profile.yaml")).runner_image_digests : split("@", image)[0] => image }
-  runner_image  = local.runner_images[try(var.shaula.parameters.runner_image, "ghcr.io/actions/actions-runner:2.323.0")]
+  runner_image  = local.runner_images[var.shaula.parameters.runner_image]
   # Exact generation-scoped metadata.name persisted by Shaula before any
   # external effect; the Secret and the Pod share it, kind separates the
   # Resource Keys. Not a Kubernetes UID; never reconstructed after state
@@ -134,8 +134,8 @@ resource "kubernetes_pod_v1" "runner" {
 
       resources {
         requests = {
-          cpu    = try(var.shaula.parameters.cpu_request, "500m")
-          memory = try(var.shaula.parameters.memory_request, "2Gi")
+          cpu    = var.shaula.parameters.cpu_request
+          memory = var.shaula.parameters.memory_request
         }
       }
 
@@ -198,6 +198,20 @@ output "shaula_result" {
 
 variable "shaula" {
   description = "Fixed Shaula system input envelope; the whole variable is sensitive and the Profile cannot rename or extend it."
-  type        = any
-  sensitive   = true
+  type = object({
+    contract_version = number
+    generation       = any
+    jit_config       = string
+    bindings_digest  = string
+    bindings = object({
+      namespace  = string
+      kubeconfig = string
+    })
+    parameters = object({
+      runner_image   = optional(string, "ghcr.io/actions/actions-runner:2.323.0")
+      cpu_request    = optional(string, "500m")
+      memory_request = optional(string, "2Gi")
+    })
+  })
+  sensitive = true
 }

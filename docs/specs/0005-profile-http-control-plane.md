@@ -3,7 +3,7 @@
 - Status: Draft
 - Date: 2026-09-04
 - Managed resources: Template Profiles and GitHub Auth Profiles
-- Persistence: SQLite plus content-addressed Template artifacts
+- Persistence: SQLite, including content-addressed Template archive bytes; reconstructable filesystem execution cache
 - Secret-at-rest decision: PAT, GitHub App private key, and schema-sensitive Template bindings may be plaintext in SQLite
 
 This specification extends the [Fleet HTTP Control-Plane Specification](0002-fleet-http-control-plane.md). Related decisions are [ADR-0005](../ard/0005-manage-fleet-desired-state-through-http-and-sqlite.md), [ADR-0007](../ard/0007-use-target-bound-github-auth-profiles.md), [ADR-0009](../ard/0009-manage-profile-resources-through-http-and-sqlite.md), and [ADR-0013](../ard/0013-require-openid-connect-for-all-http-access.md). Inbound authentication is normative in [spec 0009](0009-mandatory-openid-connect.md); GitHub Auth Profiles remain outbound credentials, not OIDC identities.
@@ -16,7 +16,7 @@ One `shaula serve` HTTP Interface manages three desired-resource families：
 - Template Profile；
 - GitHub Auth Profile.
 
-`template_profiles` and `github_auth_catalog` are not daemon-bootstrap truth sources. Their desired heads, immutable Revisions, conformance attestations, status, Changes, idempotency and audit facts live in SQLite. Template bytes are uploaded through HTTP and stored in the protected content-addressed artifact store. GitHub PAT/App private-key bytes and schema-sensitive Kubernetes/Docker binding values are accepted as write-only HTTP fields and stored in their immutable SQLite Revision rows.
+`template_profiles` and `github_auth_catalog` are not daemon-bootstrap truth sources. Their desired heads, immutable Revisions, conformance attestations, status, Changes, idempotency and audit facts live in SQLite. Template bytes are uploaded through HTTP and stored as immutable digest-addressed archives in SQLite; the protected filesystem artifact store is a reconstructable execution cache. Default filesystem source imports and Terraform variable discovery follow [spec 0015](0015-template-library-and-variable-discovery.md). GitHub PAT/App private-key bytes and schema-sensitive Kubernetes/Docker binding values are accepted as write-only HTTP fields and stored in their immutable SQLite Revision rows.
 
 The bootstrap file remains limited to native daemon concerns：storage paths, database, HTTP security/listen policy, IaC engine executables and installation policy, concurrency/timeout limits, artifact limits, and OpenTelemetry/logging.
 
@@ -37,7 +37,7 @@ flowchart LR
 
 The Profile Registry is a deep Module. Its Interface accepts typed Template/Auth mutations, conformance attestations and queries, resolves Fleet references, and returns typed results. It hides SQLite layout, revision promotion, attestation validation, references, outbox, idempotency and audit.
 
-Template Artifact storage is a separate Module because large content-addressed bytes, extraction safety, atomic publication and garbage collection differ from SQLite resource mutation. GitHub credential bytes leave the Registry only through an internal scoped handoff to the GitHub Access Module；they never cross Fleet or Template Runtime Interfaces, never enter a Terraform input and never enter a Runner. Sensitive Template bindings leave the Registry only through an exact-Revision handoff to the approved IaC child；they never enter a Runner or workflow.
+Template Artifact storage is a separate Module because archive integrity, safe extraction and reconstructable execution caches differ from Profile revision mutation; both durable archives and Profile rows now use SQLite under spec 0015. GitHub credential bytes leave the Registry only through an internal scoped handoff to the GitHub Access Module；they never cross Fleet or Template Runtime Interfaces, never enter a Terraform input and never enter a Runner. Sensitive Template bindings leave the Registry only through an exact-Revision handoff to the approved IaC child；they never enter a Runner or workflow.
 
 Template Profile and GitHub Auth Profile remain distinct typed resources. A generic untyped catalog/EAV body is forbidden.
 
@@ -74,6 +74,8 @@ All paths are below `/api/v1`：
 | --- | --- | --- |
 | `PUT` | `/template-artifacts/sha256:{digest}` | Idempotently upload an immutable Profile archive |
 | `GET` | `/template-artifacts/sha256:{digest}` | Authorized metadata only, not artifact download |
+| `GET` | `/template-sources` | Stored default source catalog, under spec 0015 |
+| `GET` | `/template-artifacts/sha256:{digest}/variables` | Exact artifact Terraform variable discovery, under spec 0015 |
 | `GET` | `/template-profiles` | Paginated Profile summaries |
 | `PUT` | `/template-profiles/{profileKey}` | Create or publish a Candidate Revision |
 | `GET` | `/template-profiles/{profileKey}` | Desired/active metadata and ETag |
@@ -91,7 +93,7 @@ All paths are below `/api/v1`：
 | `DELETE` | `/github-auth-profiles/{profileKey}` | Retire after dependent Fleets clear |
 | `GET` | `/profile-changes/{changeId}` | Query asynchronous validation/activation/retirement |
 
-Artifact upload declares digest and exact compressed/content length before the body is accepted. Shaula streams to a temporary file under a configured limit, verifies digest and safe archive shape, durably renames to its final content-addressed path, and returns `201` or idempotent `200`. Path traversal, links/reparse entries, devices, oversized expansion and duplicate normalized paths are rejected. Upload does not create, attest or activate a Template Profile Revision.
+Artifact upload declares digest and exact compressed/content length before the body is accepted. Shaula bounds the compressed body, verifies digest and safe archive shape in isolated temporary storage, commits the immutable original archive to SQLite, and materializes its execution cache before acknowledging success. Repeated uploads reuse the same content. Path traversal, links/reparse entries, devices, oversized expansion and duplicate normalized paths are rejected. Upload does not create, attest or activate a Template Profile Revision. Variable declaration consistency and legacy artifact compatibility follow spec 0015.
 
 ## 5. Template Profile resource
 

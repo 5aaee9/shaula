@@ -110,8 +110,13 @@ struct TestPublisher {
     root: std::path::PathBuf,
 }
 
+#[async_trait::async_trait]
 impl shaula_http::router::ArtifactPublisher for TestPublisher {
-    fn publish(&self, bytes: &[u8], declared_digest: &str) -> shaula_core::error::CoreResult<u64> {
+    async fn publish(
+        &self,
+        bytes: &[u8],
+        declared_digest: &str,
+    ) -> shaula_core::error::CoreResult<u64> {
         shaula_template::artifact::ArtifactStore::new(self.root.clone())
             .publish(bytes, declared_digest)
             .map(|p| p.size_bytes)

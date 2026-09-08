@@ -61,8 +61,9 @@ fn put_request(uri: &str, body: String, etag: Option<&[u8]>) -> Request<Body> {
 }
 
 struct NeverPublisher;
+#[async_trait::async_trait]
 impl shaula_http::router::ArtifactPublisher for NeverPublisher {
-    fn publish(
+    async fn publish(
         &self,
         _bytes: &[u8],
         _declared_digest: &str,

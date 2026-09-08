@@ -381,6 +381,43 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
 
 ## Embedded operator UI (2026-09-06)
 
+- Stored Template library: [spec 0015](specs/0015-template-library-and-variable-discovery.md)
+  and [ADR-0019](ard/0019-store-template-sources-and-discover-terraform-variables.md)
+  are implemented (2026-09-08). Migration m0010 stores immutable original archives
+  and default source selections in SQLite. Startup imports legacy sidecars without
+  repacking, restores missing execution material, and seeds each configured source
+  key once. Source removal or a package update cannot replace that selection or
+  publish/activate a Profile. Runtime reads and Create/Destroy also verify cache
+  material against database authority. Missing legacy authority and changed cache
+  contents remain explicit errors. Default packaging excludes image build context,
+  state, tfvars and unrelated files; the Nix package/module installs and imports
+  the two bundled source modules.
+  The `template.read` source/variable endpoints return private, bounded discovery
+  attributed to the exact archive. HCL AST parsing discovers typed `shaula.bindings`
+  and `shaula.parameters`, literal optional defaults and schema descriptions/options;
+  unsupported expressions and schema disagreement are explicit. Sensitive subtrees
+  suppress defaults/options, and existing untyped `shaula = any` templates keep their
+  prior runtime behavior with discovery unavailable. Bundled defaults now live in
+  Terraform declarations, without duplicate manifest defaults.
+  Templates lists default sources separately from published Profiles. Selecting a
+  source fixes its digest in the publication draft and exposes scalar binding editors
+  and variable descriptions in the main form. Adopting defaults or options requires
+  an explicit action and preserves existing drafts; inspection never grants Fleet
+  input permissions or bypasses conformance. Archive inspection reuses the upload.
+  Validation entrypoints include artifact library/store tests, variable parser and
+  constraints tests, HTTP read authorization/error tests, `template-library.spec.ts`
+  and the real HTTPS/OIDC `library.spec.ts`. Final local validation passed: 465
+  unfiltered workspace tests (2 skipped), the literal AGENTS filtered run (379
+  passed), strict all-target Clippy, rustfmt, frontend build/lint/format and 58
+  browser tests, plus 4 real HTTPS/OIDC browser tests against the final implementation.
+  Terraform 1.9.8 validated both complete bundled modules in isolated
+  Windows copies with temporary platform-specific provider locks; the repository
+  locks were unchanged. Separate resource-free plans checked omitted and explicit
+  null input defaults for both modules. Independent storage and variable reviews
+  found issues in error classification, source filtering/removal, numeric fidelity,
+  sensitive inheritance and nested null; fixes and regression coverage were verified.
+  Nix/Linux gates and production deployment of this increment remain pending.
+
 - Visual Fleet Template inputs: [spec 0014](specs/0014-visual-template-inputs.md)
   and [ADR-0018](ard/0018-render-fleet-inputs-from-approved-template-options.md)
   are implemented (2026-09-08). The exact-revision input-contract read projects

@@ -6,6 +6,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 
+use shaula_core::error::ReasonCode;
 use shaula_core::registry::{AttestationPut, AuthProfilePut, Scope, TemplateProfilePut};
 
 use crate::dto::{AttestationPutDto, AuthProfilePutDto, TemplateProfilePutDto};
@@ -41,12 +42,25 @@ pub(crate) async fn template_artifact_put(
         )
         .into_response();
     }
-    match state.artifact_publisher.publish(&body, &digest) {
+    match state.artifact_publisher.publish(&body, &digest).await {
         Ok(size) => (
             StatusCode::CREATED,
             Json(serde_json::json!({"digest": digest, "sizeBytes": size})),
         )
             .into_response(),
+        Err(e)
+            if matches!(
+                e.code,
+                ReasonCode::StorageUnavailable | ReasonCode::Internal
+            ) =>
+        {
+            problem(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal",
+                "template library storage is unavailable",
+            )
+            .into_response()
+        }
         Err(e) => problem(
             StatusCode::UNPROCESSABLE_ENTITY,
             "ArtifactRejected",

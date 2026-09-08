@@ -2,6 +2,7 @@
 //! into core ports and contains no fleet reconciliation, SQL, HTTP handler,
 //! GitHub protocol or Terraform plan logic.
 
+mod artifact_library;
 mod auth_worker;
 #[cfg(test)]
 #[path = "auth_worker_continuity_tests.rs"]
@@ -28,7 +29,6 @@ use shaula_core::ports::Clock;
 use shaula_daemon::bootstrap::ValidatedBootstrap;
 use shaula_store::registry_impl::SqliteControlPlane;
 use shaula_store::Store;
-use shaula_template::artifact::ArtifactStore;
 use shaula_template::TemplateRuntime;
 
 /// System clock adapter for the composition root.
@@ -130,10 +130,18 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
     store.migrate().await.map_err(|e| e.to_string())?;
 
     let clock: std::sync::Arc<dyn Clock> = std::sync::Arc::new(SystemClock);
-    let control_plane_store = std::sync::Arc::new(SqliteControlPlane::new(
-        store,
+    let artifact_library = std::sync::Arc::new(artifact_library::DbArtifactPublisher::new(
+        store.clone(),
         bootstrap.artifact_root.clone(),
     ));
+    artifact_library
+        .initialize(&bootstrap.template_source_dirs, clock.now_unix_ms())
+        .await
+        .map_err(|error| error.summary)?;
+    let control_plane_store = std::sync::Arc::new(
+        SqliteControlPlane::new(store, bootstrap.artifact_root.clone())
+            .with_artifact_cache(artifact_library.clone()),
+    );
 
     let (_shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let _daemon = shaula_daemon::daemon::start(
@@ -197,9 +205,7 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
         oidc,
         body_limit: bootstrap.artifact_body_limit,
         request_body_limit: bootstrap.request_body_limit,
-        artifact_publisher: std::sync::Arc::new(DirArtifactPublisher {
-            store: std::sync::Arc::new(ArtifactStore::new(bootstrap.artifact_root.clone())),
-        }),
+        artifact_publisher: artifact_library,
     };
     let app = shaula_http::router::build_router(state);
 
@@ -331,17 +337,5 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
         Some(Ok(Ok(()))) => Ok(()),
         Some(Ok(Err(e))) => Err(e),
         Some(Err(join)) => Err(format!("server task failed: {join}")),
-    }
-}
-
-/// Publishes uploaded bytes into the content-addressed store.
-struct DirArtifactPublisher {
-    store: std::sync::Arc<ArtifactStore>,
-}
-
-impl shaula_http::router::ArtifactPublisher for DirArtifactPublisher {
-    fn publish(&self, bytes: &[u8], declared_digest: &str) -> shaula_core::error::CoreResult<u64> {
-        let published = self.store.publish(bytes, declared_digest)?;
-        Ok(published.size_bytes)
     }
 }

@@ -51,6 +51,18 @@ rustPlatform.buildRustPackage {
   preBuild = ''
     npm exec --prefix web -- tsc --noEmit --project web/tsconfig.json
   '';
+  postInstall = ''
+    for name in docker kubernetes; do
+      destination="$out/share/shaula/templates/$name"
+      mkdir -p "$destination"
+      cp "templates/$name/profile.yaml" "templates/$name/main.tf" \
+        "templates/$name/.terraform.lock.hcl" "$destination/"
+      cp -R "templates/$name/schemas" "$destination/"
+      if test -f "templates/$name/runtime-policy.md"; then
+        cp "templates/$name/runtime-policy.md" "$destination/"
+      fi
+    done
+  '';
   # Local-server test constructors deliberately do not exist in release
   # builds. Test in debug without enabling those seams in the shipped binary.
   # nextest's run output never reaches the streamed Nix build log, so the run

@@ -10,12 +10,20 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { ErrorNotice, Field } from "./status";
+import { inputEntries } from "@/lib/input-values";
+import { useTemplateVariables, type TemplateSource } from "@/lib/template-variables";
+import { TemplateVariables } from "./template-variables";
+import { useTemplateSources } from "./template-library";
 export function TemplateForm({
   resource,
+  initialSource,
+  scopes,
   onClose,
   onAccepted,
 }: {
   resource?: Resource<TemplateResource>;
+  initialSource?: TemplateSource;
+  scopes: string[];
   onClose: () => void;
   onAccepted: (change: ChangeRef) => void;
 }) {
@@ -24,19 +32,28 @@ export function TemplateForm({
   const [key, setKey] = useState(snapshot?.data.key || "");
   const [digest, setDigest] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [source, setSource] = useState("archive");
+  const [source, setSource] = useState(initialSource ? "default" : "archive");
+  const [selectedSource, setSelectedSource] = useState(initialSource);
   const [advanced, setAdvanced] = useState(false);
-  const [engine, setEngine] = useState("terraform");
+  const [engine, setEngine] = useState(initialSource?.engineRef || "terraform");
+  const engineEdited = useRef(false);
   const [bindings, setBindings] = useState("{}");
   const [policy, setPolicy] = useState("{}");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const attempt = useRef(new MutationAttempt());
+  const canRead = scopes.includes("template.read");
+  const sources = useTemplateSources(canRead);
+  const discovery = useTemplateVariables(
+    source === "default" ? selectedSource?.artifactDigest || "" : digest,
+    file,
+    source,
+    canRead,
+  );
   function parseSettings(value: string, label: string) {
     try {
-      const parsed: unknown = JSON.parse(value);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
-      return parsed;
+      inputEntries(value);
+      return value;
     } catch {
       setAdvanced(true);
       throw new Error(`${label} must be a JSON object.`);
@@ -49,26 +66,13 @@ export function TemplateForm({
     try {
       const parsedBindings = parseSettings(bindings, "Bindings");
       const parsedPolicy = parseSettings(policy, "Fleet input policy");
-      let artifactDigest = digest;
-      if (source === "archive") {
-        if (!file) throw new Error("Choose a template archive.");
-        if (file.size > 64 * 1024 * 1024) throw new Error("Artifact exceeds 64 MiB.");
-        const bytes = await file.arrayBuffer();
-        const hash = await crypto.subtle.digest("SHA-256", bytes);
-        artifactDigest = `sha256:${Array.from(new Uint8Array(hash), (value) => value.toString(16).padStart(2, "0")).join("")}`;
-        await api(resourcePath("template-artifacts", artifactDigest), {
-          method: "PUT",
-          body: bytes,
-          headers: { "content-type": "application/gzip" },
-        });
-      }
+      const artifactDigest = await discovery.artifact();
       const path = resourcePath("template-profiles", key);
-      const body = JSON.stringify({
+      const metadata = JSON.stringify({
         artifact_digest: artifactDigest,
         engine_ref: engine,
-        bindings: parsedBindings,
-        fleet_input_policy: parsedPolicy,
       });
+      const body = `${metadata.slice(0, -1)},"bindings":${parsedBindings},"fleet_input_policy":${parsedPolicy}}`;
       const { data } = await api<Accepted>(path, {
         method: "PUT",
         body,
@@ -107,8 +111,43 @@ export function TemplateForm({
             <NativeSelect value={source} onChange={(event) => setSource(event.target.value)}>
               <NativeSelectOption value="archive">Upload archive</NativeSelectOption>
               <NativeSelectOption value="existing">Existing artifact</NativeSelectOption>
+              <NativeSelectOption value="default" disabled={!canRead}>
+                Default template
+              </NativeSelectOption>
             </NativeSelect>
           </Field>
+          {source === "default" && (
+            <div className="form-stack gap-2">
+              <Field label="Default template">
+                <NativeSelect
+                  required
+                  value={selectedSource?.key || ""}
+                  onChange={(event) => {
+                    const next = sources.data?.data.sources.find(
+                      (entry) => entry.key === event.target.value,
+                    );
+                    setSelectedSource(next);
+                    if (next && !engineEdited.current) setEngine(next.engineRef);
+                  }}
+                >
+                  <NativeSelectOption value="">Choose a template</NativeSelectOption>
+                  {sources.data?.data.sources.map((entry) => (
+                    <NativeSelectOption key={entry.key} value={entry.key}>
+                      {entry.key}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </Field>
+              {sources.error && (
+                <ErrorNotice error={sources.error} retry={() => void sources.refetch()} />
+              )}
+              {selectedSource && (
+                <p className="text-xs text-muted-foreground break-all">
+                  {selectedSource.platform} · {selectedSource.artifactDigest}
+                </p>
+              )}
+            </div>
+          )}
           <div hidden={source !== "archive"}>
             <Field label="Template archive (.tar.gz)">
               <Input
@@ -132,13 +171,46 @@ export function TemplateForm({
               />
             </Field>
           </div>
+          {canRead ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="self-start"
+              disabled={discovery.loading}
+              onClick={() => void discovery.inspect()}
+            >
+              {discovery.loading ? "Inspecting variables..." : "Inspect variables"}
+            </Button>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Template read permission is required to inspect variables. Manual publishing is
+              available.
+            </p>
+          )}
+          {discovery.error !== null && <ErrorNotice error={discovery.error} />}
+          {discovery.variables && (
+            <TemplateVariables
+              variables={discovery.variables}
+              bindings={bindings}
+              policy={policy}
+              setBindings={setBindings}
+              setPolicy={setPolicy}
+            />
+          )}
           <AdvancedSettings
             open={advanced}
             onOpenChange={setAdvanced}
             summary="Engine, template bindings and input restrictions."
           >
             <Field label="Engine reference">
-              <Input required value={engine} onChange={(event) => setEngine(event.target.value)} />
+              <Input
+                required
+                value={engine}
+                onChange={(event) => {
+                  engineEdited.current = true;
+                  setEngine(event.target.value);
+                }}
+              />
             </Field>
             <Field label="Bindings (JSON)">
               <Textarea
@@ -164,7 +236,7 @@ export function TemplateForm({
           <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" disabled={busy}>
+          <Button type="submit" disabled={busy || discovery.loading}>
             {busy ? <LoaderCircle className="animate-spin" /> : <Upload />}Publish
           </Button>
         </div>

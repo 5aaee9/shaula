@@ -124,6 +124,9 @@ impl FleetSupervisor {
                             "admitted bindings missing for destroy",
                         )
                     })?;
+                self.handoff
+                    .ensure_artifact_cached(&generation.template_artifact_digest)
+                    .await?;
                 let artifact_dir = shaula_core::artifact_layout::artifact_dir(
                     &self.config.artifact_root,
                     &generation.template_artifact_digest,

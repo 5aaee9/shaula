@@ -2,7 +2,7 @@ use super::mapping::{
     auth_handoff_row, auth_profile_head, auth_row, fleet_change_row, fleet_head,
     fleet_revision_row, profile_change_row, template_row, tpl_profile_head,
 };
-use super::{artifacts, core_err, SqliteControlPlane};
+use super::{core_err, SqliteControlPlane};
 use async_trait::async_trait;
 use shaula_core::error::CoreResult;
 use shaula_core::registry::{
@@ -13,6 +13,15 @@ use shaula_core::registry::{
 
 #[async_trait]
 impl ControlPlaneStore for SqliteControlPlane {
+    async fn ensure_artifact_cached(&self, digest: &str) -> CoreResult<()> {
+        if !self.artifact_available(digest).await? {
+            return Err(shaula_core::error::CoreError::new(
+                shaula_core::error::ReasonCode::TemplateInvalid,
+                "artifact digest is not published",
+            ));
+        }
+        Ok(())
+    }
     async fn commit_profile_retirement(
         &self,
         facts: MutationFacts,
@@ -304,27 +313,19 @@ impl ControlPlaneStore for SqliteControlPlane {
         })
     }
     async fn artifact_manifest(&self, digest: &str) -> CoreResult<Option<String>> {
-        artifacts::manifest(&self.artifact_root, digest)
+        self.artifact_manifest_impl(digest).await
     }
     async fn artifact_parameter_schema(&self, digest: &str) -> CoreResult<String> {
-        // Ok(None) only for a malformed digest; missing/corrupt file is
-        // already an Err — admission never degrades to "no schema".
-        match artifacts::parameter_schema(&self.artifact_root, digest)? {
-            Some(text) => Ok(text),
-            None => Err(shaula_core::error::CoreError::new(
-                shaula_core::error::ReasonCode::StorageUnavailable,
-                "artifact digest malformed",
-            )),
-        }
+        self.artifact_parameter_schema_impl(digest).await
     }
     async fn artifact_shape_ok(&self, digest: &str) -> CoreResult<bool> {
-        Ok(artifacts::shape_ok(&self.artifact_root, digest))
+        self.artifact_shape_impl(digest).await
     }
     async fn artifact_lock_digest(&self, digest: &str) -> CoreResult<Option<String>> {
-        artifacts::lock_digest(&self.artifact_root, digest)
+        self.artifact_lock_digest_impl(digest).await
     }
     async fn artifact_lock_file(&self, digest: &str) -> CoreResult<Option<String>> {
-        artifacts::lock_file(&self.artifact_root, digest)
+        self.artifact_lock_file_impl(digest).await
     }
     async fn commit_fleet_mutation(
         &self,
