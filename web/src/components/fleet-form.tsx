@@ -9,7 +9,9 @@ import { AdvancedSettings } from "./advanced-settings";
 import { Modal } from "./modal";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { Textarea } from "./ui/textarea";
+import { useFleetInputs } from "@/lib/use-fleet-inputs";
+import { FleetTemplateInputs } from "./fleet-template-inputs";
+import { FleetTemplateSelection } from "./fleet-template-selection";
 import { ErrorNotice, Field } from "./status";
 const initial: FleetSpec = {
   github: {
@@ -38,28 +40,18 @@ export function FleetForm({
   const client = useQueryClient();
   const [key, setKey] = useState(resource?.data.key || "");
   const [spec, setSpec] = useState<FleetSpec>(resource?.data.spec || initial);
-  const [inputs, setInputs] = useState(JSON.stringify(spec.template_inputs, null, 2));
+  const editor = useFleetInputs(resource, scopes.includes("template.read"));
   const [labels, setLabels] = useState(spec.github.labels.join(", "));
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const attempt = useRef(new MutationAttempt());
   const templates = useTemplates(scopes.includes("template.read"));
-  const currentTemplate =
-    typeof spec.template_profile_ref === "string"
-      ? spec.template_profile_ref
-      : spec.template_profile_ref.key;
-  const [template, setTemplate] = useState(currentTemplate);
-  const [revision, setRevision] = useState(
-    typeof spec.template_profile_ref === "string" ? "" : String(spec.template_profile_ref.revision),
-  );
   const customSettings = [
     !!spec.github.scale_set_name && spec.github.scale_set_name !== key,
     spec.github.runner_group !== "Default",
     spec.capacity.min_runners !== 0,
     !!labels.trim(),
-    !!revision,
-    !/^\{\s*\}$/.test(inputs.trim()),
   ].filter(Boolean).length;
   function github(patch: Partial<FleetSpec["github"]>) {
     setSpec({ ...spec, github: { ...spec.github, ...patch } });
@@ -68,18 +60,13 @@ export function FleetForm({
     event.preventDefault();
     setError(null);
     try {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(inputs);
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-          throw new Error("Template inputs must be a JSON object.");
-        if (spec.capacity.min_runners > spec.capacity.max_runners)
-          throw new Error("Minimum runners cannot exceed maximum runners.");
-      } catch (error) {
+      if (!editor.canSubmit)
+        throw new Error("Load and review the template input contract before submitting.");
+      if (spec.capacity.min_runners > spec.capacity.max_runners) {
         setAdvancedOpen(true);
-        throw error;
+        throw new Error("Minimum runners cannot exceed maximum runners.");
       }
-      const body = JSON.stringify({
+      const bodyWithoutInputs = JSON.stringify({
         ...spec,
         github: {
           ...spec.github,
@@ -89,9 +76,10 @@ export function FleetForm({
             .map((value) => value.trim())
             .filter(Boolean),
         },
-        template_inputs: parsed,
-        template_profile_ref: revision ? { key: template, revision: Number(revision) } : template,
+        template_inputs: undefined,
+        template_profile_ref: editor.reference,
       });
+      const body = `${bodyWithoutInputs.slice(0, -1)},"template_inputs":${editor.json}}`;
       const path = resourcePath("fleets", key);
       const headers = attempt.current.headers("PUT", path, body, resource?.etag || null, !resource);
       setBusy(true);
@@ -184,22 +172,8 @@ export function FleetForm({
               placeholder="github-build"
             />
           </Field>
-          <Field label="Template profile">
-            <Input
-              required
-              list="template-keys"
-              value={template}
-              onChange={(event) => setTemplate(event.target.value)}
-              placeholder="kubernetes-linux"
-            />
-            <datalist id="template-keys">
-              {templates.data?.data.profiles
-                .filter((value) => value.activeRevision)
-                .map((value) => (
-                  <option key={value.key} value={value.key} />
-                ))}
-            </datalist>
-          </Field>
+          <FleetTemplateSelection editor={editor} templates={templates.data?.data.profiles ?? []} />
+          <FleetTemplateInputs editor={editor} />
           <Field label="Maximum runners">
             <Input
               required
@@ -220,8 +194,8 @@ export function FleetForm({
             onOpenChange={setAdvancedOpen}
             summary={
               customSettings
-                ? `${customSettings} custom ${customSettings === 1 ? "setting" : "settings"}`
-                : "Default runner group, 0 minimum runners, active template revision"
+                ? `${customSettings} custom settings`
+                : "Default runner group, 0 minimum runners"
             }
           >
             <div className="form-grid">
@@ -270,10 +244,21 @@ export function FleetForm({
                   type="number"
                   min={1}
                   step={1}
-                  value={revision}
+                  value={editor.revision}
+                  disabled={editor.locked || editor.loading}
                   placeholder="Current active revision"
-                  onChange={(event) => setRevision(event.target.value)}
+                  onChange={(event) => editor.setRevision(event.target.value)}
                 />
+                {editor.revision && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={editor.locked || editor.loading}
+                    onClick={() => void editor.load()}
+                  >
+                    Load template revision
+                  </Button>
+                )}
               </Field>
             </div>
             <Field label="Labels">
@@ -283,14 +268,6 @@ export function FleetForm({
                 placeholder="linux, x64"
               />
             </Field>
-            <Field label="Template inputs (JSON)">
-              <Textarea
-                spellCheck={false}
-                className="mono"
-                value={inputs}
-                onChange={(event) => setInputs(event.target.value)}
-              />
-            </Field>
           </AdvancedSettings>
         </fieldset>
         {error !== null && <ErrorNotice error={error} />}
@@ -298,7 +275,7 @@ export function FleetForm({
           <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button disabled={busy} type="submit">
+          <Button disabled={busy || !editor.canSubmit} type="submit">
             {busy ? <LoaderCircle className="animate-spin" /> : <Save />}
             {resource ? "Save changes" : "Create fleet"}
           </Button>

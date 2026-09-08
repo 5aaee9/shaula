@@ -314,6 +314,9 @@ impl ControlPlane {
 #[path = "service_validation.rs"]
 mod validation;
 
+#[path = "service_input_contract.rs"]
+mod input_contract;
+
 #[path = "service_attestation.rs"]
 mod attestation;
 

@@ -79,6 +79,7 @@ All paths are below `/api/v1`：
 | `GET` | `/template-profiles/{profileKey}` | Desired/active metadata and ETag |
 | `GET` | `/template-profiles/{profileKey}/status` | Validation and reference status |
 | `GET` | `/template-profiles/{profileKey}/revisions/{revision}` | One immutable sanitized Revision |
+| `GET` | `/template-profiles/{profileKey}/revisions/{revision}/input-contract` | Bounded visual Fleet-input projection under [spec 0014](0014-visual-template-inputs.md) |
 | `DELETE` | `/template-profiles/{profileKey}` | Retire after all references clear |
 | `PUT` | `/template-profiles/{profileKey}/revisions/{revision}/attestations/{attestationKey}` | Submit one immutable conformance result |
 | `GET` | `/template-profiles/{profileKey}/revisions/{revision}/attestations/{attestationKey}` | Read bounded attestation metadata |

@@ -381,7 +381,29 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
 
 ## Embedded operator UI (2026-09-06)
 
-- Creation dialogs (2026-09-08) show required basics first and keep optional
+- Visual Fleet Template inputs: [spec 0014](specs/0014-visual-template-inputs.md)
+  and [ADR-0018](ard/0018-render-fleet-inputs-from-approved-template-options.md)
+  are implemented (2026-09-08). The exact-revision input-contract read projects
+  approved fields or complete presets through shared admission validation, with
+  bounded output, `template.read`, private/no-store and explicit unavailable errors.
+  All Template inputs, including optional controls and presets, appear directly
+  in the main Fleet form. Advanced settings contains only other Fleet settings.
+  Values retain their JSON types and integer precision without editable raw JSON
+  or implicit defaults. Existing inputs and bare references survive failed reads;
+  explicit template changes capture an exact revision and require draft discard
+  confirmation when needed. Background reads cannot replace the captured contract.
+  Validation passed: frontend build, lint/format and 51 browser tests (including
+  16 new visual-input regressions); 3 real HTTPS/OIDC browser tests; strict workspace
+  Clippy, rustfmt and 424 workspace tests (2 ignored). The literal AGENTS nextest
+  name-filter command also passed (341 tests); the unfiltered run is the full gate.
+  The HTTPS input test uses an isolated seeded Template read fixture, exercises
+  the real daemon projection/editor and verifies the exact PUT plus an expected
+  missing-auth rejection without creating a Fleet. Router/SQLite integration tests
+  separately cover successful admission and preset rejection. These checks do not
+  claim real template activation or runner provisioning. Independent frontend and
+  backend review found no blocking defects.
+
+- Creation dialogs (2026-09-08) show required basics first and keep other optional
   Fleet, Template and GitHub App settings in a shared collapsed Advanced settings
   section. Hidden values stay mounted; native validation reveals invalid controls,
   and JSON errors open the relevant settings. Fleet creation defaults scale set

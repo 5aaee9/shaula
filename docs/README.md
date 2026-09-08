@@ -14,6 +14,7 @@
 | Profile publication、retirement、sensitive reads、attestation | [spec 0005](specs/0005-profile-http-control-plane.md) |
 | Rust crate ownership 与依赖方向 | [spec 0007](specs/0007-rust-workspace-architecture.md) |
 | UI 行为 | [spec 0008](specs/0008-embedded-web-ui.md) |
+| Fleet Template inputs 可视化编辑 | [spec 0014](specs/0014-visual-template-inputs.md) / [ADR-0018](ard/0018-render-fleet-inputs-from-approved-template-options.md) |
 | GitHub authentication 连接列表、搜索、详情发现 | [spec 0012](specs/0012-github-authentication-inventory.md) / [ADR-0016](ard/0016-list-authentication-connections-from-the-profile-registry.md) |
 | 管理 HTTP 的 OIDC、session、CSRF | [spec 0009](specs/0009-mandatory-openid-connect.md) |
 | Browser session 到期后的 Provider 续期、页面保留 | [spec 0013](specs/0013-provider-backed-browser-session-renewal.md) / [ADR-0017](ard/0017-renew-browser-sessions-in-the-authentication-guard.md) |

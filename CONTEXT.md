@@ -196,6 +196,14 @@ _Avoid_: Message ID, Fleet Revision, process generation
 Template publisher 为连接预先存在的平台环境而提交、并冻结到 Template Profile Revision 的有界输入；其 schema 由 Template Artifact 声明。标记为 sensitive 的 member 是 write-only，不能通过管理读取面取回。
 _Avoid_: Provider Target, GitHub Target, arbitrary tfvars
 
+**Fleet Input**:
+Fleet manager 为 Runner 选择的非 secret 模板参数；它必须同时符合所选 Template Profile Revision 的参数声明和批准值集合。
+_Avoid_: Template binding, arbitrary Terraform variable, provider credential
+
+**Fleet Input Policy**:
+Template publisher 为一个 Template Profile Revision 批准的参数值集合；每个参数的完整值都受该集合限制。
+_Avoid_: Parameter schema alone, UI default, free-form input
+
 **Protected Bindings Commitment**:
 绑定一个 exact immutable Template Profile Revision 的不透明 equality token，wire name 为 `bindings_digest`；它不得是 sensitive binding plaintext 的 unkeyed digest 或 credential fingerprint，且不得让读取者离线验证 secret guess。
 _Avoid_: Credential hash, plaintext checksum, secret verifier

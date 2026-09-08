@@ -89,6 +89,18 @@ export async function mockApi(page: Page, permissions = scopes) {
           ],
         },
       });
+    if (path.startsWith("/template-profiles/") && path.endsWith("/input-contract"))
+      return route.fulfill({
+        json: {
+          version: 1,
+          profileKey: key,
+          incarnation: "template-inc",
+          revision: Number(path.split("/")[4]),
+          artifactDigest: `sha256:${"a".repeat(64)}`,
+          mode: "fields",
+          fields: [],
+        },
+      });
     if (path.startsWith("/template-profiles/"))
       return route.fulfill({
         headers: { etag: '"template-inc:3"' },

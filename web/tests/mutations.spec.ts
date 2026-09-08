@@ -14,6 +14,10 @@ test("new fleet sends the API spec with create precondition", async ({ page }) =
   await expect(page.getByLabel("Scale set name", { exact: true })).toBeHidden();
   await page.getByLabel("GitHub authentication profile", { exact: true }).fill("github-build");
   await page.getByLabel("Template profile", { exact: true }).fill("kubernetes-linux");
+  await page.getByLabel("Template profile", { exact: true }).press("Tab");
+  await expect(page.getByRole("dialog")).toContainText(
+    "This template needs no input configuration.",
+  );
   await page.screenshot({
     path: "test-results/fleet-dialog-compact.png",
     fullPage: true,
@@ -27,7 +31,10 @@ test("new fleet sends the API spec with create precondition", async ({ page }) =
     expect(request.headers()["x-shaula-backend-auth"]).toBeUndefined();
     expect(request.headers()["x-shaula-actor"]).toBeUndefined();
     expect(request.postDataJSON().github.target).toEqual({ kind: "organization", owner: "acme" });
-    expect(request.postDataJSON().template_profile_ref).toBe("kubernetes-linux");
+    expect(request.postDataJSON().template_profile_ref).toEqual({
+      key: "kubernetes-linux",
+      revision: 3,
+    });
     expect(request.postDataJSON().github.scale_set_name).toBe("new-build");
     expect(request.postDataJSON().github.runner_group).toBe("Default");
     expect(request.postDataJSON().github.labels).toEqual([]);

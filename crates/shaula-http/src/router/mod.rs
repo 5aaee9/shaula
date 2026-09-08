@@ -3,6 +3,7 @@
 //! headers before delegating to registry ports.
 
 pub mod fleet_routes;
+mod input_contract;
 pub mod profile_auth_reads;
 pub mod profile_reads;
 pub mod profile_routes;
@@ -219,6 +220,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/template-profiles/{profileKey}/revisions/{revision}",
             get(profile_reads::template_revision_get),
+        )
+        .route(
+            "/api/v1/template-profiles/{profileKey}/revisions/{revision}/input-contract",
+            get(input_contract::get),
         )
         .route(
             "/api/v1/template-profiles/{profileKey}/revisions/{revision}/attestations/{attestationKey}",

@@ -13,6 +13,10 @@ Authentication inventory and detail discovery are specified in
 [spec 0012](0012-github-authentication-inventory.md). Implementation and verification
 status belongs in [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md).
 
+Fleet Template inputs 的可视化选择、exact Revision 和草稿保留目标见
+[spec 0014](0014-visual-template-inputs.md)；该增量以批准值控件替换 JSON
+textarea，并将全部模板输入（包括可选参数和 presets）直接展示在主表单。
+
 - Cargo builds and embeds the frontend into debug and release binaries. A failed
   frontend build fails the binary build. Runtime serving requires no frontend files.
 - UI document routes support refresh and direct links. Unknown API paths and
@@ -43,13 +47,15 @@ status belongs in [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md).
   semantics. An editor keeps the version originally displayed even as background
   queries refresh. Conflicts retain user input and require explicit reload/review.
 - Creation dialogs start with the required identity, source/target and credential
-  fields. Optional settings live in a collapsed **Advanced settings** section;
-  collapsing preserves values and submission semantics. Hidden invalid controls
+  fields. Optional settings other than Template inputs live in a collapsed
+  **Advanced settings** section; all Template input controls remain visible.
+  Collapsing preserves values and submission semantics. Hidden invalid controls
   expand their section before native validation focuses them; invalid advanced
   JSON also reveals its editor. Existing resource values are never reset by folding.
   New Fleets default the scale set name to their key unless explicitly overridden;
-  runner group `Default`, zero minimum runners, empty labels/inputs and the active
-  template revision remain defaults. Maximum capacity stays visible. Templates
+  Runner group `Default`, zero minimum runners and empty labels remain defaults.
+  Template inputs start unset, without applying schema defaults; new Fleets capture
+  the displayed Active revision for submission. Maximum capacity stays visible. Templates
   expose an archive/existing-digest choice; Terraform, bindings and input policy
   are advanced. Authentication retains a visible first target and required
   credentials; additional targets may fold, but policy-change previews and live

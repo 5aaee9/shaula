@@ -12,6 +12,20 @@ use shaula_core::registry::{
 
 #[async_trait]
 impl ProfileRegistryPort for ControlPlane {
+    async fn template_input_contract_get(
+        &self,
+        actor: &Actor,
+        key: &str,
+        revision: i64,
+    ) -> CoreResult<
+        Result<
+            shaula_core::registry::TemplateInputContract,
+            shaula_core::registry::InputContractReadError,
+        >,
+    > {
+        self.input_contract_get_impl(actor, key, revision).await
+    }
+
     async fn template_put(
         &self,
         actor: &Actor,

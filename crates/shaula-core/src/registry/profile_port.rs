@@ -88,6 +88,14 @@ pub trait ProfileRegistryPort: Send + Sync {
         revision: i64,
     ) -> CoreResult<Result<TemplateRevisionView, MutationError>>;
 
+    /// Pure, bounded input projection from this exact revision's schema and policy.
+    async fn template_input_contract_get(
+        &self,
+        actor: &Actor,
+        key: &str,
+        revision: i64,
+    ) -> CoreResult<Result<super::TemplateInputContract, super::InputContractReadError>>;
+
     /// Read model of ONE immutable attestation (R10-05 route). The stored
     /// subject is the canonical typed serialization — never secret.
     async fn attestation_get(

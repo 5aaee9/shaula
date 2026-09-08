@@ -10,8 +10,6 @@ test("collapsed fleet settings preserve the edit snapshot and reveal invalid fie
   current.spec.github.runner_group = "Builders";
   current.spec.github.labels = ["arm64"];
   current.spec.capacity.min_runners = 2;
-  current.spec.template_profile_ref.revision = 7;
-  current.spec.template_inputs = { machine: "arm64" };
   let writes = 0;
   await page.route("**/api/v1/fleets/linux-build", (route) => {
     if (route.request().method() === "GET")
@@ -31,21 +29,13 @@ test("collapsed fleet settings preserve the edit snapshot and reveal invalid fie
   await expect(advanced).toHaveAttribute("aria-expanded", "false");
   await advanced.click();
   await expect(page.getByLabel("Runner group")).toHaveValue("Builders");
-  await page.getByLabel("Template inputs (JSON)").fill("[]");
+  await page.getByLabel("Minimum runners").fill("-1");
   await advanced.click();
   await save.click();
-  await expect(advanced).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByRole("alert")).toContainText("Template inputs must be a JSON object");
-  await page
-    .getByLabel("Template inputs (JSON)")
-    .fill(JSON.stringify(current.spec.template_inputs));
-  await page.getByLabel("Pinned revision").fill("0");
-  await advanced.click();
-  await save.click();
-  await expect(page.getByLabel("Pinned revision")).toBeFocused();
+  await expect(page.getByLabel("Minimum runners")).toBeFocused();
   await expect(advanced).toHaveAttribute("aria-expanded", "true");
   expect(writes).toBe(0);
-  await page.getByLabel("Pinned revision").fill("7");
+  await page.getByLabel("Minimum runners").fill("2");
   await advanced.click();
   await save.click();
   await expect(page.getByRole("dialog")).toHaveCount(0);

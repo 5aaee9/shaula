@@ -13,6 +13,8 @@ export class ApiError extends Error {
 export interface Resource<T> {
   data: T;
   etag: string | null;
+  /** Fleet input values retain their original JSON number tokens for editing. */
+  rawJson?: string;
 }
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<Resource<T>> {
@@ -38,7 +40,8 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<R
       "The server did not return a valid API response.",
     );
   }
-  const data = await response.json();
+  const rawJson = await response.text();
+  const data = JSON.parse(rawJson);
   if (authenticationExpired())
     throw new ApiError(401, "AuthenticationRequired", "Authentication required.");
   if (!response.ok)
@@ -50,7 +53,13 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<R
   // Compression proxies can weaken ETag without changing the desired revision.
   // The origin supplies its opaque write version separately from that validator.
   const version = response.headers.get("shaula-resource-version") ?? response.headers.get("etag");
-  return { data, etag: version && /^"[\x21\x23-\x7e]+"$/.test(version) ? version : null };
+  return {
+    data,
+    etag: version && /^"[\x21\x23-\x7e]+"$/.test(version) ? version : null,
+    ...((!options.method || options.method === "GET") && /^\/fleets\/[^/]+$/.test(path)
+      ? { rawJson }
+      : {}),
+  };
 }
 
 export const resourcePath = (kind: string, key: string) => `/${kind}/${encodeURIComponent(key)}`;

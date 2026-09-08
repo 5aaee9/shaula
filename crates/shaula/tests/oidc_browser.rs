@@ -2,6 +2,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #[path = "support/oidc_startup.rs"]
 mod support;
+#[path = "support/oidc_browser_template.rs"]
+mod template_fixture;
 use axum::{
     body::{to_bytes, Body},
     extract::{Request, State},
@@ -25,6 +27,9 @@ struct BrowserFixture {
 #[ignore = "long-running HTTPS harness owned by web/oidc.playwright.config.ts"]
 async fn oidc_browser_server() {
     let fixture = Startup::new();
+    template_fixture::seed(fixture.directory.path())
+        .await
+        .unwrap();
     let mut child = Running(
         fixture
             .command()

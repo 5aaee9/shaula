@@ -298,8 +298,12 @@ pub use attestation_subject::{
     AttestationSuiteSubject,
 };
 
+pub mod input_contract;
 #[path = "registry/profile_port.rs"]
 pub mod profile_port;
+pub use input_contract::{
+    InputContractProjection, InputContractReadError, InputField, InputOption, TemplateInputContract,
+};
 pub use profile_port::{
     AttestationView, AuthRevisionView, IdempotencyLookup, ProfileRegistryPort, TemplateRevisionView,
 };
