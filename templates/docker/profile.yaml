@@ -16,6 +16,5 @@ managed_resource_shape:
     terraform_type: docker_container
     exact_count: 1
 runner_image_digests:
-  - ghcr.io/actions/actions-runner:2.323.0@sha256:3f2a1b9c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8
-  - ghcr.io/actions/actions-runner:2.322.1@sha256:abababababababababababababababababababababababababababababababab
-runtime_policy_digest: sha256:shaula-runtime-policy-v1
+  - localhost:5001/shaula-runner:2.337.0-bootstrap-v1@sha256:eb9fa6d0a3b8688f0f1daba9989f9323ad02b02c6d1cd36d49c2fddcb7fb6201
+runtime_policy_digest: sha256:b4de26602d90b32d5faf6eef3f0c89f2f4e76d39a569c7b93175298c8cd8d7ec

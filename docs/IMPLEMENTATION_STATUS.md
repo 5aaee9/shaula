@@ -304,16 +304,20 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
   Existing persistence primitives alone do not implement these workflows.
 - End-to-end real-GitHub validation and the Go-oracle differential suite
   (`references/scaleset`, pinned commit) have not been executed.
-- Bundled-profile conformance harness (real Kubernetes/Docker runs) and
-  provider lock checksums — attestation remains the activation gate. Both
-  `templates/kubernetes/.terraform.lock.hcl` and
-  `templates/docker/.terraform.lock.hcl` are explicit placeholders, not real
-  reviewed provider/checksum pins. The
-  bundled templates REQUIRE a runner image that carries the reviewed
-  bootstrap-shim at `/usr/local/bin/bootstrap-shim`; that shim-bearing
-  image is built and pinned by the conformance harness, not by the
-  template bundle. Digest-pinned `runner_image_digests` in the manifests
-  are finalized by the same harness.
+- Bundled-profile conformance remains an activation gate. The Docker provider
+  now has a real Terraform-generated lock for `kreuzwerker/docker` 3.0.2 and
+  a real, privately imported shim image pin; the Kubernetes lock/image pins
+  remain staged.
+  `templates/docker/image/` supplies a non-root shim image recipe and tests
+  the read/unlink/env-only JIT handoff. `scripts/docker-conformance/` supplies
+  an external local-state Terraform smoke harness with protected diagnostics
+  and explicit GitHub removal evidence; it never asserts full conformance or
+  produces an activation attestation. The [2026-09-08 real smoke](evidence/docker-smoke-2026-09-08/README.md)
+  created one container as the Shaula OS identity, observed GitHub online,
+  completed an actual job, confirmed safe GitHub removal, and verified Terraform
+  Destroy/empty state/container absence. This does not implement the independent
+  exec Driver or worker/HTTP-backend recovery. Full exact-tuple conformance is
+  still required before activation. See the [harness instructions](../scripts/docker-conformance/README.md).
 - OTLP export pipeline and OTel SDK instrumentation (bounded in-process
   counters and their call sites exist; no span/export pipeline yet);
   remaining endpoint surface (notably pagination and artifact metadata GET),

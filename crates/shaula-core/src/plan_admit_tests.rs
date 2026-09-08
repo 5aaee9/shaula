@@ -30,6 +30,47 @@ fn destroy_plan_admits_exact_deletes() {
 }
 
 #[test]
+fn terraform_1_9_8_destroy_skips_owned_resource_precondition() {
+    // Sanitized shape from a real Terraform 1.9.8 Docker destroy plan.
+    // Terraform does not evaluate this resource's precondition on deletion.
+    let json = serde_json::json!({
+        "format_version": "1.2",
+        "terraform_version": "1.9.8",
+        "applyable": true,
+        "complete": true,
+        "errored": false,
+        "resource_changes": [{
+            "address": "docker_container.runner",
+            "mode": "managed",
+            "type": "docker_container",
+            "name": "runner",
+            "change": {"actions": ["delete"]}
+        }],
+        "checks": [{
+            "address": {
+                "kind": "resource",
+                "mode": "managed",
+                "name": "runner",
+                "to_display": "docker_container.runner",
+                "type": "docker_container"
+            },
+            "status": "unknown"
+        }]
+    });
+    let state = vec!["docker_container.runner".to_string()];
+    let manifest = [ManagedResourceRole {
+        role: "runner".into(),
+        terraform_type: "docker_container".into(),
+        exact_count: 1,
+    }];
+    let admitted = admit_destroy_plan_json(&json, &state, &manifest);
+    assert!(
+        admitted.is_ok(),
+        "a bound delete must admit skipped checks: {admitted:?}"
+    );
+}
+
+#[test]
 fn destroy_rejects_new_address_not_in_state() {
     let json = plan_json(serde_json::json!([
         change(

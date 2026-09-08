@@ -5,12 +5,9 @@
 # restarts or auto-removes, and the default Profile never mounts
 # /var/run/docker.sock into the Runner.
 #
-# IMAGE REQUIREMENT (staged gate, spec 0006 / ARD-0004): the runner image
-# MUST be built with the reviewed bootstrap-shim installed at
-# /usr/local/bin/bootstrap-shim (reads the uploaded JIT once, unlinks it,
-# then execs the Actions listener). The stock actions-runner image does
-# NOT contain it; conformance images are delivered with the phase-3
-# conformance harness.
+# Build the runner image with image/Dockerfile and pin its final digest in
+# profile.yaml. The stock actions-runner image does not contain the shim.
+# Image construction alone does not satisfy the activation attestation gate.
 
 terraform {
   required_version = ">= 1.9, < 2.0"
@@ -30,7 +27,7 @@ provider "docker" {
 
 locals {
   runner_images = { for image in yamldecode(file("${path.module}/profile.yaml")).runner_image_digests : split("@", image)[0] => image }
-  runner_image  = local.runner_images[try(var.shaula.parameters.runner_image, "ghcr.io/actions/actions-runner:2.323.0")]
+  runner_image  = local.runner_images[try(var.shaula.parameters.runner_image, "localhost:5001/shaula-runner:2.337.0-bootstrap-v1")]
   # Deterministic container name derived from the already-persisted
   # Generation identity; never randomized per attempt.
   container_name = "shaula-${var.shaula.generation.fleet_key}-${substr(var.shaula.generation.id, 0, 24)}"
@@ -44,7 +41,7 @@ data "docker_image" "runner" {
 
 resource "docker_container" "runner" {
   name    = local.container_name
-  image   = data.docker_image.runner.image_id
+  image   = data.docker_image.runner.id
   runtime = "runc"
 
   # One ephemeral job: no restart, no daemon-side removal behind the
@@ -52,17 +49,25 @@ resource "docker_container" "runner" {
   restart  = "no"
   must_run = false
   rm       = false
+  memory   = 4096
+  cpu_set  = "0-1"
+
+  labels {
+    label = "shaula.fleet"
+    value = var.shaula.generation.fleet_key
+  }
+  labels {
+    label = "shaula.generation"
+    value = var.shaula.generation.id
+  }
 
   # JIT handoff: the provider uploads the protected value to a fixed file
   # before container start (never a host source path, never argv). The
   # pinned shim reads and unlinks it, then spawns Runner.Listener with only
   # ACTIONS_RUNNER_INPUT_JITCONFIG set.
-  // JIT handoff: content is the protected value from the frozen input
-  // envelope (never a host source path, never argv). The pinned shim
-  // reads it once, unlinks it, sets only
-  // ACTIONS_RUNNER_INPUT_JITCONFIG for Runner.Listener, and exits rather
-  // than starting an unregistered runner when the file is absent.
   upload {
+    # Provider 3.0.2 uploads a root-owned 0644 file. The image's runner-owned
+    # 0700 directory restricts access and lets runner read and unlink it.
     file    = "/shaula/jit_config"
     content = var.shaula.jit_config
   }

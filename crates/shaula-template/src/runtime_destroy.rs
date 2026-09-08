@@ -2,7 +2,7 @@
 //! 400-line limit (AGENTS.md). It runs as an inherent method so the
 //! `TemplateRuntimePort` trait impl in `runtime.rs` stays a thin seam.
 
-use shaula_core::plan::{admit_destroy_plan, destroy_empty_state_short_circuit, parse_plan};
+use shaula_core::plan::{admit_destroy_plan_json, destroy_empty_state_short_circuit};
 use shaula_core::ports::{
     DestroyClassification, PlanProvenance, StateLineage, TemplateDestroyRequest,
     TemplateOutcomeError,
@@ -90,8 +90,7 @@ impl TemplateRuntime {
             .show_plan_json(workspace, &request.environment)
             .await
             .map_err(|_| plan_err("destroy.plan"))?;
-        let parsed = parse_plan(&plan_json).map_err(|_| plan_err("destroy.plan"))?;
-        admit_destroy_plan(&parsed, &snapshot.managed, &request.managed_shape)
+        admit_destroy_plan_json(&plan_json, &snapshot.managed, &request.managed_shape)
             .map_err(|_| plan_err("destroy.plan"))?;
 
         // DestroyApplyStarting must be durable before the child spawns

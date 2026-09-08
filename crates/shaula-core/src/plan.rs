@@ -50,8 +50,15 @@ fn err(msg: impl Into<String>) -> CoreError {
 }
 
 /// Extracts the subset of the plan JSON the policy reasons about. Fails
-/// closed on missing/unknown top-level shape.
+/// closed on missing/unknown top-level shape and unresolved checks. Destroy
+/// callers use `admit_destroy_plan_json` for bound skipped-resource checks.
 pub fn parse_plan(plan_json: &Value) -> CoreResult<PlanAdmission> {
+    let plan = parse_plan_shape(plan_json)?;
+    plan_checks::admit_checks(plan_json, &[])?;
+    Ok(plan)
+}
+
+fn parse_plan_shape(plan_json: &Value) -> CoreResult<PlanAdmission> {
     let obj = plan_json
         .as_object()
         .ok_or_else(|| err("plan document is not a JSON object"))?;
@@ -191,20 +198,6 @@ pub fn parse_plan(plan_json: &Value) -> CoreResult<PlanAdmission> {
         return Err(err("plan contains deferred changes"));
     }
 
-    // Failed/errored standalone checks reject admission when present.
-    if let Some(checks) = obj.get("checks").and_then(Value::as_array) {
-        for check in checks {
-            let problem_count = check
-                .get("problems")
-                .and_then(Value::as_array)
-                .map(|p| p.len())
-                .unwrap_or(0);
-            if check.get("status").and_then(Value::as_str) != Some("pass") || problem_count > 0 {
-                return Err(err("plan contains failed or errored checks"));
-            }
-        }
-    }
-
     // Managed entries inside the plan's own prior_state snapshot: an
     // independent non-empty-state witness (spec 0004 §5.192). Modules are
     // traversed recursively.
@@ -248,6 +241,10 @@ pub fn parse_plan(plan_json: &Value) -> CoreResult<PlanAdmission> {
 mod plan_admit;
 pub use plan_admit::{admit_create_plan, admit_destroy_plan, destroy_empty_state_short_circuit};
 
+#[path = "plan_checks.rs"]
+mod plan_checks;
+pub use plan_checks::admit_destroy_plan_json;
+
 #[cfg(test)]
 #[path = "plan_tests.rs"]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -256,3 +253,7 @@ mod tests;
 #[cfg(test)]
 #[path = "plan_admit_tests.rs"]
 mod admit_tests;
+
+#[cfg(test)]
+#[path = "plan_check_tests.rs"]
+mod check_tests;

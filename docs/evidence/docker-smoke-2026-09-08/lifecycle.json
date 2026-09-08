@@ -1,0 +1,56 @@
+{
+  "accepted_limitations": [
+    "same-identity IaC children share Docker host authority",
+    "Runner process inspection may reveal JIT; no memory zeroization",
+    "Terraform inputs, saved plans and state remain credential-grade"
+  ],
+  "checks": {
+    "docker_security_shape": "passed",
+    "empty_state_and_exact_container_absence": "passed",
+    "init_validate_saved_create_plan": "passed",
+    "jit_absent_from_declarative_metadata_and_process_argv": "passed",
+    "jit_staged_file_consumed": "passed",
+    "safe_github_removal_receipt": "operator_observed",
+    "saved_delete_only_plan_and_apply": "passed",
+    "terraform_created_one_container": "passed"
+  },
+  "completed_at": "2026-09-08T10:34:50.161500+00:00",
+  "container_id": "370dd644545954fb6e5060d1061a9896ce10e929319ed90c12bbaf0121921020",
+  "dependency_lock_digest": "sha256:541a79ea1f8f922d68c5e0b00dbaaf8d78c3a43bd172d32a8a209ce12c7c951a",
+  "docker_engine": {
+    "api_version": "1.55",
+    "minimum_api_version": "1.40",
+    "os": "linux",
+    "version": "29.6.2"
+  },
+  "engine": {
+    "binary_digest": "sha256:7386e89a97d0f24024955acc79ccf693b75b97f7c6383cb9d966e7d59aa5b223",
+    "kind": "terraform",
+    "version": "1.9.8"
+  },
+  "full_conformance_passed": false,
+  "generation_id": "smoke-20260908-01",
+  "inspected_at": "2026-09-08T10:22:49.606882+00:00",
+  "kind": "shaula-docker-external-smoke/v1",
+  "last_phase": "destroy",
+  "last_result": "passed",
+  "not_proven": [
+    "shaula exec Driver and independent job worker",
+    "daemon HTTP state backend and crash recovery",
+    "GitHub online, job success and workflow environment (separate evidence)",
+    "management HTTP, audit, log and telemetry redaction"
+  ],
+  "providers": [
+    {
+      "checksums_digest": "sha256:2097b86924dd76089ed8ad0cb902676ae91ebda189889055d8aff0c3c1f1ebdd",
+      "source": "kreuzwerker/docker",
+      "version": "3.0.2"
+    }
+  ],
+  "removal_evidence_digest": "sha256:8287bd979d65699da6bd71aa695c386c8bdc277263d1b6fd1f97d22f035b918c",
+  "runner_image": "localhost:5001/shaula-runner:2.337.0-bootstrap-v1@sha256:eb9fa6d0a3b8688f0f1daba9989f9323ad02b02c6d1cd36d49c2fddcb7fb6201",
+  "runtime": "external Terraform subprocess with protected local state",
+  "smoke_lifecycle_completed": true,
+  "source_digest": "sha256:60e6dd5d23f337f835968b42f8b676eb89175dbde4d0dd37103dd0026b4b1587",
+  "started_at": "2026-09-08T10:19:04.547755+00:00"
+}
