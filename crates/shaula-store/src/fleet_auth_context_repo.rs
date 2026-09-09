@@ -11,6 +11,34 @@ use crate::entities::auth::fleet_auth_contexts;
 use crate::store::{Store, StoreError, StoreResult};
 
 impl Store {
+    /// Retiring a Fleet advances its fence without changing auth intent.
+    /// Keep any pending cleanup proof acknowledgeable under that new fence.
+    pub(crate) async fn fleet_auth_context_refresh_fence_tx(
+        &self,
+        tx: &DatabaseTransaction,
+        fleet_key: &str,
+        now: i64,
+    ) -> StoreResult<()> {
+        use crate::entities::fleet::fleets;
+        let Some(context) = fleet_auth_contexts::Entity::find_by_id(fleet_key.to_string())
+            .one(tx)
+            .await?
+        else {
+            return Ok(());
+        };
+        let fleet = fleets::Entity::find_by_id(fleet_key.to_string())
+            .one(tx)
+            .await?
+            .ok_or_else(|| StoreError::Corrupt("auth context has no Fleet".into()))?;
+        let mut updated: fleet_auth_contexts::ActiveModel = context.into();
+        updated.desired_fence = Set(Some(fleet.mutation_fence));
+        updated.updated_at = Set(now);
+        fleet_auth_contexts::Entity::update(updated)
+            .exec(tx)
+            .await?;
+        Ok(())
+    }
+
     /// Writes a required exact context and captures the current mutation fence.
     /// Observed authority is retained until acknowledgement succeeds.
     pub(crate) async fn fleet_auth_context_set_desired_tx(

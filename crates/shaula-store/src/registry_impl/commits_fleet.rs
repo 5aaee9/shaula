@@ -267,10 +267,13 @@ impl SqliteControlPlane {
                 .await
                 .map_err(core_err)?;
         }
+        self.store
+            .fleet_auth_context_refresh_fence_tx(&tx, &facts.resource_key, facts.now)
+            .await
+            .map_err(core_err)?;
         // A decommissioning fleet's handoff becomes cleanup-only: auth
-        // rotations must never retarget it (the update-only retarget skips
-        // cleanup-only rows) and no ordinary create effect may run for it
-        // (spec 0002 section 8).
+        // rotations may still authorize cleanup, while session/acquisition
+        // and ordinary Create effects remain forbidden (spec 0002 section 8).
         self.store
             .handoff_set_cleanup_only(&tx, &facts.resource_key)
             .await

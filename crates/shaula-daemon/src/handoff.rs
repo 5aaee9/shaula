@@ -42,9 +42,10 @@ pub async fn run_handoff(
     if &handoff.desired != authority {
         return Ok(HandoffProgress::Retry);
     }
-    if handoff.observed == Some(handoff.desired.clone()) {
+    if handoff.state == "Observed" && handoff.observed == Some(handoff.desired.clone()) {
         // Ref equality alone is not authority (F7): a v2 desired revision
-        // also requires its observed context before the handoff settles.
+        // also requires its observed context and completed handoff. Fleet
+        // replacements retain the old tuple while reopening Pending proof.
         let context_settled = observed_context_settled(store, fleet_key, &handoff.desired).await?;
         if context_settled {
             return Ok(HandoffProgress::UpToDate);
@@ -232,7 +233,9 @@ async fn observed_context_settled(
                 format!("observed auth context corrupt: {e}"),
             )
         })?;
-    Ok(context_row.observed.as_ref() == Some(desired)
+    Ok(context_row.state == "Observed"
+        && context_row.desired.as_ref() == Some(desired)
+        && context_row.observed.as_ref() == Some(desired)
         && context.profile_key == desired.0
         && context.revision == desired.1
         && context.has_complete_identity())

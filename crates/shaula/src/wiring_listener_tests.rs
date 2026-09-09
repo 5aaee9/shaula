@@ -1,5 +1,8 @@
 //! Composition regressions for the production Pending-to-Ready path.
 
+#[path = "wiring_listener_replacement_tests.rs"]
+mod replacement_tests;
+
 use super::*;
 use crate::auth_worker_mock::{endpoints, listener::ListenerMock, mock_server_cfg, MockConfig};
 use shaula_core::registry::LifecycleStore;
