@@ -232,6 +232,15 @@ pub trait ControlPlaneStore: crate::registry::AuthExecutionStore + Send + Sync {
         credential: AuthRevisionRow,
         secret_bytes: &[u8],
     ) -> CoreResult<Result<(), MutationError>>;
+    /// Serializes replay, desired-head and Active-base checks with credential
+    /// inheritance and Candidate/change/audit/outbox publication. Replay never
+    /// needs the historical credential to remain available.
+    async fn commit_auth_policy_update(
+        &self,
+        facts: MutationFacts,
+        base_revision: i64,
+        policy_json: String,
+    ) -> CoreResult<Result<crate::registry::MutationAccepted, MutationError>>;
     /// Looks up a persisted attestation by its FULL path identity
     /// (Profile, Revision, attestation key). The replay pre-check uses
     /// this to reach the immutable historical record BEFORE the current

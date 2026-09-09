@@ -190,6 +190,7 @@ pub(crate) fn document(path: &str) -> bool {
             | "/templates"
             | "/templates/new"
             | "/auth"
+            | "/auth/new"
             | "/changes"
             | "/jobs"
             | "/jobs/runners"
@@ -215,6 +216,15 @@ pub(crate) fn document(path: &str) -> bool {
             .is_some_and(|key| {
                 !matches!(key, "." | "..")
                     && shaula_core::template::TemplateProfileKey::new(key).is_ok()
+            })
+        || path
+            .strip_prefix("/auth/")
+            .and_then(|path| {
+                path.strip_suffix("/targets/edit")
+                    .or_else(|| path.strip_suffix("/rotate"))
+            })
+            .is_some_and(|key| {
+                !matches!(key, "." | "..") && shaula_core::auth::AuthProfileKey::new(key).is_ok()
             })
 }
 

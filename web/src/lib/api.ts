@@ -95,7 +95,7 @@ export function errorMessage(error: unknown): string {
       return "Authentication required. Your session is missing or has expired.";
     if (error.status === 403) return "You do not have permission for this operation.";
     if (error.status === 412)
-      return "This resource changed since you opened it. Close this dialog, refresh, and try again.";
+      return "This resource changed since you opened it. Reopen it to review the latest version before trying again.";
   }
   return error instanceof Error ? error.message : "The request could not be completed.";
 }

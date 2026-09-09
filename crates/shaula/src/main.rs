@@ -3,6 +3,7 @@
 //! GitHub protocol or Terraform plan logic.
 
 mod artifact_library;
+mod auth_installation_link;
 mod auth_worker;
 #[cfg(test)]
 #[path = "auth_worker_continuity_tests.rs"]
@@ -21,6 +22,9 @@ mod auth_worker_selectors;
 mod auth_worker_v2;
 mod diagnostics;
 mod fleet_tasks;
+#[cfg(test)]
+#[path = "../../shaula-http/tests/support/mod.rs"]
+pub(crate) mod http_oidc;
 mod oidc_args;
 mod wiring;
 mod wiring_credential;
@@ -203,6 +207,13 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
     let http_config =
         shaula_http::server::ServerConfig::new(host, port, bootstrap.request_body_limit)?;
     let state = shaula_http::router::AppState {
+        auth_installation_link: Some(std::sync::Arc::new(
+            auth_installation_link::StoredAuthInstallationLink::production(
+                control_plane_store.clone(),
+                clock.clone(),
+            )
+            .map_err(|_| "GitHub App installation link client could not be initialized")?,
+        )),
         fleets: service.clone(),
         profiles: service.clone(),
         health: service.clone(),

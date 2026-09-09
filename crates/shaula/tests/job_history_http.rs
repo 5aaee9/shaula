@@ -135,6 +135,7 @@ async fn app() -> Result<Fixture, Box<dyn std::error::Error>> {
     ));
     service.set_ready(true);
     let router = shaula_http::router::build_router(shaula_http::router::AppState {
+        auth_installation_link: None,
         fleets: service.clone(),
         profiles: service.clone(),
         health: service,

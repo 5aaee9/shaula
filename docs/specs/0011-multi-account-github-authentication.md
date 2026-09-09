@@ -2,6 +2,7 @@
 
 - Status: Accepted — local implementation and remaining integration boundaries are recorded in [the implementation status](../IMPLEMENTATION_STATUS.md); real-GitHub multi-account acceptance remains an external release gate; legacy retirement is governed by spec 0018
 - Date: 2026-09-07
+- Amendment: 2026-09-09 — GitHub Re-auth、显式 Target policy update 与独立 Authentication 表单页面。
 - Decision: [ADR-0015](../ard/0015-route-one-github-app-profile-to-multiple-accounts.md)
 - Scope: 一个 GitHub App Auth Profile 覆盖多个组织及个人账户的仓库，按具体 Fleet Target 选择 installation
 
@@ -110,6 +111,12 @@ Context 至少包含 `auth_ref=(profile_key, revision)`、GitHub host、App ID�
 
 同 key v2 PUT 可以轮换同 App 的 private key、显式增加/替换 Target policy，或重新验证已重装的 installation；这些操作都产生新 Auth Revision，不能修改旧 Revision。每次完整 PUT 都重新提交 private key；读取面不返回 secret，也不接受 redacted placeholder 或隐式“复制 latest credential”。
 
+独立的 Target policy update 允许 Operator 明确指定 current Active 的 `base_revision`，
+只提交新策略并复用该精确版本的凭据。这是单独的 publication 操作，不改变完整 PUT 的
+必填 private key 契约。凭据复用、Active base 检查与新 Candidate 写入必须处于同一事务，
+不能先在 handler 读取“最新私钥”再交给普通 PUT。Active 在验证期间可能改变而 desired
+ETag 不变，因此仅检查 If-Match 不足以固定凭据来源。
+
 删除/缩小 selector 只有在新 policy 仍覆盖所有 live dependent Fleet Target 时才能激活；否则 Candidate `Rejected(TargetPolicyInUse)`。live 包括 active、Blocked、Decommissioning Fleet，以及 session、in-flight effect、worker cleanup 和 recovery references。历史 terminal Change 本身不阻塞删除。
 
 依赖检查必须在 promotion 事务中重新校验 dependent-set version / 等价 CAS；与新 Fleet admission 并发时只能有一方先以有效 policy 提交。验证期间新增的未验证 Target 使 activation 回到 validation，不能带着旧检查结果 promotion。Profile retirement 仍阻止新 admission/publication。
@@ -168,6 +175,87 @@ UI MUST：
 - Fleet 页面明确显示具体仓库的异步 resolution/access 结果；authentication 的 Active 状态不能代替该结果，不永久展开 policy。
 - 历史不支持的 Profile 显示 `Unsupported` 和非 secret 标识，不解析旧 credential metadata，不展示升级/旧凭据轮换入口，不能选作新的 Fleet 引用。纯读取不得转换数据或扩大授权。
 
+### 6.1 GitHub Re-auth
+
+连接详情提供 **Re-auth**，按用户点击才调用
+`GET /api/v1/github-auth-profiles/{key}/installation-link`。要求 `auth.read` 与
+`auth.write`；响应 private/no-store 的 `{url, appId, revision, incarnation}`，无凭据。
+仅使用仍可管理 Profile 的 current Active v2 GitHub App；没有 Active、历史不支持格式、
+Retiring/Retired 均不可用，失败 Candidate 不能替代 Active。
+
+独立 GitHub access adapter 读取该精确版本的 App ID 与 protected credential，以 App JWT
+调用固定 `github.com` 的 `GET /app`，核对 numeric App ID。只接受安全的 slug 路径片段，
+构造 `https://github.com/apps/{slug}/installations/new`；不信任远端 `html_url`，不跟随
+credential-bearing redirect。返回前再次确认 Profile incarnation、Active ref 与可管理状态；
+浏览器同样核对响应身份与当前连接，并只跳转到上述固定安装路径。
+
+不存在返回 404；无可用 Active 或读取期间身份改变返回 409；GitHub 身份/响应不合法返回
+502；缺少可用凭据、网络、限流或远端临时故障返回脱敏的 503，可显式重试。失败不会修改
+Profile 健康状态。读取不创建 Revision、installation token、policy、binding 或 Change。
+此操作通过独立 adapter 执行，不把 GitHub 请求放入 Profile publication admission。
+
+GitHub 页面负责账户选择、组织安装权限和审批。安装后由 Operator 回到 Shaula，使用
+**Edit target policy** 将组织加入明确的 selector 集合；不依赖安装回调、不接受 URL 中
+`installation_id` 作为授权证明，也不承诺 GitHub 自动返回。Re-auth 不创建 OAuth 登录流程，
+不自动扩大 policy，不轮换 private key。
+
+### 6.2 Target policy publication
+
+`POST /api/v1/github-auth-profiles/{key}/policy-updates` 接受且只接受：
+
+```json
+{
+  "base_revision": 2,
+  "target_policy": [{"kind": "organization", "owner": "example-org"}]
+}
+```
+
+`base_revision` 为正整数、表示用户复核的精确 Active Revision。沿用结构化 policy grammar、
+重复/未知字段拒绝、OIDC `auth.read` + `auth.write`、CSRF、If-Match 和 Idempotency-Key；
+Idempotency-Key 沿用既有 mutation 的可选 HTTP 契约，Web UI 每次 publication 必须发送并在同一请求重试时复用。
+不接受 App ID、private key、installation ID 或可变的“latest”来源。
+
+- 接受后返回现有 202 / Profile Change 及新 Candidate Revision，复用同一个 App ID 和
+  指定 base 的完整凭据。后台仍对全部 selector、账号身份、权限、live dependents 做既有
+  v2 验证；通过后原子 promotion/Handoff。即使策略相同，显式 publication 也可重新验证
+  installation；不能把页面打开、GitHub 返回或后台刷新视为 publication。
+- 事务内先按既有边界核对持久幂等记录。相同已接受请求在 activation、head 变化或旧凭据
+  回收后仍可 replay；请求身份包含独立操作种类、base_revision、规范化 policy 和 If-Match，
+  不依赖执行时最新凭据。相同幂等键不同请求拒绝，不与完整 PUT 互相 replay。
+- 新请求须同时满足 head incarnation/desired If-Match、current Active == base_revision、
+  base 格式及凭据可用、Profile 未退休。检查与 base 凭据复制在同一个 SQLite writer
+  transaction 内完成。Active 变化、删除重建、并发 publication 或 credential cleanup
+  不能使请求悄悄使用另一个版本。失败保留原 Profile、凭据与客户端草稿。
+- 沿用原有 400/403/404/409/412/422/428 错误分类；base 不再是 current Active 返回明确冲突，
+  客户端要求重新打开页面复核，不自动换 base、刷新 ETag 或重发。缺少存储凭据不能生成
+  空凭据 Candidate。policy shrink 仍由既有 live-Fleet coverage gate 拒绝。
+
+### 6.3 Dedicated Authentication pages
+
+Authentication 列表和所选连接详情保留在 `/auth?key={key}`。复杂表单使用独立页面：
+
+| 操作 | 页面 | 内容 |
+| --- | --- | --- |
+| Create profile | `/auth/new` | 新 Profile key、App ID、private key 与初始 target policy |
+| Edit target policy | `/auth/{key}/targets/edit` | Active policy、精确 base、typed selectors 与 live-Fleet 影响；不显示或要求 private key |
+| Rotate credential | `/auth/{key}/rotate` | 同一个 App 的新 private key，保留所复核的 Active target policy；不混入策略编辑 |
+
+三个页面都有明确标题、返回/取消和固定可见的提交操作，支持 390px 窄屏。详情页提供
+Re-auth、Edit target policy、Rotate credential，按 scopes、受支持状态和 Active 可用性
+显示可用入口；历史不支持格式没有旧凭据编辑/升级入口。退休确认可以保留现有短对话框。
+
+直接访问、刷新和 OIDC 登录后的 return target 都支持这些精确合法路径。编辑/轮换页面每次
+进入读取并固定新的 resource/Active/ETag snapshot，不继承上次页面或后台 refetch 的旧 base。
+显示 Candidate 状态不能让待验证策略覆盖 Active 编辑起点。读取失败保留明确错误与重试。
+编辑/轮换页面缺少 `auth.read` 或 `auth.write` 时不能借深链接读取材料或提交；创建页面沿用
+现有完整 PUT 的 `auth.write` 权限，不读取已有连接材料。
+
+编辑目标策略提交前始终展示增减与当前 live-Fleet 影响；影响读取失败阻止 publication。
+轮换凭据保留当前明确策略并重新走完整 PUT。422/409/412、网络失败或幂等重试不丢草稿；
+后台刷新不得替换输入、base 或 ETag。跳出页面/取消/成功提交结束该草稿；迟到响应不能导航
+覆盖后来打开的表单。秘密与草稿只留在页面内存，terminal session failure 清除它们。
+成功后返回 `/auth?key={key}` 并显示对应 Change；取消返回列表并保留原连接选中状态。
+
 新增有限 reason codes：`TargetNotAllowed`、`InstallationNotFound`、`InstallationSuspended`、`InstallationChanged`、`TargetIdentityChanged`、`TargetPolicyInUse`、`AmbiguousInstallation`。已有 `Unauthenticated`、`PermissionDenied`、`TargetHiddenOrNotFound`、`RateLimited` 保留。异步失败记录在 Change/status；不能用新 reason 把网络故障伪装为同步 validation 成功。
 
 ## 7. Storage, historical records and rollout
@@ -218,6 +306,9 @@ Indexyz 与 5aaee9 的多账户用例继续按本规范的 v2 policy 执行。�
 | cache scope 与大量仓库 | refresh singleflight；无跨账户/Revision/Target 污染；不把全账户展开进 500-item token 请求 |
 | 旧格式、旧 client 与历史引用 | 旧发布/replay/授权被拒绝；历史记录和执行证据保留，不转换权限或身份；部署前检查引用，见 spec 0018 |
 | UI / sensitive data | 一份凭据、多类型 selector、per-binding 状态与 policy 变更预览；任何读取/错误/日志/审计均无 PEM/token |
+| Re-auth | 点击才读取真实 App 身份并跳转安装页面；401/403/404/409/502/503、恶意 slug/URL、active/candidate 与删除重建竞态均不误跳转或扩大 policy |
+| policy-only publication | 不上传 PEM，精确 base 凭据在事务内复用；base activation 竞态、If-Match、幂等 replay/冲突与旧凭据回收均不改变来源或重复创建 Revision |
+| Authentication 独立页面 | 创建、策略编辑、轮换的直达/刷新/OIDC/返回/取消/迟到响应及 390px 布局通过；策略编辑不出现私钥框，轮换不修改选择器 |
 
 验证必须包含纯匹配/codec tests、真实 SQLite transaction/crash tests、scripted GitHub HTTP（含分页/redirect/限流）、API/UI integration，以及真实 `github.com` 的 App × 多 organization/repository 路由验收。真实服务需验证 Scale Set、session、JIT、inventory、安全 removal，而不只验证 Profile Active。并沿用 exact-pinned Go oracle 的协议差异测试；发布证据记录在 implementation status，不写成未运行的通过声明。
 

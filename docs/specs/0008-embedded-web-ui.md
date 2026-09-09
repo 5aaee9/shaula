@@ -15,6 +15,11 @@ Authentication inventory and detail discovery are specified in
 [spec 0012](0012-github-authentication-inventory.md). Implementation and verification
 status belongs in [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md).
 
+Authentication 创建、目标策略编辑与凭据轮换使用独立页面，列表详情提供 Re-auth 与各操作
+入口。精确路由、草稿生命周期、受保护凭据复用和 OIDC 深链接契约由
+[spec 0011 §6.1–6.3](0011-multi-account-github-authentication.md#61-github-re-auth) 维护；
+不再通过详情页长表单 Modal 完成这些操作。
+
 Fleet Template inputs 的可视化选择、exact Revision 和草稿保留目标见
 [spec 0014](0014-visual-template-inputs.md)；该增量以批准值控件替换 JSON
 textarea，并将全部模板输入（包括可选参数和 presets）直接展示在主表单。

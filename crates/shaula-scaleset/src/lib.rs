@@ -5,6 +5,7 @@
 //! SDK and its `internal/testserver` are differential-test oracles only;
 //! they are neither linked nor shipped.
 
+mod app_installation_link;
 pub mod auth;
 pub mod client;
 pub mod config;

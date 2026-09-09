@@ -30,9 +30,10 @@ for (const canonicalVersion of [true, false]) {
     await page.goto("/auth?key=shared-github");
     await page.getByRole("button", { name: "Rotate credential" }).click();
     await page.getByLabel("Private key (PEM)").fill("-----BEGIN TEST-----");
-    await page.getByRole("dialog").getByRole("button", { name: "Rotate credential" }).click();
+    await page.getByRole("button", { name: "Rotate credential" }).click();
     if (canonicalVersion) {
-      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(page).toHaveURL(/\/auth\?key=shared-github$/);
+      await expect(page.getByRole("form", { name: "Authentication configuration" })).toHaveCount(0);
       expect(writes).toBe(1);
     } else {
       await expect(page.getByRole("alert")).toContainText("resource version is missing");

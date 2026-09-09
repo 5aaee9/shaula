@@ -92,14 +92,15 @@ test("auth creation keeps credentials out of storage and the read model", async 
       json: { changeId: "auth-1", state: "Accepted", revision: 1 },
     });
   });
-  await page.screenshot({ path: "test-results/auth-dialog-mobile.png", fullPage: true });
+  await page.screenshot({ path: "test-results/auth-page-mobile.png", fullPage: true });
   expect(
     await page
-      .getByRole("dialog")
+      .getByRole("form", { name: "Authentication configuration" })
       .evaluate((element) => element.scrollWidth <= element.clientWidth),
   ).toBe(true);
-  await page.getByRole("dialog").getByRole("button", { name: "Create profile" }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Create profile" }).click();
+  await expect(page.getByRole("form", { name: "Authentication configuration" })).toHaveCount(0);
+  await expect(page).toHaveURL(/\/auth\?key=new-auth$/);
   const connection = page.getByRole("row").filter({ hasText: "new-auth" });
   await expect(connection.getByText("Validating", { exact: true })).toBeVisible();
   await expect(connection).toHaveAttribute("data-state", "selected");

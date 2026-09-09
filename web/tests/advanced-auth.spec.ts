@@ -19,28 +19,29 @@ test("additional authentication targets reveal invalid fields and retain scope w
   });
   await page.goto("/auth");
   await page.getByRole("button", { name: "Create profile" }).click();
-  const dialog = page.getByRole("dialog");
-  const advanced = dialog.getByRole("button", { name: "Advanced settings" });
+  await expect(page).toHaveURL(/\/auth\/new$/);
+  const form = page.getByRole("form", { name: "Authentication configuration" });
+  const advanced = form.getByRole("button", { name: "Advanced settings" });
   await expect(advanced).toHaveAttribute("aria-expanded", "false");
-  await expect(dialog.getByRole("button", { name: "Add selector" })).toBeHidden();
-  await dialog.getByLabel("Profile key", { exact: true }).fill("compact-auth");
-  await dialog.getByLabel("App ID", { exact: true }).fill("4863460");
-  await dialog.getByLabel("Private key (PEM)").fill("-----BEGIN TEST-----");
-  await dialog.getByLabel("Owner", { exact: true }).fill("Indexyz");
+  await expect(form.getByRole("button", { name: "Add selector" })).toBeHidden();
+  await form.getByLabel("Profile key", { exact: true }).fill("compact-auth");
+  await form.getByLabel("App ID", { exact: true }).fill("4863460");
+  await form.getByLabel("Private key (PEM)").fill("-----BEGIN TEST-----");
+  await form.getByLabel("Owner", { exact: true }).fill("Indexyz");
   await page.screenshot({
-    path: "test-results/auth-dialog-compact.png",
+    path: "test-results/auth-page-compact.png",
     fullPage: true,
     animations: "disabled",
   });
-  expect(await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  expect(await form.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
   await advanced.click();
-  await dialog.getByRole("button", { name: "Add selector" }).click();
-  await dialog.getByLabel("Selector type").last().selectOption("account_repositories");
-  await dialog.getByLabel("Account type").selectOption("user");
-  const additionalOwner = dialog.getByLabel("Owner", { exact: true }).last();
+  await form.getByRole("button", { name: "Add selector" }).click();
+  await form.getByLabel("Selector type").last().selectOption("account_repositories");
+  await form.getByLabel("Account type").selectOption("user");
+  const additionalOwner = form.getByLabel("Owner", { exact: true }).last();
   await advanced.click();
   await expect(additionalOwner).toBeHidden();
-  await dialog.getByRole("button", { name: "Create profile" }).click();
+  await form.getByRole("button", { name: "Create profile" }).click();
   await expect(advanced).toHaveAttribute("aria-expanded", "true");
   await expect(additionalOwner).toBeVisible();
   await expect(additionalOwner).toBeFocused();
@@ -48,7 +49,7 @@ test("additional authentication targets reveal invalid fields and retain scope w
   // Whitespace-only scope cannot be submitted from a collapsed section either.
   await additionalOwner.fill("   ");
   await advanced.click();
-  await dialog.getByRole("button", { name: "Create profile" }).click();
+  await form.getByRole("button", { name: "Create profile" }).click();
   await expect(advanced).toHaveAttribute("aria-expanded", "true");
   await expect(additionalOwner).toBeVisible();
   await expect(additionalOwner).toBeFocused();
@@ -59,9 +60,10 @@ test("additional authentication targets reveal invalid fields and retain scope w
   await additionalOwner.fill("5aaee9");
   await advanced.click();
   await expect(additionalOwner).toBeHidden();
-  await expect(dialog.getByText("1 additional target: 5aaee9 (user repositories)")).toBeVisible();
-  await dialog.getByRole("button", { name: "Create profile" }).click();
-  await expect(dialog).toHaveCount(0);
+  await expect(form.getByText("1 additional target: 5aaee9 (user repositories)")).toBeVisible();
+  await form.getByRole("button", { name: "Create profile" }).click();
+  await expect(form).toHaveCount(0);
+  await expect(page).toHaveURL(/\/auth\?key=compact-auth$/);
   expect(writes).toBe(1);
   expect(submitted).toEqual({
     kind: "github_app",

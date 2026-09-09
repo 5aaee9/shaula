@@ -1,24 +1,26 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, RotateCw, ShieldCheck, Trash2 } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { Plus, RotateCw, ShieldCheck, SlidersHorizontal, Trash2 } from "lucide-react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api, resourcePath } from "@/lib/api";
 import type { AuthResource, ChangeRef } from "@/lib/types";
 import { selectorLabel } from "@/lib/types";
-import { selectorKey } from "@/lib/auth-policy";
+import { canManageAuthProfile, selectorKey } from "@/lib/auth-policy";
 import { AuthBindings } from "@/components/auth-bindings";
 import { AuthConnections } from "@/components/auth-connections";
 import { Button } from "@/components/ui/button";
 import { ErrorNotice, KeyValue, Loading, StatusBadge } from "@/components/status";
 import { RetireDialog } from "@/components/retire-dialog";
 import { ChangeNotice } from "@/components/change-notice";
-import { AuthForm } from "@/components/auth-form";
+import { AuthReauth } from "@/components/auth-reauth";
 
 export function AuthPage({ scopes }: { scopes: string[] }) {
   const [params, setParams] = useSearchParams();
   const key = params.get("key") || "";
-  const [create, setCreate] = useState(false);
-  const [change, setChange] = useState<ChangeRef | null>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const publication = location.state as { change?: ChangeRef } | null;
+  const [change, setChange] = useState<ChangeRef | null>(publication?.change ?? null);
   return (
     <>
       <div className="page-heading">
@@ -26,7 +28,7 @@ export function AuthPage({ scopes }: { scopes: string[] }) {
           <h1>Authentication</h1>
           <p>GitHub connections, target policies, and validated profile revisions.</p>
         </div>
-        <Button disabled={!scopes.includes("auth.write")} onClick={() => setCreate(true)}>
+        <Button disabled={!scopes.includes("auth.write")} onClick={() => navigate("/auth/new")}>
           <Plus />
           Create profile
         </Button>
@@ -39,15 +41,6 @@ export function AuthPage({ scopes }: { scopes: string[] }) {
           <AuthConnections selectedKey={key} onSelect={(value) => setParams({ key: value })} />
           {key && <AuthDetails key={key} profileKey={key} scopes={scopes} onAccepted={setChange} />}
         </>
-      )}
-      {create && (
-        <AuthForm
-          onClose={() => setCreate(false)}
-          onAccepted={(value) => {
-            setChange(value);
-            setParams({ key: value.resource });
-          }}
-        />
       )}
     </>
   );
@@ -68,10 +61,11 @@ function AuthDetails({
     refetchInterval: 10_000,
   });
   const [retire, setRetire] = useState(false);
-  const [rotate, setRotate] = useState(false);
+  const navigate = useNavigate();
   if (query.isPending) return <Loading />;
   if (query.error) return <ErrorNotice error={query.error} retry={() => void query.refetch()} />;
   const { data } = query.data;
+  const canManage = scopes.includes("auth.write") && canManageAuthProfile(data);
   return (
     <section className="details-section">
       <div className="section-heading">
@@ -79,20 +73,28 @@ function AuthDetails({
           <ShieldCheck className="size-5 shrink-0 text-emerald-600" />
           {profileKey}
         </h2>
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={
-              !scopes.includes("auth.write") ||
-              data.schema_version !== 2 ||
-              data.status === "Unsupported"
-            }
-            onClick={() => setRotate(true)}
-          >
-            <RotateCw />
-            Rotate credential
-          </Button>
+        <div className="flex min-w-0 flex-wrap gap-2">
+          {canManage && (
+            <>
+              <AuthReauth profile={data} />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => navigate(`/auth/${encodeURIComponent(profileKey)}/targets/edit`)}
+              >
+                <SlidersHorizontal />
+                Edit target policy
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => navigate(`/auth/${encodeURIComponent(profileKey)}/rotate`)}
+              >
+                <RotateCw />
+                Rotate credential
+              </Button>
+            </>
+          )}
           <Button
             variant="outline"
             size="icon"
@@ -104,6 +106,12 @@ function AuthDetails({
           </Button>
         </div>
       </div>
+      {canManage && (
+        <p className="mb-5 text-sm text-muted-foreground">
+          Re-auth opens GitHub to install this App on more accounts. After returning, edit the
+          target policy to enable those targets.
+        </p>
+      )}
       <dl className="details-grid">
         <KeyValue label="Status">
           <StatusBadge value={data.status} />
@@ -171,9 +179,6 @@ function AuthDetails({
           onClose={() => setRetire(false)}
           onAccepted={onAccepted}
         />
-      )}
-      {rotate && (
-        <AuthForm resource={query.data} onClose={() => setRotate(false)} onAccepted={onAccepted} />
       )}
     </section>
   );

@@ -86,7 +86,7 @@ test("typed v2 preview distinguishes org runners from the same org repositories 
     }),
   );
   await page.goto("/auth?key=shared-github");
-  await page.getByRole("button", { name: "Rotate credential" }).click();
+  await page.getByRole("button", { name: "Edit target policy" }).click();
   await page.getByLabel("Selector type").first().selectOption("account_repositories");
   await page.getByLabel("Account type").first().selectOption("organization");
   const preview = page.getByRole("region", { name: "Policy change preview" });
@@ -100,7 +100,7 @@ test("typed v2 preview distinguishes org runners from the same org repositories 
   await expect(page.getByRole("button", { name: "Publish policy" })).toBeEnabled();
 });
 
-test("policy rotation previews retained targets and refreshes impact without discarding form edits", async ({
+test("policy editing previews retained targets and refreshes impact without discarding form edits", async ({
   page,
 }) => {
   await mockApi(page);
@@ -123,14 +123,14 @@ test("policy rotation previews retained targets and refreshes impact without dis
     });
   });
   await page.goto("/auth?key=shared-github");
-  await page.getByRole("button", { name: "Rotate credential" }).click();
+  await page.getByRole("button", { name: "Edit target policy" }).click();
   const preview = page.getByRole("region", { name: "Policy change preview" });
   await expect(preview.getByText(/retained-dependent.*Remains covered/)).toBeVisible();
   await page.getByRole("button", { name: "Add selector" }).click();
   await page.getByLabel("Owner").last().fill("other-org");
   dependentAdded = true;
   await expect(preview.getByText(/new-dependent.*Remains covered/)).toBeVisible({ timeout: 8_000 });
-  await expect(page.getByLabel("App ID")).toHaveValue("4863460");
+  await expect(page.getByLabel("App ID", { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Owner").last()).toHaveValue("other-org");
   await expect(preview.getByText("other-org (org runners)", { exact: true })).toBeVisible();
 });
@@ -146,10 +146,8 @@ test("impact read failure is explicit and cannot be presented as no live depende
     route.fulfill({ status: 500, json: { code: "Internal", detail: "Unavailable" } }),
   );
   await page.goto("/auth?key=shared-github");
-  await page.getByRole("button", { name: "Rotate credential" }).click();
-  await expect(
-    page.getByRole("dialog").getByRole("button", { name: "Rotate credential" }),
-  ).toBeDisabled();
+  await page.getByRole("button", { name: "Edit target policy" }).click();
+  await expect(page.getByRole("button", { name: "Publish policy" })).toBeDisabled();
   await expect(page.getByText("No live Fleets reference this profile.")).toHaveCount(0);
   await expect(page.getByText(/Fleet impact is unavailable/)).toBeVisible({ timeout: 10_000 });
 });

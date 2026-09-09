@@ -63,6 +63,8 @@ mod control_plane_store;
 
 #[path = "commits.rs"]
 mod commits;
+mod commits_auth;
+mod commits_auth_policy;
 
 #[path = "commits_fleet.rs"]
 mod commits_fleet;

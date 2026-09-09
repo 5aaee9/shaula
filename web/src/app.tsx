@@ -19,6 +19,7 @@ import { TemplatesPage } from "@/pages/templates";
 import { TemplatePublishPage } from "@/pages/template-publish";
 import { TemplateUpdatePage } from "@/pages/template-update";
 import { AuthPage } from "@/pages/auth";
+import { AuthManagePage } from "@/pages/auth-manage";
 import { ChangesPage } from "@/pages/changes";
 import { JobsPage } from "@/pages/jobs";
 import { JobDetail } from "@/pages/job-detail";
@@ -108,6 +109,18 @@ export function App() {
                   element={<TemplatePublishPage key="revision" scopes={scopes} />}
                 />
                 <Route path="/auth" element={<AuthPage scopes={scopes} />} />
+                <Route
+                  path="/auth/new"
+                  element={<AuthManagePage key="create" mode="create" scopes={scopes} />}
+                />
+                <Route
+                  path="/auth/:key/targets/edit"
+                  element={<AuthManagePage key="policy" mode="policy" scopes={scopes} />}
+                />
+                <Route
+                  path="/auth/:key/rotate"
+                  element={<AuthManagePage key="rotate" mode="rotate" scopes={scopes} />}
+                />
                 <Route path="/changes" element={<ChangesPage scopes={scopes} />} />
                 <Route
                   path="*"

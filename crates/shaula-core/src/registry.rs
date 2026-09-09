@@ -314,7 +314,8 @@ pub use input_contract::{
     InputContractProjection, InputContractReadError, InputField, InputOption, TemplateInputContract,
 };
 pub use profile_port::{
-    AttestationView, AuthRevisionView, IdempotencyLookup, ProfileRegistryPort, TemplateRevisionView,
+    AttestationView, AuthPolicyUpdate, AuthRevisionView, IdempotencyLookup, ProfileRegistryPort,
+    TemplateRevisionView,
 };
 
 /// Liveness/readiness source.

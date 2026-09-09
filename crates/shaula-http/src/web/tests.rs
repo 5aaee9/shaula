@@ -30,6 +30,9 @@ async fn web_tests_embedded_document_and_deep_link() -> TestResult {
         "/templates/linux-build/update",
         "/templates/linux-x64.1_a/update",
         "/auth",
+        "/auth/new",
+        "/auth/shared-github/targets/edit",
+        "/auth/shared-github/rotate",
         "/changes",
         "/jobs",
         "/jobs/job-1",
@@ -78,6 +81,13 @@ async fn web_tests_missing_assets_api_and_methods_are_not_html() -> TestResult {
         "/templates/%2e%2e/update",
         "/templates/a/b/update",
         "/templates/linux-build/update/",
+        "/auth/shared-github",
+        "/auth/new/extra",
+        "/auth//targets/edit",
+        "/auth/../targets/edit",
+        "/auth/%2e%2e/targets/edit",
+        "/auth/a/b/rotate",
+        "/auth/shared-github/rotate/",
     ] {
         assert_eq!(
             request(path, Method::GET).await?.status(),
@@ -96,6 +106,9 @@ async fn web_tests_template_publication_head_and_post() -> TestResult {
         "/templates/new",
         "/templates/linux-build/revisions/new",
         "/templates/linux-build/update",
+        "/auth/new",
+        "/auth/shared-github/targets/edit",
+        "/auth/shared-github/rotate",
     ] {
         let response = request(path, Method::HEAD).await?;
         assert_eq!(response.status(), StatusCode::OK);

@@ -272,6 +272,8 @@ mod profile_attestation;
 
 #[path = "service_auth.rs"]
 mod auth;
+#[path = "service_auth_policy.rs"]
+mod auth_policy;
 #[path = "service_profile_conditions.rs"]
 mod profile_conditions;
 #[path = "service_profile_retirement.rs"]

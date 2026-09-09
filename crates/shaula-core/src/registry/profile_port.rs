@@ -8,6 +8,13 @@ use crate::registry::{
     MutationError, TemplateProfilePut, TemplateProfileUpdate, TemplateProfileView,
 };
 
+/// Explicit policy publication reusing the reviewed current Active credential.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AuthPolicyUpdate {
+    pub base_revision: i64,
+    pub target_policy: Vec<crate::auth_policy::TargetSelector>,
+}
+
 /// Read model of ONE immutable Template Revision (R10-05).
 #[derive(Debug, Clone)]
 pub struct TemplateRevisionView {
@@ -140,6 +147,16 @@ pub trait ProfileRegistryPort: Send + Sync {
         key: &str,
         payload: AuthProfilePut,
         if_none_match: bool,
+        if_match: Option<(String, i64)>,
+        idempotency_key: Option<String>,
+    ) -> CoreResult<Result<MutationAccepted, MutationError>>;
+
+    /// Publishes a Candidate from the exact Active base in one storage transaction.
+    async fn auth_policy_update(
+        &self,
+        actor: &Actor,
+        key: &str,
+        payload: AuthPolicyUpdate,
         if_match: Option<(String, i64)>,
         idempotency_key: Option<String>,
     ) -> CoreResult<Result<MutationAccepted, MutationError>>;

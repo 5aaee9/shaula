@@ -155,6 +155,18 @@ impl ProfileRegistryPort for ControlPlane {
         .await
     }
 
+    async fn auth_policy_update(
+        &self,
+        actor: &Actor,
+        key: &str,
+        payload: shaula_core::registry::AuthPolicyUpdate,
+        if_match: Option<(String, i64)>,
+        idempotency_key: Option<String>,
+    ) -> CoreResult<Result<MutationAccepted, MutationError>> {
+        self.auth_policy_update_impl(actor, key, payload, if_match, idempotency_key)
+            .await
+    }
+
     /// R10-05: read model of ONE immutable Auth Revision — credential
     /// bytes excluded by construction.
     async fn auth_revision_get(

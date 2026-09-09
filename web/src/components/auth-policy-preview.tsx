@@ -36,7 +36,7 @@ export function AuthPolicyPreview({
         </div>
       ))}
       {!difference.added.length && !difference.removed.length && (
-        <p>Target policy unchanged; this publishes a credential rotation.</p>
+        <p>Target policy unchanged; these targets will be validated again.</p>
       )}
       <h4 className="font-medium">Live Fleet impact</h4>
       {loading ? (

@@ -57,8 +57,16 @@ _Avoid_: App identity, personal login session, all App installations
 _Avoid_: GitHub token, inline credential, fallback chain
 
 **GitHub Auth Revision**:
-一个 GitHub Auth Profile 下不可变的 credential 版本；Profile 的 active head 指向通过验证后供 Fleet 使用的 Revision。
+一个 GitHub Auth Profile 下固定凭据、Target policy 与已验证安装关系的不可变版本；Profile 的 active head 指向通过验证后供 Fleet 使用的 Revision。
 _Avoid_: Fleet Revision, installation token, mutable secret
+
+**GitHub Re-auth**:
+由 Operator 在 GitHub 管理同一 App 的账户安装与授权的操作；它本身不改变 Shaula 的 Target policy。
+_Avoid_: OIDC login, credential rotation, automatic policy expansion
+
+**Target Policy Update**:
+保留明确选定 Auth Revision 的 App 身份和凭据，显式发布新的 Target selector 集合；新策略通过验证后才供 Fleet 使用。
+_Avoid_: Credential rotation, installation discovery, in-place policy edit
 
 **GitHub Auth Revision Ref**:
 Fleet 对一个精确 GitHub Auth credential 的完整引用 `(profile_key, revision)`；desired 与 observed 必须始终作为完整 tuple 比较、持久化和释放。

@@ -186,6 +186,37 @@ fn oidc_tests_jobs_return_targets_preserve_filters_only_on_valid_documents() {
 }
 
 #[test]
+fn oidc_tests_auth_edit_return_targets_require_exact_valid_routes() {
+    for target in [
+        "/auth/new",
+        "/auth/shared-github/targets/edit",
+        "/auth/org_1.test/targets/edit",
+        "/auth/shared-github/rotate",
+        "/auth?key=shared-github",
+    ] {
+        assert_eq!(crate::oidc::login::return_target(Some(target)), target);
+    }
+    for target in [
+        "/auth/new/extra",
+        "/auth//targets/edit",
+        "/auth/./targets/edit",
+        "/auth/../rotate",
+        "/auth/%2e%2e/rotate",
+        "/auth/with%20space/rotate",
+        "/auth/a/b/targets/edit",
+        "/auth/shared-github/rotate/",
+        "/auth/shared-github/targets/edit?return_to=https://evil.example",
+    ] {
+        assert_eq!(crate::oidc::login::return_target(Some(target)), "/fleets");
+    }
+    let oversized_key = format!("/auth/{}/rotate", "a".repeat(129));
+    assert_eq!(
+        crate::oidc::login::return_target(Some(&oversized_key)),
+        "/fleets"
+    );
+}
+
+#[test]
 fn oidc_tests_refreshable_idle_expiry_requires_renewal_without_local_logout() {
     use crate::oidc::session_refresh::Admission;
     let mut store = Sessions::default();

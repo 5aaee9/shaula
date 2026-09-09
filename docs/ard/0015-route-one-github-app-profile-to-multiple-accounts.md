@@ -20,6 +20,30 @@ date: 2026-09-07
 - 保留完整 Auth Revision Ref，并给 Fleet/session/effect 增加 exact Resolved Auth Context。复用原来的 quiesce、ownership proof、CAS、cleanup retention 与 ordinary reconcile 边界。
 - 活跃配置的健康度按 installation/Target 隔离；一个账户故障不应停止其他账户。Profile publication 的原子性不等于 runtime failure domain 必须扩大到整个 Profile。
 
+### 2026-09-09 amendment: Re-auth and explicit policy editing
+
+Authentication 提供三个明确的管理动作：Re-auth 在 GitHub 管理同一 App 的安装；
+Edit target policy 发布新的 Shaula selector 集合；Rotate credential 更换同一 App 的私钥。
+GitHub 安装与 Shaula 准入有不同的授权主体，不能把安装完成或回调参数解释为策略批准。
+Re-auth 只按点击读取 current Active App 的身份并构造固定 GitHub 安装链接；它不创建
+新的 Auth Revision，也不扩大或刷新持久 bindings。
+
+目标策略编辑通过独立 publication 命令复用用户明确指定的 Active base 凭据。完整 PUT
+仍要求 private key，不新增空字符串、脱敏占位符或隐式 latest-copy 语义。SQLite publication
+事务同时验证 head If-Match 与 Active base，并复制精确凭据；这样既避免重新上传私钥，
+也不会在 Candidate 并发 activation 时混用版本。新 Candidate 继续使用原有 validator、
+live-Fleet coverage gate、promotion 和 Handoff，幂等重放不依赖尚存的旧凭据。
+
+创建、编辑策略、轮换使用独立页面，详情作为入口保留在 Authentication 列表。页面路由
+拥有表单生命周期，移除详情页管理长表单弹窗的 open/close 状态；共用表单布局、typed
+selector、impact preview 与既有条件发布基础设施。凭据来源检查和存储事务是必须保留的
+边界，不通过通用 workflow 框架或第二套 Candidate 状态机来“简化”。具体 API、路径、
+错误与验收唯一维护于 [spec 0011 §6](../specs/0011-multi-account-github-authentication.md#6-http-and-ui-contract)。
+
+未采用的方案：要求每次改策略都重新输入私钥，会把策略管理与凭据分发耦合；GitHub 安装
+后自动加入全部组织，会绕过明确 selector 授权；在普通 PUT 中省略私钥并复制最新版本，
+会使旧协议与重试语义依赖可变状态；三个独立表单实现会复制校验、草稿和提交逻辑。
+
 ## Considered options
 
 | 方案 | 代价与选择 |

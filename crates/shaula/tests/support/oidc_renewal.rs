@@ -24,6 +24,7 @@ impl Harness {
         let (_, _, _, service) = common::build_app_with_service().await;
         let artifact_root = tempfile::tempdir().unwrap().keep();
         let app = shaula_http::router::build_router(shaula_http::router::AppState {
+            auth_installation_link: None,
             fleets: service.clone(),
             profiles: service.clone(),
             health: service,

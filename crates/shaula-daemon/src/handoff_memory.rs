@@ -310,6 +310,14 @@ impl ControlPlaneStore for MemoryStore {
     ) -> CoreResult<Result<(), shaula_core::registry::MutationError>> {
         Ok(Ok(()))
     }
+    async fn commit_auth_policy_update(
+        &self,
+        _facts: shaula_core::registry::MutationFacts,
+        _base_revision: i64,
+        _policy_json: String,
+    ) -> CoreResult<Result<shaula_core::registry::MutationAccepted, MutationError>> {
+        Ok(Err(MutationError::NotFound))
+    }
     async fn attestation_get(
         &self,
         _profile_key: &str,

@@ -48,7 +48,7 @@ test("unsupported authentication remains visible without rotation or upgrade", a
   );
   await page.goto("/auth?key=old-auth");
   await expect(page.getByText("Unsupported", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Rotate credential" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Rotate credential" })).toHaveCount(0);
   await expect(page.getByLabel("Upgrade to multi-account policy")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Retire authentication profile" })).toBeEnabled();
 });
@@ -76,5 +76,5 @@ test("all auth surfaces need the auth.write scope to publish", async ({ page }) 
   const readOnly = scopes.filter((scope) => scope !== "auth.write");
   await mockApi(page, readOnly);
   await page.goto("/auth?key=shared-github");
-  await expect(page.getByRole("button", { name: "Rotate credential" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Rotate credential" })).toHaveCount(0);
 });

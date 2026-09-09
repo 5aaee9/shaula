@@ -35,7 +35,7 @@ test("Provider renewal preserves the same page and draft through rotation and ID
   // Real server clock: expire the two-second lease, then issue ordinary browser requests.
   await page.waitForTimeout(2100);
   const refreshed = page.waitForResponse("**/api/v1/github-auth-profiles");
-  // The credential Dialog stays mounted while these requests renew the session.
+  // The credential page stays mounted while these requests renew the session.
   const sessionResult = await page.evaluate(async () => {
     const responses = await Promise.all([
       fetch("/api/v1/session"),

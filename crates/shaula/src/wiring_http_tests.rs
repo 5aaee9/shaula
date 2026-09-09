@@ -6,6 +6,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use super::wiring_tests::{test_plane, tick_and_drain, wiring_with, TestPlane};
+use crate::http_oidc;
 use axum::body::Body;
 use axum::http::Request;
 use shaula_core::registry::ControlPlaneStore;
@@ -13,9 +14,6 @@ use shaula_daemon::service::ControlPlane;
 use shaula_http::router::AppState;
 use std::sync::Arc;
 use tower::ServiceExt;
-/// The HTTPS identity-provider fixture used by every control-plane test.
-#[path = "../../shaula-http/tests/support/mod.rs"]
-mod http_oidc;
 
 use crate::auth_worker_v2::tests::KEY;
 
@@ -84,6 +82,7 @@ async fn http_app(control_plane: &TestPlane) -> axum::Router {
     ));
     service.set_ready(true);
     shaula_http::router::build_router(AppState {
+        auth_installation_link: None,
         fleets: service.clone(),
         profiles: service.clone(),
         health: service,

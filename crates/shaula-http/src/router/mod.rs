@@ -2,9 +2,11 @@
 //! context, authorization scopes, conditional writes and idempotency
 //! headers before delegating to registry ports.
 
+pub mod auth_installation_link;
 pub mod fleet_routes;
 mod input_contract;
 mod jobs;
+mod profile_auth_policy;
 pub mod profile_auth_reads;
 pub mod profile_reads;
 pub mod profile_routes;
@@ -40,6 +42,7 @@ pub struct AppState {
     pub request_body_limit: usize,
     /// Content-addressed artifact publisher (digest-addressed uploads).
     pub artifact_publisher: Arc<dyn ArtifactPublisher>,
+    pub auth_installation_link: Option<Arc<dyn auth_installation_link::AuthInstallationLinkPort>>,
     pub jobs: Option<Arc<dyn shaula_core::jobs::JobsReadPort>>,
     pub logs: Option<Arc<dyn shaula_core::operation_log::OperationLogReadPort>>,
 }
@@ -274,6 +277,14 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/github-auth-profiles/{profileKey}/impact",
             get(profile_auth_reads::auth_profile_impact),
+        )
+        .route(
+            "/api/v1/github-auth-profiles/{profileKey}/installation-link",
+            get(auth_installation_link::get),
+        )
+        .route(
+            "/api/v1/github-auth-profiles/{profileKey}/policy-updates",
+            post(profile_auth_policy::auth_policy_update),
         )
         .route(
             "/api/v1/github-auth-profiles/{profileKey}/revisions/{revision}",

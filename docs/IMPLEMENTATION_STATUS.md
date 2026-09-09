@@ -16,6 +16,62 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Authentication management pages and focused simplification (2026-09-09)
+
+[Spec 0011 §6](specs/0011-multi-account-github-authentication.md#6-http-and-ui-contract)
+and the [ARD-0015 amendment](ard/0015-route-one-github-app-profile-to-multiple-accounts.md)
+define on-demand Re-auth, explicit policy publication using the reviewed Active
+credential, and standalone create/policy/rotation pages. The local implementation
+keeps the overview and selected connection at `/auth?key=...`.
+
+The focused `simplify-codebase` change covers the Auth UI → protected HTTP routes →
+Profile Registry → SQLite Candidate writer, plus the separate read-only GitHub App
+adapter. Public full PUT, immutable revisions, the validation worker, activation and
+runtime Handoff remain supported consumers. Real GitHub installation and production
+deployment are outside this local verification boundary.
+
+| Finding / disposition | Proof and consequence |
+| --- | --- |
+| S1 — remove modal lifetime ownership | `web/src/pages/auth.tsx` was the only production owner of create/rotate modal flags; `auth-form.tsx` owned an additional resource snapshot and inferred rotation from policy differences. Standalone routes now own lifetime, one shared form has explicit create/policy/rotate modes, and policy inputs use Active metadata. The cut removes both modal flags, the extra snapshot and inferred operation; it deliberately replaces long-form modals, preserves the overview, and leaves the short retirement dialog supported. Consumer tests now enter through routes and check fresh snapshots, draft retention, secret disposal and late responses. Confidence: high; risk is navigation/draft behavior, reversible in source. Topology: these direct React consumers, no dynamic registry. |
+| S2 — keep one Candidate writer | `commits.rs` previously owned the complete Auth revision/change/audit/outbox/idempotency transaction. Both full PUT and policy updates now call `commits_auth.rs::commit_auth_candidate`; `commits_auth_policy.rs` adds only replay and exact Active credential-source checks before that same writer. This prevents two publication protocols from drifting. Existing PUT identity and persistence remain unchanged; the new policy operation has its own request identity and audit action. Atomicity, credential-copy, stale-base and accepted-replay tests are the decisive checks. Confidence: high; risk is transactional publication. No schema migration or dependency is added. Topology: the two admission paths converge on one SQLite writer. |
+| S3 — retain trust and concurrency boundaries | The installation-link port remains separate from Profile Registry publication because it performs credential-bearing outbound GitHub reads. App identity/slug checks, redirect refusal, response sanitization, scopes/CSRF, desired-head CAS, Active-base checks and replay-before-credential-read have real external or concurrent consumers. Removing them would surrender authorization or retry guarantees; the candidate is rejected. Adapter and HTTP/SQLite race tests exercise those boundaries. Confidence: high; GitHub's live account chooser remains externally unverified. |
+
+Operation receipt: scope is this Auth management increment, based on the existing
+implementation at `7b3a0b9`; unrelated Proxmox work at `5f5cab2` is preserved.
+No new pre-change full-suite run was taken for the simplification; prior results
+below are historical, and the feature-specific and repository checks for this
+increment are recorded separately. Changed artifacts are the linked contract and
+glossary, Auth page/form/API consumers, Rust route/adapter/publication modules and
+their tests. Net structural effect: two modal flags and one duplicate snapshot are
+removed, one shared form and one Candidate transaction remain, and the requested
+features add a route page and two endpoints. This is not a claim of reduced total
+LOC. There is no new workflow framework, package, migration or persisted format.
+Undo consists of reversing this increment's source diff, preserving other work;
+no production configuration, database or GitHub installation needs restoration.
+
+Verification passed for this increment:
+
+| Layer | Command / evidence | Result |
+| --- | --- | --- |
+| Residue / structure | Search Auth page/form for modal flags, duplicate snapshot and Candidate policy seed; search both publication callers for `commit_auth_candidate`; `git diff --check` | Removed paths absent, one shared writer, clean diff; every Rust file is at most 400 physical lines |
+| Narrow behavior | New installation-link adapter and real protected HTTP/SQLite tests; policy publication, concurrency, rollback, replay-after-cleanup and HTTP → v2 validator → activation tests | Passed; no PEM in policy payload, exact stored credential copied, old revision preserved, link reads leave durable state unchanged |
+| Rust formatting / lint | `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Passed |
+| Rust workspace | `cargo nextest run --manifest-path Cargo.toml --workspace --no-fail-fast --status-level fail --final-status-level fail` | 681 passed, 2 platform-specific tests skipped |
+| Literal AGENTS filter | `cargo nextest run --manifest-path Cargo.toml --workspace test --status-level fail --final-status-level fail` | 546 passed, 137 filtered/platform tests skipped |
+| Web build / lint / changed-file format | From `web`: `npm run build`, `npm run lint`, `oxfmt --check` on the 19 changed TypeScript files | Passed; Vite retains its bundle-size advisory |
+| Component browser suite | From `web`: `npm test -- --workers=6` | 163 passed; fresh 390px create/policy/action renders inspected |
+| Real HTTPS/OIDC browser suite | From `web`: `npm run test:oidc` | 8 passed, including the three new protected deep links and draft-preserving renewal |
+| Independent reviews | UI against §6.1–6.3 and backend publication against §6.2, reviewed by agents who did not implement those surfaces | No actionable findings |
+
+The first broad browser run found two obsolete modal test selectors; those now
+assert standalone navigation and the final suite passes. Running the filtered Rust
+suite while the OIDC fixture held its Windows executable caused a linker lock;
+rerunning after the fixture stopped passed. A whole-Web formatting probe reports
+10 unchanged files with existing style differences; this increment's 19 files pass
+the scoped formatter. No production deployment or real GitHub installation has
+been performed by this change. Local mocks verify GitHub protocol boundaries,
+not account installation acceptance or live Fleet behavior after authorization.
+
 ## Proxmox runner template (2026-09-09)
 
 [Spec 0022](specs/0022-proxmox-runner-template.md) and

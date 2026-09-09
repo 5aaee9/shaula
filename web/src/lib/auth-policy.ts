@@ -1,4 +1,19 @@
-import type { GitHubTarget, TargetSelector } from "./types";
+import type { AuthResource, GitHubTarget, TargetSelector } from "./types";
+
+/** Management uses the validated Active revision, never a Candidate. */
+export function canManageAuthProfile(profile: AuthResource): boolean {
+  return (
+    profile.schema_version === 2 &&
+    profile.kind === "github_app" &&
+    profile.credential_present &&
+    ["Active", "Validating"].includes(profile.status) &&
+    !!profile.activeRevision &&
+    profile.active?.revision === profile.activeRevision &&
+    profile.active.schema_version === 2 &&
+    profile.active.state === "Active" &&
+    !!profile.active.app_id
+  );
+}
 
 export type SelectorRow = {
   kind: TargetSelector["kind"];

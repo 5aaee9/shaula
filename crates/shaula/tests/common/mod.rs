@@ -133,6 +133,7 @@ async fn build_app_inner() -> (
     let service_for_return = Arc::clone(&service);
 
     let router = shaula_http::router::build_router(shaula_http::router::AppState {
+        auth_installation_link: None,
         fleets: service.clone(),
         profiles: service.clone(),
         health: service,

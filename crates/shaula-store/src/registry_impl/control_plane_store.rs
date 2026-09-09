@@ -372,6 +372,15 @@ impl ControlPlaneStore for SqliteControlPlane {
         self.attestation_lookup(profile_key, revision, attestation_key)
             .await
     }
+    async fn commit_auth_policy_update(
+        &self,
+        facts: MutationFacts,
+        base_revision: i64,
+        policy_json: String,
+    ) -> CoreResult<Result<shaula_core::registry::MutationAccepted, MutationError>> {
+        self.commit_auth_policy_update_impl(facts, base_revision, policy_json)
+            .await
+    }
     async fn commit_attestation(
         &self,
         record: AttestationRecord,

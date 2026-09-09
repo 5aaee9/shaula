@@ -71,6 +71,7 @@ fn digest(pair: &str) -> String {
 async fn app(library: Arc<Library>) -> Router {
     let (_, _, _, service) = common::build_app_with_service().await;
     shaula_http::router::build_router(AppState {
+        auth_installation_link: None,
         fleets: service.clone(),
         profiles: service.clone(),
         health: service,
