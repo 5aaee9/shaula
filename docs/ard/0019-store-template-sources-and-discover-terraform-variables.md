@@ -19,6 +19,9 @@ Template archive bytes 与 Profile 数据共同持久化到 SQLite，文件系�
 数据库来源库后，publisher 再冻结 bindings 和 input policy，仍通过原静态验证和 conformance
 门禁，可保留现有部署的控制权，也不需要替 Kubernetes 环境猜测凭据。
 
+来源库的首次 seed 策略已由 [ARD-0025](0025-sync-default-templates-and-explicitly-update-published-revisions.md)
+修订为每次启动同步当前默认目录；Profile 的发布、配置冻结与独立生命周期继续保留。
+
 默认值复制到 manifest/schema 容易与 Terraform `try(...)` 失配。采用 HCL AST 读取类型声明
 中的 `optional(type, default)`，把同一声明同时交给 Terraform 和 discovery 使用；schema
 保留批准范围、说明和敏感字段约束，发布发现时检查一致性。这样不需要执行任意表达式来发现

@@ -109,17 +109,18 @@ and `execution.engines`; use `stateDirectory` and `terraformPackage` instead.
 
 The package also installs default Docker and Kubernetes template sources under
 `share/shaula/templates`. `services.shaula.templateSourceDirectories` defaults to
-that package directory; set it to `[]` to disable startup import, or provide trusted
+that package directory; set it to `[]` for an empty default catalog, or provide trusted
 absolute source directories whose direct children contain template modules. Outside
 NixOS, the equivalent bootstrap setting is `template_source_dirs` (default `[]`).
-Missing directories add no new sources; other read or validation errors fail startup.
+Missing configured directories and read or validation errors fail startup and preserve
+the previous source catalog. An explicit empty directory list clears the default catalog.
 
-Sources are imported once per source key into SQLite. Rebuilding the package or
-removing an import directory does not overwrite the database selection or publish
-a Profile. Select a source in **Templates → Default templates** to inspect its
-Terraform declarations, configure bindings and publish normally. New source contents
-can still be adopted explicitly through archive upload. Import does not supply a
-conformance attestation or activate a Runner template.
+At startup, the complete configured source set atomically replaces the SQLite default
+catalog after validation. Stable source keys follow the current package; obsolete entries
+are removed. This updates the starting points, while published revisions and their archives
+remain immutable. Select **Use template** to publish a Profile, or **Update from default**
+on a published template to review a new revision while retaining its bindings. Existing
+Fleet pins change only through explicit Fleet editing. See [spec 0021](specs/0021-default-template-updates.md).
 
 SQLite now owns complete immutable template archives, including migrated original
 archive sidecars. The execution cache is verified against those bytes and can be

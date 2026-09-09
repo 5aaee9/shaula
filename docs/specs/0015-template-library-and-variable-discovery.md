@@ -29,9 +29,10 @@ Template Source、Template Artifact 和已发布 Template Profile 的区别见
   Terraform source、lock 和 schemas；默认包与上传包经过相同安全检查。目录不来自浏览器输入。
   文件打包顺序和 metadata 规范化，使相同内容产生稳定 digest；拒绝 symlink/reparse point，
   不导入 `.git`、`.terraform`、state、tfvars、image build context 或凭据文件。
-- 默认来源用稳定 key 登记到数据库。重复启动不增加 Profile Revision、Change 或 Active；
-  已登记 source key 保留数据库中的 digest，软件升级不静默覆盖它。新版本仍可通过显式
-  archive 发布流程采用。删除来源目录不会删除数据库中的来源或已发布模板。
+- 默认来源用稳定 key 登记到数据库，启动时按完整可信目录集合原子同步；同 key 跟随当前
+  内容更新，撤下的入口从来源列表移除。重复启动不增加 Profile Revision、Change 或 Active。
+  失败保留原列表，历史 archive 和已发布模板独立保留；完整契约与显式 Update 流程见
+  [spec 0021](0021-default-template-updates.md)。
 - Nix package 安装 bundled sources，NixOS module 配置对应只读路径。未配置目录的其他
   部署继续接受 HTTP 上传，不依赖运行时源码 checkout。
 

@@ -120,6 +120,10 @@ The versioned `shaula-profile` manifest inside the artifact is the sole authorit
 
 A Profile incarnation fixes its manifest-derived `platform` and `bindings_contract`. Changing from Kubernetes to Docker, or to an incompatible bindings contract version, requires a new Profile key. Compatible artifact, binding or bounded-input-policy changes create Candidate Revisions under the same key.
 
+Explicit `POST /template-profiles/{profileKey}/updates` reuses bindings and, by default, input policy
+from the exact immutable base identified by `If-Match`. It enters this same conditional publication
+path; request identity, redaction and UI review follow [spec 0021](0021-default-template-updates.md).
+
 Asynchronous static validation：
 
 1. Re-open the already published artifact by digest.

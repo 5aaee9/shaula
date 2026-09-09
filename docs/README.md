@@ -35,6 +35,7 @@
 | 官方容器镜像、宿主 bootstrap 与启动门槛 | [spec 0020](specs/0020-official-container-runner-bootstrap.md) / [ARD-0024](ard/0024-bootstrap-official-runner-images-outside-containers.md) |
 | Fleet Template inputs 可视化编辑 | [spec 0014](specs/0014-visual-template-inputs.md) / [ADR-0018](ard/0018-render-fleet-inputs-from-approved-template-options.md) |
 | 数据库模板库、默认文件导入与 Terraform 变量发现 | [spec 0015](specs/0015-template-library-and-variable-discovery.md) / [ARD-0019](ard/0019-store-template-sources-and-discover-terraform-variables.md) |
+| 内置模板同步与已发布模板 Update | [spec 0021](specs/0021-default-template-updates.md) / [ARD-0025](ard/0025-sync-default-templates-and-explicitly-update-published-revisions.md) |
 | Fleet authentication/template Profile 服务端列表选择 | [spec 0016](specs/0016-fleet-profile-selection.md) / [ARD-0020](ard/0020-load-fleet-profile-choices-from-registry.md) |
 | Template 静态校验后的自动激活与旧 Ready 升级 | [spec 0017](specs/0017-automatic-template-activation.md) / [ARD-0021](ard/0021-activate-templates-after-static-validation.md) |
 | 仅支持 v2 GitHub App authentication、历史格式停用与部署检查 | [spec 0018](specs/0018-github-app-only-authentication.md) / [ARD-0022](ard/0022-retire-legacy-github-authentication.md) |
