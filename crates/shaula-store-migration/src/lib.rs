@@ -12,6 +12,7 @@ pub mod m0007_http_state;
 pub mod m0008_auth_multi_account;
 pub mod m0009_auth_execution_contexts;
 pub mod m0010_template_library;
+pub mod m0011_listener_messages;
 
 use sea_orm_migration::prelude::*;
 
@@ -33,6 +34,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0008_auth_multi_account::Migration),
             Box::new(m0009_auth_execution_contexts::Migration),
             Box::new(m0010_template_library::Migration),
+            Box::new(m0011_listener_messages::Migration),
         ]
     }
 }

@@ -18,7 +18,9 @@ pub(crate) struct Routes {
     pub installation_reads: Arc<Mutex<Vec<i64>>>,
 }
 
-pub(crate) fn routes() -> Routes {
+pub(crate) fn routes(
+    listener: Option<Arc<crate::auth_worker_mock::listener::ListenerMock>>,
+) -> Routes {
     let repo_id = Arc::new(AtomicI64::new(700));
     let repo_owner_id = Arc::new(AtomicI64::new(220));
     let scale_set_creates = Arc::new(AtomicUsize::new(0));
@@ -63,7 +65,18 @@ pub(crate) fn routes() -> Routes {
         )
         .route(
             "/actions/_apis/runtime/runnerscalesets",
-            get(|| async { Json(serde_json::json!({"count":0,"value":[]})) }).post(move || {
+            get(move || {
+                let listener = listener.clone();
+                async move {
+                    Json(match listener {
+                        Some(listener) => {
+                            serde_json::json!({"count":1,"value":[listener.scale_set()]})
+                        }
+                        None => serde_json::json!({"count":0,"value":[]}),
+                    })
+                }
+            })
+            .post(move || {
                 let creates = creates.clone();
                 async move {
                     creates.fetch_add(1, Ordering::SeqCst);

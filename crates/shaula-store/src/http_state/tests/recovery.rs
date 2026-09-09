@@ -247,7 +247,10 @@ async fn uncommitted_write_rolls_back_and_all_pool_connections_are_durable() -> 
     assert!(!snapshot.document.managed_empty());
     let mut held = Vec::new();
     for _ in 0..8 {
-        let tx = f.store.begin().await?;
+        // Pin every pool connection to inspect connection-local pragmas.
+        // These are read-only probes, not runtime read/write transactions.
+        use sea_orm::TransactionTrait;
+        let tx = f.store.connection().begin().await?;
         let row = tx
             .query_one(sql("PRAGMA synchronous", vec![]))
             .await?

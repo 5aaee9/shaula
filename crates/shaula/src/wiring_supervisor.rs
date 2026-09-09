@@ -4,7 +4,9 @@ use super::SupervisorWiring;
 use shaula_core::error::CoreResult;
 use shaula_core::github::ScaleSetIdentity;
 use shaula_core::ports::GitHubAccessPort;
+use shaula_core::registry::FleetRuntimeGuard;
 use shaula_daemon::apply_intent::LedgerApplyIntentSink;
+use shaula_daemon::listener::{FleetListener, ListenerConfig, ListenerDeps};
 use shaula_daemon::supervisor::{FleetSupervisor, FleetSupervisorConfig, FleetSupervisorDeps};
 use std::sync::Arc;
 
@@ -93,12 +95,14 @@ impl SupervisorWiring {
             }
         }
         let execution_ready = observed.is_some();
-        let fence = self
-            .store
-            .fleet_get(key)
-            .await?
-            .map(|f| f.mutation_fence)
-            .unwrap_or_default();
+        let Some(head) = self.store.fleet_get(key).await? else {
+            return Ok(None);
+        };
+        if head.desired_revision != latest.revision || head.tombstone {
+            return Ok(None);
+        }
+        let guard = FleetRuntimeGuard::from(&head);
+        let fence = guard.mutation_fence;
         let mut execution_contexts = Vec::new();
         for (profile, revision) in self.store.auth_execution_refs(key).await? {
             let context = self
@@ -147,7 +151,7 @@ impl SupervisorWiring {
             let client = self
                 .auth_worker_endpoints
                 .probe_client(spec.github.target.clone(), credential, self.clock.clone())?
-                .with_expected_context(observed_context);
+                .with_expected_context(observed_context.clone());
             let github: Arc<dyn GitHubAccessPort> = Arc::new(client);
             let mut revision_clients = std::collections::HashMap::new();
             for (profile, revision, json) in &cache_key.execution_contexts {
@@ -233,6 +237,30 @@ impl SupervisorWiring {
                     label_type: "Customer".to_string(),
                 })
                 .collect();
+            let listener = observed_context.map(|auth_context| {
+                if let Some(listener) = self.listeners.get(key) {
+                    if listener.matches(&guard, &auth_context) {
+                        return listener.clone();
+                    }
+                }
+                let listener = Arc::new(FleetListener::new(
+                    ListenerConfig {
+                        fleet_key: key.to_owned(),
+                        guard: guard.clone(),
+                        auth_context,
+                        max_capacity: spec.capacity.max_runners,
+                    },
+                    ListenerDeps {
+                        store: self.lifecycle.clone(),
+                        github: github.clone(),
+                        retained_clients: revision_clients.clone(),
+                        gates: self.gates.clone(),
+                        clock: self.clock.clone(),
+                    },
+                ));
+                self.listeners.insert(key.to_owned(), listener.clone());
+                listener
+            });
             let supervisor = FleetSupervisor::new(
                 FleetSupervisorDeps {
                     limits: self.limits.clone(),
@@ -264,6 +292,8 @@ impl SupervisorWiring {
             .with_clock(self.clock.clone())
             .with_handoff_authority(desired)
             .with_execution_ready(execution_ready)
+            .with_runtime_guard(guard)
+            .with_listener(listener)
             .with_revision_clients(revision_clients);
             self.cache.retain(|k, _| k.fleet != key);
             self.cache.insert(cache_key.clone(), Arc::new(supervisor));

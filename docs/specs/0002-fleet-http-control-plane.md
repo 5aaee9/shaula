@@ -220,6 +220,12 @@ Runtime status 与 desired representation 分离：
 
 Fleet phase 是 `Pending`、`Reconciling`、`Ready`、`Degraded`、`Decommissioning` 或 `Decommissioned`。Conditions 使用 stable finite reason codes 和 sanitized summaries，不含 provider-specific object status。
 
+`Pending` 只表示当前 Revision 尚未由 supervisor 分类；已发生的 ownership、authentication、session 或 listener failure 必须持久化为 `Degraded` / blocking Condition，并透传有限 `last_error`，不得长期用 `Pending` 或固定 `last_error: null` 隐藏失败。下一次成功分类可恢复并清除旧错误，但成功的 session 不能掩盖仍存在的 ownership 或 capacity block。
+
+`Ready` 要求当前 Fleet head 与 auth context 一致、Scale Set ownership 已证明、完整当前 session 已持久化且 listener 已可调度；仅 Profile Active、仅 Scale Set ID 或仅 credential handoff 都不满足。`Ready` 不等于 runner 数量非零或容量已经收敛：当 `min_runners=0`、Assigned Demand 为 0 时，`Ready`、target/effective capacity 均为 0 是正常状态。`Converged=true` 同时要求 `phase=Ready`、`observedRevision=desiredRevision`、可解码的当前 capacity policy、`effective=target` 和 `occupancy=target`。尚未补足的容量或仍在清退、继续占位的 Generation 都不得仅凭 `Ready` 宣告收敛。
+
+Runtime observation 同时 CAS Fleet incarnation、desired Revision、mutation fence 与当前 session epoch；捕获旧 Revision 的任务不能用新的 head 令牌替旧 spec 记为 Ready。状态与对应 Fleet Change 的 Running/Blocked/Succeeded 进度在一个短 transaction 中推进，已经完成的 Change 不因后续 listener failure reopen；DELETE/tombstone 不能被迟到的观测改回普通运行 phase。
+
 ### 4.4 Fleet Change
 
 Fleet Change 跟踪一个 accepted Fleet mutation 的异步处理，与 Profile Change、Auth Handoff acknowledgement 和 Runner Operation 不同：

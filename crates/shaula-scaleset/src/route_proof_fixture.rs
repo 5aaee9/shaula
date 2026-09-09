@@ -251,7 +251,7 @@ async fn handle(State(s): State<Arc<Script>>, request: Request) -> Response {
             } else if path.ends_with("generatejitconfig") {
                 serde_json::json!({"encodedJITConfig": "jit-config", "runner": {"id": 77, "name": "runner", "runnerScaleSetId": 9}})
             } else if path.ends_with("sessions") {
-                serde_json::json!({"sessionId": "a82c6d3f-0ea4-43fd-a6d8-3d48b8db60b1", "messageQueueUrl": format!("{}/queue", s.base), "messageQueueAccessToken": "queue-token"})
+                serde_json::json!({"sessionId": "a82c6d3f-0ea4-43fd-a6d8-3d48b8db60b1", "messageQueueUrl": format!("{}/queue", s.base), "messageQueueAccessToken": "queue-token", "statistics": {"totalAssignedJobs": 0}})
             } else {
                 serde_json::json!({"id": 9, "name": "test", "runnerGroupId": 7})
             };

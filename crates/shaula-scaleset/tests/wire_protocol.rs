@@ -12,6 +12,9 @@ use axum::{Json, Router};
 #[path = "wire_protocol/wire_mock_router.rs"]
 mod wire_mock_router;
 
+#[path = "wire_protocol/statistics.rs"]
+mod statistics;
+
 use shaula_core::github::GitHubTarget;
 use shaula_core::ports::Clock;
 use shaula_core::ports::GitHubAccessPort;
@@ -76,7 +79,12 @@ async fn full_auth_chain_and_port_operations() {
 
     // 2. Lookup finds exactly one compatible scale set.
     match client.lookup_scale_set(&identity, group_id).await.unwrap() {
-        LookupOutcome::ExactlyOne(view) => assert_eq!(view.id, 42),
+        LookupOutcome::ExactlyOne(view) => {
+            assert_eq!(view.id, 42);
+            assert_eq!(view.labels.len(), 1);
+            assert_eq!(view.labels[0].name, "shaula-x64");
+            assert_eq!(view.labels[0].label_type, "System");
+        }
         other => panic!("expected exactly one scale set, got {other:?}"),
     }
 
@@ -116,6 +124,22 @@ async fn full_auth_chain_and_port_operations() {
         client.remove_runner(9001).await.unwrap(),
         RemovalOutcome::Removed
     );
+}
+
+#[tokio::test]
+async fn unknown_label_type_cannot_establish_scale_set_identity() {
+    let github_base = wire_mock_router::spawn_mock_github_with_label_type("future-type").await;
+    let client = app_client(github_base);
+    let identity = shaula_core::github::ScaleSetIdentity {
+        target: GitHubTarget::organization("example-org").unwrap(),
+        runner_group: "Default".into(),
+        scale_set_name: "shaula-x64".into(),
+    };
+    let result = client.lookup_scale_set(&identity, 7).await;
+    assert!(matches!(
+        result,
+        Err(shaula_core::ports::AccessFailure::Unavailable { .. })
+    ));
 }
 
 #[tokio::test]
@@ -241,7 +265,7 @@ fn known_job_decode_failure_fails_the_whole_batch() {
         message_id: 42,
         message_type: "RunnerScaleSetJobMessages".into(),
         body: body.to_string(),
-        statistics: None,
+        statistics: Some(Default::default()),
     };
     let result = shaula_scaleset::port::parse_job_messages(response);
     assert!(
@@ -255,7 +279,7 @@ fn known_job_decode_failure_fails_the_whole_batch() {
         message_id: 43,
         message_type: "RunnerScaleSetJobMessages".into(),
         body: body.to_string(),
-        statistics: None,
+        statistics: Some(Default::default()),
     };
     let message = shaula_scaleset::port::parse_job_messages(response).unwrap();
     assert_eq!(message.message_id, 43);

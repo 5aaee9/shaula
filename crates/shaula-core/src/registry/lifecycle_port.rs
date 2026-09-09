@@ -11,15 +11,38 @@ use crate::error::CoreResult;
 /// namespaced so identical message/job suffixes across Fleets can never
 /// cross-dedupe, cross-wake or cross-recover.
 #[async_trait]
-pub trait LifecycleStore: Send + Sync {
+pub trait LifecycleStore: super::ListenerMessageStore + Send + Sync {
     async fn session_epoch(&self, fleet_key: &str) -> CoreResult<Option<i64>>;
+    /// Checks the captured authority under the caller's exclusive effect gate
+    /// before establishing a remote session. Installation checks it again.
+    async fn session_authorize(
+        &self,
+        fleet_key: &str,
+        guard: &super::FleetRuntimeGuard,
+        auth_context: &crate::auth_context::ResolvedAuthContext,
+    ) -> CoreResult<bool>;
+    /// A current reconciler may close its predecessor during deletion too;
+    /// stale incarnations/revisions/fences and tombstones never gain that right.
+    async fn session_close_authorize(
+        &self,
+        fleet_key: &str,
+        guard: &super::FleetRuntimeGuard,
+    ) -> CoreResult<bool>;
     async fn session_install(
         &self,
         fleet_key: &str,
-        session_id: &str,
-        scale_set_id: i64,
+        install: &super::SessionInstall,
         now: i64,
-    ) -> CoreResult<i64>;
+    ) -> CoreResult<Option<i64>>;
+    /// Reads only complete active sessions, without exposing credentials to Debug.
+    async fn session_get(&self, fleet_key: &str) -> CoreResult<Option<super::PersistedSession>>;
+    /// Clears the captured session and advances its epoch to prevent stale writes.
+    async fn session_clear(
+        &self,
+        fleet_key: &str,
+        expected_epoch: i64,
+        now: i64,
+    ) -> CoreResult<bool>;
     async fn demand_snapshot(
         &self,
         fleet_key: &str,
@@ -104,11 +127,9 @@ pub trait LifecycleStore: Send + Sync {
     async fn fleet_set_observed(
         &self,
         key: &str,
-        observed_revision: i64,
-        phase: &str,
-        reason: Option<&str>,
+        observation: &super::FleetObservation,
         now: i64,
-    ) -> CoreResult<()>;
+    ) -> CoreResult<bool>;
     /// Terminal state after a completed decommission: the fleet can never
     /// admit or execute anything again (spec 0002 §8).
     async fn fleet_set_tombstone(&self, key: &str, now: i64) -> CoreResult<()>;
@@ -128,14 +149,6 @@ pub trait LifecycleStore: Send + Sync {
         state: &str,
         reason: Option<&str>,
         next_retry_at: Option<i64>,
-        now: i64,
-    ) -> CoreResult<()>;
-    /// Materializes the message-queue endpoint of an established session.
-    async fn session_set_queue(
-        &self,
-        fleet_key: &str,
-        message_queue_url: &str,
-        queue_token: &str,
         now: i64,
     ) -> CoreResult<()>;
     /// The fleet-head guard at the apply-spawn boundary: the current

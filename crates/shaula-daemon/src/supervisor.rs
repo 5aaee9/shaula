@@ -46,6 +46,9 @@ pub struct ReconcileReport {
     pub destroyed: u32,
     pub quarantined: u32,
     pub blocked: bool,
+    pub reason: Option<shaula_core::error::ReasonCode>,
+    pub listener_ready: bool,
+    pub session_epoch: Option<i64>,
 }
 
 pub struct FleetSupervisor {
@@ -61,74 +64,36 @@ pub struct FleetSupervisor {
     handoff: Arc<dyn shaula_core::registry::ControlPlaneStore>,
     config: FleetSupervisorConfig,
     identity: shaula_core::github::ScaleSetIdentity,
+    runtime_guard: Option<shaula_core::registry::FleetRuntimeGuard>,
+    listener: Option<Arc<crate::listener::FleetListener>>,
 }
 
 impl FleetSupervisor {
-    /// Constructor dependencies. The generation's template pin and inputs
-    pub fn new(
-        deps: FleetSupervisorDeps,
-        config: FleetSupervisorConfig,
-        identity: shaula_core::github::ScaleSetIdentity,
-    ) -> Self {
-        let FleetSupervisorDeps {
-            store,
-            handoff,
-            github,
-            runtime,
-            limits,
-        } = deps;
-        Self {
-            clock: None,
-            limits,
-            store,
-            handoff,
-            handoff_github: Arc::clone(&github),
-            handoff_authority: (config.auth_profile_key.clone(), config.auth_revision),
-            execution_ready: true,
-            revision_clients: std::collections::HashMap::new(),
-            github,
-            runtime,
-            config,
-            identity,
-        }
-    }
-
-    #[must_use]
-    pub fn with_clock(mut self, clock: Arc<dyn shaula_core::ports::Clock>) -> Self {
-        self.clock = Some(clock);
-        self
-    }
-
-    #[must_use]
-    pub fn with_handoff_github(mut self, github: Arc<dyn GitHubAccessPort>) -> Self {
-        self.handoff_github = github;
-        self
-    }
-
-    #[must_use]
-    pub fn with_handoff_authority(mut self, authority: (String, i64)) -> Self {
-        self.handoff_authority = authority;
-        self
-    }
-
-    #[must_use]
-    pub fn with_execution_ready(mut self, ready: bool) -> Self {
-        self.execution_ready = ready;
-        self
-    }
-
-    #[must_use]
-    pub fn with_revision_clients(
-        mut self,
-        clients: std::collections::HashMap<(String, i64), Arc<dyn GitHubAccessPort>>,
-    ) -> Self {
-        self.revision_clients = clients;
-        self
-    }
-
     /// One level-triggered reconcile pass.
     pub async fn tick(&self, now: i64) -> CoreResult<ReconcileReport> {
-        let mut report = ReconcileReport::default();
+        let epoch = self
+            .store
+            .session_get(&self.config.fleet_key)
+            .await?
+            .map(|s| s.epoch);
+        let result = self.reconcile(now, epoch).await;
+        self.observe_reconcile(&result, epoch, now).await?;
+        result
+    }
+
+    async fn reconcile(&self, now: i64, epoch: Option<i64>) -> CoreResult<ReconcileReport> {
+        let mut report = ReconcileReport {
+            session_epoch: epoch,
+            ..ReconcileReport::default()
+        };
+        let head = self.handoff.fleet_get(&self.config.fleet_key).await?;
+        if let Some(guard) = &self.runtime_guard {
+            if head.as_ref().is_none_or(|head| {
+                head.tombstone || shaula_core::registry::FleetRuntimeGuard::from(head) != *guard
+            }) {
+                return Ok(report);
+            }
+        }
 
         // 1. Auth handoff: read-only classification then acknowledge.
         let bound_scale_set_id = self
@@ -136,6 +101,10 @@ impl FleetSupervisor {
             .scale_set_get(&self.config.fleet_key)
             .await?
             .and_then(|s| s.scale_set_id);
+        let handoff_gate = match &self.listener {
+            Some(listener) => Some(listener.handoff_gate().await),
+            None => None,
+        };
         let progress = crate::handoff::run_handoff(
             &self.handoff,
             &self.config.fleet_key,
@@ -146,6 +115,7 @@ impl FleetSupervisor {
             now,
         )
         .await?;
+        drop(handoff_gate);
         report.handoff_acknowledged = matches!(
             progress,
             crate::handoff::HandoffProgress::Acknowledged
@@ -167,6 +137,7 @@ impl FleetSupervisor {
             match progress {
                 crate::handoff::HandoffProgress::Blocked => {
                     report.blocked = true;
+                    report.reason = Some(shaula_core::error::ReasonCode::OwnershipProofFailed);
                 }
                 crate::handoff::HandoffProgress::Acknowledged => {
                     report.settled_this_tick = true;
@@ -190,12 +161,49 @@ impl FleetSupervisor {
             return Ok(report);
         }
 
-        // 2. Ownership: create-or-adopt with persist-before-POST semantics.
-        let bound = self.ensure_ownership(now).await?;
-        report.scale_set_bound = bound;
-        if !bound {
-            report.blocked = true;
+        if head.is_some_and(|head| head.deletion_marker) {
+            if let Some(listener) = &self.listener {
+                listener.stop().await?;
+            }
+            report.destroyed = self.retire_excess(i64::MAX, now).await?;
+            report.quarantined = self.quarantine_stale_cleanup(now).await?;
             return Ok(report);
+        }
+
+        // 2. Ownership: create-or-adopt with persist-before-POST semantics.
+        match self.ensure_ownership(now).await? {
+            OwnershipOutcome::Ready => report.scale_set_bound = true,
+            OwnershipOutcome::Blocked(reason) => {
+                report.blocked = true;
+                report.reason = Some(reason);
+                if let Some(listener) = &self.listener {
+                    if listener.stop().await? {
+                        report.session_epoch = None;
+                    }
+                }
+                return Ok(report);
+            }
+        }
+        if let Some(listener) = &self.listener {
+            let id = self
+                .store
+                .scale_set_get(&self.config.fleet_key)
+                .await?
+                .and_then(|s| s.scale_set_id);
+            let installed_epoch = match id {
+                Some(id) => listener.ensure_session(id).await?,
+                None => None,
+            };
+            report.listener_ready = installed_epoch.is_some();
+            if installed_epoch.is_some() {
+                report.session_epoch = installed_epoch;
+            }
+            let listener_reason = listener.reason().await;
+            if !report.listener_ready || listener_reason.is_some() {
+                report.blocked = true;
+                report.reason = listener_reason;
+                return Ok(report);
+            }
         }
 
         // 3. Capacity convergence.
@@ -303,6 +311,9 @@ mod ownership_impl;
 #[path = "supervisor_health.rs"]
 mod health_impl;
 
+#[path = "supervisor_status.rs"]
+mod status_impl;
+
 #[path = "supervisor_lifecycle.rs"]
 mod lifecycle_impl;
 
@@ -350,3 +361,10 @@ pub struct LifecycleLimits {
     pub create: Arc<tokio::sync::Semaphore>,
     pub destroy: Arc<tokio::sync::Semaphore>,
 }
+
+#[path = "supervisor_ownership_outcome.rs"]
+mod ownership_outcome;
+pub(crate) use ownership_outcome::OwnershipOutcome;
+
+#[path = "supervisor_config.rs"]
+mod config_impl;

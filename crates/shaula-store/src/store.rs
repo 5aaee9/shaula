@@ -117,9 +117,24 @@ impl Store {
         }
     }
 
-    /// Begins a short transaction. Transactions never span network calls or
-    /// subprocesses; callers must keep them small.
+    /// Begins a short transaction with its SQLite writer reserved before any
+    /// authority snapshot is read. Transactions never span network calls or
+    /// subprocesses; callers must keep them small and must not nest them.
     pub(crate) async fn begin(&self) -> StoreResult<sea_orm::DatabaseTransaction> {
-        self.db.begin().await.map_err(StoreError::from)
+        use sea_orm::ConnectionTrait;
+        let tx = self.db.begin().await?;
+        // SeaORM 1.1 always starts SQLite transactions with BEGIN DEFERRED;
+        // isolation/access-mode options do not select BEGIN IMMEDIATE. A
+        // write statement with no matching rows obtains that same writer
+        // reservation without changing the format marker or any other data.
+        // Acquire it BEFORE a SELECT, so concurrent listener/reconcile commits
+        // wait at this boundary instead of failing a stale snapshot upgrade
+        // with SQLITE_BUSY_SNAPSHOT (517). Even read-only transactional
+        // snapshots use this short, serialized boundary; ordinary read queries
+        // remain concurrent on the WAL pool. SeaORM still owns commit/rollback
+        // and cancellation, including when reservation is interrupted.
+        tx.execute_unprepared("UPDATE durable_format SET version=version WHERE 0")
+            .await?;
+        Ok(tx)
     }
 }

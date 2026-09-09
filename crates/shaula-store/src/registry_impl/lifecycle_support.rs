@@ -43,3 +43,24 @@ pub(crate) fn fence_conflict(
         current: (facts.incarnation.clone(), facts.revision.saturating_sub(1)),
     }
 }
+
+use crate::entities::shared::idempotency_records;
+use crate::store::Store;
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+impl Store {
+    pub(crate) async fn idempotency_find_by_key(
+        &self,
+        resource_kind: &str,
+        resource_key: &str,
+        idempotency_key: &str,
+    ) -> crate::store::StoreResult<Option<idempotency_records::Model>> {
+        idempotency_records::Entity::find()
+            .filter(idempotency_records::Column::ResourceKind.eq(resource_kind))
+            .filter(idempotency_records::Column::ResourceKey.eq(resource_key))
+            .filter(idempotency_records::Column::IdempotencyKey.eq(idempotency_key))
+            .one(self.connection())
+            .await
+            .map_err(crate::store::StoreError::from)
+    }
+}

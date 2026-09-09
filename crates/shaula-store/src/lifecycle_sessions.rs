@@ -1,124 +1,194 @@
-//! Session epochs, demand snapshots and idempotent job observations,
-//! split from `lifecycle_repo.rs` to keep every file within the
-//! 400-line limit (AGENTS.md).
+//! Session installation, invalidation and demand snapshots.
 
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, QueryFilter, Statement};
+use shaula_core::registry::{PersistedSession, SessionInstall};
 
-use crate::entities::lifecycle::{fleet_demand, fleet_sessions, job_observations};
+use crate::entities::lifecycle::{fleet_demand, fleet_sessions, job_observations, scale_set_state};
+use crate::runtime_guards::session_active;
 use crate::store::{Store, StoreError, StoreResult};
 
 impl Store {
-    /// Installs a session with the next monotonic epoch; returns the new
-    /// epoch. Used under the per-fleet session-effect gate.
+    /// Atomically publishes the full listener handle, its initial demand,
+    /// and retained exact authentication under the captured head and epoch.
     pub(crate) async fn session_install(
         &self,
         fleet_key: &str,
-        session_id: &str,
-        scale_set_id: i64,
+        install: &SessionInstall,
         now: i64,
-    ) -> StoreResult<i64> {
-        let tx = self.begin().await?;
-        let handoff = crate::entities::fleet::fleet_auth_handoffs::Entity::find_by_id(fleet_key)
-            .one(&tx)
-            .await?
-            .ok_or_else(|| StoreError::Corrupt("session auth handoff missing".into()))?;
-        let (key, revision) = handoff
-            .observed_profile_key
-            .as_deref()
-            .zip(handoff.observed_revision)
-            .ok_or_else(|| StoreError::Corrupt("session observed auth reference missing".into()))?;
-        let auth = self
-            .auth_revision_get_tx(&tx, key, revision)
-            .await?
-            .ok_or_else(|| StoreError::Corrupt("session auth revision missing".into()))?;
-        if auth.schema_version != 2 || auth.kind != "github_app" {
-            return Err(StoreError::PolicyDenied {
-                reason: "UnsupportedAuthFormat",
-            });
-        }
-        if self
-            .auth_execution_context_tx(&tx, fleet_key, key, revision)
-            .await?
-            .is_none()
+    ) -> StoreResult<Option<i64>> {
+        if install.handle.session_id.is_empty()
+            || install.handle.message_queue_url.is_empty()
+            || install.handle.message_queue_access_token.is_empty()
+            || install.handle.initial_statistics.total_assigned_jobs < 0
         {
-            return Err(StoreError::Corrupt(
-                "session requires observed exact auth context".into(),
-            ));
+            return Err(StoreError::Corrupt("incomplete session handle".into()));
         }
-        let previous = fleet_sessions::Entity::find_by_id(fleet_key.to_string())
+        let tx = self.begin().await?;
+        if !self
+            .runtime_auth_guard_tx(&tx, fleet_key, &install.guard, &install.auth_context)
+            .await?
+        {
+            return Ok(None);
+        }
+        let ownership = scale_set_state::Entity::find_by_id(fleet_key)
             .one(&tx)
             .await?;
-        let epoch = match previous {
-            None => {
-                let row = fleet_sessions::ActiveModel {
-                    fleet_key: Set(fleet_key.to_string()),
-                    session_id: Set(session_id.to_string()),
-                    epoch: Set(1),
-                    scale_set_id: Set(scale_set_id),
-                    message_queue_url: Set(None),
-                    queue_token: Set(None),
-                    last_message_id: Set(0),
-                    created_at: Set(now),
-                };
-                fleet_sessions::Entity::insert(row).exec(&tx).await?;
-                1
-            }
-            Some(row) => {
-                let epoch = row.epoch + 1;
-                let mut updated: fleet_sessions::ActiveModel = row.into();
-                updated.session_id = Set(session_id.to_string());
-                updated.epoch = Set(epoch);
-                updated.scale_set_id = Set(scale_set_id);
-                updated.message_queue_url = Set(None);
-                updated.queue_token = Set(None);
-                updated.last_message_id = Set(0);
-                fleet_sessions::Entity::update(updated).exec(&tx).await?;
-                epoch
-            }
+        if !ownership
+            .is_some_and(|o| o.scale_set_id == Some(install.scale_set_id) && o.state == "Adopted")
+        {
+            return Ok(None);
+        }
+        let previous = fleet_sessions::Entity::find_by_id(fleet_key)
+            .one(&tx)
+            .await?;
+        if previous.as_ref().map(|s| s.epoch) != install.expected_epoch {
+            return Ok(None);
+        }
+        let epoch = previous
+            .as_ref()
+            .map_or(0, |s| s.epoch)
+            .checked_add(1)
+            .ok_or_else(|| StoreError::Corrupt("session epoch exhausted".into()))?;
+        if let Some(previous) = &previous {
+            self.listener_session_end_tx(&tx, fleet_key, previous.epoch)
+                .await?;
+        }
+        let row = fleet_sessions::ActiveModel {
+            fleet_key: Set(fleet_key.to_string()),
+            session_id: Set(install.handle.session_id.clone()),
+            epoch: Set(epoch),
+            scale_set_id: Set(install.scale_set_id),
+            message_queue_url: Set(Some(install.handle.message_queue_url.clone())),
+            queue_token: Set(Some(install.handle.message_queue_access_token.clone())),
+            last_message_id: Set(0),
+            created_at: Set(now),
         };
-        use sea_orm::{ConnectionTrait, DbBackend, Statement};
-        tx.execute(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "DELETE FROM fleet_session_auth WHERE fleet_key=?",
-            [fleet_key.into()],
-        ))
-        .await?;
+        fleet_sessions::Entity::insert(row)
+            .on_conflict(
+                sea_orm::sea_query::OnConflict::column(fleet_sessions::Column::FleetKey)
+                    .update_columns([
+                        fleet_sessions::Column::SessionId,
+                        fleet_sessions::Column::Epoch,
+                        fleet_sessions::Column::ScaleSetId,
+                        fleet_sessions::Column::MessageQueueUrl,
+                        fleet_sessions::Column::QueueToken,
+                        fleet_sessions::Column::LastMessageId,
+                        fleet_sessions::Column::CreatedAt,
+                    ])
+                    .to_owned(),
+            )
+            .exec(&tx)
+            .await?;
         tx.execute(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "INSERT OR REPLACE INTO fleet_session_auth(fleet_key,profile_key,revision)
-             SELECT fleet_key,observed_profile_key,observed_revision FROM fleet_auth_handoffs
-             WHERE fleet_key=? AND observed_profile_key IS NOT NULL AND observed_revision IS NOT NULL",
-            [fleet_key.into()])).await?;
+            "INSERT INTO fleet_session_auth(fleet_key,profile_key,revision) VALUES(?,?,?)
+             ON CONFLICT(fleet_key) DO UPDATE SET profile_key=excluded.profile_key, revision=excluded.revision",
+            [fleet_key.into(), install.auth_context.profile_key.clone().into(), install.auth_context.revision.into()],
+        )).await?;
+        Self::demand_snapshot_tx(
+            &tx,
+            fleet_key,
+            install.handle.initial_statistics.total_assigned_jobs,
+            now,
+        )
+        .await?;
+        self.listener_reconcile_old_tx(&tx, fleet_key, epoch, now)
+            .await?;
         tx.commit().await?;
-        Ok(epoch)
+        Ok(Some(epoch))
     }
 
     pub(crate) async fn session_get(
         &self,
         fleet_key: &str,
     ) -> StoreResult<Option<fleet_sessions::Model>> {
-        Ok(fleet_sessions::Entity::find_by_id(fleet_key.to_string())
+        Ok(fleet_sessions::Entity::find_by_id(fleet_key)
             .one(self.connection())
             .await?)
     }
 
-    pub(crate) async fn session_set_queue(
+    pub(crate) async fn session_handle(
         &self,
         fleet_key: &str,
-        url: &str,
-        token: &str,
-    ) -> StoreResult<()> {
-        let row = fleet_sessions::Entity::find_by_id(fleet_key.to_string())
-            .one(self.connection())
+    ) -> StoreResult<Option<PersistedSession>> {
+        let tx = self.begin().await?;
+        let Some(row) = fleet_sessions::Entity::find_by_id(fleet_key)
+            .one(&tx)
             .await?
-            .ok_or_else(|| StoreError::Corrupt(format!("session {fleet_key} missing")))?;
-        let mut updated: fleet_sessions::ActiveModel = row.into();
-        updated.message_queue_url = Set(Some(url.to_string()));
-        updated.queue_token = Set(Some(token.to_string()));
-        fleet_sessions::Entity::update(updated)
-            .exec(self.connection())
+        else {
+            return Ok(None);
+        };
+        if !session_active(&row) {
+            return Ok(None);
+        }
+        let auth_context = self
+            .session_auth_context_tx(&tx, fleet_key)
+            .await?
+            .ok_or_else(|| {
+                StoreError::Corrupt("active session exact auth context missing".into())
+            })?;
+        let demand = fleet_demand::Entity::find_by_id(fleet_key)
+            .one(&tx)
+            .await?
+            .map_or(0, |d| d.total_assigned_jobs);
+        let session = PersistedSession {
+            epoch: row.epoch,
+            last_message_id: row.last_message_id,
+            scale_set_id: row.scale_set_id,
+            auth_context,
+            handle: shaula_core::ports::SessionHandle {
+                session_id: row.session_id,
+                message_queue_url: row.message_queue_url.unwrap_or_default(),
+                message_queue_access_token: row.queue_token.unwrap_or_default(),
+                initial_statistics: shaula_core::ports::StatisticsSnapshot {
+                    total_assigned_jobs: demand,
+                    ..Default::default()
+                },
+            },
+        };
+        tx.commit().await?;
+        Ok(Some(session))
+    }
+
+    /// Keep the epoch row after clearing to prevent an ABA session identity.
+    pub(crate) async fn session_clear(
+        &self,
+        fleet_key: &str,
+        expected_epoch: i64,
+        now: i64,
+    ) -> StoreResult<bool> {
+        let tx = self.begin().await?;
+        let Some(row) = fleet_sessions::Entity::find_by_id(fleet_key)
+            .one(&tx)
+            .await?
+        else {
+            return Ok(false);
+        };
+        if row.epoch != expected_epoch {
+            return Ok(false);
+        }
+        self.listener_session_end_tx(&tx, fleet_key, expected_epoch)
             .await?;
-        Ok(())
+        let epoch = row
+            .epoch
+            .checked_add(1)
+            .ok_or_else(|| StoreError::Corrupt("session epoch exhausted".into()))?;
+        let mut updated: fleet_sessions::ActiveModel = row.into();
+        updated.epoch = Set(epoch);
+        updated.session_id = Set(String::new());
+        updated.message_queue_url = Set(None);
+        updated.queue_token = Set(None);
+        updated.last_message_id = Set(0);
+        updated.created_at = Set(now);
+        fleet_sessions::Entity::update(updated).exec(&tx).await?;
+        tx.execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "DELETE FROM fleet_session_auth WHERE fleet_key=?",
+            [fleet_key.into()],
+        ))
+        .await?;
+        tx.commit().await?;
+        Ok(true)
     }
 
     /// The fleet head guard tuple: `(desired_revision, deleting)`.
@@ -141,6 +211,15 @@ impl Store {
         total_assigned_jobs: i64,
         now: i64,
     ) -> StoreResult<()> {
+        Self::demand_snapshot_tx(self.connection(), fleet_key, total_assigned_jobs, now).await
+    }
+
+    pub(crate) async fn demand_snapshot_tx<C: ConnectionTrait>(
+        connection: &C,
+        fleet_key: &str,
+        total_assigned_jobs: i64,
+        now: i64,
+    ) -> StoreResult<()> {
         let row = fleet_demand::ActiveModel {
             fleet_key: Set(fleet_key.to_string()),
             total_assigned_jobs: Set(total_assigned_jobs),
@@ -155,7 +234,7 @@ impl Store {
                     ])
                     .to_owned(),
             )
-            .exec(self.connection())
+            .exec(connection)
             .await?;
         Ok(())
     }

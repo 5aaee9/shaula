@@ -260,6 +260,7 @@ pub struct FleetHead {
     pub tombstone: bool,
     pub deletion_marker: bool,
     pub phase: String,
+    pub last_condition_reason: Option<String>,
     /// G5: the fence captured BEFORE network validation is the
     /// precondition the acknowledgement must still satisfy.
     pub mutation_fence: i64,

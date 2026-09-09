@@ -8,6 +8,26 @@ use axum::Json;
 use axum::Router;
 use base64::Engine;
 pub(crate) async fn spawn_mock_github() -> String {
+    spawn_mock_github_with_label_type("system").await
+}
+
+pub(crate) async fn spawn_mock_github_with_label_type(label_type: &'static str) -> String {
+    spawn_mock(
+        label_type,
+        serde_json::json!({
+            "totalAvailableJobs": 0, "totalAcquiredJobs": 0, "totalAssignedJobs": 2,
+            "totalRunningJobs": 0, "totalRegisteredRunners": 1, "totalBusyRunners": 0,
+            "totalIdleRunners": 1
+        }),
+    )
+    .await
+}
+
+pub(crate) async fn spawn_mock_github_with_statistics(statistics: serde_json::Value) -> String {
+    spawn_mock("system", statistics).await
+}
+
+async fn spawn_mock(label_type: &'static str, statistics: serde_json::Value) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -89,7 +109,7 @@ pub(crate) async fn spawn_mock_github() -> String {
         )
         .route(
             "/actions-service/_apis/runtime/runnerscalesets",
-            get(|| async {
+            get(move || async move {
                 Json(serde_json::json!({
                     "count": 1,
                     "value": [{
@@ -97,7 +117,7 @@ pub(crate) async fn spawn_mock_github() -> String {
                         "name": "shaula-x64",
                         "runnerGroupId": 7,
                         "runnerGroupName": "Default",
-                        "labels": [],
+                        "labels": [{"type": label_type, "name": "shaula-x64"}],
                         "RunnerSetting": {},
                         "createdOn": "2026-01-01T00:00:00Z"
                     }]
@@ -117,22 +137,17 @@ pub(crate) async fn spawn_mock_github() -> String {
         )
         .route(
             "/actions-service/_apis/runtime/runnerscalesets/42/sessions",
-            post(|| async {
-                Json(serde_json::json!({
-                    "sessionId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
-                    "ownerName": "shaula",
-                    "messageQueueUrl": "https://queue.actions.githubusercontent.com/queues/42",
-                    "messageQueueAccessToken": "queue-token",
-                    "statistics": {
-                        "totalAvailableJobs": 0,
-                        "totalAcquiredJobs": 0,
-                        "totalAssignedJobs": 2,
-                        "totalRunningJobs": 0,
-                        "totalRegisteredRunners": 1,
-                        "totalBusyRunners": 0,
-                        "totalIdleRunners": 1
-                    }
-                }))
+            post(move || {
+                let statistics = statistics.clone();
+                async move {
+                    Json(serde_json::json!({
+                        "sessionId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+                        "ownerName": "shaula",
+                        "messageQueueUrl": "https://queue.actions.githubusercontent.com/queues/42",
+                        "messageQueueAccessToken": "queue-token",
+                        "statistics": statistics
+                    }))
+                }
             }),
         )
         .route(

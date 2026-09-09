@@ -35,6 +35,7 @@ pub struct SupervisorWiring {
     /// revision): a credential rotation, fleet replacement or phase
     /// change rebuilds the client.
     cache: HashMap<supervisor::SupervisorCacheKey, Arc<FleetSupervisor>>,
+    listeners: HashMap<String, Arc<shaula_daemon::listener::FleetListener>>,
     tasks: crate::fleet_tasks::FleetTasks,
     /// Per-profile auth-worker deferral deadlines (F8): a rate-limited
     /// validation carries GitHub's Retry-After; the next attempt waits
@@ -69,6 +70,7 @@ impl SupervisorWiring {
             artifact_root,
             operation_timeout,
             cache: HashMap::new(),
+            listeners: HashMap::new(),
             tasks: crate::fleet_tasks::FleetTasks::default(),
             auth_worker_deferred_until: Arc::default(),
             auth_worker_endpoints: crate::auth_worker_probe::WorkerEndpoints::production(),
@@ -214,13 +216,19 @@ impl SupervisorWiring {
         // the supervisor alongside the revision-driven rebuild (R10-01).
         for (key, revision, phase) in self.store.fleet_list(&actor).await? {
             live_keys.insert(key.clone());
-            if self.tasks.contains(&key) {
-                continue;
-            }
             match self.supervisor_for(&key, revision, &phase).await {
                 Ok(Some(supervisor)) => {
-                    self.tasks
-                        .spawn(key, async move { supervisor.tick(now).await.map(|_| ()) });
+                    let listener_key = format!("listener/{key}");
+                    if !self.tasks.contains(&listener_key) {
+                        if let Some(listener) = supervisor.listener() {
+                            self.tasks
+                                .spawn(listener_key, async move { listener.poll_once().await });
+                        }
+                    }
+                    if !self.tasks.contains(&key) {
+                        self.tasks
+                            .spawn(key, async move { supervisor.tick(now).await.map(|_| ()) });
+                    }
                 }
                 Ok(None) => {}
                 Err(e) => tracing::warn!(fleet = %key, summary = %e.summary, "fleet wiring failed"),
@@ -229,6 +237,7 @@ impl SupervisorWiring {
         // R10-01: evict supervisors for revisions that no longer exist —
         // the cache stays bounded by live fleet revisions only.
         self.cache.retain(|k, _| live_keys.contains(&k.fleet));
+        self.listeners.retain(|key, _| live_keys.contains(key));
         Ok(())
     }
 }

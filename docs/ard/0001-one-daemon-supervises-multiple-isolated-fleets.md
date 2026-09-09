@@ -15,5 +15,6 @@ date: 2026-09-04
 - Fleet Key 和远端 Scale Set identity 在 daemon 管理的 active Fleet set 中必须唯一；一个 Scale Set 同时只能由一个 daemon 所有。
 - Fleet-local listener、认证、模板或 IaC 故障只降级对应 Fleet；共享存储、全局调度器或 telemetry pipeline 的故障可能影响整个 daemon，但不得造成跨 Fleet 状态污染。
 - 全局 worker budget 必须在 Fleet 之间公平调度，不能让一个 Fleet 长期饿死其他 Fleet。
+- Listener 长轮询和容量 reconcile 使用独立的 per-Fleet task identity。Composition root 必须实际调度两条路径；一个阻塞 poll 不得占住同 Fleet 的 reconcile，也不阻止其他 Fleet。Fleet Ready 由当前 ownership/session/auth 证据决定，与零 demand 时的零容量兼容。
 - 每个 Fleet 独立执行 create-or-adopt 并验证兼容性；普通 daemon 退出不删除任何 Scale Set。
 - v1 仍是单活本地 daemon，不提供跨主机 lease 或 HA。

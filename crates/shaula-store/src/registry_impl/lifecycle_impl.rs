@@ -2,35 +2,42 @@
 //! the idempotency and handoff flows.
 
 use async_trait::async_trait;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
 use shaula_core::error::{CoreError, CoreResult};
 
 use super::core_err;
 use super::lifecycle_support::map_generation;
 use super::SqliteControlPlane;
-use crate::entities::shared::idempotency_records;
-use crate::store::Store;
-
-impl Store {
-    pub(crate) async fn idempotency_find_by_key(
-        &self,
-        resource_kind: &str,
-        resource_key: &str,
-        idempotency_key: &str,
-    ) -> crate::store::StoreResult<Option<idempotency_records::Model>> {
-        idempotency_records::Entity::find()
-            .filter(idempotency_records::Column::ResourceKind.eq(resource_kind))
-            .filter(idempotency_records::Column::ResourceKey.eq(resource_key))
-            .filter(idempotency_records::Column::IdempotencyKey.eq(idempotency_key))
-            .one(self.connection())
-            .await
-            .map_err(crate::store::StoreError::from)
-    }
-}
 
 #[async_trait]
 impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
+    async fn session_close_authorize(
+        &self,
+        fleet_key: &str,
+        guard: &shaula_core::registry::FleetRuntimeGuard,
+    ) -> CoreResult<bool> {
+        self.store
+            .session_close_authorize(fleet_key, guard)
+            .await
+            .map_err(core_err)
+    }
+
+    async fn session_authorize(
+        &self,
+        fleet_key: &str,
+        guard: &shaula_core::registry::FleetRuntimeGuard,
+        auth_context: &shaula_core::auth_context::ResolvedAuthContext,
+    ) -> CoreResult<bool> {
+        let tx = self.store.begin().await.map_err(core_err)?;
+        let result = self
+            .store
+            .runtime_auth_guard_tx(&tx, fleet_key, guard, auth_context)
+            .await
+            .map_err(core_err)?;
+        tx.commit().await.map_err(|e| core_err(e.into()))?;
+        Ok(result)
+    }
+
     async fn session_epoch(&self, fleet_key: &str) -> CoreResult<Option<i64>> {
         Ok(self
             .store
@@ -43,12 +50,30 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
     async fn session_install(
         &self,
         fleet_key: &str,
-        session_id: &str,
-        scale_set_id: i64,
+        install: &shaula_core::registry::SessionInstall,
         now: i64,
-    ) -> CoreResult<i64> {
+    ) -> CoreResult<Option<i64>> {
         self.store
-            .session_install(fleet_key, session_id, scale_set_id, now)
+            .session_install(fleet_key, install, now)
+            .await
+            .map_err(core_err)
+    }
+
+    async fn session_get(
+        &self,
+        fleet_key: &str,
+    ) -> CoreResult<Option<shaula_core::registry::PersistedSession>> {
+        self.store.session_handle(fleet_key).await.map_err(core_err)
+    }
+
+    async fn session_clear(
+        &self,
+        fleet_key: &str,
+        expected_epoch: i64,
+        now: i64,
+    ) -> CoreResult<bool> {
+        self.store
+            .session_clear(fleet_key, expected_epoch, now)
             .await
             .map_err(core_err)
     }
@@ -297,13 +322,11 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
     async fn fleet_set_observed(
         &self,
         key: &str,
-        observed_revision: i64,
-        phase: &str,
-        reason: Option<&str>,
+        observation: &shaula_core::registry::FleetObservation,
         now: i64,
-    ) -> CoreResult<()> {
+    ) -> CoreResult<bool> {
         self.store
-            .fleet_set_observed(key, observed_revision, phase, reason, now)
+            .fleet_set_observed(key, observation, now)
             .await
             .map_err(core_err)
     }
@@ -339,19 +362,6 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
     ) -> CoreResult<()> {
         self.store
             .profile_change_update(id, state, reason, next_retry_at, now)
-            .await
-            .map_err(core_err)
-    }
-
-    async fn session_set_queue(
-        &self,
-        fleet_key: &str,
-        message_queue_url: &str,
-        queue_token: &str,
-        _now: i64,
-    ) -> CoreResult<()> {
-        self.store
-            .session_set_queue(fleet_key, message_queue_url, queue_token)
             .await
             .map_err(core_err)
     }

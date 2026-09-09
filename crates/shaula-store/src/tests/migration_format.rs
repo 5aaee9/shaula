@@ -6,7 +6,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::Store;
-use sea_orm::{ConnectionTrait, Statement};
+use sea_orm::{ConnectionTrait, Statement, TransactionTrait};
 use shaula_store_migration as migration;
 use shaula_store_migration::MigratorTrait;
 
@@ -51,7 +51,9 @@ async fn marker_of(store: &Store) -> Option<i64> {
 
 /// Applies only m0001..m0007 (the pre-multi-account schema).
 async fn migrate_to_pre_m0008(store: &Store) {
-    let tx = store.begin().await.unwrap();
+    // This bootstraps the schema before durable_format exists, so use the
+    // migration connection rather than the post-migration runtime boundary.
+    let tx = store.connection().begin().await.unwrap();
     migration::Migrator::up(&tx, Some(7)).await.unwrap();
     tx.commit().await.unwrap();
 }

@@ -329,6 +329,10 @@ pub use auth_port::{
 };
 pub use lifecycle_port::{FleetHeadGuard, LifecycleStore};
 pub use lifecycle_port::{GenerationRecord, OperationRow, ScaleSetRow};
+mod runtime_port;
+pub use runtime_port::{
+    FleetObservation, FleetObservationPhase, FleetRuntimeGuard, PersistedSession, SessionInstall,
+};
 pub use store_port::ControlPlaneStore;
 pub use store_port::MutationFacts;
 pub use store_port::{FleetHead, FleetRevisionRow, ProfileHead, TemplateRevisionRow};
@@ -337,3 +341,6 @@ mod write_records;
 pub use write_records::{
     AuditAppend, IdempotencyInsert, JobObservationInsert, OperationInsert, ProfileChangeInsert,
 };
+
+pub mod listener_message_port;
+pub use listener_message_port::{IngestedMessage, ListenerMessageStore, SessionEffectContext};

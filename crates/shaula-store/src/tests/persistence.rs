@@ -152,15 +152,24 @@ async fn session_epoch_monotonic_across_reinstalls() {
             .unwrap();
     }
     assert_eq!(
-        store.session_install("fleet", "s1", 42, 1).await.unwrap(),
+        super::session_support::install(&store, "fleet", "s1", 42, &context, 1)
+            .await
+            .unwrap(),
         1
     );
     assert_eq!(
-        store.session_install("fleet", "s2", 42, 2).await.unwrap(),
+        super::session_support::install(&store, "fleet", "s2", 42, &context, 2)
+            .await
+            .unwrap(),
         2
     );
     // Different fleet namespaces independently (no cross-fleet coupling).
-    assert_eq!(store.session_install("f2", "s1", 43, 2).await.unwrap(), 1);
+    assert_eq!(
+        super::session_support::install(&store, "f2", "s1", 43, &context, 2)
+            .await
+            .unwrap(),
+        1
+    );
 
     let session = store.session_get("fleet").await.unwrap().unwrap();
     assert_eq!(session.epoch, 2);

@@ -21,7 +21,7 @@ Fleet Spec 经规范化和校验后形成的不可变版本；Fleet 的 desired 
 _Avoid_: Runner Generation, mutable record
 
 **Fleet Status**:
-一个 Fleet 当前所有权、listener、容量和收敛结果的只读观测；已观测 Fleet Revision 不代表容量已经收敛。
+一个 Fleet 当前所有权、listener、容量和收敛结果的只读观测；已观测 Fleet Revision 不代表容量已经收敛。Ready 需要当前 ownership/session/auth 证据，零 demand 与零容量可以是正常 Ready 状态。
 _Avoid_: Fleet Spec, desired state
 
 **Fleet Change**:
@@ -53,7 +53,7 @@ _Avoid_: Fleet Target, repository snapshot, arbitrary glob
 _Avoid_: App identity, personal login session, all App installations
 
 **GitHub Auth Profile**:
-一个可由多个 Fleet 引用的稳定 GitHub 控制面身份与 Target policy；其认证方式只能是 GitHub App 或 PAT。
+一个可由多个 Fleet 引用的稳定 GitHub 控制面身份与 Target policy；当前支持 schema 2 GitHub App，旧格式仅保留为不可执行的历史记录。
 _Avoid_: GitHub token, inline credential, fallback chain
 
 **GitHub Auth Revision**:
@@ -73,7 +73,7 @@ _Avoid_: Runtime fallback, credential retry, Scale Set reconcile
 _Avoid_: Latest credential, Profile-wide installation, ready session
 
 **Control-Plane Credential**:
-GitHub App private key、installation/admin token 或 PAT 等只供 Shaula 调用 GitHub 管理面使用的凭据；它们不属于 Runner 或 workflow 身份。
+GitHub App private key、installation/admin token 等只供 Shaula 调用 GitHub 管理面使用的凭据；它们不属于 Runner 或 workflow 身份。
 _Avoid_: Runner token, bootstrap token, workflow secret
 
 **Workflow Credential**:

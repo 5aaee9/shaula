@@ -2,6 +2,8 @@
 mod common;
 #[path = "common/lifecycle_fakes.rs"]
 mod fakes;
+#[path = "support/lifecycle_ownership_tests.rs"]
+mod ownership_tests;
 use common::*;
 use shaula_core::{
     lifecycle::GenerationState as G,
@@ -62,6 +64,21 @@ async fn transaction_rejects_same_profile_revision_switch_with_occupancy() {
 }
 
 async fn setup() -> (
+    Arc<shaula_store::registry_impl::SqliteControlPlane>,
+    Arc<fakes::GitHub>,
+    FleetSupervisor,
+    String,
+) {
+    setup_with_labels(vec![shaula_core::github::Label {
+        name: "shaula-x64".into(),
+        label_type: "Customer".into(),
+    }])
+    .await
+}
+
+async fn setup_with_labels(
+    labels: Vec<shaula_core::github::Label>,
+) -> (
     Arc<shaula_store::registry_impl::SqliteControlPlane>,
     Arc<fakes::GitHub>,
     FleetSupervisor,
@@ -128,10 +145,7 @@ async fn setup() -> (
                 store: store.clone(),
                 gates: service.effect_gates(),
             }),
-            labels: vec![shaula_core::github::Label {
-                name: "shaula-x64".into(),
-                label_type: "Customer".into(),
-            }],
+            labels,
             auth_profile_key: "prod-app".into(),
             auth_revision: 1,
         },
@@ -238,7 +252,12 @@ async fn adopted_access_failure_and_unknown_inventory_block_effects() {
     assert!(supervisor.tick(10).await.unwrap().scale_set_bound);
     github.denied.store(true, Ordering::SeqCst);
     store.demand_snapshot("f1", 1, 11).await.unwrap();
-    assert!(supervisor.tick(20).await.unwrap().blocked);
+    let blocked = supervisor.tick(20).await.unwrap();
+    assert!(blocked.blocked);
+    assert_eq!(
+        blocked.reason,
+        Some(shaula_core::error::ReasonCode::PermissionDenied)
+    );
     assert_eq!(
         store.scale_set_get("f1").await.unwrap().unwrap().state,
         "AccessBlocked"
@@ -253,7 +272,12 @@ async fn adopted_access_failure_and_unknown_inventory_block_effects() {
             name: "foreign".into(),
             scale_set_id: 42,
         });
-    assert!(supervisor.tick(30).await.unwrap().blocked);
+    let blocked = supervisor.tick(30).await.unwrap();
+    assert!(blocked.blocked);
+    assert_eq!(
+        blocked.reason,
+        Some(shaula_core::error::ReasonCode::UnknownRemoteRunner)
+    );
     assert_eq!(
         store.scale_set_get("f1").await.unwrap().unwrap().state,
         "UnknownRemoteRunner"

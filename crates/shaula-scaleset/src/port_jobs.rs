@@ -15,19 +15,40 @@ pub(crate) fn scale_set_view(value: &wire::RunnerScaleSet) -> ScaleSetView {
             .iter()
             .map(|l| shaula_core::github::Label {
                 name: l.name.clone(),
-                label_type: l.label_type.clone(),
+                label_type: l.label_type.as_str().to_string(),
             })
             .collect(),
     }
 }
 
-pub(crate) fn stats_from_wire(value: wire::RunnerScaleSetStatistic) -> StatisticsSnapshot {
-    StatisticsSnapshot {
+pub(crate) fn stats_from_wire(
+    value: Option<wire::RunnerScaleSetStatistic>,
+) -> Result<StatisticsSnapshot, shaula_core::ports::AccessFailure> {
+    let value = value.ok_or_else(|| shaula_core::ports::AccessFailure::Unavailable {
+        summary: "message statistics missing".into(),
+    })?;
+    if [
+        value.total_assigned_jobs,
+        value.total_registered_runners,
+        value.total_busy_runners,
+        value.total_idle_runners,
+        value.total_available_jobs,
+        value.total_acquired_jobs,
+        value.total_running_jobs,
+    ]
+    .into_iter()
+    .any(|count| count < 0)
+    {
+        return Err(shaula_core::ports::AccessFailure::Unavailable {
+            summary: "message statistics contain a negative count".into(),
+        });
+    }
+    Ok(StatisticsSnapshot {
         total_assigned_jobs: value.total_assigned_jobs,
         total_registered_runners: value.total_registered_runners,
         total_busy_runners: value.total_busy_runners,
         total_idle_runners: value.total_idle_runners,
-    }
+    })
 }
 
 /// Private wire-shaped job messages (camelCase per the Actions Service
@@ -88,7 +109,7 @@ pub fn parse_job_messages(
     };
     let mut message = PollMessage {
         message_id: response.message_id,
-        statistics: response.statistics.map(stats_from_wire).unwrap_or_default(),
+        statistics: stats_from_wire(response.statistics)?,
         job_available: Vec::new(),
         job_assigned: Vec::new(),
         job_started: Vec::new(),

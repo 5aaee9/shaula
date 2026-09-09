@@ -16,6 +16,9 @@ pub struct GitHub {
     pub jit_definite: AtomicBool,
     pub jit_uncertain: AtomicBool,
     pub runners: Mutex<Vec<RunnerRef>>,
+    pub labels: Mutex<Option<Vec<Label>>>,
+    pub lookup_override: Mutex<Option<Result<LookupOutcome, AccessFailure>>>,
+    pub create_override: Mutex<Option<Result<EffectOutcome<ScaleSetView>, AccessFailure>>>,
 }
 #[async_trait::async_trait]
 impl GitHubAccessPort for GitHub {
@@ -36,15 +39,20 @@ impl GitHubAccessPort for GitHub {
         i: &ScaleSetIdentity,
         _: i64,
     ) -> Result<LookupOutcome, AccessFailure> {
+        if let Some(outcome) = self.lookup_override.lock().unwrap().clone() {
+            return outcome;
+        }
         Ok(LookupOutcome::ExactlyOne(ScaleSetView {
             id: 42,
             name: i.scale_set_name.clone(),
             runner_group_id: 7,
             runner_group_name: i.runner_group.clone(),
-            labels: vec![Label {
-                name: "shaula-x64".into(),
-                label_type: "Customer".into(),
-            }],
+            labels: self.labels.lock().unwrap().clone().unwrap_or_else(|| {
+                vec![Label {
+                    name: "shaula-x64".into(),
+                    label_type: "Customer".into(),
+                }]
+            }),
         }))
     }
     async fn list_runners(&self, _: i64) -> Result<Vec<RunnerRef>, AccessFailure> {
@@ -69,7 +77,11 @@ impl GitHubAccessPort for GitHub {
         _: &[Label],
     ) -> Result<EffectOutcome<ScaleSetView>, AccessFailure> {
         self.effects.fetch_add(1, Ordering::SeqCst);
-        Err(AccessFailure::PermissionDenied)
+        self.create_override
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or(Err(AccessFailure::PermissionDenied))
     }
     async fn establish_session(
         &self,

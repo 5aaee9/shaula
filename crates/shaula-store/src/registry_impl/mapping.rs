@@ -13,6 +13,7 @@ pub(crate) fn fleet_head(f: crate::entities::fleet::fleets::Model) -> FleetHead 
         tombstone: f.tombstone,
         deletion_marker: f.deletion_marker,
         phase: f.phase,
+        last_condition_reason: f.last_condition_reason,
         mutation_fence: f.mutation_fence,
     }
 }

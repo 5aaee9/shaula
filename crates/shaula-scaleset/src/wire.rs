@@ -12,8 +12,28 @@ pub const API_VERSION: &str = "6.0-preview";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Label {
     #[serde(rename = "type")]
-    pub label_type: String,
+    pub label_type: LabelType,
     pub name: String,
+}
+
+/// The Actions service emits lowercase types while create requests use
+/// PascalCase. Normalize only recognized types; unknown values cannot prove
+/// label compatibility at the ownership boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LabelType {
+    #[serde(alias = "system")]
+    System,
+    #[serde(alias = "customer")]
+    Customer,
+}
+
+impl LabelType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::System => "System",
+            Self::Customer => "Customer",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -29,7 +49,6 @@ pub struct RunnerScaleSetStatistic {
     pub total_available_jobs: i64,
     #[serde(default)]
     pub total_acquired_jobs: i64,
-    #[serde(default)]
     pub total_assigned_jobs: i64,
     #[serde(default)]
     pub total_running_jobs: i64,
@@ -252,6 +271,32 @@ impl std::fmt::Debug for InstallationAccessToken {
 #[cfg(test)]
 mod wire_tests {
     use super::*;
+
+    #[test]
+    fn recognized_label_types_normalize_without_changing_names() -> Result<(), serde_json::Error> {
+        for (wire_type, canonical) in [
+            ("system", LabelType::System),
+            ("System", LabelType::System),
+            ("customer", LabelType::Customer),
+            ("Customer", LabelType::Customer),
+        ] {
+            let label: Label = serde_json::from_value(serde_json::json!({
+                "type": wire_type,
+                "name": "Case-Sensitive-Route"
+            }))?;
+            assert_eq!(label.label_type, canonical);
+            assert_eq!(label.name, "Case-Sensitive-Route");
+            assert_eq!(serde_json::to_value(label)?["type"], canonical.as_str());
+        }
+        for unknown in ["", "future-type", " system", "system "] {
+            assert!(serde_json::from_value::<Label>(serde_json::json!({
+                "type": unknown,
+                "name": "route"
+            }))
+            .is_err());
+        }
+        Ok(())
+    }
 
     #[test]
     fn session_debug_never_leaks_the_queue_token() {

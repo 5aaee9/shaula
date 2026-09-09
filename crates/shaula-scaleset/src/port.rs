@@ -250,7 +250,7 @@ impl GitHubAccessPort for ScalesetClient {
                     session_id,
                     message_queue_url,
                     message_queue_access_token,
-                    initial_statistics: session.statistics.map(stats_from_wire).unwrap_or_default(),
+                    initial_statistics: stats_from_wire(session.statistics)?,
                 })
             }
             EffectOutcome::Uncertain { summary } => EffectOutcome::Uncertain { summary },

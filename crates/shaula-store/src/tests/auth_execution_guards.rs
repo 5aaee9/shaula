@@ -52,10 +52,11 @@ async fn observed_json_cannot_disagree_with_its_durable_reference() {
 #[tokio::test]
 async fn session_requires_complete_observed_v2_authority() {
     let (store, captured, context) = ready().await;
-    assert!(store
-        .session_install("fleet", "first", 1, 10)
-        .await
-        .is_err());
+    assert!(
+        super::session_support::install(&store, "fleet", "first", 1, &context, 10)
+            .await
+            .is_err()
+    );
     assert!(store.session_get("fleet").await.unwrap().is_none());
     store
         .handoff_acknowledge(
@@ -72,10 +73,11 @@ async fn session_requires_complete_observed_v2_authority() {
         "DELETE FROM fleet_auth_context_history WHERE fleet_key='fleet'",
     )
     .await;
-    assert!(store
-        .session_install("fleet", "first", 1, 11)
-        .await
-        .is_err());
+    assert!(
+        super::session_support::install(&store, "fleet", "first", 1, &context, 11)
+            .await
+            .is_err()
+    );
     assert!(store.session_get("fleet").await.unwrap().is_none());
 }
 
@@ -94,10 +96,11 @@ async fn unsupported_session_cannot_replace_retained_authority() {
         .unwrap();
     execute(&store, "UPDATE github_auth_profile_revisions SET schema_version=1 WHERE profile_key='shared-github';
         INSERT INTO fleet_session_auth(fleet_key,profile_key,revision) VALUES('fleet','obsolete',99)").await;
-    assert!(store
-        .session_install("fleet", "replacement", 1, 10)
-        .await
-        .is_err());
+    assert!(
+        super::session_support::install(&store, "fleet", "replacement", 1, &context, 10)
+            .await
+            .is_err()
+    );
     assert!(store.session_get("fleet").await.unwrap().is_none());
     let row = store
         .connection()
@@ -116,10 +119,11 @@ async fn unsupported_session_cannot_replace_retained_authority() {
 #[tokio::test]
 async fn missing_handoff_cannot_create_or_replace_a_session() {
     let (store, captured, context) = ready().await;
-    assert!(store
-        .session_install("missing", "new", 1, 10)
-        .await
-        .is_err());
+    assert!(
+        super::session_support::install(&store, "missing", "new", 1, &context, 10)
+            .await
+            .is_err()
+    );
     assert!(store.session_get("missing").await.unwrap().is_none());
     store
         .handoff_acknowledge(
@@ -131,8 +135,7 @@ async fn missing_handoff_cannot_create_or_replace_a_session() {
         )
         .await
         .unwrap();
-    store
-        .session_install("fleet", "original", 1, 10)
+    super::session_support::install(&store, "fleet", "original", 1, &context, 10)
         .await
         .unwrap();
     execute(
@@ -140,10 +143,11 @@ async fn missing_handoff_cannot_create_or_replace_a_session() {
         "DELETE FROM fleet_auth_handoffs WHERE fleet_key='fleet'",
     )
     .await;
-    assert!(store
-        .session_install("fleet", "replacement", 1, 11)
-        .await
-        .is_err());
+    assert!(
+        super::session_support::install(&store, "fleet", "replacement", 1, &context, 11)
+            .await
+            .is_err()
+    );
     let session = store.session_get("fleet").await.unwrap().unwrap();
     assert_eq!(session.session_id, "original");
     assert_eq!(session.epoch, 1);
@@ -176,8 +180,7 @@ async fn unsupported_execution_refs_remain_readable_without_becoming_authority()
         )
         .await
         .unwrap();
-    store
-        .session_install("fleet", "historical-session", 1, 10)
+    super::session_support::install(&store, "fleet", "historical-session", 1, &context, 10)
         .await
         .unwrap();
     execute(&store, "UPDATE github_auth_profile_revisions SET schema_version=1, policy_json='{old-policy' WHERE profile_key='shared-github';

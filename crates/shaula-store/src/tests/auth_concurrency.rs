@@ -38,8 +38,12 @@ async fn auth_replacement_waits_for_writer_before_reading_head() -> TestResult {
         .await?;
     // Hold the first replacement uncommitted. A deferred SELECT by the second
     // transaction can read r1 but cannot subsequently upgrade to this writer.
-    let second = store.begin().await?;
-    let competing = store.auth_commit_revision(&second, revision(2), b"credential-three", 2);
+    let competing = async {
+        let second = store.begin().await?;
+        store
+            .auth_commit_revision(&second, revision(2), b"credential-three", 2)
+            .await
+    };
     tokio::pin!(competing);
     assert!(
         tokio::time::timeout(Duration::from_millis(100), &mut competing)

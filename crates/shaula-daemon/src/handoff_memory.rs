@@ -31,6 +31,7 @@ impl ControlPlaneStore for MemoryStore {
             deletion_marker: false,
             phase: "Active".into(),
             mutation_fence: 1,
+            last_condition_reason: None,
         }))
     }
     async fn fleet_list(&self, _actor: &Actor) -> CoreResult<Vec<(String, i64, String)>> {

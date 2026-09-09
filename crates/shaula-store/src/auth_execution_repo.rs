@@ -140,8 +140,13 @@ impl Store {
              WHERE h.fleet_key=? AND h.observed_profile_key IS NOT NULL
              UNION ALL SELECT a.profile_key,a.revision,r.spec_json FROM fleet_session_auth a
              JOIN fleet_sessions s ON s.fleet_key=a.fleet_key JOIN fleets f ON f.key=a.fleet_key
-             JOIN fleet_revisions r ON r.fleet_key=f.key AND r.revision=f.desired_revision WHERE a.fleet_key=?",
-            [fleet.into(),fleet.into()])).await?;
+             JOIN fleet_revisions r ON r.fleet_key=f.key AND r.revision=f.desired_revision WHERE a.fleet_key=?
+             UNION ALL SELECT m.profile_key,m.auth_revision,r.spec_json FROM listener_messages m
+             JOIN fleet_revisions r ON r.fleet_key=m.fleet_key AND r.revision=m.fleet_revision
+             WHERE m.fleet_key=? AND EXISTS(SELECT 1 FROM listener_acquisitions a
+                WHERE a.fleet_key=m.fleet_key AND a.epoch=m.epoch AND a.message_id=m.message_id
+                AND a.state IN ('Pending','AcquireStarting','Uncertain'))",
+            [fleet.into(),fleet.into(),fleet.into()])).await?;
         for row in rows {
             references.push((
                 (

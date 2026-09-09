@@ -308,13 +308,19 @@ Fleet supervisor 激活时 MUST：
 
 存在以下情况时 Fleet 必须停止新 Create 并暴露 bounded Condition：multiple matches、runner group/labels/fingerprint conflict、persisted ID identity mismatch、duplicate local ownership、或 remote inventory 中有无法映射到 non-terminal Generation 的 Runner。空 ledger 只可 adopt 空 Scale Set；未知 remote Runner 不自动删除。
 
+Label type 在 GitHub wire boundary 解析为有限类型；服务端返回的 `system` / `System`、`customer` / `Customer` 按同一语义比较，不得仅因 type 大小写不同把正常 Scale Set 分类为 access failure。未知 type、不同 label name、缺失/额外 label 仍不构成 compatible ownership；不能通过整体忽略 labels 来修复大小写问题。
+
 Shaula 不调用 Scale Set Update 修复 drift。普通 shutdown、restart、Fleet replacement 和 Decommission 都不删除 Scale Set。若已持久化 Scale Set 被 authenticated read 确认缺失，而 Resource Occupancy 非零或存在 non-terminal Generation，Fleet MUST 进入 `ScaleSetMissingWithResources`：停止 create-or-adopt、session、acquisition 和重新绑定；Scale Set/Runner 的 absent 或 `404` 不能单独证明一个可能 Busy 的既有资源可 Destroy。只有 JIT 与 IaC Create 均可证明从未开始的 Generation 可以本地终结；任何可能已注册或已创建基础设施的 Generation 必须继续计入 Occupancy 并 Blocked/Quarantined，直到恢复 consistency-set 证据或未来显式 operator procedure。仅当 Occupancy 和 active Runner Operations 都为零时，普通 reconciliation 才可从 `ScaleSetMissing` 建立新的 create-or-adopt binding。
 
 ## 8. Listener, demand and eventual convergence
 
 每个 Fleet 拥有独立的 `shaula-scaleset` Rust session/listener supervisor。生产 Adapter 以 reqwest 实现 core-owned poll、ACK、acquire、JIT、inventory/removal ports；固定 commit/module/checksum 的 `github.com/actions/scaleset` Go SDK 与 `internal/testserver` 只作为 differential test oracle，既不链接也不由 `shaula serve` 启动。
 
-建立或替换 session 时，supervisor 取得 per-Fleet session-effect gate 的 exclusive permit，等待旧 epoch outbound effects 完成或取得 durable uncertainty classification，再分配 Fleet-scoped、单调递增的 `session_epoch`，并在开始 poll 前将 session identity、epoch 和 initial current statistics 原子持久化。每个 poll task 捕获 epoch；message ingest、ACK authorization、`AcquireStarting`/result classification 和 demand write 都必须以 `(fleet_key, session_epoch)` CAS 为门。ACK/Acquire 在各自 HTTP call 前还必须取得 epoch-scoped shared permit 并重新授权 current epoch，直至 outcome durable classification 才释放；旧 epoch task 即使延迟返回也只能 no-op，不能 ACK、acquire、覆盖 demand 或 wake lifecycle。取消旧 task 是资源管理，不是 correctness proof；SQLite transaction 不跨 network call。
+建立或替换 session 时，supervisor 取得 per-Fleet session-effect gate 的 exclusive permit，等待旧 epoch outbound effects 完成或取得 durable uncertainty classification，再分配 Fleet-scoped、单调递增的 `session_epoch`，并在开始 poll 前将 session identity、epoch 和 initial current statistics 原子持久化。安装 CAS 同时检查捕获的 Fleet incarnation、desired Revision、mutation fence、预期前一 epoch，以及已观测的完整 Auth Revision Ref / Resolved Auth Context；DELETE、replacement、handoff 或 restart 后的过期结果不能安装 session。
+
+每个 poll task 捕获该完整快照；message ingest、ACK authorization、`AcquireStarting` 和 demand write 都必须通过其 current-authority CAS。ACK/Acquire 在各自 HTTP call 前还必须取得 epoch-scoped shared permit 并重新授权 current epoch，直至 outcome durable classification 才释放；旧 epoch task 即使延迟返回也不能 ACK、acquire、覆盖 demand 或 wake lifecycle。已经开始的 Acquire 即使变旧仍须按原 intent 记录结果，不把结果重新归属新 session，也不因此修改新 demand。取消旧 task 是资源管理，不是 correctness proof；SQLite transaction 不跨 network call。
+
+Listener poll 必须由 daemon 实际调度，并与同 Fleet 的容量 reconcile、其他 Fleet 的 poll 分开；不能把 70 秒长轮询串行放入全局扫描。Auth Handoff、Fleet replacement 与 DELETE 先停止旧 listener 的新 effects，再推进 authority 或执行 cleanup。普通 restart 先分类并关闭持久化的旧 session，再安装新 session；清除 session 仍保留并推进 epoch，不能从 1 重新开始形成 ABA。
 
 每个已 poll 的 message 遵循 persist-before-ACK：
 
@@ -322,6 +328,12 @@ Shaula 不调用 Scale Set Update 修复 drift。普通 shutdown、restart、Fle
 - transaction commit 失败时不发送 ACK 或 acquire；只终止/重试该 Fleet listener；
 - commit 成功后才允许 ACK；ACK response uncertain 时只按已持久化 message identity/checkpoint 幂等重试或等待 redelivery/new session，不重复创建 acquisition intent；
 - ACK 后依据 durable intent 调用 Acquire；调用前写 `AcquireStarting`，结果按 exact epoch 分类。outcome uncertain 时不从事件数量推导新 Create，等待 current statistics、inventory 或 recovery scan 分类。
+
+Ingested message 与已 ACK checkpoint 分开持久化。下一次 poll 的 `lastMessageId` 只能来自已确认 checkpoint；恢复先处理未 ACK 的持久 message 和已 ACK、尚未开始的 acquisition。重复 `(Fleet, epoch, message ID)` 不重写较新的 statistics；同 epoch/request ID 不因重投到另一个 message 而再次 Acquire。相同 message ID 在不同 Fleet 或 epoch 下不互相去重。
+
+ACK failure 保留 durable message；若原 session 无法确认该消息，按有界退避重建 session，并以新的 initial statistics 恢复 level source，不把一般 `404` 当作 ACK 成功。旧 Pending acquisition 可取消；Starting/Uncertain 不能盲重试。新 session 的 authoritative initial statistics 提交后，可把旧 uncertainty 标为已由新快照接管并释放其 live auth pin；历史 outcome 仍保留，既有 Runner/Generation 的 ownership 和 cleanup pins 不因此释放。
+
+Session initial statistics 和 message statistics 必须明确包含非负 `TotalAssignedJobs`。缺失/null 的 statistics、缺失 assigned count 或负计数是无效响应，不得默认为零、清空 demand 或标记健康。显式零是正常的权威快照。
 
 Session request 的 `X-ScaleSetMaxCapacity` 始终是该 Fleet 的 `max_runners`，而不是 daemon global concurrency、当前空闲 worker 数或所有 Fleet 容量之和。Listener reconnect 使用 bounded exponential backoff 和 jitter；一个 Fleet 的 retry/circuit breaker 不占满全局 scheduler，也不暂停其他 Fleet 的 listener。
 

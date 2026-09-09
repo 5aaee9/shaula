@@ -218,8 +218,7 @@ async fn historical_generation_and_session_references_survive_cross_profile_hand
         )
         .await
         .unwrap();
-    store
-        .session_install("fleet", "session-old", 3, 10)
+    super::session_support::install(&store, "fleet", "session-old", 3, &context, 10)
         .await
         .unwrap();
     store

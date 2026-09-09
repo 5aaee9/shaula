@@ -190,29 +190,6 @@ impl Store {
         Ok(())
     }
 
-    pub(crate) async fn fleet_set_observed(
-        &self,
-        key: &str,
-        observed_revision: i64,
-        phase: &str,
-        reason: Option<&str>,
-        now: i64,
-    ) -> StoreResult<()> {
-        let current = fleets::Entity::find_by_id(key.to_string())
-            .one(self.connection())
-            .await?
-            .ok_or_else(|| crate::store::StoreError::Corrupt(format!("fleet {key} missing")))?;
-        let mut updated: fleets::ActiveModel = current.into();
-        updated.observed_revision = Set(observed_revision);
-        updated.phase = Set(phase.to_string());
-        updated.last_condition_reason = Set(reason.map(str::to_string));
-        updated.updated_at = Set(now);
-        fleets::Entity::update(updated)
-            .exec(self.connection())
-            .await?;
-        Ok(())
-    }
-
     pub(crate) async fn fleet_set_tombstone(&self, key: &str, now: i64) -> StoreResult<()> {
         let current = fleets::Entity::find_by_id(key.to_string())
             .one(self.connection())

@@ -101,6 +101,14 @@ const REPO_TARGET_JSON: &str = r#"{"kind":"repository","owner":"5aaee9","reposit
 /// derives the desired context and the handoff tuple in the same
 /// transaction (spec 0011 §4.2).
 pub(crate) async fn seed_promoted_profile_and_fleet(plane: &TestPlane) -> i64 {
+    seed_profile_and_fleet_config(plane, &["shaula-x64"], 5).await
+}
+
+pub(crate) async fn seed_profile_and_fleet_config(
+    plane: &TestPlane,
+    labels: &[&str],
+    max_runners: i64,
+) -> i64 {
     crate::auth_worker_v2::tests::seed_candidate(
         &plane.control_plane,
         1,
@@ -152,8 +160,9 @@ pub(crate) async fn seed_promoted_profile_and_fleet(plane: &TestPlane) -> i64 {
         "fixture: promotion must succeed"
     );
 
+    let labels = serde_json::to_string(labels).unwrap();
     let spec_json = format!(
-        r#"{{"github":{{"target":{REPO_TARGET_JSON},"auth_profile_ref":"{KEY}","scale_set_name":"shaula-x64","runner_group":"Default","labels":["shaula-x64"]}},"capacity":{{"min_runners":0,"max_runners":5}},"template_profile_ref":{{"key":"k8s-linux","revision":1}}}}"#
+        r#"{{"github":{{"target":{REPO_TARGET_JSON},"auth_profile_ref":"{KEY}","scale_set_name":"shaula-x64","runner_group":"Default","labels":{labels}}},"capacity":{{"min_runners":0,"max_runners":{max_runners}}},"template_profile_ref":{{"key":"k8s-linux","revision":1}}}}"#
     );
     let facts = MutationFacts {
         resource_kind: "fleet",
@@ -284,3 +293,6 @@ impl shaula_core::ports::Clock for At {
 
 #[path = "wiring_execution_tests.rs"]
 mod execution_tests;
+
+#[path = "wiring_listener_tests.rs"]
+mod listener_tests;

@@ -110,8 +110,11 @@ impl ControlPlane {
                 Condition {
                     condition_type: "Converged",
                     status: fleet.observed_revision == fleet.desired_revision
-                        && fleet.phase == "Ready",
-                    reason: None,
+                        && fleet.phase == "Ready"
+                        && capacity_policy.is_some()
+                        && effective == capacity_target
+                        && occupancy == capacity_target,
+                    reason: fleet.last_condition_reason.clone(),
                 },
             ],
             capacity: CapacitySummary {
@@ -120,7 +123,7 @@ impl ControlPlane {
                 effective,
                 occupancy,
             },
-            last_error: None,
+            last_error: fleet.last_condition_reason,
         }))
     }
 

@@ -16,6 +16,56 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Fleet listener and Pending diagnosis repair (2026-09-08)
+
+This increment closes the missing listener/message-ledger composition seam under
+spec 0001 sections 7–8 and spec 0002 section 4. The wire adapter normalizes only
+known System/Customer label-type spellings, preserving label and remote identity
+conflict detection. The daemon schedules each Fleet's listener independently from
+capacity reconciliation and records classified runtime failures in Fleet status
+and the matching Change instead of leaving an unexplained Pending state.
+
+Session installation and message effects compare the captured Fleet incarnation,
+desired revision, mutation fence, exact observed authentication context and epoch.
+The full queue handle, initial statistics and authentication pin commit together.
+Clearing a session retains a monotonically advancing epoch. `Ready` with zero
+demand/minimum and zero capacity is a valid idle Fleet; it is not provisioning
+evidence or a claim that arbitrary future workloads will run successfully.
+The public `Converged` condition additionally requires the observed revision to
+match the desired revision and both effective capacity and occupancy to equal the
+target derived from the current capacity policy. A Ready listener can therefore
+report unconverged capacity while runners are starting or retiring.
+
+Migration m0011 adds separate message, acquisition and observation evidence so
+historical tables do not acquire incompatible deduplication constraints. Message
+ingestion commits the statistics snapshot, observations, Pending acquisition
+intents and wake marker before ACK. Only successful ACK advances the poll cursor;
+acquisition records AcquireStarting before the request. Redelivery cannot rewind
+demand or repeat the same epoch/request acquisition. Old completions retain their
+original outcome even if current authentication is corrupt or replaced, without
+writing new demand. Replacement statistics can reconcile old uncertain demand;
+the historical evidence and independent Runner cleanup references remain.
+
+Concurrent short SQLite transactions reserve the writer before reading a
+snapshot. SeaORM 1.1.20 does not expose SQLite `BEGIN IMMEDIATE` configuration, so
+`Store::begin` follows the managed begin with a no-op write before any read. This
+prevents a deferred read transaction from failing its later write upgrade with
+`SQLITE_BUSY_SNAPSHOT` (517), while retaining managed rollback and cancellation.
+The tradeoff is serialization of transactions, including composite read snapshots;
+ordinary WAL read queries remain concurrent. Network and process operations stay
+outside these transactions.
+
+Final local verification: all 525 workspace tests passed (two existing platform
+tests skipped). The repository's additional `workspace test` name-filtered gate
+passed 432 tests. Workspace all-target Clippy with warnings denied and rustfmt
+passed. The regressions exercise real SQLite and the production HTTP/wiring path:
+Pending to Ready and Change completion, ownership drift/recovery, ACK/acquisition
+and redelivery, expiry/reconnect, stale epoch and repeated-stop fencing, failed
+session installation cleanup, writer contention and cancellation, and independent
+capacity convergence reporting. Missing/null/negative statistics are rejected.
+These local checks do not establish real GitHub session acceptance or Runner
+provisioning; deployment evidence is recorded separately after live verification.
+
 ## Multi-account GitHub authentication (spec 0011 / ADR-0015): local implementation (2026-09-07)
 
 The v1/PAT and legacy-upgrade contracts below have been retired by
@@ -94,9 +144,10 @@ module limit passed. The two ignored Rust tests require a verified Terraform
 Open release gates: real GitHub multi-account acceptance under spec 0011 section 9,
 Go-oracle protocol acceptance and migration of the existing production
 `indexyz-org` profile. No production credentials or deployment were used for the
-local checks. The pre-existing production session listener, message acquisition
-and ingestion, recovery and decommission integration gaps recorded below remain
-open. Scripted-server evidence does not establish those end-to-end workflows.
+local checks. The later Fleet listener repair above supplies session/message
+composition and its durable gates. Full recovery/decommission and real-platform
+acceptance remain separate: scripted-server evidence does not establish those
+end-to-end workflows.
 
 ## Existing implementation and local test coverage
 
@@ -309,10 +360,11 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
   against the actual deployment's registered Provider and API client remains a
   release gate. See the dedicated OIDC evidence section below.
 - The per-Fleet capacity/ownership/cleanup supervisor and Auth validator are
-  started by the binary. The production session listener, persist-before-ACK
-  message ingestion/acquisition, online/busy inventory classification, operation
-  recovery and complete Fleet decommission/tombstone workflow are still missing.
-  Existing persistence primitives alone do not implement these workflows.
+  started by the binary. The listener repair above adds separately scheduled
+  sessions and persist-before-ACK message ingestion/acquisition. Complete
+  online/busy inventory classification, operation recovery and Fleet
+  decommission/tombstone acceptance remain open. Store and scripted-listener
+  tests alone do not prove these complete external workflows.
 - End-to-end real-GitHub validation and the Go-oracle differential suite
   (`references/scaleset`, pinned commit) have not been executed.
 - Bundled-profile conformance remains a runtime evidence gap, independent of
@@ -345,7 +397,7 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
 | Keep an unchanged old Template pin during capacity/no-op PUT | Already handled by `ControlPlane::resolve_admission_materials` in `crates/shaula-daemon/src/service_fleet_ops.rs`; do not list this wholesale as unimplemented. Spec 0002 clarifies new-reference versus unchanged-reference admission. |
 | Zero-Occupancy barrier for changed `template_inputs` | Still missing from the audited replacement boundary; `crates/shaula-store/src/registry_impl/commits_fleet.rs` currently protects reference replacement but does not establish the newly explicit inputs-change rule. Requires transactional race tests with Generation/worker admission. |
 | Lower max below current Busy/Occupancy | Normative behavior is stop new admission and retire safely, not reject solely for current Occupancy or kill Busy. Existing arithmetic does not prove complete listener/worker scale-down acceptance. |
-| Reachable cross-Auth handoff with an idle session | Spec 0002 removes an idle session as an admission blocker while retaining the zero-Occupancy/effect barrier. Full production listener/handoff integration and idle-session/race acceptance remain outstanding. |
+| Reachable cross-Auth handoff with an idle session | Spec 0002 removes an idle session as an admission blocker while retaining the zero-Occupancy/effect barrier. The listener repair adds exact-context session gates and quiescence; real multi-account idle-session/race acceptance remains a release gate. |
 | Profile retirement self-head release | `service_profile_retirement.rs` and `shaula-store/src/registry_impl/retirement.rs` retain current heads. Spec 0005 §7.1's final self-reference release/Retired transaction and history-versus-runtime-reference tests are missing. |
 | Binding reads | Existing core/Profile reads expose coarse `bindings_present`; spec 0005 §5.2 retains that conservative projection, not a new per-secret fingerprint map. Full manifest annotation/schema/redaction acceptance still needs verification. |
 | Attestation integrity/evidence | Existing `service_profile_attestation.rs`, `service_attestation.rs` and core `registry/attestation_subject.rs` provide authority/subject handling. No independent signing PKI is required by the clarified contract; complete external report linkage, canonical compatibility and real-platform suite evidence are not established by local record-acceptance tests. |

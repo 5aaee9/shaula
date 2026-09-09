@@ -128,6 +128,8 @@ App identity 与 kind 仍不可改；不支持的历史 Profile 必须用显式�
 4. 原子推进 `observed_auth_ref` 和 `observed_auth_context`，CAS 同时比较 desired ref/context 与 fence；仅 auth ref 相同不足以证明 context 已切换。
 5. ordinary reconcile 才能 create/adopt、绑定 ID 或为 observed context 建立新 session；acquisition 只有在该 session ready 后恢复。Decommission 仍只允许 cleanup-only handoff。
 
+quiesce 必须与真实 listener 使用同一 per-Fleet effect gate：停止新 acquisition、等待已开始的 ACK/Acquire 完成或持久化 uncertainty 后再推进 observed context；普通 reconcile 在新 session 安装前关闭持久化的旧 session。单纯取消 poll future 或更新 observed ref 不构成 quiesce。session 安装、message ingest、ACK 与 Acquire-start 同时校验 exact context、epoch 和 Fleet head/fence；迟到的旧 effect result 只更新原 intent 的历史结果。旧 uncertainty 的恢复与引用释放遵循 spec 0001 §8 的新 authoritative snapshot 边界。
+
 同 key promotion 不修改 Fleet Spec/Revision/ETag，不替换 Runner Resource。cross-key replacement 仍要求 spec 0002 的零 Occupancy / effect barrier。旧 credential/context 在所有真实执行、session、cleanup 与 recovery 引用解除之前不得 GC；`Blocked` 不释放引用。
 
 ### 5.3 Runtime failures and freshness

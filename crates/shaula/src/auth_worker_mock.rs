@@ -12,6 +12,9 @@ use std::sync::Arc;
 
 use shaula_core::ports::Clock;
 
+#[path = "auth_worker_listener_mock.rs"]
+pub(crate) mod listener;
+
 pub(crate) struct Now;
 impl Clock for Now {
     fn now_unix_ms(&self) -> i64 {
@@ -38,6 +41,7 @@ pub(crate) struct MockConfig {
     pub deny_runner_groups: bool,
     /// Rate-limit 403 (+Retry-After) on the installation token mint.
     pub throttle_token_mint: bool,
+    pub listener: Option<Arc<listener::ListenerMock>>,
 }
 
 /// Scripted GitHub + Actions Service. `deny_runner_groups` makes the
@@ -214,8 +218,11 @@ pub(crate) async fn mock_server_cfg(cfg: MockConfig) -> Mock {
                 }
             }),
         );
-    let routes = crate::auth_worker_mock_routes::routes();
-    let app = app.merge(routes.router);
+    let routes = crate::auth_worker_mock_routes::routes(cfg.listener.clone());
+    let mut app = app.merge(routes.router);
+    if let Some(listener) = cfg.listener {
+        app = app.merge(listener.routes(&base));
+    }
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
