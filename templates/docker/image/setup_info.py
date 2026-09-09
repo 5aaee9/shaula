@@ -46,18 +46,28 @@ def read_regular(path, limit):
 def validate_descriptor(value):
     if value == {"status": "disabled"}:
         return value
-    if not isinstance(value, dict) or set(value) != {
-        "status", "url", "capability", "expires_at", "wait_seconds"
-    } or value["status"] != "enabled":
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"status", "url", "capability", "expires_at", "wait_seconds"}
+        or value["status"] != "enabled"
+    ):
         raise ValueError("descriptor rejected")
     url = value["url"]
     if not isinstance(url, str) or len(url) > 2048 or any(c.isspace() for c in url):
         raise ValueError("URL rejected")
     parsed = urllib.parse.urlsplit(url)
-    if (parsed.scheme != "https" or not parsed.hostname or parsed.username is not None
-            or parsed.password is not None or parsed.query or parsed.fragment
-            or parsed.port == 0
-            or not re.fullmatch(r"/runner/v1/generations/[A-Za-z0-9_-]+/setup-info", parsed.path)):
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.port == 0
+        or not re.fullmatch(
+            r"/runner/v1/generations/[A-Za-z0-9_-]+/setup-info", parsed.path
+        )
+    ):
         raise ValueError("URL rejected")
     if not isinstance(value["capability"], str) or not re.fullmatch(
         r"[A-Za-z0-9_-]{32,512}", value["capability"]
@@ -85,8 +95,11 @@ def parse_entries(raw, own_only=False):
     for entry in entries:
         if not isinstance(entry, dict):
             raise TypeError("setup entry rejected")
-        if own_only and (set(entry) != {"Group", "Detail"} or entry["Group"] != GROUP
-                         or not isinstance(entry["Detail"], str)):
+        if own_only and (
+            set(entry) != {"Group", "Detail"}
+            or entry["Group"] != GROUP
+            or not isinstance(entry["Detail"], str)
+        ):
             raise ValueError("unexpected setup group")
         if entry.get("Group") is not None and not isinstance(entry["Group"], str):
             raise ValueError("setup group rejected")
@@ -102,13 +115,18 @@ def fetch_entries(descriptor):
     # Explicitly disable ambient proxy configuration and all redirects. HTTPSHandler
     # uses the system trust store; no configurable insecure context is accepted.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
-    deadline = min(time.monotonic() + descriptor["wait_seconds"],
-                   time.monotonic() + descriptor["expires_at"] - time.time())
+    deadline = min(
+        time.monotonic() + descriptor["wait_seconds"],
+        time.monotonic() + descriptor["expires_at"] - time.time(),
+    )
     while (remaining := deadline - time.monotonic()) > 0:
-        request = urllib.request.Request(descriptor["url"], headers={
-            "Authorization": "Bearer " + descriptor["capability"],
-            "Accept": "application/json",
-        })
+        request = urllib.request.Request(
+            descriptor["url"],
+            headers={
+                "Authorization": "Bearer " + descriptor["capability"],
+                "Accept": "application/json",
+            },
+        )
         retry_after = 1.0
         try:
             with opener.open(request, timeout=min(5.0, remaining)) as response:
@@ -141,11 +159,15 @@ def merge_entries(runner_root, incoming):
     try:
         existing = []
         try:
-            existing = parse_entries(read_regular(runner_root / ".setup_info", MAX_BYTES))
+            existing = parse_entries(
+                read_regular(runner_root / ".setup_info", MAX_BYTES)
+            )
         except FileNotFoundError:
             pass
         merged = [entry for entry in existing if entry.get("Group") != GROUP] + incoming
-        raw = json.dumps(merged, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        raw = json.dumps(merged, ensure_ascii=False, separators=(",", ":")).encode(
+            "utf-8"
+        )
         parse_entries(raw)
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
         descriptor = os.open(TEMP_NAME, flags, 0o600, dir_fd=root_fd)
@@ -183,16 +205,34 @@ def prepare(descriptor_path=DESCRIPTOR_PATH, runner_root=RUNNER_ROOT):
                 descriptor_path.unlink()
             except FileNotFoundError:
                 pass
-        descriptor = validate_descriptor(json.loads(raw, object_pairs_hook=unique_object))
+        descriptor = validate_descriptor(
+            json.loads(raw, object_pairs_hook=unique_object)
+        )
         if descriptor["status"] == "disabled":
             return True
-        timeout = min(descriptor["wait_seconds"], descriptor["expires_at"] - time.time())
+        timeout = min(
+            descriptor["wait_seconds"], descriptor["expires_at"] - time.time()
+        )
         result = subprocess.run(
-            [sys.executable, "-I", str(Path(__file__).resolve()), "--worker", str(runner_root)],
-            input=json.dumps(descriptor).encode(), stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, timeout=max(0.001, timeout), check=False,
-            env={key: value for key, value in os.environ.items()
-                 if not key.upper().startswith(("ACTIONS_RUNNER_INPUT_", "SHAULA_SETUP_"))},
+            [
+                sys.executable,
+                "-I",
+                str(Path(__file__).resolve()),
+                "--worker",
+                str(runner_root),
+            ],
+            input=json.dumps(descriptor).encode(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=max(0.001, timeout),
+            check=False,
+            env={
+                key: value
+                for key, value in os.environ.items()
+                if not key.upper().startswith(
+                    ("ACTIONS_RUNNER_INPUT_", "SHAULA_SETUP_")
+                )
+            },
         )
         return result.returncode == 0
     except FileNotFoundError:
@@ -205,7 +245,9 @@ def worker():
     try:
         if len(sys.argv) != 3 or sys.argv[1] != "--worker":
             return 1
-        descriptor = validate_descriptor(json.loads(sys.stdin.buffer.read(MAX_DESCRIPTOR_BYTES + 1)))
+        descriptor = validate_descriptor(
+            json.loads(sys.stdin.buffer.read(MAX_DESCRIPTOR_BYTES + 1))
+        )
         merge_entries(Path(sys.argv[2]), fetch_entries(descriptor))
         return 0
     except (OSError, ValueError, TypeError, RecursionError):

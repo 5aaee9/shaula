@@ -226,8 +226,11 @@ class HandoffTests(unittest.TestCase):
     def test_setup_helper_failure_preserves_successful_jit_handoff(self):
         with (
             mock.patch.object(shim, "JIT_PATH", self.jit_path),
-            mock.patch.object(shim.importlib.util, "spec_from_file_location",
-                              side_effect=RuntimeError("private-diagnostic")),
+            mock.patch.object(
+                shim.importlib.util,
+                "spec_from_file_location",
+                side_effect=RuntimeError("private-diagnostic"),
+            ),
             mock.patch.object(shim.os, "execve") as execute,
             mock.patch.object(shim.os, "chdir"),
             mock.patch.object(shim.sys, "argv", ["bootstrap-shim"]),
@@ -237,7 +240,9 @@ class HandoffTests(unittest.TestCase):
         self.assertFalse(self.jit_path.exists())
         execute.assert_called_once()
         environment = execute.call_args.args[2]
-        self.assertEqual(environment["ACTIONS_RUNNER_INPUT_JITCONFIG"], VALID_JIT.decode())
+        self.assertEqual(
+            environment["ACTIONS_RUNNER_INPUT_JITCONFIG"], VALID_JIT.decode()
+        )
         stderr.write.assert_called_once_with("bootstrap-shim: setup info unavailable\n")
 
 

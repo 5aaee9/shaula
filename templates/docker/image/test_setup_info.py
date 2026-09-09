@@ -1,4 +1,5 @@
 """Credential-free validation of setup-log transport and atomic publication."""
+
 import importlib.util
 import json
 import subprocess
@@ -9,38 +10,61 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-spec = importlib.util.spec_from_file_location("setup_info", Path(__file__).with_name("setup_info.py"))
+spec = importlib.util.spec_from_file_location(
+    "setup_info", Path(__file__).with_name("setup_info.py")
+)
 setup = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(setup)
 
 
 def descriptor():
-    return {"status": "enabled", "url": "https://example.test/runner/v1/generations/abc/setup-info",
-            "capability": "a" * 64, "expires_at": int(time.time()) + 3600, "wait_seconds": 60}
+    return {
+        "status": "enabled",
+        "url": "https://example.test/runner/v1/generations/abc/setup-info",
+        "capability": "a" * 64,
+        "expires_at": int(time.time()) + 3600,
+        "wait_seconds": 60,
+    }
 
 
 class ValidationTests(unittest.TestCase):
     def test_only_explicit_supported_descriptor_and_https(self):
-        self.assertEqual(setup.validate_descriptor({"status": "disabled"}), {"status": "disabled"})
+        self.assertEqual(
+            setup.validate_descriptor({"status": "disabled"}), {"status": "disabled"}
+        )
         setup.validate_descriptor(descriptor())
-        for url in ("http://example.test/x", "https://u:p@example.test/x",
-                    "https://example.test/runner/v1/generations/abc/setup-info?token=x",
-                    "https://example.test/runner/v1/generations/abc/setup-info#x",
-                    "https://example.test/runner/v1/generations/../setup-info"):
+        for url in (
+            "http://example.test/x",
+            "https://u:p@example.test/x",
+            "https://example.test/runner/v1/generations/abc/setup-info?token=x",
+            "https://example.test/runner/v1/generations/abc/setup-info#x",
+            "https://example.test/runner/v1/generations/../setup-info",
+        ):
             with self.subTest(url=url), self.assertRaises(ValueError):
                 setup.validate_descriptor(dict(descriptor(), url=url))
-        for change in ({"wait_seconds": 301}, {"expires_at": 1}, {"capability": "short"},
-                       {"wait_seconds": True}, {"unexpected": 1}):
+        for change in (
+            {"wait_seconds": 301},
+            {"expires_at": 1},
+            {"capability": "short"},
+            {"wait_seconds": True},
+            {"unexpected": 1},
+        ):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 setup.validate_descriptor(dict(descriptor(), **change))
 
     def test_redirect_never_returns_a_followup_request(self):
         with self.assertRaises(ValueError):
-            setup.NoRedirect().redirect_request(None, None, 302, "", {}, "https://other.test")
+            setup.NoRedirect().redirect_request(
+                None, None, 302, "", {}, "https://other.test"
+            )
 
     def test_rejects_oversize_wrong_group_duplicate_keys_and_nonarray(self):
-        for raw in (b" " * (setup.MAX_BYTES + 1), b"{}", b'[{"Group":"a","Detail":"x"}]',
-                    b'[{"Group":"a","Group":"b","Detail":"x"}]'):
+        for raw in (
+            b" " * (setup.MAX_BYTES + 1),
+            b"{}",
+            b'[{"Group":"a","Detail":"x"}]',
+            b'[{"Group":"a","Group":"b","Detail":"x"}]',
+        ):
             with self.subTest(size=len(raw)), self.assertRaises(ValueError):
                 setup.parse_entries(raw, own_only=True)
 
@@ -57,8 +81,11 @@ class FileTests(unittest.TestCase):
 
     def test_atomic_merge_preserves_other_groups_and_replaces_own(self):
         path = self.root / ".setup_info"
-        original = [{"Group": "Image", "Detail": "pinned"}, {"Detail": "default group"},
-                    {"Group": setup.GROUP, "Detail": "old"}]
+        original = [
+            {"Group": "Image", "Detail": "pinned"},
+            {"Detail": "default group"},
+            {"Group": setup.GROUP, "Detail": "old"},
+        ]
         path.write_text(json.dumps(original))
         setup.merge_entries(self.root, self.incoming)
         setup.merge_entries(self.root, self.incoming)
@@ -86,6 +113,7 @@ class FileTests(unittest.TestCase):
             self.assertLessEqual(kwargs["timeout"], 60)
             self.assertNotIn("a" * 64, str(args))
             raise subprocess.TimeoutExpired("worker", kwargs["timeout"])
+
         with mock.patch.object(setup.subprocess, "run", side_effect=check_child):
             self.assertFalse(setup.prepare(self.path, self.root))
         self.assertFalse(self.path.exists())
