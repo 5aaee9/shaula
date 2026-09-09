@@ -1,6 +1,8 @@
 import { inputEntries, inputsJson, parseInputValue } from "@/lib/input-values";
 import type { TemplateVariable, TemplateVariables as Variables } from "@/lib/template-variables";
 import { ApprovedValueSelect, RawInputValuePreview } from "./template-input-values";
+import { TemplatePolicyOptions } from "./template-policy-options";
+import { TemplateVariableDescription as VariableDescription } from "./template-variable-description";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select";
@@ -12,28 +14,6 @@ function entries(raw: string): Map<string, string> | null {
   } catch {
     return null;
   }
-}
-
-function VariableDescription({ variable }: { variable: TemplateVariable }) {
-  return (
-    <div className="min-w-0 space-y-2 text-sm">
-      <p className="text-xs text-muted-foreground break-all">
-        {variable.key} · {variable.typeName} · {variable.required ? "Required" : "Optional"}
-        {variable.sensitive && " · Sensitive"}
-      </p>
-      {variable.description && (
-        <p className="text-muted-foreground whitespace-pre-wrap break-words">
-          {variable.description}
-        </p>
-      )}
-      {!variable.sensitive && variable.defaultValueJson !== undefined && (
-        <div>
-          <p className="mb-1 font-medium">Terraform default</p>
-          <RawInputValuePreview raw={variable.defaultValueJson} />
-        </div>
-      )}
-    </div>
-  );
 }
 
 function BindingEditor({
@@ -72,6 +52,12 @@ function BindingEditor({
       </div>
     );
   const options = variable.sensitive ? [] : variable.options;
+  const defaultValue =
+    !variable.sensitive &&
+    variable.defaultValueJson !== undefined &&
+    variable.defaultValueJson !== "null"
+      ? parseInputValue(variable.defaultValueJson)
+      : undefined;
   return (
     <div className="form-stack gap-2">
       {options.length ? (
@@ -102,6 +88,7 @@ function BindingEditor({
             spellCheck={false}
             step={variable.typeName === "integer" ? 1 : "any"}
             required={variable.required}
+            placeholder={defaultValue?.text}
             value={parsed?.text ?? ""}
             onChange={(event) => {
               const text = event.target.value;
@@ -113,6 +100,17 @@ function BindingEditor({
         </Field>
       )}
       <VariableDescription variable={variable} />
+      {defaultValue && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="self-start"
+          onClick={() => onChange(defaultValue.raw)}
+        >
+          Use default for {label}
+        </Button>
+      )}
       {value !== undefined && (
         <Button
           type="button"
@@ -243,27 +241,17 @@ export function TemplateVariables({
           </p>
         )}
         {variables.parameters.map((variable) => (
-          <div key={variable.key} className="form-stack gap-2 rounded-md border p-3 min-w-0">
-            <h4 className="text-sm font-medium">{variable.label || variable.key}</h4>
-            <VariableDescription variable={variable} />
-            {!variable.sensitive && !!variable.options.length && (
-              <div className="space-y-2">
-                <p className="text-sm font-medium">Declared options</p>
-                {variable.options.map((option, index) => (
-                  <div key={index}>
-                    <RawInputValuePreview raw={option.valueJson} />
-                  </div>
-                ))}
-              </div>
-            )}
-            {policyValues?.has(variable.key) ? (
-              <p className="text-xs text-muted-foreground">
-                Input policy configured. Edit approved values in Advanced settings.
-              </p>
-            ) : (
-              <p className="text-xs text-muted-foreground">No values approved yet.</p>
-            )}
-          </div>
+          <TemplatePolicyOptions
+            key={variable.key}
+            variable={variable}
+            value={policyValues?.get(variable.key)}
+            disabled={!policyValues}
+            onChange={(value) => {
+              if (!policyValues) return;
+              policyValues.set(variable.key, value);
+              setPolicy(inputsJson(policyValues));
+            }}
+          />
         ))}
         {!variables.parameters.length && (
           <p className="text-sm text-muted-foreground">No fleet input variables.</p>

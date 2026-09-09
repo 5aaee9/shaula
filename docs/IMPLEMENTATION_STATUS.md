@@ -16,6 +16,30 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Template approval controls and optional inputs (2026-09-09)
+
+[Spec 0015](specs/0015-template-library-and-variable-discovery.md) and
+[ARD-0019](ard/0019-store-template-sources-and-discover-terraform-variables.md)
+now define direct checkbox editing for declared Fleet input approvals. Publication
+and explicit Update policy replacement share the controls. Editing a value preserves
+other approvals and their raw JSON tokens; manually added values remain visible and
+removable. Invalid JSON disables the affected visual editor without rewriting its draft.
+
+Optional scalar bindings remain editable and display default placeholders with a
+per-field default action. Non-enumerated scalar parameters accept explicit custom
+approvals; booleans use Yes/No radio controls. Defaults never become bindings or
+approved values merely by rendering the form. Null defaults remain distinct from
+omission, and empty strings, false, zero and large integers retain their types.
+
+Local verification: nine focused browser regressions cover exact publication/Update
+payloads, keyboard selection, custom scalar entry, defaults, preserved manual values,
+invalid policy, and 390px layout. The full 125-case browser suite passed, and the
+390px checkbox/input render was inspected. All 643 unfiltered Rust workspace tests passed
+(2 platform-specific tests skipped), as did the literal AGENTS filtered command
+(523 passed, 122 skipped), strict all-target Clippy, rustfmt and frontend build/lint.
+Release delivery uses PowerArmor's locked `shaula` input; these UI tests do not
+provision runners or submit a real GitHub job.
+
 ## Default template synchronization and Update (2026-09-09)
 
 [Spec 0021](specs/0021-default-template-updates.md) and

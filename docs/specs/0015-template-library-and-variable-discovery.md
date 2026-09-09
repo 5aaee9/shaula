@@ -122,6 +122,13 @@ Terraform 语义依据：[variable declaration](https://developer.hashicorp.com/
   非敏感默认值与候选值。可支持的 scalar bindings 用可视化控件编辑，其他形态保留现有
   明确的手动 JSON 配置入口；只维护一份绑定草稿。
 - 默认值不自动填入。使用默认 bindings 和采用声明候选选项分别是 publisher 的显式操作。
+  Optional 只表示允许缺省，不隐藏或禁用输入。可编辑的 scalar binding 显示默认值提示，
+  支持输入覆盖、逐字段采用默认值和清空；清空表示缺省，空字符串须作为显式值保留。
+  Fleet parameters 的声明候选值用 checkbox 逐项批准或取消批准，可同时选择多个值，
+  默认值和唯一候选值都不自动勾选。没有枚举的非敏感 scalar 参数提供输入与显式添加操作，
+  boolean 使用 Yes / No radio；不通过 Optional 标记放宽声明枚举或既有 admission。
+  已批准的自定义值保持可见、可移除；编辑单个参数保留其他参数及候选外批准值。取消最后
+  一个批准值保留显式空数组。手动 JSON 无效时禁用对应可视化编辑并保留原稿。
   采用选项只填充发布草稿，最终仍须 publisher 提交才能形成 immutable Fleet input policy；
   不在 Fleet GET/PUT 时从 schema 或 defaults 自动扩大批准集合。
   `optional(type, null)` 的默认值可展示为 null，但采用默认值时保持字段缺省，避免将

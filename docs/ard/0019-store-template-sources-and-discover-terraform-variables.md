@@ -30,3 +30,8 @@ Template archive bytes 与 Profile 数据共同持久化到 SQLite，文件系�
 
 发现默认值和批准 Fleet 参数是两件事。UI 提供显式采用操作，默认值不能自动成为批准 policy，
 敏感字段默认值也不能通过只读接口暴露。既有可视化输入的类型、精度、草稿和版本固定规则继续生效。
+
+发布页面使用 checkbox 编辑每个参数的批准集合；Optional 不改变编辑权限，只允许缺省。
+无枚举的 scalar 参数可输入并显式添加批准值，boolean 用 radio 区分未选与 false。
+默认值作为提示或显式采用入口，不能因页面渲染写入绑定或批准集合。控件共用原始 JSON
+token 草稿，保留数值精度、候选外批准值及未编辑参数；不增加另一份授权策略或客户端 schema validator。
