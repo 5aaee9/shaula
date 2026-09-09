@@ -82,6 +82,9 @@ async fn active_v2_personal_repository_policy_allows_fleet_admission() -> TestRe
     assert_eq!(denied.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let denied_body = axum::body::to_bytes(denied.into_body(), 1 << 20).await?;
     let denied_json: Value = serde_json::from_slice(&denied_body)?;
-    assert_eq!(denied_json["code"], "AuthTargetDenied");
+    assert_eq!(denied_json["code"], "Unprocessable");
+    assert!(denied_json["detail"]
+        .as_str()
+        .is_some_and(|detail| detail.contains("does not cover")));
     Ok(())
 }
