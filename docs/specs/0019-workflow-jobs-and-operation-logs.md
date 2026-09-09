@@ -16,7 +16,9 @@ v1 展示 Shaula 从已管理 Scale Set 收到并保存的 job 观测，不宣�
 
 每个 Jobs 记录拥有 Shaula 生成的 opaque `id`。非空 Scale Set `jobId` 作为 opaque string 保存；观测身份由 **Fleet incarnation、Scale Set incarnation/remote identity、jobId** 共同确定，关联的 GitHub Target 也必须一致。Session Epoch 是消息来源，不是 job 身份；重连不能为同一 job 创建新行。不同 Fleet/Scale Set 的记录不凭名称合并。
 
-`runnerRequestId` 标识分配请求证据，必须与 jobId 一起保留；同一 job 的多次分配保留独立观测，不能把每次分配取消都创建成一个新 Workflow Job。不能从 request ID、job 显示名称或时间相近推断 GitHub job 身份。空 jobId 先保存为未解析的 request observation；同 scope/request 后续提供一致的非空 jobId 才能提升为 Jobs 记录。冲突保留并标记 `ambiguous`，不把所有空值合并。
+正数 `runnerRequestId` 标识分配请求证据，必须与 jobId 一起保留；同一 job 的多次分配保留独立观测，不能把每次分配取消都创建成一个新 Workflow Job。不能从 request ID、job 显示名称或时间相近推断 GitHub job 身份。空 jobId 先保存为未解析的 request observation；同 scope/正数 request 后续提供一致的非空 jobId 才能提升为 Jobs 记录。冲突保留并标记 `ambiguous`，不把所有空值合并。
+
+`JobAssigned`、`JobStarted`、`JobCompleted` 的原始 `runnerRequestId=0` 保留为未知 request 的观测事实，不提升为正常请求身份。非空 `jobId` 仍可按既有 scope 建立 Jobs 记录；Assigned 可展示已分配，Started/Completed 仍分别受 §2.2 的执行证据要求约束。真实 Runner identity 按 §2.3 使用，缺失时 Generation 保持未关联。不同 job 的零值不会形成 request 冲突，空 jobId 的零值也不能被另一条零值观测补齐或合并。观测去重仍依据原消息/观测身份；不能仅以 `0 == 0` 判定同次 assignment/execution，也不能创建或授权 Acquire。
 
 一次 assignment episode 不等于一个 request ID：上游不保证重分配一定更换 `runnerRequestId`。只有相容的 runner identity、assignment timestamps 等可信证据足以区分同次执行、不同分配与先后时才归组/排序；证据不足就保留独立观测并标 unknown/ambiguous。不得按消息到达顺序、request 数值大小或本地时间猜测哪次分配最新。
 
@@ -26,7 +28,7 @@ Workflow 重跑、matrix 同名 job 和同一 run 下的不同 job 不按名称�
 
 | 字段 | 用途与约束 |
 | --- | --- |
-| `jobId`, `runnerRequestId` | scoped opaque job 身份与分配请求；均不是 Actions REST numeric job ID |
+| `jobId`, `runnerRequestId` | scoped opaque job 身份与分配请求；均不是 Actions REST numeric job ID；原始 request `0` 仅保留未知事实，不充当有效身份 |
 | `ownerName`, `repositoryName` | 仓库展示；按字段校验/限长，不作为新的授权来源 |
 | `jobDisplayName`, `jobWorkflowRef` | job 标题和 workflow ref；ref 不是 workflow YAML 的 `name` |
 | `workflowRunId`, `eventName` | run 与触发事件；positive run ID 才能生成 run 链接 |
@@ -57,6 +59,8 @@ Jobs 同时保存 `observed_status`、`reported_result`、来源/时间和 `fres
 缺少 Started 且不能证明 Completed 属于实际执行时，只显示该分配的结束报告，`observed_status` 保持 unknown；不能因为存在 runnerId 或 result 就越过“未领取而重新分配”的歧义。
 
 保留现有 ingest 的 session fence、同消息 changed-payload 检查、先持久化再 ACK 和 demand/outbox 原子边界。Available 也必须保存 job 观测。Jobs 投影可异步从已提交观测构建；投影失败、UI 断线或 GitHub 元数据不足不触发重复 Acquire 或阻塞安全清理。重放重建应幂等。
+
+含零 request Assigned/Started/Completed 观测的合法消息同样适用上述原子边界：有效的 statistics、原始未知 request 观测（含真实 job/runner 证据）和 message fact 必须一起持久化，随后才 ACK；不能为了推进 checkpoint 跳过事实，也不能把未知 request 当协议错误而反复回滚整批 demand。
 
 Scale Set 消息是可能重复、乱序、缺失和批次截断的提示。页面明确说明历史覆盖从本功能启用/保留窗口开始，不把没有记录解释为 GitHub 没有 job；不由最后收到一条消息的时间证明 listener 健康。
 
@@ -201,7 +205,7 @@ Setup Info 的批准内容策略、归档和访问记录仍由本文维护，传
 
 ## 9. Acceptance
 
-1. 真实或忠实 oracle fixtures 覆盖所有 workflow metadata、Available 持久化、numeric runner ID、result/null 值；opaque jobId 不被转成 REST job ID。
+1. 真实或忠实 oracle fixtures 覆盖所有 workflow metadata、Available 持久化、numeric runner ID、result/null 值；opaque jobId 不被转成 REST job ID。覆盖零 request Assigned/Started/Completed、`TotalAssignedJobs=1` 的原子提交、ACK 和幂等重投，保留真实 job/runner 证据且不生成 acquisition；不同 job/空 jobId 的零 request 不串联，不凭零值相等归并执行。负数 request 和零 request `JobAvailable` 仍被拒绝且不 ACK。
 2. 同 job 多次 Assigned → Completed/canceled → 再 Assigned/Started 不显示最终取消；覆盖相同 request ID 的不同分配、缺少 timestamps、旧取消跨 session 晚到。重复、乱序、丢消息和 changed payload 不造成重复 Acquire、job 合并或状态覆盖。
 3. 同名/matrix/rerun/不同 Fleet/Scale Set 的 job 不串联；warm Runner、provision failure、仅名字旧记录、runner ID/name 冲突不被猜测关联。晚到可靠证据可补关联。
 4. Jobs 以 workflow job 展示；完成 job + Destroy 失败、运行结束但 conclusion unknown、unassigned failed Create 均可独立发现并查看正确日志。

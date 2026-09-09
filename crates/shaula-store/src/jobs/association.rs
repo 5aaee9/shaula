@@ -94,6 +94,9 @@ async fn request_conflicts<C: ConnectionTrait>(
     scope: &str,
     request: i64,
 ) -> StoreResult<bool> {
+    if request <= 0 {
+        return Ok(false);
+    }
     let evidence = rows(
         db,
         "SELECT COUNT(DISTINCT NULLIF(protocol_job_id,'')) AS identities,

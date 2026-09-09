@@ -76,7 +76,8 @@ impl Store {
         let mut runners = BTreeSet::new();
         let mut requests = BTreeSet::new();
         for fact in facts(message) {
-            if fact.request <= 0
+            if fact.request < 0
+                || (fact.request == 0 && fact.kind == ObservationKind::Available)
                 || fact.job.len() > 4096
                 || fact.name.is_some_and(|n| n.len() > 1024)
             {
@@ -91,7 +92,10 @@ impl Store {
             };
             affected.extend(job_id.iter().cloned());
             runners.extend(fact.runner);
-            requests.insert(fact.request);
+            // Zero is a wire sentinel, never a shared request identity.
+            if fact.request > 0 {
+                requests.insert(fact.request);
+            }
             let observation = JobObservation {
                 id: uuid::Uuid::new_v4().to_string(),
                 kind: fact.kind,

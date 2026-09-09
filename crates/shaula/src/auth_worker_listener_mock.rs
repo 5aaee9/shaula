@@ -1,7 +1,7 @@
 //! Real HTTP session/queue endpoints for composition regression tests.
 
 use axum::{
-    extract::Query,
+    extract::{Path, Query},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{delete, get, post, put},
@@ -27,6 +27,7 @@ pub(crate) struct ListenerMock {
     pub acks: AtomicUsize,
     pub acquisitions: AtomicUsize,
     pub emit_message: AtomicBool,
+    pub message_response: Mutex<Option<Value>>,
     pub expired: AtomicBool,
     pub expired_ack: AtomicBool,
     pub denied: AtomicBool,
@@ -125,22 +126,23 @@ impl ListenerMock {
                 async move {
                     assert_eq!(headers.get("authorization").unwrap(), "Bearer composition-queue-token");
                     assert_eq!(headers.get("x-scalesetmaxcapacity").unwrap(), "0");
-                    if let Some(id) = query.get("lastMessageId") { assert_eq!(id, "1"); }
+                    if let Some(id) = query.get("lastMessageId") { assert!(id.parse::<i64>().unwrap() > 0); }
                     state.polls.fetch_add(1, Ordering::SeqCst);
                     if state.expired.load(Ordering::SeqCst) { return StatusCode::UNAUTHORIZED.into_response(); }
                     if state.denied.load(Ordering::SeqCst) { return StatusCode::FORBIDDEN.into_response(); }
                     if state.emit_message.swap(false, Ordering::SeqCst) {
-                        Json(json!({
+                        Json(state.message_response.lock().unwrap().clone().unwrap_or_else(|| json!({
                             "messageId":1, "messageType":"RunnerScaleSetJobMessages",
                             "statistics":{"totalAssignedJobs":2},
                             "body":json!([{"messageType":"JobAvailable","runnerRequestId":11,"jobId":"job-11"}]).to_string()
-                        })).into_response()
+                        }))).into_response()
                     } else { StatusCode::ACCEPTED.into_response() }
                 }
             }))
-            .route("/queue/f1/1", delete(move |headers: HeaderMap| {
+            .route("/queue/f1/{message_id}", delete(move |Path(message_id): Path<i64>, headers: HeaderMap| {
                 let state = acks.clone();
                 async move {
+                    assert!(message_id > 0);
                     assert_eq!(headers.get("authorization").unwrap(), "Bearer composition-queue-token");
                     state.acks.fetch_add(1, Ordering::SeqCst);
                     if state.expired_ack.load(Ordering::SeqCst) {

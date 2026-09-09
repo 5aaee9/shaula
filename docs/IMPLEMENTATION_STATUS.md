@@ -16,6 +16,39 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Job observations without a request identity (2026-09-09)
+
+The Ready observation after deploying `35cf06f` was temporary. The user reported
+`AccessVerificationFailed` again, and the next production investigation isolated
+a different failure after successful access and labels verification. Queue message
+`100000001` contained `totalAssignedJobs=1` and one `JobAssigned` with a nonempty
+job ID, `runnerRequestId=0`, and no Runner ID/name. The store rejected it as
+`invalid observed runner request ID`, rolled back demand and observations, and
+left the ACK checkpoint at zero. The same message was repeatedly delivered; the
+generic listener failure surfaced as `AccessVerificationFailed`.
+
+Spec 0001 §8, spec 0019 §2 and ARDs 0003/0023 now distinguish zero request
+Assigned/Started/Completed observations from positive acquisition/request identity.
+The local live evidence covers Assigned; the [billet author's run report](https://billet.readthedocs.io/en/stable/reference/upstream-references.html)
+additionally describes Completed retaining zero on 2026-08-19. The Assigned shape
+is also reported by a third-party user in [actions/scaleset#107](https://github.com/actions/scaleset/issues/107),
+not confirmed there by a maintainer. Started zero is supported as an unknown-request
+contract; its occurrence was not separately demonstrated by this investigation.
+The fix must retain these unknown facts and real job/runner evidence with the valid
+demand snapshot, then ACK the committed message, without acquiring request zero
+or conflating unrelated Jobs/episodes.
+The implementation now keeps zero-request facts in the UUID-keyed workflow
+observation ledger while excluding them from request-based indexes, promotion
+and conflict checks. Exact scoped Runner evidence and source episode times can
+still establish execution; an unknown request alone cannot. No migration is needed.
+Two real HTTP/listener/SQLite composition tests reproduced the production failure
+before the fix and now pass, including Assigned/Started/Completed delivery, demand,
+ACK, replay and no zero-request acquisition. Store/core regressions cover multiple
+Jobs and anonymous facts without conflation and both known Runner completions.
+All 716 local workspace tests pass (2 platform skips), with strict Clippy and
+rustfmt. Deployment and processing of the original live message still need to be
+verified; these tests do not establish that a production workflow has completed.
+
 ## Scale Set labels protocol correction (2026-09-09)
 
 Live GitHub.com validation isolated two errors in the mutable-labels implementation:
@@ -46,7 +79,9 @@ succeeded, and listener epoch 5 used the original owned Scale Set 9. Independent
 GitHub reads confirmed `self-hosted` and `wanix-runners` and accepted the mixed
 organization inventory. The Docker Fleet remained Ready. Schema 16, Fleet and
 Template revisions, credentials and account bindings were preserved. This proves
-access/labels recovery, not a newly executed workflow job. A separate intermittent
+access/labels recovery at that observation point, not sustained listener health or
+a newly executed workflow job; the later Assigned-message failure is recorded
+above. A separate intermittent
 SQLite busy error had occurred before deployment; its historical lock holder was
 not established by this protocol fix.
 

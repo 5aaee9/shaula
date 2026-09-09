@@ -118,12 +118,30 @@ fn newest_start<'a>(starts: &[&'a JobObservation]) -> Option<&'a JobObservation>
 }
 
 fn same_assignment(left: &JobObservation, right: &JobObservation) -> bool {
-    left.runner_request_id == right.runner_request_id
-        && left.metadata.scale_set_assign_time == right.metadata.scale_set_assign_time
+    if left.runner_request_id > 0 && right.runner_request_id > 0 {
+        return left.runner_request_id == right.runner_request_id
+            && left.metadata.scale_set_assign_time == right.metadata.scale_set_assign_time;
+    }
+    // The zero sentinel supplies no equality evidence. A direct assignment
+    // can match a later request only through its source assignment time.
+    left == right
+        || (left.metadata.scale_set_assign_time.is_some()
+            && left.metadata.scale_set_assign_time == right.metadata.scale_set_assign_time)
 }
 
 fn same_execution(left: &JobObservation, right: &JobObservation) -> bool {
-    left.runner_request_id == right.runner_request_id
+    let request_evidence = if left.runner_request_id > 0 && right.runner_request_id > 0 {
+        left.runner_request_id == right.runner_request_id
+    } else {
+        // Two unknown requests need independent source episode evidence. Do
+        // not let an unknown request bridge distinct positive request IDs.
+        left.runner_request_id == 0
+            && right.runner_request_id == 0
+            && (left == right
+                || left.metadata.scale_set_assign_time.is_some()
+                || left.metadata.runner_assign_time.is_some())
+    };
+    request_evidence
         && left.runner_id.is_some()
         && left.runner_id == right.runner_id
         && left.generation_id.is_some()

@@ -43,10 +43,16 @@ impl Store {
                 )
             }));
         for (kind, request_id, job_id, runner_name) in observations {
-            if request_id <= 0 {
+            if request_id < 0 {
                 return Err(StoreError::Corrupt(
                     "invalid observed runner request ID".into(),
                 ));
+            }
+            if request_id == 0 {
+                // Direct assignments can lack a request identity. The complete
+                // approved fact is retained by jobs_ingest_tx in this same
+                // transaction; this legacy request-keyed index cannot hold it.
+                continue;
             }
             tx.execute(Statement::from_sql_and_values(DbBackend::Sqlite,
                 "INSERT OR IGNORE INTO listener_job_observations(fleet_key,epoch,message_id,observation_kind,

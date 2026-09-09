@@ -5,6 +5,9 @@ use shaula_core::ports::{JobCompletedMessage, JobMessage, JobStartedMessage, Pol
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
+#[path = "assigned_request_tests.rs"]
+mod assigned_request;
+
 fn message(id: i64, job: &str) -> PollMessage {
     PollMessage {
         message_id: id,

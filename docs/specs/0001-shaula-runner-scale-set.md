@@ -340,6 +340,8 @@ ACK failure 保留 durable message；若原 session 无法确认该消息，按�
 
 Session initial statistics 和 message statistics 必须明确包含非负 `TotalAssignedJobs`。缺失/null 的 statistics、缺失 assigned count 或负计数是无效响应，不得默认为零、清空 demand 或标记健康。显式零是正常的权威快照。
 
+非 acquisition 观测 `JobAssigned`、`JobStarted`、`JobCompleted` 的 `runnerRequestId=0` 表示没有有效 request identity；应按原消息身份幂等保存该未知事实、已有 `jobId`、Runner identity 和批准 metadata，并与同批 statistics、message fact 和 wake marker 一起提交，提交后才 ACK。不能因为这个未知 request 提示而回滚有效的 `TotalAssignedJobs`，也不能丢弃观测或提前 ACK 来跳过重投。`0` 不是可 Acquire 的 request、跨消息 request 去重键、Jobs 关联或执行 episode 相同的证据；保留的真实 job/runner 证据仍按既有 scope、identity 和 lifecycle safety gates 使用，不能因 request 未知而丢弃。`JobAvailable` 创建 acquisition intent 仍要求正数 request ID，所有消息的负数 request ID 仍拒绝。零值观测的 Jobs 投影规则由 spec 0019 §2 维护；本地 Assigned 与外部 Completed 实证及 Started 的合同支持边界见 ARD-0003。
+
 Session request 的 `X-ScaleSetMaxCapacity` 始终是该 Fleet 的 `max_runners`，而不是 daemon global concurrency、当前空闲 worker 数或所有 Fleet 容量之和。Listener reconnect 使用 bounded exponential backoff 和 jitter；一个 Fleet 的 retry/circuit breaker 不占满全局 scheduler，也不暂停其他 Fleet 的 listener。
 
 Persist-before-ACK 消除了“本地提交尚未完成却主动确认”的窗口，但不提供 exactly-once：消息可能在到达前丢失、被截断/重分配，ACK 结果也可能未知。因此 Job Observation 和单个 message 仍只是 hint；成功持久化的 current-statistics snapshot 是可替换的 level source。Shaula 不从 Started/Completed 增减永久计数器，也不以完整事件序列作为安全前提。

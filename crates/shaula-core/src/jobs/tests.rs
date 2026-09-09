@@ -84,6 +84,48 @@ fn new_source_assignment_can_follow_a_completed_execution() {
 }
 
 #[test]
+fn assigned_zero_request_matches_execution_only_with_source_assignment_evidence() {
+    let mut assigned = observation(ObservationKind::Assigned, Some(20), None);
+    assigned.runner_request_id = 0;
+    let started = observation(ObservationKind::Started, Some(20), Some(42));
+    for order in permutations(&[assigned.clone(), started.clone()]) {
+        assert_eq!(
+            project_observations(&order).observed_status,
+            ObservedStatus::Running
+        );
+    }
+    assigned.metadata.scale_set_assign_time = None;
+    for order in permutations(&[assigned, started]) {
+        assert_eq!(
+            project_observations(&order).observed_status,
+            ObservedStatus::Unknown
+        );
+    }
+}
+
+#[test]
+fn zero_request_execution_requires_exact_runner_and_source_episode_evidence() {
+    let mut started = observation(ObservationKind::Started, Some(20), Some(42));
+    started.runner_request_id = 0;
+    let mut completed = observation(ObservationKind::Completed, Some(20), Some(42));
+    completed.runner_request_id = 0;
+    for order in permutations(&[started.clone(), completed.clone()]) {
+        assert_eq!(
+            project_observations(&order).observed_status,
+            ObservedStatus::Completed
+        );
+    }
+    started.metadata.scale_set_assign_time = None;
+    completed.metadata.scale_set_assign_time = None;
+    for order in permutations(&[started, completed]) {
+        assert_eq!(
+            project_observations(&order).observed_status,
+            ObservedStatus::Unknown
+        );
+    }
+}
+
+#[test]
 fn completed_without_started_reports_result_without_claiming_execution() {
     let mut completed = observation(ObservationKind::Completed, Some(10), Some(42));
     completed.reported_result = Some("failed".into());

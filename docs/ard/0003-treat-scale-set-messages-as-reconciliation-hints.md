@@ -9,6 +9,12 @@ Shaula v1 由纯 Rust `shaula-scaleset` Adapter 提供 message session/长轮询
 
 即使采用 persist-before-ACK，服务端截断、重分配、session 丢失、消息过期或协议本身不提供完整历史时，JobStarted、JobCompleted 仍可能缺失、重复或乱序。因此消息只用于加速 reconcile，不能累加成 desired count 或当作生命周期真相源。Shaula 通过最新 Assigned Demand 覆盖快照、GitHub Runner inventory、启动恢复、周期性 retirement reaper 和持久化 Generation/worker/外部副作用事实等独立 level-triggered sources 收敛资源生命周期。
 
+2026-09-09 的 Shaula 生产消息包含有效 `TotalAssignedJobs=1`、非空 jobId 和 `runnerRequestId=0` 的 `JobAssigned`。将该提示套用 acquisition 的正数请求校验，导致整批 transaction 回滚、demand 未提交、消息不 ACK 并持续重投。
+
+外部一手运行记录也覆盖这一协议形状：[billet 作者的实测记录](https://billet.readthedocs.io/en/stable/reference/upstream-references.html) 称其 2026-08-19 GitHub.com job 在直接 Assigned 时 request 为零，随后 Completed 仍为零；这是作者报告，尚未由本次 Shaula 现场复现 Completed。[actions/scaleset#107](https://github.com/actions/scaleset/issues/107) 是另一使用者在官方仓库报告的直接 Assigned 零值，并非维护者确认或协议保证。当前证据没有单独证明 Started 零值常见。
+
+因此非 acquisition 的 Assigned/Started/Completed 统一保留零值为未知 request 事实；Started 纳入完整的未知请求合同支持。有效 statistics、观测和 message fact 原子提交后才 ACK，不能通过丢弃事实或提前 ACK 恢复表面健康。正数 request 才能作为 acquisition/request 关联证据，零值相等不证明同一请求或执行，Available 零值及所有负数 request 仍拒绝。真实 job/runner 证据继续保留并按原 scope/ownership/safety gates 使用；无需仿照其他控制器另造 request 身份，也不能由未知 request 自动获得 Runner 关联或清理权限。精确协议与 Jobs 投影约束分别由 spec 0001 §8 和 spec 0019 §2 维护。
+
 ## Consequences
 
 - v1 不承诺完整 job audit、exactly-once 处理或完整 job-to-runner 映射。

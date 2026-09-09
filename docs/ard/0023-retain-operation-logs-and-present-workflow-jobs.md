@@ -34,6 +34,12 @@ Scale Set 的 opaque `jobId` 不是 GitHub REST workflow-job numeric ID，不能
 直接拼成 REST 请求或 GitHub job URL，也不能通过显示转换暗示两者等价。
 Job identity、消息去重与 assignment observation 的精确范围由 spec 定义。
 
+非 acquisition 的 Assigned/Started/Completed 允许缺少有效 request identity
+（原始值为 `0`）。本地 Assigned、外部作者 Completed 实证及 Started 合同支持的
+区别见 ARD-0003。保留这一未知事实及真实 job/runner 证据；零值本身不能串联
+不同 job、补齐无 jobId 记录、判定同一次执行或获得 Acquire/Runner 关联权限。
+原子提交及正数 acquisition 边界继续由 ARD-0003 与 spec 维护。
+
 `JobCompleted` 的 `canceled` 可能表示未及时领取导致 assignment 被撤销、job
 重新排队；不能仅凭该消息把整个 workflow job 宣告最终取消。
 [pinned Scale Set oracle](https://github.com/actions/scaleset/blob/cb0405b2d874500e75ae34eff8d582ab75956b45/README.md#job-reassignment)

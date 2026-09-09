@@ -65,6 +65,8 @@ impl ObservationKind {
 pub struct JobObservation {
     pub id: String,
     pub kind: ObservationKind,
+    /// The wire value: zero means an unknown request on a direct assignment.
+    /// Only positive values can join observations by request identity.
     pub runner_request_id: i64,
     pub runner_id: Option<i64>,
     pub runner_name: Option<String>,
