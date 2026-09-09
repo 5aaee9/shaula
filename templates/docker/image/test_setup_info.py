@@ -1,13 +1,12 @@
 """Credential-free validation of setup-log transport and atomic publication."""
 import importlib.util
 import json
-import os
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from pathlib import Path
 from unittest import mock
 
 spec = importlib.util.spec_from_file_location("setup_info", Path(__file__).with_name("setup_info.py"))

@@ -2,7 +2,6 @@
 
 import json
 import os
-from pathlib import Path
 import re
 import stat
 import subprocess
@@ -11,6 +10,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 GROUP = "Terraform apply (runner provisioning)"
 DESCRIPTOR_PATH = Path("/shaula/setup_info.json")
@@ -84,7 +84,7 @@ def parse_entries(raw, own_only=False):
     lines = 0
     for entry in entries:
         if not isinstance(entry, dict):
-            raise ValueError("setup entry rejected")
+            raise TypeError("setup entry rejected")
         if own_only and (set(entry) != {"Group", "Detail"} or entry["Group"] != GROUP
                          or not isinstance(entry["Detail"], str)):
             raise ValueError("unexpected setup group")

@@ -2,9 +2,9 @@
 import argparse
 import hashlib
 import json
-from pathlib import Path
 import re
 import shutil
+from pathlib import Path
 
 
 def prepare(platform, image, output):

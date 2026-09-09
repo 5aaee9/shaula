@@ -1,8 +1,8 @@
 import importlib.util
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 spec = importlib.util.spec_from_file_location("prepare", Path(__file__).with_name("prepare.py"))
 generator = importlib.util.module_from_spec(spec)
