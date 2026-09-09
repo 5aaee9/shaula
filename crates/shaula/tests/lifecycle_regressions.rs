@@ -71,7 +71,7 @@ async fn setup() -> (
 ) {
     setup_with_labels(vec![shaula_core::github::Label {
         name: "shaula-x64".into(),
-        label_type: "Customer".into(),
+        label_type: "System".into(),
     }])
     .await
 }

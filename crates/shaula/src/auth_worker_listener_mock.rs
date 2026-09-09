@@ -4,7 +4,7 @@ use axum::{
     extract::Query,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::{delete, get, patch, post},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use serde_json::{json, Value};
@@ -57,6 +57,7 @@ impl ListenerMock {
         let acks = self.clone();
         let acquisitions = self.clone();
         let labels = self.clone();
+        let unchanged_labels = self.clone();
         let inventory = self.clone();
         let queue = format!("{base}/queue/f1");
         Router::new()
@@ -74,12 +75,20 @@ impl ListenerMock {
                     } else { json!({"count":0,"value":[]}) })
                 }
             }))
-            .route("/actions/_apis/runtime/runnerscalesets/42", patch(move |Query(query): Query<HashMap<String,String>>, Json(body): Json<Value>| {
+            .route("/actions/_apis/runtime/runnerscalesets/42", put(move |Query(query): Query<HashMap<String,String>>, Json(body): Json<Value>| {
                 let state = labels.clone();
                 async move {
                     assert_eq!(query.get("api-version").map(String::as_str), Some("6.0-preview"));
                     assert_eq!(body.as_object().unwrap().len(), 1);
                     assert!(body["labels"].is_array());
+                    if body["labels"].as_array().unwrap().iter().any(|label| {
+                        !matches!(label["type"].as_str(), Some("System" | "User"))
+                    }) {
+                        return (StatusCode::BAD_REQUEST, Json(json!({
+                            "typeName":"ArgumentNullException",
+                            "message":"Value cannot be null. (Parameter 'runnerScaleSet')"
+                        }))).into_response();
+                    }
                     state.label_updates.fetch_add(1, Ordering::SeqCst);
                     if !state.ignore_label_updates.load(Ordering::SeqCst) {
                         *state.label_values.lock().unwrap() = Some(body["labels"].clone());
@@ -88,6 +97,10 @@ impl ListenerMock {
                         (StatusCode::OK, "{").into_response()
                     } else { Json(state.scale_set()).into_response() }
                 }
+            }).patch(move || {
+                let state = unchanged_labels.clone();
+                // GitHub accepts PATCH but returns the unchanged Scale Set.
+                async move { Json(state.scale_set()) }
             }))
             .route("/actions/_apis/runtime/runnerscalesets/42/sessions", post(move || {
                 let state = sessions.clone();

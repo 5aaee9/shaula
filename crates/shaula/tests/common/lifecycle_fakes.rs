@@ -50,7 +50,7 @@ impl GitHubAccessPort for GitHub {
             labels: self.labels.lock().unwrap().clone().unwrap_or_else(|| {
                 vec![Label {
                     name: "shaula-x64".into(),
-                    label_type: "Customer".into(),
+                    label_type: "System".into(),
                 }]
             }),
         }))

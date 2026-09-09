@@ -42,7 +42,7 @@ async fn blocked_default_label_binding_recovers_without_creating_another_scale_s
 async fn default_label_name_and_type_conflicts_remain_blocked() {
     for labels in [
         vec![label("different-fleet", "System")],
-        vec![label("shaula-x64", "Customer")],
+        vec![label("shaula-x64", "User")],
         vec![label("shaula-x64", "future-type")],
         Vec::new(),
     ] {

@@ -18,7 +18,7 @@ impl FleetSupervisor {
             return Ok(OwnershipOutcome::Blocked(ReasonCode::OwnershipProofFailed));
         };
         // ensure_ownership holds the shared Fleet exclusive effect gate through
-        // lookup, pending writes, PATCH and readback, including recovery.
+        // lookup, pending writes, PUT and readback, including recovery.
         if !listener.authorize_runtime().await? {
             return Ok(OwnershipOutcome::Blocked(ReasonCode::OwnershipProofFailed));
         }
@@ -84,7 +84,7 @@ impl FleetSupervisor {
                     .await
             }
         }
-        // Never mark Ready merely because PATCH returned 200.
+        // Never mark Ready merely because PUT returned 200.
         match self.github.lookup_scale_set(&self.identity, group_id).await {
             Ok(LookupOutcome::ExactlyOne(view))
                 if view.id == bound_id && self.view_compatible(&view, group_id) =>

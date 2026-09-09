@@ -118,7 +118,7 @@ impl FleetSupervisor {
     /// identity and routing; a same-name match alone never grants ownership.
     pub(crate) async fn ensure_ownership(&self, now: i64) -> CoreResult<OwnershipOutcome> {
         // Readback may restore Adopted too: serialize every ownership proof
-        // with replacement and acquisition, not only the PATCH itself.
+        // with replacement and acquisition, not only the labels PUT itself.
         let _gate = match &self.listener {
             Some(listener) => {
                 let gate = listener.handoff_gate().await;

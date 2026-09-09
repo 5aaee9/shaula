@@ -1,4 +1,4 @@
-//! Owned label replacements follow the pinned PATCH wire contract.
+//! Owned label replacements follow the verified labels-only PUT contract.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -17,7 +17,7 @@ const PATH: &str = "/actions-service/_apis/runtime/runnerscalesets/42";
 fn desired() -> Vec<Label> {
     vec![Label {
         name: "linux".into(),
-        label_type: "Customer".into(),
+        label_type: "System".into(),
     }]
 }
 
@@ -29,7 +29,7 @@ fn view(labels: serde_json::Value) -> serde_json::Value {
 }
 
 #[tokio::test]
-async fn patch_only_replaces_labels_and_preserves_their_types() {
+async fn put_only_replaces_labels_and_preserves_their_types() {
     for labels in [desired(), vec![Label::system("shaula-x64").unwrap()]] {
         let expected = serde_json::json!({"labels": labels});
         let expected_view = view(serde_json::json!(labels
@@ -44,7 +44,7 @@ async fn patch_only_replaces_labels_and_preserves_their_types() {
                 let expected = expected.clone();
                 let response = expected_view.clone();
                 async move {
-                    assert_eq!(request.method(), Method::PATCH);
+                    assert_eq!(request.method(), Method::PUT);
                     assert_eq!(request.uri().query(), Some("api-version=6.0-preview"));
                     assert_eq!(request.headers()[header::CONTENT_TYPE], "application/json");
                     assert!(request.headers()[header::AUTHORIZATION]
@@ -77,7 +77,7 @@ async fn patch_only_replaces_labels_and_preserves_their_types() {
 }
 
 #[tokio::test]
-async fn expired_admin_response_rechecks_authority_and_retries_patch_once() {
+async fn expired_admin_response_rechecks_authority_and_retries_put_once() {
     let requests = Arc::new(AtomicUsize::new(0));
     let seen = requests.clone();
     let routes = Router::new().route(
@@ -105,8 +105,8 @@ async fn expired_admin_response_rechecks_authority_and_retries_patch_once() {
 }
 
 #[tokio::test]
-async fn patch_rejections_are_classified_without_unbounded_retries() {
-    for status in [401, 403, 404, 429, 500] {
+async fn put_rejections_are_classified_without_unbounded_retries() {
+    for status in [400, 401, 403, 404, 429, 500] {
         let requests = Arc::new(AtomicUsize::new(0));
         let seen = requests.clone();
         let routes = Router::new().route(
@@ -146,7 +146,7 @@ async fn patch_rejections_are_classified_without_unbounded_retries() {
 }
 
 #[tokio::test]
-async fn patch_does_not_follow_redirects_or_accept_malformed_labels() {
+async fn put_does_not_follow_redirects_or_accept_malformed_labels() {
     let redirected = Arc::new(AtomicUsize::new(0));
     let seen = redirected.clone();
     let routes = Router::new()
@@ -196,7 +196,7 @@ async fn patch_does_not_follow_redirects_or_accept_malformed_labels() {
 }
 
 #[tokio::test]
-async fn interrupted_patch_response_never_proves_an_update() {
+async fn interrupted_put_response_never_proves_an_update() {
     let routes = Router::new().route(
         PATH,
         any(|| async {

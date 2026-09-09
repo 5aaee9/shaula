@@ -74,7 +74,7 @@ async fn owned_labels_add_remove_and_clear_converge_on_the_same_scale_set() {
         } else {
             json!(labels
                 .iter()
-                .map(|name| json!({"name":name,"type":"Customer"}))
+                .map(|name| json!({"name":name,"type":"System"}))
                 .collect::<Vec<_>>())
         };
         assert_eq!(listener.scale_set()["labels"], expected);
@@ -94,7 +94,7 @@ async fn owned_labels_add_remove_and_clear_converge_on_the_same_scale_set() {
 }
 
 #[tokio::test]
-async fn patch_success_without_changed_readback_stays_pending_and_blocks_acquisition() {
+async fn put_success_without_changed_readback_stays_pending_and_blocks_acquisition() {
     let (plane, mut wiring, listener, clock, mock) = setup().await;
     ready(&plane, &mut wiring, &clock).await;
     listener.ignore_label_updates.store(true, Ordering::SeqCst);
@@ -133,7 +133,7 @@ async fn patch_success_without_changed_readback_stays_pending_and_blocks_acquisi
 }
 
 #[tokio::test]
-async fn malformed_applied_patch_response_recovers_from_readback_after_wiring_restart() {
+async fn malformed_applied_put_response_recovers_from_readback_after_wiring_restart() {
     let (plane, mut wiring, listener, clock, mock) = setup().await;
     ready(&plane, &mut wiring, &clock).await;
     listener
@@ -172,9 +172,9 @@ async fn malformed_applied_patch_response_recovers_from_readback_after_wiring_re
 }
 
 #[tokio::test]
-async fn same_name_unowned_labels_conflict_never_sends_a_patch() {
+async fn same_name_unowned_labels_conflict_never_sends_a_put() {
     let (plane, mut wiring, listener, clock, mock) = setup().await;
-    *listener.label_values.lock().unwrap() = Some(json!([{"name":"foreign","type":"Customer"}]));
+    *listener.label_values.lock().unwrap() = Some(json!([{"name":"foreign","type":"User"}]));
     tick(&mut wiring, &clock, NOW).await;
     tick(&mut wiring, &clock, NOW + 1_000).await;
     let head = plane.control_plane.fleet_get(FLEET).await.unwrap().unwrap();
@@ -200,7 +200,7 @@ async fn same_name_unowned_labels_conflict_never_sends_a_patch() {
 }
 
 #[tokio::test]
-async fn owned_labels_mismatch_with_unknown_runner_inventory_never_sends_a_patch() {
+async fn owned_labels_mismatch_with_unknown_runner_inventory_never_sends_a_put() {
     let (plane, mut wiring, listener, clock, mock) = setup().await;
     ready(&plane, &mut wiring, &clock).await;
     listener.unknown_runner.store(true, Ordering::SeqCst);

@@ -161,7 +161,7 @@ async fn pending_fleet_becomes_ready_and_consumes_the_real_message_protocol() {
 #[tokio::test]
 async fn existing_blocked_binding_recovers_from_lowercase_system_labels() {
     let (plane, mut wiring, listener, clock, mock) = setup().await;
-    *listener.label_type.lock().unwrap() = Some("customer".into());
+    *listener.label_type.lock().unwrap() = Some("user".into());
     tick(&mut wiring, &clock, NOW).await;
     tick(&mut wiring, &clock, NOW + 1_000).await;
     let blocked = plane.control_plane.fleet_get(FLEET).await.unwrap().unwrap();
@@ -215,7 +215,7 @@ async fn existing_blocked_binding_recovers_from_lowercase_system_labels() {
         "Succeeded"
     );
     assert_eq!(mock.scale_set_creates.load(Ordering::SeqCst), 0);
-    *listener.label_type.lock().unwrap() = Some("customer".into());
+    *listener.label_type.lock().unwrap() = Some("user".into());
     tick(&mut wiring, &clock, NOW + 3_000).await;
     let drifted = plane.control_plane.fleet_get(FLEET).await.unwrap().unwrap();
     assert_eq!(drifted.phase, "Ready", "{drifted:?}");

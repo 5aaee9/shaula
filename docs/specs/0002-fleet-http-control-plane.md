@@ -321,13 +321,15 @@ Auth Profile 内同 numeric App identity 的 credential、policy 或 binding pub
 
 已有 Fleet 可以通过同一 conditional `PUT` 增加、删除或替换 `github.labels`。它使用既有 `fleet.write`、CSRF、`If-Match` 和 idempotency 检查；有效修改提交新的 immutable Fleet Revision、mutation fence、Change、audit 和 wake marker 后返回 `202`。只修改 labels 不要求零 Occupancy，允许 Busy jobs 存在，不改变 Fleet incarnation、Scale Set identity/ID、Auth 或 Template pin。混合修改仍须满足各字段原有 barrier；旧 ETag 返回 `412`，accepted request replay 不重复提交。
 
-显式 labels 使用现有 GitHub `Customer` wire type；空列表恢复以 Scale Set name 为名的 `System` fallback label，不发送含义不明的空 PATCH。比较使用完整 `(name, normalized type)` 集合，忽略顺序和重复项；删除 label 必须收敛，不能仅检查 desired 是 observed 的子集。
+显式 labels 使用 GitHub `System` wire type；空列表恢复以 Scale Set name 为名的 `System` fallback label，不发送含义不明的空 labels 集合。比较使用完整 `(name, normalized type)` 集合，忽略顺序和重复项；删除 label 必须收敛，不能仅检查 desired 是 observed 的子集。
 
-普通 Fleet supervisor 独占 labels 收敛。首次 create/adopt 仍要求完整 identity、labels 和 inventory 兼容；同名对象或仅保存了候选 ID 不构成修改授权。只有持久化的 proven-owned ID、当前 authenticated identity lookup 和已知 Runner inventory 均匹配时，才允许对该 ID 发出仅含 labels 的 Scale Set PATCH。Target、name、runner group、fingerprint 或未知 Runner 冲突仍阻塞，不能借更新 labels 接管未知 Scale Set。
+普通 Fleet supervisor 独占 labels 收敛。首次 create/adopt 仍要求完整 identity、labels 和 inventory 兼容；同名对象或仅保存了候选 ID 不构成修改授权。只有持久化的 proven-owned ID、当前 authenticated identity lookup 和已知 Runner inventory 均匹配时，才允许通过窄接口对该 ID 发出 Scale Set labels PUT：`_apis/runtime/runnerscalesets/{id}?api-version=6.0-preview`。请求 body 仅包含 `labels`，不携带或复制 ID、name、runner group、runner settings，也不暴露任意 Scale Set replacement。Target、name、runner group、fingerprint 或未知 Runner 冲突仍阻塞，不能借更新 labels 接管未知 Scale Set。
 
-PATCH 前取得与 Fleet PUT/DELETE、session/Acquire 共用的 per-Fleet exclusive effect gate，重新检查 captured incarnation/revision/fence、deletion marker 和完整 observed Auth Context，并持久化非 `Adopted` 的 pending ownership state。SQLite transaction 不跨 HTTP。更新未确认时禁止新 acquisition/Create；已经运行的 jobs、acquired facts 和 Generations 保留，不能为 labels 变化重建或强杀 Runner。
+Scale Set labels PUT 前取得与 Fleet PUT/DELETE、session/Acquire 共用的 per-Fleet exclusive effect gate，重新检查 captured incarnation/revision/fence、deletion marker 和完整 observed Auth Context，并持久化非 `Adopted` 的 pending ownership state。SQLite transaction 不跨 HTTP。更新未确认时禁止新 acquisition/Create；已经运行的 jobs、acquired facts 和 Generations 保留，不能为 labels 变化重建或强杀 Runner。
 
-PATCH response 不是收敛证明：必须 authenticated readback 同一 ID、identity、完整 labels 和 inventory 后才恢复 `Adopted`，随后按原 session 协议恢复 Ready。timeout、丢失 response 或失败保持可见 pending/Degraded reason；下次 reconcile（包括重启后）先 readback，再决定是否重试当前 desired labels。新 Revision supersede 旧 desired，DELETE 阻止新的 PATCH；不宣称 GitHub 提供 remote mutation fence，也不保证已经排队或分配的 job 在更新瞬间重新路由。
+PUT response 不是收敛证明：必须 authenticated readback 同一 ID、identity、完整 labels 和 inventory 后才恢复 `Adopted`，随后按原 session 协议恢复 Ready。timeout、丢失 response 或失败保持可见 pending/Degraded reason；下次 reconcile（包括重启后）先 readback，再决定是否重试当前 desired labels。新 Revision supersede 旧 desired，Fleet DELETE 阻止新的 Scale Set labels PUT；不宣称 GitHub 提供 remote mutation fence，也不保证已经排队或分配的 job 在更新瞬间重新路由。
+
+协议依据包含 2026-09-09 对 GitHub.com 已有 Scale Set 的实测：`Customer` labels 请求被 HTTP `400` 拒绝；改为 `System` 后，同一路径的 PATCH 返回 `200` 但响应和立即 GET 都保留旧 labels；PUT 成功更新 labels。在确认已分配、已领取、运行中和已注册计数均为零且该 Scale Set inventory 为空后，仅含 `labels` 的 PUT 先将 labels 改回原集合，再恢复目标集合；每步均由 authenticated GET 确认 labels 实际变化，并逐项确认 ID/name/runnerGroupId/runnerGroupName/runnerSetting 未变。因此最终 adapter 采用仅含 `labels` 的窄 PUT；不能以 actions/scaleset 通用 `UpdateRunnerScaleSet` 使用 PATCH 或单次 `200` 作为 labels 更新成功的依据，也不能通过删除重建绕过 readback 契约。
 
 ## 7. Auth Revision handoff
 

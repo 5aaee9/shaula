@@ -171,7 +171,7 @@ impl Harness {
                 }),
                 labels: vec![shaula_core::github::Label {
                     name: "shaula-x64".into(),
-                    label_type: "Customer".into(),
+                    label_type: "System".into(),
                 }],
                 auth_profile_key: "prod-app".into(),
                 auth_revision: revision,

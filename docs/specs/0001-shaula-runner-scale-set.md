@@ -311,7 +311,7 @@ Fleet supervisor 激活时 MUST：
 
 存在以下情况时 Fleet 必须停止新 Create 并暴露 bounded Condition：multiple matches、runner group/fingerprint conflict、首次 adoption 的 labels conflict、persisted ID identity mismatch、duplicate local ownership、或 remote inventory 中有无法映射到 non-terminal Generation 的 Runner。空 ledger 只可 adopt 空 Scale Set；未知 remote Runner 不自动删除。
 
-Label type 在 GitHub wire boundary 解析为有限类型；服务端返回的 `system` / `System`、`customer` / `Customer` 按同一语义比较，不得仅因 type 大小写不同把正常 Scale Set 分类为 access failure。未知 type、不同 label name、缺失/额外 label 仍不构成 compatible ownership；不能通过整体忽略 labels 来修复大小写问题。
+Label type 在 GitHub wire boundary 解析为有限类型；服务端返回的 `system` / `System`、`user` / `User` 各自按同一语义比较，不得仅因 type 大小写不同把正常 Scale Set 分类为 access failure。Shaula 为显式 desired labels 和空配置的 Scale Set name fallback 发送 `System`；`Customer` 不属于 GitHub 的合法 label type。未知 type、不同 label name、缺失/额外 label 仍不构成 compatible ownership；不能通过整体忽略 labels 来修复大小写问题。
 
 Runner inventory endpoint 返回 Target 范围的清单，可能同时包含普通 Runner 和多个 Scale Set。缺失或为 `0` 的 `runnerScaleSetId` 表示没有声明 Scale Set 归属，不能使整个 Fleet 验证失败；inventory port 只返回明确匹配当前正数 Scale Set ID 的条目。响应 count、Runner ID/name 和非负归属值仍须有效，当前 Scale Set 的未知 Runner 仍阻塞 adoption。精确名称查询中，返回名称不符或归属缺失/为 `0` 必须 fail closed，不能据此声称匹配当前 Scale Set 或证明 Runner 已不存在。
 

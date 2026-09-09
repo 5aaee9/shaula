@@ -16,7 +16,7 @@ async fn pause_inventory(
     let release = Arc::new(Notify::new());
     *listener.inventory_barrier.lock().unwrap() = Some((entered.clone(), release.clone()));
     *listener.label_values.lock().unwrap() = Some(serde_json::json!([
-        {"name":"drift","type":"Customer"}
+        {"name":"drift","type":"User"}
     ]));
     let head = wiring.store.fleet_get(FLEET).await.unwrap().unwrap();
     let supervisor = wiring

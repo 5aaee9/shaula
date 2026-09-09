@@ -16,6 +16,28 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Scale Set labels protocol correction (2026-09-09)
+
+Live GitHub.com validation isolated two errors in the mutable-labels implementation:
+`Customer` label types returned HTTP 400 (`ArgumentNullException` for
+`runnerScaleSet`), while valid `System` labels sent with PATCH returned HTTP 200
+without changing the stored labels. A PUT containing only `labels` replaced the
+set successfully. Both restoring the original label and applying the desired
+labels were read back on the same Scale Set ID, with name, runner group and runner
+settings unchanged and no registered, acquired, assigned or running work.
+
+Fleet wiring now emits `System`, the wire enum recognizes GitHub's `System` and
+`User`, and the narrow update adapter uses PUT. Failed updates log the operation,
+Scale Set ID and actual HTTP status without response bodies or credentials.
+Ownership, fencing, inventory and mandatory readback protections remain unchanged;
+no database migration, Fleet revision or infrastructure replacement is required.
+Spec 0001, spec 0002 and ARD-0027 record the corrected contract.
+
+Composition regressions first reproduced `AccessVerificationFailed` for the
+invalid type and `ScaleSetLabelsPending` for PATCH's unchanged response, then
+passed with PUT/System. All 708 local workspace tests pass with 2 platform skips.
+Deployment readiness must additionally be verified against the running service.
+
 ## Mixed organization Runner inventory (2026-09-09)
 
 The production `pve-builder-tyo` failure was reproduced through its observed

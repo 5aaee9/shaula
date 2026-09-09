@@ -234,7 +234,7 @@ impl SupervisorWiring {
                 .iter()
                 .map(|name| shaula_core::github::Label {
                     name: name.clone(),
-                    label_type: "Customer".to_string(),
+                    label_type: "System".to_string(),
                 })
                 .collect();
             let listener = observed_context.map(|auth_context| {

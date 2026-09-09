@@ -50,7 +50,7 @@ async fn unrelated_global_inventory_allows_adoption_and_later_label_update() {
     assert_eq!(listener.label_updates.load(Ordering::SeqCst), 1);
     assert_eq!(
         listener.scale_set()["labels"],
-        json!([{"name":"linux","type":"Customer"},{"name":"arm64","type":"Customer"}])
+        json!([{"name":"linux","type":"System"},{"name":"arm64","type":"System"}])
     );
     let binding = plane
         .control_plane

@@ -23,15 +23,15 @@ pub struct Label {
 pub enum LabelType {
     #[serde(alias = "system")]
     System,
-    #[serde(alias = "customer")]
-    Customer,
+    #[serde(alias = "user")]
+    User,
 }
 
 impl LabelType {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::System => "System",
-            Self::Customer => "Customer",
+            Self::User => "User",
         }
     }
 }
@@ -277,8 +277,8 @@ mod wire_tests {
         for (wire_type, canonical) in [
             ("system", LabelType::System),
             ("System", LabelType::System),
-            ("customer", LabelType::Customer),
-            ("Customer", LabelType::Customer),
+            ("user", LabelType::User),
+            ("User", LabelType::User),
         ] {
             let label: Label = serde_json::from_value(serde_json::json!({
                 "type": wire_type,
@@ -296,6 +296,25 @@ mod wire_tests {
             .is_err());
         }
         Ok(())
+    }
+
+    #[test]
+    fn label_types_match_github_agent_label_contract() {
+        for wire_type in ["User", "user"] {
+            let parsed = serde_json::from_value::<Label>(serde_json::json!({
+                "name": "route", "type": wire_type
+            }));
+            assert!(parsed.is_ok(), "GitHub recognizes {wire_type}");
+        }
+        for wire_type in ["Customer", "customer"] {
+            assert!(
+                serde_json::from_value::<Label>(serde_json::json!({
+                    "name": "route", "type": wire_type
+                }))
+                .is_err(),
+                "GitHub does not recognize {wire_type}"
+            );
+        }
     }
 
     #[test]
