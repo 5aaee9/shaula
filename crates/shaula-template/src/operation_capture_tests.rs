@@ -1,6 +1,8 @@
 use super::*;
 use async_trait::async_trait;
-use shaula_core::error::CoreResult;
+use shaula_core::error::{CoreError, CoreResult, ReasonCode};
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 struct SlowArchive {
     first_append: AtomicBool,
@@ -28,9 +30,16 @@ impl OperationLogSink for SlowArchive {
 
     async fn append(&self, chunk: AppendLog) -> CoreResult<()> {
         if self.first_append.swap(false, Ordering::SeqCst) {
-            self.release.acquire().await.expect("test release").forget();
+            self.release
+                .acquire()
+                .await
+                .map_err(|_| CoreError::new(ReasonCode::Internal, "test release closed"))?
+                .forget();
         }
-        self.texts.lock().expect("test text lock").push(chunk.text);
+        self.texts
+            .lock()
+            .map_err(|_| CoreError::new(ReasonCode::Internal, "test text lock poisoned"))?
+            .push(chunk.text);
         Ok(())
     }
 
@@ -39,13 +48,17 @@ impl OperationLogSink for SlowArchive {
     }
 
     async fn finish(&self, result: FinishInvocation) -> CoreResult<()> {
-        *self.result.lock().expect("test result lock") = Some(result);
+        *self
+            .result
+            .lock()
+            .map_err(|_| CoreError::new(ReasonCode::Internal, "test result lock poisoned"))? =
+            Some(result);
         Ok(())
     }
 }
 
 #[tokio::test]
-async fn full_queue_discards_only_sanitized_records_and_keeps_failure_outcome() {
+async fn full_queue_discards_only_sanitized_records_and_keeps_failure_outcome() -> TestResult {
     let sink = Arc::new(SlowArchive::default());
     let tasks = CaptureTasks::default();
     let values = SensitiveValues::from_input(&serde_json::json!({"jit_config":"abcdef"}), &[]);
@@ -57,10 +70,10 @@ async fn full_queue_discards_only_sanitized_records_and_keeps_failure_outcome() 
         values,
     )
     .await
-    .expect("capture starts");
+    .ok_or("capture did not start")?;
     guard
         .scope(async {
-            let mut command = command("apply").expect("apply capture");
+            let mut command = command("apply").ok_or("apply capture missing")?;
             let mut pipe = command.pipe("stderr");
             pipe.feed(b"Error: abc");
             pipe.feed(b"def\n");
@@ -72,25 +85,31 @@ async fn full_queue_discards_only_sanitized_records_and_keeps_failure_outcome() 
             }
             pipe.finish(true);
             command.finish(Some(1), "exited");
+            Ok::<(), &'static str>(())
         })
-        .await;
+        .await?;
     sink.release.add_permits(1);
     guard.finish("failed").await;
     tasks.drain().await;
-    let result = sink.result.lock().expect("result lock");
-    let result = result.as_ref().expect("capture finalized");
+    let result = sink.result.lock().map_err(|_| "result lock poisoned")?;
+    let result = result.as_ref().ok_or("capture did not finalize")?;
     assert_eq!(result.execution_outcome, "failed");
     assert!(result.partial);
     assert!(result.lost_bytes > 0);
-    let text = sink.texts.lock().expect("text lock").join("");
+    let text = sink
+        .texts
+        .lock()
+        .map_err(|_| "text lock poisoned")?
+        .join("");
     assert!(!text.contains("abc"));
     assert!(!text.contains("def"));
     assert!(text.contains("Error:"));
     assert!(text.contains("Destroying..."));
+    Ok(())
 }
 
 #[tokio::test]
-async fn cancelled_capture_closes_with_partial_interrupted_outcome() {
+async fn cancelled_capture_closes_with_partial_interrupted_outcome() -> TestResult {
     let sink = Arc::new(SlowArchive::default());
     sink.release.add_permits(1);
     let tasks = CaptureTasks::default();
@@ -102,20 +121,26 @@ async fn cancelled_capture_closes_with_partial_interrupted_outcome() {
         SensitiveValues::default(),
     )
     .await
-    .expect("capture starts");
+    .ok_or("capture did not start")?;
     guard
         .scope(async {
-            let command = command("apply").expect("apply capture");
+            let command = command("apply").ok_or("apply capture missing")?;
             let mut pipe = command.pipe("stdout");
             pipe.feed(b"Error: unterminated-credential");
+            Ok::<(), &'static str>(())
         })
-        .await;
+        .await?;
     drop(guard);
     tasks.drain().await;
-    let result = sink.result.lock().expect("result lock");
-    let result = result.as_ref().expect("capture finalized");
+    let result = sink.result.lock().map_err(|_| "result lock poisoned")?;
+    let result = result.as_ref().ok_or("capture did not finalize")?;
     assert_eq!(result.execution_outcome, "interrupted");
     assert!(result.partial);
-    let text = sink.texts.lock().expect("text lock").join("");
+    let text = sink
+        .texts
+        .lock()
+        .map_err(|_| "text lock poisoned")?
+        .join("");
     assert_eq!(text, crate::operation_sanitize::WITHHELD);
+    Ok(())
 }
