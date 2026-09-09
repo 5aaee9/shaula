@@ -9,7 +9,6 @@ pub mod auth;
 pub mod auth_context;
 pub mod auth_policy;
 pub mod capacity;
-pub mod epoch;
 pub mod error;
 pub mod fleet;
 pub mod github;

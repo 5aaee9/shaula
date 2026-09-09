@@ -83,20 +83,6 @@ impl GenerationState {
     }
 }
 
-/// Fine-grained durable subphases inside the operation ledger. Recovery may
-/// only advance on these plus evidence; the disappearance of a process never
-/// proves a side effect did not happen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OperationSubphase {
-    JitStarting,
-    JitReady,
-    CreatePlanReady,
-    ApplyStarting,
-    DestroyPlanReady,
-    DestroyApplyStarting,
-}
-
 /// Allowed coarse transitions. Anything not listed here is a bug and must be
 /// rejected rather than silently applied.
 pub fn transition_allowed(from: GenerationState, to: GenerationState) -> bool {

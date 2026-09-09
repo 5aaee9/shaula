@@ -143,15 +143,6 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
             .with_artifact_cache(artifact_library.clone()),
     );
 
-    let (_shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-    let _daemon = shaula_daemon::daemon::start(
-        bootstrap.clone(),
-        control_plane_store.clone(),
-        clock.clone(),
-        shutdown_rx,
-    )
-    .await?;
-
     // Control-plane service implementing the registry ports. The engine
     // binary is the attestation subject's binary-digest authority.
     let service = std::sync::Arc::new(shaula_daemon::service::ControlPlane::new(
@@ -184,7 +175,7 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
             )),
         },
     );
-    let wiring_shutdown = _shutdown_tx.subscribe();
+    let (shutdown_tx, wiring_shutdown) = tokio::sync::watch::channel(false);
     let mut wiring_task = tokio::spawn(wiring.run(wiring_shutdown));
     service.set_ready(true);
 
@@ -216,7 +207,7 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
     // alive to retry; shutdown drains it before the server stops.
     let scan_store = control_plane_store.clone();
     let scan_ready = service.clone();
-    let mut scan_shutdown = _shutdown_tx.subscribe();
+    let mut scan_shutdown = shutdown_tx.subscribe();
     let mut scan_handle = tokio::spawn(async move {
         let mut ticker = tokio::time::interval(shaula_daemon::daemon::SCAN_INTERVAL);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -267,7 +258,6 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
     // error propagates as a daemon-fatal exit instead of a clean stop.
     // ("shaula listening" is printed by the server AFTER a successful
     // bind — never before the outcome is known.)
-    let shutdown_tx = _shutdown_tx;
     let server_shutdown = shutdown_tx.subscribe();
     let mut server = tokio::spawn(shaula_http::server::serve(
         app,

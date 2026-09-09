@@ -1,28 +1,8 @@
-//! Daemon assembly: startup barrier, supervision loops and periodic
-//! scans. The startup barrier performs shared work (telemetry, validation,
-//! ownership lock, migration, store checks) before per-fleet supervisors
-//! recover independently.
+//! Data-directory ownership and shared scan cadence. The binary owns
+//! startup, task supervision and shutdown.
 
 use std::path::Path;
-use std::sync::Arc;
 use std::time::Duration;
-
-use shaula_core::ports::Clock;
-use shaula_core::registry::ControlPlaneStore;
-
-use crate::bootstrap::ValidatedBootstrap;
-
-/// The running daemon handle; dropping it stops supervision loops.
-pub struct Daemon {
-    pub control_plane: Arc<dyn ControlPlaneStore>,
-    shutdown: tokio::sync::watch::Sender<bool>,
-}
-
-impl Daemon {
-    pub async fn request_shutdown(&self) {
-        let _ = self.shutdown.send(true);
-    }
-}
 
 /// Acquires the data-directory ownership lock. A second daemon on the same
 /// data directory must fail closed rather than become a second writer.
@@ -65,35 +45,6 @@ pub struct OwnershipLock {
     // The guard IS the ownership: it stays with the acquiring process and
     // the kernel drops it if that process dies.
     _guard: Option<fd_lock::RwLockWriteGuard<'static, std::fs::File>>,
-}
-
-/// Startup sequence shared by the binary (spec 0002 §10). The composition
-/// root injects the concrete store; the daemon only sees the port.
-pub async fn start(
-    bootstrap: ValidatedBootstrap,
-    control_plane: Arc<dyn ControlPlaneStore>,
-    _clock: Arc<dyn Clock>,
-    _shutdown_rx: tokio::sync::watch::Receiver<bool>,
-) -> Result<Daemon, String> {
-    // 1. Filesystem roots.
-    for dir in [
-        &bootstrap.data_dir,
-        &bootstrap.work_root,
-        &bootstrap.artifact_root,
-    ] {
-        std::fs::create_dir_all(dir)
-            .map_err(|e| format!("root {} unusable: {e}", dir.display()))?;
-    }
-
-    // The ownership lock is acquired by the composition root and held for
-    // the process lifetime; start() must not re-acquire (the same process
-    // would self-conflict).
-
-    let (shutdown_tx, _) = tokio::sync::watch::channel(false);
-    Ok(Daemon {
-        control_plane,
-        shutdown: shutdown_tx,
-    })
 }
 
 /// Periodic scan cadence for outbox/desired>observed/due-change sweeps.

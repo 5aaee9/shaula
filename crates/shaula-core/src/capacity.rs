@@ -66,22 +66,6 @@ pub fn create_count(
         .min((policy.max_runners - counters.resource_occupancy).max(0))
 }
 
-/// Whether scale-down may pick this candidate: observed Idle only, but a
-/// stale Busy observation must not block candidate checks forever — the
-/// GitHub `JobStillRunning` removal gate remains the authoritative safety.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScaleDownCandidate {
-    ObservedIdle,
-    StaleBusyObservation,
-}
-
-pub fn scale_down_eligible(candidate: ScaleDownCandidate) -> bool {
-    matches!(
-        candidate,
-        ScaleDownCandidate::ObservedIdle | ScaleDownCandidate::StaleBusyObservation
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,15 +167,5 @@ mod tests {
         assert!(policy(5, 5).validate().is_ok());
         assert!(policy(6, 5).validate().is_err());
         assert!(policy(-1, 5).validate().is_err());
-    }
-
-    #[test]
-    fn scale_down_candidates_both_eligible() {
-        // Stale busy observations must not block candidates; the GitHub
-        // removal gate is authoritative.
-        assert!(scale_down_eligible(ScaleDownCandidate::ObservedIdle));
-        assert!(scale_down_eligible(
-            ScaleDownCandidate::StaleBusyObservation
-        ));
     }
 }
