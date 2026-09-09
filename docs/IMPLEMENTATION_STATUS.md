@@ -46,8 +46,27 @@ before the fix and now pass, including Assigned/Started/Completed delivery, dema
 ACK, replay and no zero-request acquisition. Store/core regressions cover multiple
 Jobs and anonymous facts without conflation and both known Runner completions.
 All 716 local workspace tests pass (2 platform skips), with strict Clippy and
-rustfmt. Deployment and processing of the original live message still need to be
-verified; these tests do not establish that a production workflow has completed.
+rustfmt. Linux packaging passed 709 workspace tests (2 skips) and both real
+Terraform HTTP-backend integration tests.
+
+Source `7c09b48` was deployed through PowerArmor `5933a55`. At 20:34 UTC, the
+running package matched the build and both Fleets remained Ready. Session epoch 7
+durably retained and ACKed messages `100000001` and `100000002`: the original
+Assigned observation and its subsequent Completed observation both carried zero.
+No request-zero acquisition was created. The Completed result was `canceled`, so
+the Jobs view correctly reports assignment withdrawal, not workflow success.
+All four configuration/revision table hashes and schema 16 were preserved.
+
+This verifies recovery of the actual blocked message, not a successful Runner job.
+Two separate follow-on problems remain: SQLite reported another transient busy
+error at 20:30:59 UTC, and a JIT-created Generation reached Quarantined after its
+Terraform plan failed. Read-only validation isolated a missing Linux AMD64 provider
+content hash in the Proxmox template lock: the installed provider matches the
+upstream 0.4.0 ZIP and its approved `zh`, but the lock lacks the platform's `h1`.
+The fix requires a newly validated/published Template Revision and explicit Fleet
+adoption; modifying the quarantined workspace's frozen lock is not recovery.
+Neither that template repair nor the intermittent SQLite contention is fixed by
+the unknown-request change.
 
 ## Scale Set labels protocol correction (2026-09-09)
 
