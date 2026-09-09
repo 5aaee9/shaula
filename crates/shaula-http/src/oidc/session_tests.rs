@@ -122,6 +122,39 @@ fn oidc_tests_cookie_ambiguity_and_return_targets() {
 }
 
 #[test]
+fn oidc_tests_template_publish_return_targets_require_valid_routes() {
+    for target in [
+        "/templates/new",
+        "/templates/linux-build/revisions/new",
+        "/templates/linux-x64.1_a/revisions/new",
+        "/templates?key=linux-build",
+    ] {
+        assert_eq!(crate::oidc::login::return_target(Some(target)), target);
+    }
+    for target in [
+        "/templates/linux-build",
+        "/templates/new/extra",
+        "/templates//revisions/new",
+        "/templates/./revisions/new",
+        "/templates/../revisions/new",
+        "/templates/%2e%2e/revisions/new",
+        "/templates/with%20space/revisions/new",
+        "/templates/a/b/revisions/new",
+        "/templates/linux-build/revisions/latest",
+        "/templates/linux-build/revisions/new/",
+        "/templates/new?return_to=https://evil.example",
+        "/templates/new#https://evil.example",
+    ] {
+        assert_eq!(crate::oidc::login::return_target(Some(target)), "/fleets");
+    }
+    let oversized_key = format!("/templates/{}/revisions/new", "a".repeat(129));
+    assert_eq!(
+        crate::oidc::login::return_target(Some(&oversized_key)),
+        "/fleets"
+    );
+}
+
+#[test]
 fn oidc_tests_refreshable_idle_expiry_requires_renewal_without_local_logout() {
     use crate::oidc::session_refresh::Admission;
     let mut store = Sessions::default();

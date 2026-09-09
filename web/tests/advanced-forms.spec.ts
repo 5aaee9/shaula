@@ -58,6 +58,7 @@ test("template upload keeps source choices and reveals invalid advanced settings
     return route.fulfill({ status: 201, json: { digest } });
   });
   await page.route("**/api/v1/template-profiles/uploaded", (route) => {
+    if (route.request().method() === "GET") return route.fallback();
     publications += 1;
     expect(route.request().headers()["if-none-match"]).toBe("*");
     expect(route.request().postDataJSON()).toEqual({
@@ -81,12 +82,14 @@ test("template upload keeps source choices and reveals invalid advanced settings
   await expect(page.getByLabel("Bindings (JSON)")).toBeHidden();
   await expect(page.getByLabel("Existing artifact digest")).toBeHidden();
   await page.screenshot({
-    path: "test-results/template-dialog-compact.png",
+    path: "test-results/template-page-mobile.png",
     fullPage: true,
     animations: "disabled",
   });
   expect(
-    await page.getByRole("dialog").evaluate((node) => node.scrollWidth <= node.clientWidth),
+    await page
+      .getByRole("form", { name: "Template configuration" })
+      .evaluate((node) => node.scrollWidth <= node.clientWidth),
   ).toBe(true);
   await advanced.click();
   await page.getByLabel("Engine reference").fill("");
@@ -102,12 +105,17 @@ test("template upload keeps source choices and reveals invalid advanced settings
   expect(uploads).toBe(0);
   await page.getByLabel("Bindings (JSON)").fill("{}");
   await advanced.click();
-  await page.getByLabel("Template source").selectOption("existing");
+  await page.getByRole("radio", { name: "Existing artifact", exact: true }).check();
   await page.getByLabel("Existing artifact digest").fill(`sha256:${"a".repeat(64)}`);
-  await page.getByLabel("Template source").selectOption("archive");
+  await page.getByRole("radio", { name: "Upload archive", exact: true }).check();
   await expect(file).toHaveValue(/runner\.tar\.gz$/);
+  await expect(page.getByLabel("Profile key")).toHaveValue("uploaded");
+  await page.getByRole("radio", { name: "Existing artifact", exact: true }).check();
+  await expect(page.getByLabel("Existing artifact digest")).toHaveValue(`sha256:${"a".repeat(64)}`);
+  await page.getByRole("radio", { name: "Upload archive", exact: true }).check();
   await page.getByRole("button", { name: "Publish", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/templates(?:\?[^#]*)?$/);
+  await expect(page.getByRole("form", { name: "Template configuration" })).toHaveCount(0);
   expect(uploads).toBe(1);
   expect(publications).toBe(1);
 });

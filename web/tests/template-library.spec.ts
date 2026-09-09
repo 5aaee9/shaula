@@ -16,7 +16,7 @@ test("library discovery displays variables but only explicit actions adopt defau
   await page.goto("/templates");
   await expect(page.getByRole("region", { name: "Default templates" })).toContainText("docker");
   await page.getByRole("button", { name: "Use template docker" }).click();
-  await expect(page.getByLabel("Template source", { exact: true })).toHaveValue("default");
+  await expect(page.getByRole("radio", { name: "Default template", exact: true })).toBeChecked();
   await expect(page.getByLabel("Docker host", { exact: true })).toHaveValue("");
   await expect(page.getByRole("region", { name: "Fleet input variables" })).toContainText(
     "runner:stable",
@@ -50,6 +50,7 @@ test("library discovery displays variables but only explicit actions adopt defau
   await page.getByLabel("Profile key").fill("from-library");
   let written = "";
   await page.route("**/api/v1/template-profiles/from-library", (route) => {
+    if (route.request().method() === "GET") return route.fallback();
     written = route.request().postData()!;
     expect(route.request().headers()["if-none-match"]).toBe("*");
     return route.fulfill({
@@ -58,7 +59,8 @@ test("library discovery displays variables but only explicit actions adopt defau
     });
   });
   await page.getByRole("button", { name: "Publish", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/templates(?:\?[^#]*)?$/);
+  await expect(page.getByRole("form", { name: "Template configuration" })).toHaveCount(0);
   expect(written).toContain('"quota":9007199254740993');
   expect(written).toContain('"__proto__":false');
   expect(JSON.parse(written).artifact_digest).toBe(dockerDigest);
@@ -79,7 +81,9 @@ test("declared options approval preserves exact values and variables stay outsid
   await expect(page.getByLabel("Docker host", { exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Fleet input variables" })).toBeVisible();
   expect(
-    await page.getByRole("dialog").evaluate((node) => node.scrollWidth <= node.clientWidth),
+    await page
+      .getByRole("form", { name: "Template configuration" })
+      .evaluate((node) => node.scrollWidth <= node.clientWidth),
   ).toBe(true);
   await page.screenshot({
     path: "test-results/template-library-mobile.png",
@@ -89,6 +93,21 @@ test("declared options approval preserves exact values and variables stay outsid
   await page.getByRole("button", { name: "Advanced settings" }).click();
   await expect(page.getByLabel("Fleet input policy (JSON)")).toHaveValue(
     '{"runner_image":["runner:stable","runner:canary"]}',
+  );
+  await page.getByLabel("Profile key").scrollIntoViewIfNeeded();
+  await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeInViewport({
+    ratio: 1,
+  });
+  await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeInViewport({
+    ratio: 1,
+  });
+  expect(
+    await page
+      .getByRole("form", { name: "Template configuration" })
+      .evaluate((node) => node.scrollWidth <= node.clientWidth),
+  ).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
   );
 });
 
@@ -111,7 +130,9 @@ test("source switches retain drafts and discard late inspection responses", asyn
   await expect.poll(() => requested).toBe(true);
   await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByLabel("Bindings (JSON)").fill('{"docker_host":"my-draft"}');
-  await page.getByLabel("Default template", { exact: true }).selectOption("kubernetes");
+  await page
+    .getByRole("combobox", { name: "Default template", exact: true })
+    .selectOption("kubernetes");
   await expect(page.getByRole("button", { name: "Inspect variables", exact: true })).toBeEnabled();
   release!();
   await expect(page.getByLabel("Docker host", { exact: true })).toHaveValue("my-draft");
@@ -119,6 +140,7 @@ test("source switches retain drafts and discard late inspection responses", asyn
   await page.getByLabel("Profile key").fill("switched-source");
   let selectedDigest = "";
   await page.route("**/api/v1/template-profiles/switched-source", (route) => {
+    if (route.request().method() === "GET") return route.fallback();
     selectedDigest = route.request().postDataJSON().artifact_digest;
     return route.fulfill({
       status: 202,
@@ -126,7 +148,8 @@ test("source switches retain drafts and discard late inspection responses", asyn
     });
   });
   await page.getByRole("button", { name: "Publish", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/templates(?:\?[^#]*)?$/);
+  await expect(page.getByRole("form", { name: "Template configuration" })).toHaveCount(0);
   expect(selectedDigest).toBe(kubernetesDigest);
 });
 
@@ -142,6 +165,7 @@ test("a successfully inspected archive uploads only once when published", async 
     return route.fulfill({ status: 201, json: { digest } });
   });
   await page.route("**/api/v1/template-profiles/upload-inspected", (route) => {
+    if (route.request().method() === "GET") return route.fallback();
     expect(route.request().postDataJSON().artifact_digest).toBe(digest);
     return route.fulfill({
       status: 202,
@@ -157,7 +181,8 @@ test("a successfully inspected archive uploads only once when published", async 
   await page.getByRole("button", { name: "Inspect variables", exact: true }).click();
   await expect(page.getByLabel("Docker host", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Publish", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/templates(?:\?[^#]*)?$/);
+  await expect(page.getByRole("form", { name: "Template configuration" })).toHaveCount(0);
   expect(uploads).toBe(1);
 });
 
@@ -177,7 +202,9 @@ test("read permission gates library and inspection without blocking manual publi
   await expect(page.getByRole("region", { name: "Default templates" })).toHaveCount(0);
   await page.getByRole("button", { name: "Publish template", exact: true }).click();
   await expect(page.getByRole("button", { name: "Inspect variables", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("dialog")).toContainText("Manual publishing is available");
+  await expect(page.getByRole("form", { name: "Template configuration" })).toContainText(
+    "Manual publishing is available",
+  );
   expect(discoveryReads).toBe(0);
 });
 
@@ -202,7 +229,9 @@ test("unavailable and failed discovery preserve manual bindings", async ({ page 
   );
   await page.goto("/templates");
   await page.getByRole("button", { name: "Use template docker" }).click();
-  await expect(page.getByRole("dialog")).toContainText("Legacy untyped variables");
+  await expect(page.getByRole("form", { name: "Template configuration" })).toContainText(
+    "Legacy untyped variables",
+  );
   await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByLabel("Bindings (JSON)").fill('{"docker_host":"preserved"}');
   fail = true;
@@ -235,6 +264,7 @@ test("open form retains the exact library artifact when source metadata refreshe
   await page.getByLabel("Profile key").fill("pinned-library");
   let digest = "";
   await page.route("**/api/v1/template-profiles/pinned-library", (route) => {
+    if (route.request().method() === "GET") return route.fallback();
     digest = route.request().postDataJSON().artifact_digest;
     return route.fulfill({
       status: 202,
@@ -242,6 +272,7 @@ test("open form retains the exact library artifact when source metadata refreshe
     });
   });
   await page.getByRole("button", { name: "Publish", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/templates(?:\?[^#]*)?$/);
+  await expect(page.getByRole("form", { name: "Template configuration" })).toHaveCount(0);
   expect(digest).toBe(dockerDigest);
 });

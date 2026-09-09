@@ -30,7 +30,7 @@ export function ErrorNotice({ error, retry }: { error: unknown; retry?: () => vo
       <AlertDescription className="flex min-w-0 items-center justify-between gap-3">
         <span className="break-words">{errorMessage(error)}</span>
         {retry && (
-          <Button variant="outline" size="sm" onClick={retry}>
+          <Button type="button" variant="outline" size="sm" onClick={retry}>
             Retry
           </Button>
         )}

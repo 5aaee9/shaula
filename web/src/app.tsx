@@ -16,6 +16,7 @@ import { ErrorNotice, Loading } from "@/components/status";
 import { FleetsPage } from "@/pages/fleets";
 import { FleetDetail } from "@/pages/fleet-detail";
 import { TemplatesPage } from "@/pages/templates";
+import { TemplatePublishPage } from "@/pages/template-publish";
 import { AuthPage } from "@/pages/auth";
 import { ChangesPage } from "@/pages/changes";
 
@@ -86,6 +87,14 @@ export function App() {
                 <Route path="/fleets" element={<FleetsPage scopes={scopes} />} />
                 <Route path="/fleets/:key" element={<FleetDetail scopes={scopes} />} />
                 <Route path="/templates" element={<TemplatesPage scopes={scopes} />} />
+                <Route
+                  path="/templates/new"
+                  element={<TemplatePublishPage key="new" scopes={scopes} />}
+                />
+                <Route
+                  path="/templates/:key/revisions/new"
+                  element={<TemplatePublishPage key="revision" scopes={scopes} />}
+                />
                 <Route path="/auth" element={<AuthPage scopes={scopes} />} />
                 <Route path="/changes" element={<ChangesPage scopes={scopes} />} />
                 <Route

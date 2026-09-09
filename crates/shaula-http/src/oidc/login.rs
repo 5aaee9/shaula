@@ -184,9 +184,17 @@ pub(crate) async fn logout(
 }
 
 pub(crate) fn document(path: &str) -> bool {
-    matches!(path, "/" | "/fleets" | "/templates" | "/auth" | "/changes")
-        || path.strip_prefix("/fleets/").is_some_and(|key| {
-            !matches!(key, "." | "..") && shaula_core::fleet::FleetKey::new(key).is_ok()
+    matches!(
+        path,
+        "/" | "/fleets" | "/templates" | "/templates/new" | "/auth" | "/changes"
+    ) || path.strip_prefix("/fleets/").is_some_and(|key| {
+        !matches!(key, "." | "..") && shaula_core::fleet::FleetKey::new(key).is_ok()
+    }) || path
+        .strip_prefix("/templates/")
+        .and_then(|path| path.strip_suffix("/revisions/new"))
+        .is_some_and(|key| {
+            !matches!(key, "." | "..")
+                && shaula_core::template::TemplateProfileKey::new(key).is_ok()
         })
 }
 

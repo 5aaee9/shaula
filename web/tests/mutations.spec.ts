@@ -127,11 +127,12 @@ test("template publication sends only the API-owned inputs", async ({ page }) =>
   await page.getByRole("button", { name: "Publish template" }).click();
   await page.getByLabel("Profile key", { exact: true }).fill("new-template");
   await expect(page.getByLabel("Bindings (JSON)")).toBeHidden();
-  await page.getByLabel("Template source").selectOption("existing");
+  await page.getByRole("radio", { name: "Existing artifact", exact: true }).check();
   await page
     .getByLabel("Existing artifact digest", { exact: true })
     .fill(`sha256:${"a".repeat(64)}`);
   await page.route("**/api/v1/template-profiles/new-template", (route) => {
+    if (route.request().method() === "GET") return route.fallback();
     expect(route.request().headers()["if-none-match"]).toBe("*");
     expect(route.request().postDataJSON()).toEqual({
       artifact_digest: `sha256:${"a".repeat(64)}`,
@@ -145,6 +146,7 @@ test("template publication sends only the API-owned inputs", async ({ page }) =>
     });
   });
   await page.getByRole("button", { name: "Publish", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/templates(?:\?[^#]*)?$/);
+  await expect(page.getByRole("form", { name: "Template configuration" })).toHaveCount(0);
   await expect(page.getByText("Change for new-template")).toBeVisible();
 });

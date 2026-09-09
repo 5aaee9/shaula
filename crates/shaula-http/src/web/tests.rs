@@ -24,6 +24,9 @@ async fn web_tests_embedded_document_and_deep_link() -> TestResult {
         "/fleets/linux-build",
         "/fleets/linux-x64.1_a",
         "/templates",
+        "/templates/new",
+        "/templates/linux-build/revisions/new",
+        "/templates/linux-x64.1_a/revisions/new",
         "/auth",
         "/changes",
     ] {
@@ -51,6 +54,15 @@ async fn web_tests_missing_assets_api_and_methods_are_not_html() -> TestResult {
         "/assets/missing.js",
         "/missing.css",
         "/unknown",
+        "/templates/linux-build",
+        "/templates/new/extra",
+        "/templates//revisions/new",
+        "/templates/../revisions/new",
+        "/templates/%2e%2e/revisions/new",
+        "/templates/with%20space/revisions/new",
+        "/templates/a/b/revisions/new",
+        "/templates/linux-build/revisions/latest",
+        "/templates/linux-build/revisions/new/",
     ] {
         assert_eq!(
             request(path, Method::GET).await?.status(),
@@ -60,6 +72,21 @@ async fn web_tests_missing_assets_api_and_methods_are_not_html() -> TestResult {
     let response = request("/fleets", Method::POST).await?;
     assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     assert_eq!(response.headers()[header::ALLOW], "GET, HEAD");
+    Ok(())
+}
+
+#[tokio::test]
+async fn web_tests_template_publication_head_and_post() -> TestResult {
+    for path in ["/templates/new", "/templates/linux-build/revisions/new"] {
+        let response = request(path, Method::HEAD).await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "text/html");
+        assert!(to_bytes(response.into_body(), usize::MAX).await?.is_empty());
+
+        let response = request(path, Method::POST).await?;
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(response.headers()[header::ALLOW], "GET, HEAD");
+    }
     Ok(())
 }
 

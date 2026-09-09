@@ -27,9 +27,9 @@ npx shadcn@latest add button input textarea dialog tooltip table tabs badge aler
 ```
 
 Tables use Table, status labels use Badge, forms use Field/Input/NativeSelect,
-resource editors use Dialog, and mobile navigation uses Sheet. Loading and empty
-views use Skeleton and Empty. Dependencies such as Label and Separator are
-resolved by the CLI.
+Fleet and auth editors use Dialog, and mobile navigation uses Sheet. Template
+publication uses dedicated pages. Loading and empty views use Skeleton and Empty.
+Dependencies such as Label and Separator are resolved by the CLI.
 
 ## Build the binary
 
@@ -75,11 +75,12 @@ Never expose the development server on a public interface or put secrets in
 
 ## HTTP and authentication
 
-Open `/` on the daemon/proxy. `/fleets`, `/fleets/{key}`, `/templates`, `/auth`,
-and `/changes` support direct navigation and reload. Missing asset/API routes
-return 404 after authentication, unsupported UI methods return 405, and HEAD
-returns no body. All responses, including embedded assets, are private/no-store.
-CSP restricts requests and scripts to the same origin.
+Open `/` on the daemon/proxy. `/fleets`, `/fleets/{key}`, `/templates`,
+`/templates/new`, `/templates/{key}/revisions/new`, `/auth`, and `/changes` support
+direct navigation and reload. Missing asset/API routes return 404 after
+authentication, unsupported UI methods return 405, and HEAD returns no body.
+All responses, including embedded assets, are private/no-store. CSP restricts
+requests and scripts to the same origin.
 
 All UI, assets, API and health routes require OIDC under ADR 0013. An anonymous
 document visit redirects to login without returning HTML; anonymous assets/API
@@ -96,7 +97,13 @@ connections with their active target policy and revision status; selecting a row
 opens its details. Change lookup still requires an ID. Template attestation
 submission remains an API workflow. No demo data is used in the application.
 
-Edits capture the ETag when the dialog opens. Creates use `If-None-Match: *`;
+Template creation and revision publication open at `/templates/new` and
+`/templates/{key}/revisions/new`. Selecting a default library source carries its
+metadata and pins its artifact digest for the draft. Publishing returns to the
+Templates list with the profile selected and its accepted change displayed;
+canceling returns to the list and retains the selected profile when editing a revision.
+
+Edits capture the ETag when the editor opens. Creates use `If-None-Match: *`;
 replace/retire uses `If-Match`. Retrying an unchanged uncertain mutation reuses
 its idempotency key. Secret fields exist only in transient form state and are
 never stored in browser storage. `202 Accepted` is shown as a pending change,

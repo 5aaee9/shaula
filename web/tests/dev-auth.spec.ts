@@ -1,7 +1,20 @@
-import { createServer as httpServer } from "node:http";
+import { createServer as httpServer, request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, test } from "@playwright/test";
 import { createServer, preview } from "vite";
+
+async function rawStatus(origin: string, path: string) {
+  // Preserve dot segments so the guard is checked against the actual request path.
+  return new Promise<number | undefined>((resolve, reject) => {
+    const request = httpRequest(origin, { path }, (response) => {
+      response.resume();
+      response.on("end", () => resolve(response.statusCode));
+      response.on("error", reject);
+    });
+    request.on("error", reject);
+    request.end();
+  });
+}
 
 test("normal Vite dev and preview authenticate source assets and disable shared caching", async () => {
   const backend = httpServer((req, res) => {
@@ -29,11 +42,36 @@ test("normal Vite dev and preview authenticate source assets and disable shared 
       [production.httpServer, "/index.html"],
     ] as const) {
       const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-      const response = await fetch(`${origin}/fleets`, { redirect: "manual" });
-      expect(response.status).toBe(302);
-      expect(await response.text()).toBe("");
+      for (const path of [
+        "/fleets",
+        "/templates/new",
+        "/templates/linux-build/revisions/new",
+        "/templates/linux-x64.1_a/revisions/new",
+      ]) {
+        const response = await fetch(`${origin}${path}`, { redirect: "manual" });
+        expect(response.status).toBe(302);
+        expect(response.headers.get("location")).toBe(
+          `/auth/oidc/login?${new URLSearchParams({ return_to: path })}`,
+        );
+        expect(await response.text()).toBe("");
+        expect((await fetch(`${origin}${path}`, { method: "HEAD" })).status).toBe(401);
+      }
+      for (const path of [
+        "/templates/linux-build",
+        "/templates/new/extra",
+        "/templates//revisions/new",
+        "/templates/./revisions/new",
+        "/templates/../revisions/new",
+        "/templates/linux-build/../new",
+        "/templates/%2e%2e/revisions/new",
+        "/templates/with%20space/revisions/new",
+        "/templates/a/b/revisions/new",
+        "/templates/linux-build/revisions/new/",
+        `/templates/${"a".repeat(129)}/revisions/new`,
+      ]) {
+        expect(await rawStatus(origin, path), path).toBe(401);
+      }
       expect((await fetch(`${origin}${asset}`)).status).toBe(401);
-      expect((await fetch(`${origin}/fleets`, { method: "HEAD" })).status).toBe(401);
       const authenticated = await fetch(`${origin}${asset}`, {
         headers: { cookie: "__Host-shaula-session=test" },
       });

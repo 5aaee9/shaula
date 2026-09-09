@@ -4,7 +4,8 @@ import type { Plugin } from "vite";
 // Development source files have the same session boundary as embedded assets.
 export function oidcDevelopmentGuard(target: string): Plugin {
   async function guard(request: IncomingMessage, response: ServerResponse, next: () => void) {
-    const path = new URL(request.url || "/", "http://localhost").pathname;
+    // Keep dot segments intact, matching the embedded document router.
+    const path = request.url?.split("?")[0] || "/";
     response.setHeader("Cache-Control", "private, no-store");
     if (
       path === "/api" ||
@@ -29,9 +30,11 @@ export function oidcDevelopmentGuard(target: string): Plugin {
     }
     if (status === 200) return next();
     const document =
-      ["/", "/fleets", "/templates", "/auth", "/changes"].includes(path) ||
+      ["/", "/fleets", "/templates", "/templates/new", "/auth", "/changes"].includes(path) ||
       (/^\/fleets\/[a-zA-Z0-9_.-]{1,128}$/.test(path) &&
-        !["/fleets/.", "/fleets/.."].includes(path));
+        !["/fleets/.", "/fleets/.."].includes(path)) ||
+      (/^\/templates\/[a-zA-Z0-9_.-]{1,128}\/revisions\/new$/.test(path) &&
+        !["/templates/./revisions/new", "/templates/../revisions/new"].includes(path));
     if (status === 401 && request.method === "GET" && document && !request.headers.authorization) {
       response.writeHead(302, {
         location: `/auth/oidc/login?${new URLSearchParams({ return_to: request.url || "/fleets" })}`,

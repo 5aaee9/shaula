@@ -110,7 +110,11 @@ Terraform 语义依据：[variable declaration](https://developer.hashicorp.com/
 ## 5. UI interaction
 
 - Templates 页同时展示可选来源和已经发布的 Profiles，清晰区分二者的用途和状态。
-  选择来源后打开发布表单并固定其 digest；刷新来源列表不能改写已打开草稿。
+  选择来源后进入 `/templates/new`，携带该来源的完整 metadata 并固定其 digest；
+  刷新来源列表不能改写已打开草稿。
+- 新建 Template 使用 `/templates/new` 独立页面，发布已有 Profile 的新 Revision 使用
+  `/templates/{key}/revisions/new` 独立页面。成功提交后返回 Templates 列表，选中对应
+  Profile 并展示已接受的 Change；取消返回列表，Revision 流程保留原 Profile 的选中状态。
 - 发布表单支持 Default template、Upload archive、Existing artifact。后两种来源可显式
   Inspect variables；上传后的 inspection 和提交复用同一精确 artifact。
 - variables 按 Template bindings / Fleet parameters 分组展示名称、类型、说明、必填、

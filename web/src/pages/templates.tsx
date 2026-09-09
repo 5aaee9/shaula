@@ -8,8 +8,8 @@ import {
 } from "@/components/ui/table";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Layers3, RefreshCw, Search, Trash2, Upload } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { Layers3, Plus, RefreshCw, Search, Trash2, Upload } from "lucide-react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api, resourcePath } from "@/lib/api";
 import { useTemplates } from "@/lib/queries";
 import type { ChangeRef, TemplateResource, TemplateRevision } from "@/lib/types";
@@ -19,16 +19,16 @@ import { Tip } from "@/components/icon-tooltip";
 import { Empty, ErrorNotice, KeyValue, Loading, StatusBadge } from "@/components/status";
 import { ChangeNotice } from "@/components/change-notice";
 import { RetireDialog } from "@/components/retire-dialog";
-import { TemplateForm } from "@/components/template-form";
 import { TemplateLibrary } from "@/components/template-library";
-import type { TemplateSource } from "@/lib/template-variables";
 export function TemplatesPage({ scopes }: { scopes: string[] }) {
   const templates = useTemplates(scopes.includes("template.read"));
+  const location = useLocation();
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [params, setParams] = useSearchParams();
-  const [publish, setPublish] = useState(false);
-  const [source, setSource] = useState<TemplateSource>();
-  const [change, setChange] = useState<ChangeRef | null>(null);
+  const [change, setChange] = useState<ChangeRef | null>(
+    (location.state as { change?: ChangeRef } | null)?.change ?? null,
+  );
   const key = params.get("key");
   const items =
     templates.data?.data.profiles.filter((item) =>
@@ -39,16 +39,13 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
       <div className="page-heading">
         <div>
           <h1>Templates</h1>
-          <p>Templates activate automatically after validation.</p>
+          <p>Create reusable templates and manage their published revisions.</p>
         </div>
         <Button
-          onClick={() => {
-            setSource(undefined);
-            setPublish(true);
-          }}
+          onClick={() => navigate("/templates/new")}
           disabled={!scopes.includes("template.publish")}
         >
-          <Upload />
+          <Plus />
           Publish template
         </Button>
       </div>
@@ -59,18 +56,28 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
         <>
           <TemplateLibrary
             canPublish={scopes.includes("template.publish")}
-            onUse={(source) => {
-              setSource(source);
-              setPublish(true);
-            }}
+            onUse={(source) => navigate("/templates/new", { state: { initialSource: source } })}
           />
+          <div className="section-heading">
+            <div>
+              <h2>
+                Published templates
+                {templates.data && (
+                  <span className="count">{templates.data.data.profiles.length}</span>
+                )}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                New revisions activate automatically after validation.
+              </p>
+            </div>
+          </div>
           <div className="toolbar">
             <div className="search-input">
               <Search />
               <Input
                 className="pl-9"
                 aria-label="Search templates"
-                placeholder="Search templates..."
+                placeholder="Search by template name..."
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
               />
@@ -81,8 +88,9 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
                 size="icon"
                 aria-label="Refresh templates"
                 onClick={() => void templates.refetch()}
+                disabled={templates.isFetching}
               >
-                <RefreshCw />
+                <RefreshCw className={templates.isFetching ? "animate-spin" : ""} />
               </Button>
             </Tip>
           </div>
@@ -91,7 +99,18 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
           ) : templates.isPending ? (
             <Loading />
           ) : !items.length ? (
-            <Empty title={search ? "No matching templates" : "No templates yet"} />
+            <Empty title={search ? "No matching templates" : "No templates yet"}>
+              <p className="max-w-sm text-sm text-muted-foreground">
+                {search
+                  ? "Try another template name or clear your search to see all templates."
+                  : "Choose a default template above, or publish your own template to get started."}
+              </p>
+              {search && (
+                <Button variant="outline" size="sm" onClick={() => setSearch("")}>
+                  Clear search
+                </Button>
+              )}
+            </Empty>
           ) : (
             <div className="table-scroll">
               <Table>
@@ -120,10 +139,10 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
                       <TableCell>
                         <StatusBadge value={item.status} />
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="font-mono text-xs">
                         {item.activeRevision ? `r${item.activeRevision}` : "--"}
                       </TableCell>
-                      <TableCell>r{item.desiredRevision}</TableCell>
+                      <TableCell className="font-mono text-xs">r{item.desiredRevision}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -134,14 +153,6 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
             <TemplateDetails key={key} profileKey={key} scopes={scopes} onAccepted={setChange} />
           )}
         </>
-      )}
-      {publish && (
-        <TemplateForm
-          initialSource={source}
-          scopes={scopes}
-          onClose={() => setPublish(false)}
-          onAccepted={setChange}
-        />
       )}
     </>
   );
@@ -155,6 +166,7 @@ function TemplateDetails({
   scopes: string[];
   onAccepted: (change: ChangeRef) => void;
 }) {
+  const navigate = useNavigate();
   const path = resourcePath("template-profiles", profileKey);
   const query = useQuery({
     queryKey: ["template", profileKey],
@@ -172,7 +184,6 @@ function TemplateDetails({
     refetchInterval: 10000,
   });
   const [retire, setRetire] = useState(false);
-  const [publish, setPublish] = useState(false);
   if (query.isPending) return <Loading />;
   if (query.error) return <ErrorNotice error={query.error} retry={() => void query.refetch()} />;
   const { data } = query.data;
@@ -185,7 +196,7 @@ function TemplateDetails({
             variant="outline"
             size="sm"
             disabled={!scopes.includes("template.publish")}
-            onClick={() => setPublish(true)}
+            onClick={() => navigate(`/templates/${encodeURIComponent(profileKey)}/revisions/new`)}
           >
             <Upload />
             New revision
@@ -251,14 +262,6 @@ function TemplateDetails({
           etag={query.data.etag}
           type="profile"
           onClose={() => setRetire(false)}
-          onAccepted={onAccepted}
-        />
-      )}
-      {publish && (
-        <TemplateForm
-          resource={query.data}
-          scopes={scopes}
-          onClose={() => setPublish(false)}
           onAccepted={onAccepted}
         />
       )}
