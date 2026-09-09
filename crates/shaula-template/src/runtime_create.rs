@@ -6,8 +6,13 @@ impl TemplateRuntime {
         &self,
         request: TemplateCreateRequest,
     ) -> Result<TemplateCreateResult, TemplateOutcomeError> {
-        self.validate_input_contract(&request.artifact_dir, &request.input)?;
-        if self.http_backend.is_some() && request.apply_intent_sink.is_none() {
+        let manifest = self.validate_input_contract(&request.artifact_dir, &request.input)?;
+        manifest
+            .validate_new_container_profile()
+            .map_err(|_| state_err("input.contract"))?;
+        if (self.http_backend.is_some() || manifest.container_bootstrap_contract.is_some())
+            && request.apply_intent_sink.is_none()
+        {
             return Err(state_err("create.authorization"));
         }
         let workspace = &request.workspace_path;
@@ -66,6 +71,7 @@ impl TemplateRuntime {
             .map_err(|_| state_err("create.plan"))?;
         admit_create_plan(&parsed, prior_state.is_empty(), &request.managed_shape)
             .map_err(|_| plan_err("create.plan"))?;
+        bootstrap::admit_plan(&manifest, &request, &plan_json)?;
         let plan_bytes =
             std::fs::read(workspace.join("tfplan")).map_err(|_| state_err("create.plan"))?;
         // The provenance pins the ACTUAL executed material: the workspace's
@@ -198,6 +204,39 @@ impl TemplateRuntime {
             .map_err(|_| state_err("state.verify"))?;
         if snapshot.managed.is_empty() {
             return Err(exec_err("create.apply"));
+        }
+
+        if manifest.container_bootstrap_contract.is_some() {
+            // The completed apply must be visible to the projection reader. This
+            // barrier is diagnostic-only and never authorizes a platform effect.
+            crate::operation_capture::flush().await;
+            if self
+                .workspace_digest(workspace)
+                .map_err(|_| state_err("container.bootstrap"))?
+                != provenance.template_material_digest
+                || digest_of(
+                    &std::fs::read(workspace.join("shaula.tfvars.json"))
+                        .map_err(|_| state_err("container.bootstrap"))?,
+                ) != provenance.protected_input_digest
+            {
+                return Err(state_err("container.bootstrap"));
+            }
+            // A durable CAS prevents a second bootstrap after cancellation or
+            // daemon death. The short platform sequence is bounded by 60 seconds.
+            let sink = request
+                .apply_intent_sink
+                .as_ref()
+                .ok_or_else(|| state_err("container.bootstrap"))?;
+            let _claim = sink
+                .authorize_bootstrap(&provenance)
+                .await
+                .map_err(|_| exec_err("container.bootstrap"))?;
+            tokio::time::timeout(
+                Duration::from_secs(60),
+                bootstrap::launch(self, &request, &envelope),
+            )
+            .await
+            .map_err(|_| exec_err("container.bootstrap"))??;
         }
 
         Ok(TemplateCreateResult {

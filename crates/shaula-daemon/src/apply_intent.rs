@@ -19,6 +19,21 @@ pub struct LedgerApplyIntentSink {
 
 #[async_trait::async_trait]
 impl ApplyIntentSink for LedgerApplyIntentSink {
+    async fn authorize_bootstrap(&self, provenance: &PlanProvenance) -> Result<ApplyClaim, String> {
+        let generation = self
+            .store
+            .generation_get(&provenance.generation_id)
+            .await
+            .map_err(|e| e.summary)?
+            .ok_or("generation missing")?;
+        let claim = self.gates.acquire_claim(&generation.fleet_key).await;
+        self.store
+            .operation_record_bootstrap_starting(provenance, chrono::Utc::now().timestamp_millis())
+            .await
+            .map_err(|e| e.summary)?;
+        Ok(Box::new(claim))
+    }
+
     async fn persist_apply_starting(
         &self,
         provenance: &PlanProvenance,
@@ -102,6 +117,10 @@ impl TrackedApplyIntentSink {
 
 #[async_trait::async_trait]
 impl ApplyIntentSink for TrackedApplyIntentSink {
+    async fn authorize_bootstrap(&self, provenance: &PlanProvenance) -> Result<ApplyClaim, String> {
+        self.inner.authorize_bootstrap(provenance).await
+    }
+
     async fn persist_apply_starting(
         &self,
         provenance: &PlanProvenance,

@@ -205,7 +205,7 @@ fn bundled_profile_schemas_are_admissible() {
         (
             "../../templates/docker/schemas/parameters.schema.json",
             "runner_image",
-            "localhost:5001/shaula-runner:2.337.0-bootstrap-v1",
+            "ghcr.io/actions/actions-runner:2.337.0",
         ),
     ] {
         let manifest_dir = env!("CARGO_MANIFEST_DIR");

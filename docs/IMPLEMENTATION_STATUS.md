@@ -16,6 +16,54 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Official container images and host bootstrap (2026-09-09)
+
+[Spec 0020](specs/0020-official-container-runner-bootstrap.md) and
+[ARD-0024](ard/0024-bootstrap-official-runner-images-outside-containers.md) replace
+the custom-image delivery design for new Docker/Kubernetes Template revisions.
+The bundled sources now pin official Runner 2.337.0 and declare
+`shaula.container-bootstrap/v1` with v1 inputs. Docker is created stopped;
+Kubernetes uses Pending plus a required missing `.setup_info` Secret item.
+Runner commands invoke the official Listener directly with native JIT input;
+custom Dockerfile/shim/helper and the v2 source generator have been removed.
+
+`shaula-template/src/runtime_bootstrap*.rs` implements the fixed host delivery
+and startup path; `shaula-store/src/lifecycle_bootstrap*.rs` adds the atomic
+`BootstrapStarting` admission transition so an uncertain bootstrap is not
+replayed. Before ApplyStarting, saved-plan admission verifies the official image,
+native Listener/JIT input and stopped-container or missing-Secret-key startup
+gate; critical unknown fields and provisioner hooks are rejected. Actual resource
+identity and the gate are checked again before host bootstrap.
+
+Local Rust validation passed 609 workspace tests (2 skipped), rustfmt and strict
+Clippy across all targets. The full test run explicitly enabled the captured
+Docker 3.0.2 and Kubernetes 2.33.0 provider-plan oracles. The Kubernetes plan was
+produced against an isolated mock Namespace endpoint, not a live cluster.
+Terraform 1.9.8 fmt, readonly locked init and validate passed for both templates
+in isolated Linux copies. The Kubernetes 2.33.0 provider lock now contains real
+HashiCorp checksums rather than a comment-only placeholder.
+
+Current production composition remains daemon-owned local-state Runtime; independent `shaula job`/HTTP-state
+integration is not established by this feature. Existing retained v1/v2 artifact,
+inputs, pins and state are not rewritten; the old HTTPS listener remains a
+compatibility path for already retained v2 Generations; new publication/Create
+requires the official-image host bootstrap contract. Existing Fleets pinned to
+legacy container Templates must select a newly published official revision
+before further Runner creation; no automatic mutation of their pins occurs.
+
+The external Docker harness now prepares the stopped container, copies and
+reads back a fixed smoke marker from the host, records possible start before
+starting, and inspects the official Listener. Its marker is not the production
+apply projection. Local Python validation passed 35 tests, with 5 Linux-only
+checks skipped on Windows. This is neither production archive integration
+acceptance nor full conformance. The historical 2026-09-08 custom-image smoke
+does not validate the new official-image/host-bootstrap tuple. The isolated
+[2026-09-09 official Docker probe](evidence/docker-official-bootstrap-2026-09-09/README.md)
+verified stopped Create, host file copy/readback, UID 1001 readability, official
+Listener rejection of synthetic invalid JIT, and delete-only Destroy/empty state.
+It did not run a real GitHub job or change production service/Fleet configuration.
+No new Docker or Kubernetes first-job Set up job acceptance is claimed here.
+
 ## Jobs and retained operation logs: local implementation (2026-09-09)
 
 [Spec 0019](specs/0019-workflow-jobs-and-operation-logs.md) and
@@ -42,9 +90,9 @@ The implementation now includes:
   before immutable v2 inputs, with current clock time, bounded requests and no
   management/state/control routes. `shaula/src/diagnostics.rs` wires these into the
   actual daemon and drains capture before releasing ownership.
-- `templates/docker/image/setup_info.py` and `templates/setup-info/prepare.py`:
-  bounded main-container bootstrap delivery and separate Docker/Kubernetes v2
-  sources without changing existing image pins or resource cardinality.
+- The original implementation included a container helper and v2 source
+  generator. Those source paths have since been removed by the official-image
+  increment above; retained v2 artifacts keep their original bytes and protocol.
 
 Local validation on 2026-09-09: the full workspace nextest gate passed 579 tests
 with 2 existing external-environment tests skipped; workspace Clippy and rustfmt
@@ -55,13 +103,11 @@ HTTP permissions, embedded routes and browser behavior. These checks are not rea
 Runner acceptance.
 
 The current production composition still uses the daemon-owned local-state
-Runtime; future Lifecycle Worker/HTTP-state integration remains staged. Existing
-v1 image digests have not been rebuilt or relabeled. Enabling Setup Info requires
-a newly built/distributed shim image with its actual repository digest, an
-admitted v2 Template and the separate HTTPS delivery origin described in
-[the operator guide](jobs-and-operation-logs.md). Docker and Kubernetes first-job
-`Set up job` smoke acceptance for this increment has not been run. Older
-generations have no retroactively generated logs or metadata.
+Runtime; future Lifecycle Worker/HTTP-state integration remains staged. The
+original shim/v2 delivery design has been superseded for new bundled Templates
+by spec 0020 above. The 579-test and Python helper results are historical evidence
+for that earlier increment, not validation of the new official-image bootstrap.
+Older generations have no retroactively generated logs or metadata.
 
 ## Fleet listener and Pending diagnosis repair (2026-09-08)
 
@@ -428,10 +474,9 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
 - Bundled-profile conformance remains a runtime evidence gap, independent of
   automatic static activation under spec 0017. The Docker provider
   now has a real Terraform-generated lock for `kreuzwerker/docker` 3.0.2 and
-  a real, privately imported shim image pin; the Kubernetes lock/image pins
-  remain staged.
-  `templates/docker/image/` supplies a non-root shim image recipe and tests
-  the read/unlink/env-only JIT handoff. `scripts/docker-conformance/` supplies
+  a historical privately imported shim image pin. Current official image pins
+  and host bootstrap supersede that source; Kubernetes full runtime acceptance
+  remains staged. `scripts/docker-conformance/` supplies
   an external local-state Terraform smoke harness with protected diagnostics
   and explicit GitHub removal evidence; it never asserts full conformance or
   produces an activation attestation. The [2026-09-08 real smoke](evidence/docker-smoke-2026-09-08/README.md)

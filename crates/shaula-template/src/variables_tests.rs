@@ -45,7 +45,7 @@ fn bundled_variables_are_discovered_from_terraform_defaults() -> TestResult {
     assert_eq!(docker.parameters.len(), 1);
     assert_eq!(
         docker.parameters[0].default_value_json.as_deref(),
-        Some("\"localhost:5001/shaula-runner:2.337.0-bootstrap-v1\"")
+        Some("\"ghcr.io/actions/actions-runner:2.337.0\"")
     );
     let socket = docker
         .bindings

@@ -162,7 +162,9 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
     // independent tasks; readiness cannot wait for a GitHub/IaC round trip.
     let mut runtime = TemplateRuntime::new(bootstrap.terraform_executable.clone());
     if let Some(logs) = &logs {
-        runtime = runtime.with_operation_logs(logs.clone());
+        runtime = runtime
+            .with_operation_logs(logs.clone())
+            .with_operation_log_reader(logs.clone());
     }
     let runtime = std::sync::Arc::new(runtime);
     let runtime_logs = runtime.clone();

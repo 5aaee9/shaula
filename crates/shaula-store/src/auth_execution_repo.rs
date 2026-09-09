@@ -160,7 +160,7 @@ impl Store {
             "SELECT g.id,r.spec_json FROM runner_generations g JOIN fleet_revisions r ON r.fleet_key=g.fleet_key AND r.revision=g.fleet_revision
              WHERE g.fleet_key=? AND (g.state!='Destroyed' OR EXISTS (
                 SELECT 1 FROM runner_operations o WHERE o.generation_id=g.id
-                AND o.state IN ('Pending','Starting','ApplyStarting','Running','Blocked')))", [fleet.into()])).await?;
+                AND o.state IN ('Pending','Starting','ApplyStarting','BootstrapStarting','Running','Blocked')))", [fleet.into()])).await?;
         for row in generations {
             let id: String = row.try_get("", "id")?;
             let reference = self

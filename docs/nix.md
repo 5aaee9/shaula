@@ -177,3 +177,15 @@ device as the store. It uses
 ordinary `pull_request` events, not privileged `pull_request_target` execution,
 and needs no production credentials. Remote CI success must be observed on an
 actual pushed workflow run; local Nix checks alone are not that evidence.
+
+## Official container bootstrap tools
+
+The NixOS service wrapper includes `docker-client` and `kubectl` in its runtime
+PATH for the fixed host bootstrap in [spec 0020](specs/0020-official-container-runner-bootstrap.md).
+The daemon resolves those fixed executable names before launching children with
+a minimal environment; Fleet input cannot select executables or arguments.
+Docker/kubectl availability alone does not grant access: configure the approved
+Docker socket or Kubernetes bindings and namespace permissions through the usual
+Profile/deployment path. No tools or platform credentials are injected into the
+Runner container. Standalone package deployments must provide the corresponding
+host CLI dependencies themselves.

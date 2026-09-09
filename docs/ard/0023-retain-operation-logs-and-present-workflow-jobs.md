@@ -6,7 +6,7 @@ amends: [0003, 0004, 0006, 0008, 0012, 0013, 0014]
 
 # Retain operation logs and present workflow jobs
 
-本决定接受日志保存、Runner setup 信息投递及 Jobs 页面目标设计；这些能力尚未实现。
+本决定接受日志保存、Runner setup 信息投递及 Jobs 页面设计；实现进度见 [实现状态](../IMPLEMENTATION_STATUS.md)。容器 bootstrap 部分已由 [ARD-0024](0024-bootstrap-official-runner-images-outside-containers.md) 修订。
 状态模型、协议、授权、保留期限、配额与验收的唯一 owner 是
 [spec 0019](../specs/0019-workflow-jobs-and-operation-logs.md)。
 
@@ -71,57 +71,15 @@ Terraform `sensitive`、`-no-color` 或一次字符串替换都不构成完整�
 日志存储的准入、配额、降级及恢复规则由 spec 定义，不允许静默假报日志完整。
 具体读取授权与保留策略只在 spec 规定；日志的脱敏不把它变为公开数据。
 
-### Bootstrap retrieves the apply projection before starting the Listener
+### Container bootstrap is superseded by ARD-0024
 
-成功交付时，Runner bootstrap shim 在 exec `Runner.Listener` 前，通过独立的、
-Runner 可达的 HTTPS 只读通道取回本 Generation 的 Create apply 脱敏投影，
-合并已有合法 setup 条目并原子写入 `<runner_root>/.setup_info`。
-JSON 使用 `Group`/`Detail`；Shaula 分组不得使用 Runner 保留的 `_internal_` 前缀。
-Destroy 日志在 Runner 终止后仍归档并供 UI 排障，不依赖该容器接收它。
+最初接受的 v2 方案由自制 Runner shim 使用独立 HTTPS capability，在容器内等待和下载 apply 投影。该方案仅作为旧 v2 artifact 的兼容历史保留；它不再是新 Docker/Kubernetes Template 的实现选项。
 
-下载使用独立、短期、仅限本 Generation 日志读取的 capability。
-它不是 worker control、Terraform state 或 management OIDC token，不能换取
-JIT、state、其他 Generation 的内容或任何 mutation 权限。
-现有仅 loopback 的内部 state/control listener 不对 Runner 开放。
-新的 HTTPS 通道具有独立路由和认证边界，不成为管理面 OIDC 的匿名例外。
-
-Descriptor 通过受保护的 bootstrap 文件交付；shim 消费后移除其 staged 副本，
-避免传入 Listener argv、普通 job environment、setup log 或遥测。
-这只缩小主动暴露面，不承诺同一 Runner Execution Domain 的进程/内存隔离。
-若 capability 被该域内进程获取，其授权上限仍只是本 Generation 的脱敏日志。
-
-等待必须有界，读取、解析、合并或落盘失败均降级后继续既有 JIT 启动流程；
-日志功能不能把健康 Runner 无限阻塞。JIT 本身的严格验证和失败行为保持独立。
-这接受一个明确取舍：任意慢的 apply、首个 job 必有完整日志、零新增启动等待
-三者不能同时保证。超出等待预算的 job 可以没有完整 apply 内容，UI 仍保留档案。
-
-Kubernetes 的等待放在 runner 主容器的 shim，init container 只负责 staged
-文件复制。当前 pinned provider 等待 Pod phase `Running`；如果 init container
-等 apply 完成，会形成 apply 等 Pod 启动、Pod 等日志结束的循环。
-主容器中的 shim 已可运行，不要求 `Runner.Listener` 已上线才能完成该 provider gate。
-未来的 provider、probe 与 Create 等待策略不能把 Listener 上线或日志到达作为
-apply 结束前提；单独的 readiness condition 与 Pod phase 不应混为一谈。
-
-### Templates opt into a versioned bootstrap contract
-
-日志投递通过显式版本化的 system input、manifest 能力声明及 pinned shim/image
-约定协作。精确字段和版本由 spec 定义；不使用任意 Fleet 参数或隐藏环境变量
-绕过 input admission，也不通过篡改 JIT configuration dictionary 夹带新文件。
-
-Docker 模板在 Create 时上传新的 protected bootstrap descriptor；Kubernetes
-模板在既有 bootstrap Secret 中携带并经 init 复制该 descriptor，主容器只挂载
-staged volume。这个扩展修订此前 Secret 仅含 JIT 的契约，须经新 revision 的
-静态校验与对应平台验收；不新增 daemon 原生平台客户端或事后对象修改路径。
-
-旧 Profile、旧 image 与保留 Generation 继续使用原 input/bootstrap contract，
-没有日志投递能力时明确显示不支持。不能改写旧 artifact、pin、protected input、
-state 或兼容证据来把它们伪装成支持新协议；新能力从新 Generation 生效。
+[ARD-0024](0024-bootstrap-official-runner-images-outside-containers.md) 改为直接使用官方 Runner 镜像，由 Terraform 建立启动门槛，并由宿主侧生命周期执行端在 apply 完成后生成、交付 Setup Info 再启动 Listener。其新能力与 v1 input、平台固定 bootstrap、失败/恢复边界归 [spec 0020](../specs/0020-official-container-runner-bootstrap.md)。不变的是独立受众、完整 apply 之后交付、Destroy 日志不依赖 Runner、旧 artifact/input/state 不变，以及 GitHub readiness 的独立权威。
 
 ## Alternatives and tradeoffs
 
-不采用 apply 后 `docker cp`、`kubectl exec` 或 Secret 更新：它们引入原生平台
-能力、状态外 mutation 和首 job 竞态。第二次 Terraform apply 也违反现有
-Create-once 与 Create/Destroy-only 的生命周期边界。
+原方案因平台能力与首 job 竞态拒绝 apply 后 copy/Secret 更新；ARD-0024 已用明确的停止/缺 key 启动门槛、exact identity 检查和单次 Create admission 修订此取舍。运行中 exec 注入、通用更新与第二次 apply 仍不采用。
 
 不把完整 apply 输出作为同次 apply 的初始 Terraform input：完整输出此时尚未
 产生，且会把日志绑定到冻结的 plan/input 或敏感 state。共享宿主目录只适合
@@ -134,7 +92,7 @@ Create-once 与 Create/Destroy-only 的生命周期边界。
 ## Rollout
 
 先交付 Runtime 采集、持久档案、受保护投影与 Generation 排障读取，再接入 Jobs
-观测读模型及有证据的关联；bootstrap 投递通过新模板版本启用并做真实 job 冒烟。
+观测读模型及有证据的关联；宿主 bootstrap 投递按 spec 0020 通过新模板版本启用并做真实 job 冒烟。
 发布验收须覆盖失败 apply、Destroy 重试、日志存储故障、首 job 时序、投递超时、
 跨 Generation 拒绝，以及容器与 Workspace 删除后的历史读取。
 

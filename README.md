@@ -14,7 +14,7 @@ Shaula 是一个自托管的 GitHub Actions Runner Scale Set 容量控制器。�
 - **集中认证与权限**：通过 GitHub App 管理 GitHub 连接，使用 OIDC 登录 Web UI，并分别控制管理操作和日志读取权限。
 - **内置 Web UI 与 API**：UI 随 Rust 可执行文件一起发布；提供 Nix 构建环境和 NixOS 服务模块。
 
-项目仍在开发中。Docker 已有真实单 job 冒烟验证，Kubernetes 模板与完整生命周期的验收仍有待完成；Setup Info 需要额外配置新镜像、v2 模板和 HTTPS 交付入口。已实现范围和验证进度见 [实现状态](docs/IMPLEMENTATION_STATUS.md)。
+Docker、Kubernetes Runner 直接使用 GitHub 官方镜像；Shaula 在容器外准备 Setup Info，再启动 Runner，无需构建定制镜像。项目仍在开发中，新启动流程的真实平台验收进度见 [实现状态](docs/IMPLEMENTATION_STATUS.md)。
 
 ## 开始使用
 
@@ -31,7 +31,7 @@ Shaula 是一个自托管的 GitHub Actions Runner Scale Set 容量控制器。�
 | --- | --- |
 | 部署、开发与全部文档 | [文档索引](docs/README.md) |
 | 构建二进制、开发 UI 和运行检查 | [开发指南](docs/development.md) |
-| 构建 Runner 镜像、启用 Setup Info | [Runner 镜像](docs/runner-image.md) · [Setup Info 模板](docs/setup-info-templates.md) |
+| 官方 Runner 镜像与 Setup Info | [Runner 镜像](docs/runner-image.md) · [Setup Info 模板](docs/setup-info-templates.md) |
 | 功能完成度与已验证环境 | [实现状态](docs/IMPLEMENTATION_STATUS.md) |
 | 产品契约与架构选择 | [Specs](docs/specs/) · [ARD](docs/ard/) |
 | Fleet、Runner 等领域术语 | [术语表](docs/CONTEXT.md) |

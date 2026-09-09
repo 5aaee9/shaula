@@ -5,7 +5,7 @@
 - GitHub target: `github.com`
 - Supported scopes: organization and repository
 - Supported GitHub authentication: schema 2 GitHub App with explicit TargetPolicy (spec 0018)
-- Native platform clients: none
+- Platform SDK clients: none; fixed host container bootstrap is owned by spec 0020
 - v1 bundled Template Platforms: Kubernetes and Docker
 - Lifecycle primitives: Create and Destroy only
 - Lifecycle execution: one `shaula job` per Generation; exec Executor only in v1
@@ -22,7 +22,7 @@
 
 Fleet、Template Profile 和 GitHub Auth Profile 都通过同一 HTTP control plane 管理；SQLite 中的不可变 Revision、desired head、observed state、Change、outbox 和 audit 是唯一运行时真相源。Template artifact 通过 digest HTTP 发布到 content-addressed artifact store。Fleet/Profile resource mutation 只提交 durable desired state，GitHub、Profile validation 和 IaC 副作用都在提交后异步发生；artifact streaming 与 atomic publication 遵循独立的高权限上传契约。
 
-Shaula 是 pure-Rust 多进程执行模型：一个 daemon 管理 Fleet/GitHub/容量，每个 Generation 的 `shaula job` worker 顺序负责完整 Terraform 生命周期。生产路径使用 Tokio、clap、axum、SeaORM/SQLite、serde、reqwest 和 Rust OpenTelemetry；`shaula-scaleset` 实现 GitHub wire protocol，state 通过 daemon 内部 HTTP backend 写入 SQLite。生产 binary 不链接 Go、Kubernetes 或 Docker client，不构造平台请求，也不解释平台对象。Kubernetes/Docker 是 bundled Terraform Profiles，不是 Executor Drivers。
+Shaula 是 pure-Rust 多进程执行模型：一个 daemon 管理 Fleet/GitHub/容量，每个 Generation 的 `shaula job` worker 顺序负责完整 Terraform 生命周期。生产路径使用 Tokio、clap、axum、SeaORM/SQLite、serde、reqwest 和 Rust OpenTelemetry；`shaula-scaleset` 实现 GitHub wire protocol，state 通过 daemon 内部 HTTP backend 写入 SQLite。生产 binary 不链接 Go、Kubernetes 或 Docker SDK client；core 不构造平台请求或解释平台对象。[spec 0020](0020-official-container-runner-bootstrap.md) 明确允许 Template Runtime 内部通过固定宿主 CLI 完成官方镜像的 Create bootstrap。Kubernetes/Docker 是 bundled Terraform Profiles，不是 Executor Drivers。
 
 每个 Runner Generation 固定一份不可变 Template Profile Revision、artifact、输入、Workspace 和 IaC state。基础设施生命周期只有 Create 和 Destroy，没有 Update。JobStarted、JobCompleted 和进程内 wakeup 都可能丢失；最新 Assigned Demand、GitHub Runner inventory、Generation/worker 与外部副作用事实、outbox 扫描和 retirement reaper 共同提供 level-triggered 最终收敛，而不是完整事件重放。
 
@@ -72,7 +72,7 @@ v1 MUST：
 10. 使用 SQLite desired/worker/GitHub facts、HTTP-backed Terraform state/lock、retained artifacts/inputs 和 emergency state 支持恢复，不承诺 Create 的逐指令 resume。
 11. 容忍重复、乱序和缺失的 Job Observation，且不故意销毁 GitHub 已知仍在执行 job 的 Runner。
 12. 只接受 schema 2 GitHub App authentication，支持显式多账户 TargetPolicy；PAT、旧版和未知格式必须拒绝，认证失败不自动 fallback 到另一 kind 或旧 revision，详见 spec 0018。
-13. 接受 GitHub App private key 与 schema-sensitive Kubernetes/Docker Template bindings 作为 write-only HTTP 输入并允许其明文存入各自 immutable SQLite Revision，同时禁止所有读取接口、audit、error、log、OTel 和 diagnostics 回显；GitHub credential 只进入 GitHub Access Module，Template binding secret 只进入 exact-Revision IaC child，二者都不进入 Runner/workflow。历史 PAT bytes 继续受同等保护，但不再作为输入或执行凭据。
+13. 接受 GitHub App private key 与 schema-sensitive Kubernetes/Docker Template bindings 作为 write-only HTTP 输入并允许其明文存入各自 immutable SQLite Revision，同时禁止所有读取接口、audit、error、log、OTel 和 diagnostics 回显；GitHub credential 只进入 GitHub Access Module，Template binding secret 只进入 exact-Revision IaC 与固定 bootstrap child，二者都不进入 Runner/workflow。历史 PAT bytes 继续受同等保护，但不再作为输入或执行凭据。
 14. 从 Day 0 通过 Rust `tracing`/OpenTelemetry 产生 traces 和 metrics，并让结构化日志与 trace 关联。
 
 ## 3. Non-goals
@@ -80,7 +80,7 @@ v1 MUST：
 v1 不包括：
 
 - GitHub Enterprise Server 或 `github.com` enterprise-level Scale Set；
-- Shaula 原生 Kubernetes/Docker client、watcher、controller、平台对象 schema 或平台特定 reconcile 分支；
+- 通用 Kubernetes/Docker client、watcher、controller、core 平台对象 schema 或平台特定 reconcile 分支；spec 0020 的固定 Runtime bootstrap 不属于通用平台 API；
 - 在单个 Scale Set 内按逐 job labels 动态选择 Template Profile；
 - Runner 或 Scale Set 原地 Update、模板热更新、自动 drift repair；
 - 实现 Kubernetes Job 或远程 Executor Driver；仅保留其可替换 Interface，不禁止未来另行决策的扩展；
@@ -149,11 +149,11 @@ GitHub Access Module 的 production Adapter 是 `shaula-scaleset`。它由稳定
 
 Executor Interface 只负责 launch、observe、stop/fence `shaula job` 及 descendants；每个 worker 内的 Runner Lifecycle 只执行 Create/Destroy。Template Runtime Module 是 worker 的 IaC seam，隐藏 materialization、Workspace、env、subprocess、backend access、plan/output classification 与只读 diagnosis，见 [Template Runtime](0004-template-profile-runtime.md)。GitHub safety 通过 daemon 内部控制通道请求，state 通过内部 HTTP backend 持久化，见 [spec 0010](0010-lifecycle-worker-and-http-state-backend.md)。
 
-Store、HTTP、Scale Set、Template Runtime 和 telemetry 都有 local-substitutable test Adapters。生产实现分别以 SeaORM/SQLite、axum、reqwest、Tokio subprocess 和 Rust `tracing`/OpenTelemetry 封装于对应 crate。平台差异只存在于 Template Profile artifact 及其外部验收，不扩张 Fleet/Runner core Interface。
+Store、HTTP、Scale Set、Template Runtime 和 telemetry 都有 local-substitutable test Adapters。生产实现分别以 SeaORM/SQLite、axum、reqwest、Tokio subprocess 和 Rust `tracing`/OpenTelemetry 封装于对应 crate。平台资源声明属于 Template Profile artifact；spec 0020 的固定宿主 bootstrap 属于 Runtime 内部能力，二者均不扩张 Fleet/Runner core Interface。
 
 ### 4.2 Native dependency boundary
 
-Shaula production binary MUST NOT：
+除 [spec 0020](0020-official-container-runner-bootstrap.md) 明确规定、位于 Runtime 内部的 exact-resource bootstrap 外，生产路径 MUST NOT：
 
 - 链接 Kubernetes 或 Docker API client；
 - 构造、watch、list、get、patch 或 delete 平台对象；
@@ -432,7 +432,7 @@ worker 从原始 materials 和 database state 执行 delete-only saved plan；pa
 
 核心 lifecycle 不知道 Template Platform。v1 随附 Kubernetes 与 Docker 两个 Terraform Profile；其全部 resource shape、bootstrap、provider access 和安全约束分别由 [Kubernetes Runner Resource Specification](0003-kubernetes-runner-resource.md)、[Docker Runner Resource Specification](0006-docker-runner-resource.md)、[Template Profile Runtime Specification](0004-template-profile-runtime.md)、Profile artifact 和外部 integration harness 定义。
 
-Shaula 不为这些约束执行原生 preflight 或 live inspection。Profile-side Terraform checks、declared outputs 和外部验收可以观察平台；它们不成为 daemon platform capability。
+Shaula 不新增通用平台 preflight 或 reconcile。Profile-side Terraform checks 和外部验收观察平台；spec 0020 仅允许固定 bootstrap 对 exact 新建资源的身份及启动门槛进行检查，不能替代 GitHub readiness/safe-removal 权威。
 The Kubernetes Profile uses a user-published, Revision-pinned namespace binding and a collision-resistant Generation name persisted before external effects；the bundled Profile uses that exact value as both objects' `metadata.name`, with kind separating their Resource Keys. v1 accepts the HashiCorp provider's Terraform-state-driven namespace/name deletion and never calls that name a Kubernetes UID. The target binding and namespace must retain continuity, and all namespace writers must reserve Shaula names until Destroy；if an external actor repoints the target, recreates the namespace or replaces an object under the same name, a later Destroy may delete that replacement. This residual risk is accepted, while missing/corrupt state still quarantines and never authorizes reconstructed-name deletion.
 
 
@@ -546,7 +546,7 @@ Credential 术语必须准确：
 | --- | --- | --- |
 | GitHub Control-Plane Credential | App private key、installation/admin token；历史 PAT bytes 仍受保护但不再执行 | 只在 daemon GitHub Access Module，永不传入 Lifecycle Worker、IaC、Runner 或 workflow |
 | Internal Worker/State Capability | Generation/worker-scoped control token、Terraform backend password | control token 仅 worker；state token 仅 worker/其 Terraform child；两者都不进入 Runner/workflow |
-| Platform Provider Credential / Sensitive Binding | Profile-owned kubeconfig、remote Docker TLS/registry credential、schema-sensitive Kubernetes/Docker binding | 原始值只从 exact Template Revision 传给获准 IaC subprocess，永不传入 Runner/workflow；local `docker.sock` 是同 OS identity children 共享的 ambient host-admin capability，不是 environment scoping 可隔离的 credential |
+| Platform Provider Credential / Sensitive Binding | Profile-owned kubeconfig、remote Docker TLS/registry credential、schema-sensitive Kubernetes/Docker binding | 原始值只从 exact Template Revision 传给获准 IaC 与固定 bootstrap subprocess，永不传入 Runner/workflow；local `docker.sock` 是同 OS identity children 共享的 ambient host-admin capability，不是 environment scoping 可隔离的 credential |
 | Runner Registration | one-time JIT bootstrap payload | 进入 bootstrap/Runner Execution Domain；禁止主动传递给 job，但 v1 接受同域 process inspection 风险 |
 | Workflow Credential | per-job `GITHUB_TOKEN` 与 workflow 显式引用的 `${{ secrets.* }}` | 按 GitHub/workflow policy 对该 job 可见 |
 
@@ -560,7 +560,7 @@ GitHub App private key 与 schema-sensitive Template bindings 可以明文存入
 - SQLite main DB、WAL/SHM、online/backup/migration copy、crash dump、filesystem permission、retention 和 disposal 都按 credential-grade 管理；
 - host administrator 位于 trust boundary；application-level encryption 不是 v1 requirement，deployment-level disk/filesystem/backup encryption 强烈建议；
 - GitHub control-plane credential 从 SQLite 解出后只经过 GitHub Access Module，永不进入 Template/Terraform/Runner/workflow；`shaula-scaleset` 派生的短期 token 同样受保护；
-- sensitive Template binding 只从 exact Revision 解析到获准 IaC child，永不进入 Runner/workflow。
+- sensitive Template binding 只从 exact Revision 解析到获准 IaC 与固定 bootstrap child，永不进入 Runner/workflow。
 
 Template artifact publication 等价于部署可运行 provider plugin 并持有平台权限的代码。`template.publish`、`template.attest`、`fleet.write`、`auth.write`、read 和 retirement 必须独立分权；artifact streaming 需 digest、size、expansion、path/link/device、atomic publication 和 GC 安全检查。Static validation 通过后自动激活；独立 conformance evidence 不控制 Active，且 Template Platform 只从 artifact manifest 派生。
 
@@ -621,7 +621,7 @@ Implementation is incomplete until：
 14. JIT response loss 按 stable unique name lookup，remove 后使用 fresh Generation 或 Quarantine；Create-start response/spawn uncertainty 跨 worker crash 不产生第二次 Create apply。
 15. Destroy 使用原始 exact runtime/Profile/inputs 和 database state；prior descendants fenced，engine/plan/state bindings 重验，只有可信 empty-state completion/seal 后才允许清理 protected inputs。普通 Workspace 重建不能换材料。
 16. Create/Destroy plans 只有 supported format、`applyable=true`、`complete=true`、`errored=false` 才可 apply；managed actions 分别严格等于 create/delete，并在 spawn 前复验 plan/engine/artifact/input/state bindings。
-17. exec Driver 启动每 Generation 一个 `shaula job`，Terraform 是其受跟踪 child；进程树 fencing、隔离 cwd/env、worker restart、内部 auth 和 HTTP state CAS 通过 spec 0010 完整验收。v1 无远程 Executor 或 native platform client。
+17. exec Driver 启动每 Generation 一个 `shaula job`，Terraform 是其受跟踪 child；进程树 fencing、隔离 cwd/env、worker restart、内部 auth 和 HTTP state CAS 通过 spec 0010 完整验收。v1 无远程 Executor 或通用 native platform client；固定 bootstrap 的子进程边界按 spec 0020 验收。
 18. Kubernetes 与 Docker bundled Profiles 均在 `Active` 前取得绑定 exact artifact/dependency/engine binary/provider/protected bindings/runtime policy/image/suite tuple 的 conformance attestation，并通过 [Template Runtime](0004-template-profile-runtime.md) contract suite；各自 real integration test 从 queue 到 run-once、safe unregister、Destroy 和 empty state。Kubernetes 还必须证明 exact `metadata.name` 稳定且跨 Generation 不复用、normalization/truncation collision 在 mutation 前 fail closed、Destroy 只使用原始 state，并记录 target/namespace continuity 被破坏或同名 replacement 时 name-based provider 可能删除 replacement 的 accepted risk。
 19. 一个平台 Profile 的错误/阻塞不会停止另一个 Fleet 或整个 HTTP control plane；hung dependency 受 deadline 限制。
 20. 每个 effective Fleet/Profile mutation 原子持久化 Revision、Change、audit 和 outbox；handler 在 `202` 前无 GitHub、Terraform 或平台副作用。
@@ -629,10 +629,10 @@ Implementation is incomplete until：
 22. Fleet Decommission 永久停止新 acquisition/Create，允许 cleanup-only Auth Handoff，等待 Busy Runner，Destroy 已知 owned Generations，保留 Scale Set 并写 tombstone；unknown ownership/Quarantine 显示 Blocked 而非假成功。
 23. Day 0 in-memory OTel tests 覆盖 startup、HTTP、Profile/Auth、session、reconcile、Create/Destroy、recovery 和 exporter failure；metric cardinality 有显式上界。
 24. hung exporter 不超过 queue/timeout budget，也不延迟 commit/lifecycle；本地 rate-limited warning 和 counters 可见。
-25. JIT、PAT/App key、derived token、provider credential、Profile sensitive binding、tfvars、state、request body、Authorization 和 OTel headers 不进入任何进程 argv、普通管理 HTTP read response、audit、log 或 telemetry，也不进入 Runner declarative env/args/metadata、普通 job environment、workflow context 或 workflow-facing file。Provider credential 与 sensitive binding 只通过 protected input 进入获准的 exact-Revision IaC child；JIT 的唯一 env 例外是受信 bootstrap shim 为 pinned `Runner.Listener` 临时设置 `ACTIONS_RUNNER_INPUT_JITCONFIG`，Runner startup 捕获后 unset。v1 明确接受同一 Runner Execution Domain 内具备 process-inspection 能力的 workflow 可能读取 Listener initial environment/memory；这不是 activation failure，也不放宽 PAT/App/derived/provider/binding/HTTP/SQLite credential 永不进入 Runner 的边界。
+25. JIT、PAT/App key、derived token、provider credential、Profile sensitive binding、tfvars、state、request body、Authorization 和 OTel headers 不进入任何进程 argv、普通管理读取、audit、log 或 telemetry。JIT 的唯一 Runner env 例外按 spec 0020 使用官方 `ACTIONS_RUNNER_INPUT_JITCONFIG`（Kubernetes 用 Secret 引用）；其他 env/args/metadata 与普通 job environment/context 无这些凭据。Docker 初始配置/env 保留 JIT，因此属于 credential-grade；官方 Runner 捕获并 unset 普通环境项，不表示同域 process isolation。Provider/binding secrets 只进入 exact-Revision IaC 与固定 bootstrap child，GitHub/HTTP/SQLite 控制凭据永不进入 Runner。
 26. graceful stop 和 forced kill 都不删除 Scale Set 或主动 fleet-wide Destroy；backend 在 worker 最后写入后关闭，restart/backup/migration 从 spec 0010 consistency set 恢复。
 
-Verification SHOULD 组合 deep-Interface unit tests、fake Scale Set/IaC Adapters、pinned Go-oracle differential tests、in-memory OTel exporter、crash injection、real GitHub Scale Sets，以及由外部 harness 执行的 Kubernetes/Docker integration tests。外部 harness 使用平台工具不构成 daemon capability。
+Verification SHOULD 组合 deep-Interface unit tests、fake Scale Set/IaC Adapters、pinned Go-oracle differential tests、in-memory OTel exporter、crash injection、real GitHub Scale Sets，以及由外部 harness 执行的 Kubernetes/Docker integration tests。外部 harness 的额外平台检查不扩大 spec 0020 明确限定的生产 bootstrap 能力。
 
 ## 17. Delivery plan
 

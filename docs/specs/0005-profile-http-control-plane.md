@@ -37,7 +37,7 @@ flowchart LR
 
 The Profile Registry is a deep Module. Its Interface accepts typed Template/Auth mutations, conformance attestations and queries, resolves Fleet references, and returns typed results. It hides SQLite layout, revision promotion, attestation validation, references, outbox, idempotency and audit.
 
-Template Artifact storage is a separate Module because archive integrity, safe extraction and reconstructable execution caches differ from Profile revision mutation; both durable archives and Profile rows now use SQLite under spec 0015. GitHub credential bytes leave the Registry only through an internal scoped handoff to the GitHub Access Module；they never cross Fleet or Template Runtime Interfaces, never enter a Terraform input and never enter a Runner. Sensitive Template bindings leave the Registry only through an exact-Revision handoff to the approved IaC child；they never enter a Runner or workflow.
+Template Artifact storage is a separate Module because archive integrity, safe extraction and reconstructable execution caches differ from Profile revision mutation; both durable archives and Profile rows now use SQLite under spec 0015. GitHub credential bytes leave the Registry only through an internal scoped handoff to the GitHub Access Module；they never cross Fleet or Template Runtime Interfaces, never enter a Terraform input and never enter a Runner. Sensitive Template bindings leave the Registry only through an exact-Revision handoff to the approved IaC and fixed bootstrap children under spec 0020；they never enter a Runner or workflow.
 
 Template Profile and GitHub Auth Profile remain distinct typed resources. A generic untyped catalog/EAV body is forbidden.
 

@@ -8,6 +8,7 @@ import re
 import sys
 from pathlib import Path
 
+from bootstrap import stage_and_start
 from safety import (
     Rejected,
     admit_destroy_identity,
@@ -59,10 +60,18 @@ def prepare(args, commands, workspace, evidence, report):
     require(runner_name == generation["runner_name"], "jit_runner_name_mismatch")
     image = args.image
     require(
-        image and re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", image),
-        "pinned_image_required",
+        image and re.fullmatch(
+            r"ghcr\.io/actions/actions-runner(?::[A-Za-z0-9_.-]+)?@sha256:[a-f0-9]{64}",
+            image,
+        ),
+        "pinned_official_image_required",
     )
-    require(image in (workspace / "profile.yaml").read_text(), "image_not_in_manifest")
+    manifest = (workspace / "profile.yaml").read_text()
+    require(image in manifest, "image_not_in_manifest")
+    require(
+        "container_bootstrap_contract: shaula.container-bootstrap/v1" in manifest,
+        "container_bootstrap_contract_required",
+    )
     journal = {
         "generation_id": generation["id"],
         "source_digest": source_digest(workspace),
@@ -91,6 +100,7 @@ def prepare(args, commands, workspace, evidence, report):
                 "daemon HTTP state backend and crash recovery",
                 "GitHub online, job success and workflow environment (separate evidence)",
                 "management HTTP, audit, log and telemetry redaction",
+                "production operation-log archive and Setup Info projection delivery",
             ],
             "accepted_limitations": [
                 "same-identity IaC children share Docker host authority",
@@ -153,8 +163,15 @@ def prepare(args, commands, workspace, evidence, report):
     )
     after = resource["change"]["after"]
     require(
-        after.get("must_run") is False and after.get("rm") is False,
+        after.get("must_run") is False and after.get("rm") is False
+        and after.get("start") is False,
         "template_lifecycle_flags",
+    )
+    require(
+        after.get("command") == ["/home/runner/bin/Runner.Listener", "run"]
+        and after.get("env") == ["ACTIONS_RUNNER_INPUT_JITCONFIG=" + shaula["jit_config"]]
+        and not after.get("upload"),
+        "template_native_bootstrap_required",
     )
     require(after.get("image") == journal["image_id"], "plan_image_mismatch")
     journal["create_possible"] = True
@@ -182,26 +199,24 @@ def prepare(args, commands, workspace, evidence, report):
     save_json(journal_path, journal)
     report["container_id"] = journal["container_id"]
     report["checks"]["terraform_created_one_container"] = "passed"
+    stage_and_start(commands, journal, inputs, evidence, report)
 
 
 def inspect(args, commands, journal, inputs, report):
+    require(journal.get("bootstrap_completed") is True, "bootstrap_not_completed")
     info = commands.docker_json(
         "container", "inspect", journal["container_id"], phase="container_inspect"
     )[0]
     inspect_container(
-        info, journal["name"], journal["image_id"], inputs["shaula"]["jit_config"]
+        info, journal["name"], journal["image_id"], inputs["shaula"]["jit_config"],
+        expected_labels={
+            "shaula.fleet": inputs["shaula"]["generation"]["fleet_key"],
+            "shaula.generation": journal["generation_id"],
+        },
     )
     require(
         info.get("State", {}).get("Running") is True,
         "container_not_running_for_handoff_check",
-    )
-    commands.docker_run(
-        "exec",
-        journal["container_id"],
-        "/bin/sh",
-        "-c",
-        "test ! -e /shaula/jit_config",
-        phase="jit_file_consumed",
     )
     argv = commands.docker_run(
         "top", journal["container_id"], "-eo", "pid,args", phase="process_argv"
@@ -211,8 +226,8 @@ def inspect(args, commands, journal, inputs, report):
     report["checks"].update(
         {
             "docker_security_shape": "passed",
-            "jit_staged_file_consumed": "passed",
-            "jit_absent_from_declarative_metadata_and_process_argv": "passed",
+            "jit_only_in_native_input_environment": "passed",
+            "jit_absent_from_process_argv": "passed",
         }
     )
     report["inspected_at"] = now()

@@ -324,6 +324,7 @@ impl Store {
                 "Pending",
                 "Starting",
                 "ApplyStarting",
+                "BootstrapStarting",
                 "Running",
                 "Blocked",
             ]))

@@ -1,5 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod common;
+#[path = "support/container_profile_policy.rs"]
+mod container_profile_policy;
 use axum::http::{HeaderValue, StatusCode};
 use common::*;
 use shaula_core::registry::ControlPlaneStore;

@@ -21,6 +21,7 @@ pub(crate) fn now() -> i64 {
 enum Event {
     Text(AppendLog),
     Command(LogCommand),
+    Flush(oneshot::Sender<()>),
     Finish(String, oneshot::Sender<()>),
 }
 
@@ -125,6 +126,10 @@ impl InvocationGuard {
                         outcome = result;
                         acknowledgement = Some(ack);
                         break;
+                    }
+                    Event::Flush(ack) => {
+                        let _ = ack.send(());
+                        true
                     }
                 };
                 if !result {
@@ -359,3 +364,7 @@ impl Drop for PipeCapture {
 #[cfg(test)]
 #[path = "operation_capture_tests.rs"]
 mod tests;
+
+#[path = "operation_capture_barrier.rs"]
+mod barrier;
+pub(crate) use barrier::flush;

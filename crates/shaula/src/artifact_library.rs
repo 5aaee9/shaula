@@ -94,9 +94,12 @@ fn validate_archive(bytes: &[u8], digest: &str, validate_variables: bool) -> Cor
     shaula_template::artifact::extract_tar_gz(bytes, temp.path(), MAX_EXPANSION)?;
     let manifest = std::fs::read_to_string(temp.path().join("profile.yaml"))
         .map_err(|_| invalid("artifact missing or unreadable profile.yaml"))?;
-    shaula_template::manifest::parse_manifest(&manifest)?;
+    let manifest = shaula_template::manifest::parse_manifest(&manifest)?;
     shaula_template::manifest::verify_artifact_shape(temp.path())?;
     if validate_variables {
+        // Legacy import and cache recovery retain original cleanup material.
+        // Only a new upload/default source must adopt the current runner policy.
+        manifest.validate_new_container_profile()?;
         shaula_template::variables::discover_variables(temp.path(), digest)?;
     }
     Ok(())

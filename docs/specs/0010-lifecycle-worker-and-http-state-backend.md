@@ -6,6 +6,8 @@
 
 本规范是 Lifecycle Worker、Executor Interface、内部控制通道、Terraform HTTP backend 和 worker recovery 的唯一协议 owner。它修订旧的 daemon-owned Terraform operation orchestration 与 local-state authority；[spec 0004](0004-template-profile-runtime.md) 继续拥有模板、inputs/outputs 和 saved-plan admission。
 
+> 容器 bootstrap 修订见 [spec 0020](0020-official-container-runner-bootstrap.md) / [ARD-0024](../ard/0024-bootstrap-official-runner-images-outside-containers.md)：同次 Create apply 完成后，受当前 execution admission/fence 约束的固定宿主能力交付 Setup Info 并开启启动门槛；这不是第二次 apply 或新 Update。本文的 worker/HTTP-state 目标协议不因此被宣称已完成生产组合。
+
 ## 1. Ownership
 
 一个 Runner Generation 对应一个完整生命周期任务，而不是每个 init/apply/destroy 命令各自派发一个任务。
@@ -15,7 +17,7 @@
 | `shaula serve` / Fleet supervisor | HTTP/SQLite desired state、GitHub Auth/Profile、Scale Set/session、需求与容量、Generation admission、worker supervision、GitHub safety gates |
 | Executor Module | 启动、观察、停止并证明 Lifecycle Worker 及其 descendants 的进程归属；v1 的 `exec` Adapter 启动同一 binary 的 `shaula job` |
 | `shaula job` Lifecycle Worker | 独占 Workspace、materialize、Terraform init/plan/apply、等待 Retirement、Destroy 和本地清理的顺序控制 |
-| Template Runtime Module | worker 内的模板与 Terraform 机制；不认识 Executor Driver，不链接平台 client |
+| Template Runtime Module | worker 内的模板、Terraform 与 spec 0020 固定宿主 bootstrap；不认识 Executor Driver，不链接平台 SDK client |
 | State Backend Module | Generation-scoped state/lock 的认证读取和原子写入；SQLite 是 authoritative Terraform state store |
 
 Runner Resource 中的 `Runner.Listener`/workflow 与 Lifecycle Worker 是不同的进程及信任域。Kubernetes Runner Pod 不是未来承载 `shaula job` 的 Kubernetes Job。

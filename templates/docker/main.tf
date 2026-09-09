@@ -5,9 +5,9 @@
 # restarts or auto-removes, and the default Profile never mounts
 # /var/run/docker.sock into the Runner.
 #
-# Build the runner image with image/Dockerfile and pin its final digest in
-# profile.yaml. The stock actions-runner image does not contain the shim.
-# Image construction alone does not satisfy the activation attestation gate.
+# Use the unmodified official GitHub Runner image pinned in profile.yaml.
+# Shaula owns the post-apply bootstrap: write the prepared .setup_info file
+# into the stopped container, then start its official Listener directly.
 
 terraform {
   required_version = ">= 1.9, < 2.0"
@@ -47,6 +47,7 @@ resource "docker_container" "runner" {
   # One ephemeral job: no restart, no daemon-side removal behind the
   # lifecycle ledger, no persistence claim.
   restart  = "no"
+  start    = false
   must_run = false
   rm       = false
   memory   = 4096
@@ -61,23 +62,15 @@ resource "docker_container" "runner" {
     value = var.shaula.generation.id
   }
 
-  # JIT handoff: the provider uploads the protected value to a fixed file
-  # before container start (never a host source path, never argv). The
-  # pinned shim reads and unlinks it, then spawns Runner.Listener with only
-  # ACTIONS_RUNNER_INPUT_JITCONFIG set.
-  upload {
-    # Provider 3.0.2 uploads a root-owned 0644 file. The image's runner-owned
-    # 0700 directory restricts access and lets runner read and unlink it.
-    file    = "/shaula/jit_config"
-    content = var.shaula.jit_config
-  }
+  # GitHub's Listener captures and removes this supported input variable
+  # before workflow execution. Docker metadata and Terraform state remain
+  # credential-grade; no JIT value is placed in argv or a shell script.
+  command = ["/home/runner/bin/Runner.Listener", "run"]
+  env     = ["ACTIONS_RUNNER_INPUT_JITCONFIG=${var.shaula.jit_config}"]
 
-  // Pinned shim (bundled in the pinned runner image) performs the
-  // read-once / unlink / env-only handoff.
-  command = ["/usr/local/bin/bootstrap-shim"]
-
-  # JIT arrives through the upload above, not through declarative env.
-  env = []
+  # Do not start during apply: its completed, sanitized log projection is
+  # prepared outside the container before Shaula releases this start gate.
+  # Terraform remains the sole container create/destroy owner.
 
   lifecycle {
     precondition {
@@ -116,7 +109,7 @@ variable "shaula" {
       registry_auth = optional(string)
     })
     parameters = object({
-      runner_image = optional(string, "localhost:5001/shaula-runner:2.337.0-bootstrap-v1")
+      runner_image = optional(string, "ghcr.io/actions/actions-runner:2.337.0")
     })
   })
   sensitive = true

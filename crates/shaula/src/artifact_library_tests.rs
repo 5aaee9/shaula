@@ -129,6 +129,44 @@ async fn legacy_original_archives_import_without_repacking_and_unregistered_file
 }
 
 #[tokio::test]
+async fn legacy_container_upload_is_rejected_but_original_archive_still_recovers() -> TestResult {
+    let temp = tempfile::tempdir()?;
+    let defaults = fixture_source(temp.path())?;
+    let path = defaults.join("docker/profile.yaml");
+    let mut manifest: shaula_core::template::ProfileManifest =
+        serde_yaml::from_str(&std::fs::read_to_string(&path)?)?;
+    manifest.container_bootstrap_contract = None;
+    manifest.runner_image_digests = vec![format!(
+        "registry.test/custom:old@sha256:{}",
+        "a".repeat(64)
+    )];
+    std::fs::write(path, serde_yaml::to_string(&manifest)?)?;
+    let (bytes, _) = import::package(&defaults.join("docker"))?;
+    let digest = format!("sha256:{}", hex::encode(Sha256::digest(&bytes)));
+    let (store, library) = adapter(temp.path()).await?;
+    assert!(library.publish(&bytes, &digest).await.is_err());
+    assert!(library.import_defaults(&defaults, 1).await.is_err());
+    assert!(store.artifact_archive_get(&digest).await?.is_none());
+    assert!(library.sources().await?.is_empty());
+
+    // Upgrade recovery imports the exact old bytes; it must not reinterpret
+    // cleanup data as a request to publish or launch another legacy Runner.
+    let published = shaula_template::ArtifactStore::new(&library.root).publish(&bytes, &digest)?;
+    library.initialize(&[], 2).await?;
+    assert_eq!(
+        store.artifact_archive_get(&digest).await?,
+        Some(bytes.clone())
+    );
+    std::fs::remove_dir_all(&published.final_path)?;
+    assert!(library.ensure_cached(&digest).await?);
+    assert_eq!(
+        std::fs::read(published.final_path.with_extension("tar.gz"))?,
+        bytes
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn corrupted_existing_cache_and_legacy_archive_fail_closed() -> TestResult {
     let temp = tempfile::tempdir()?;
     let (store, library) = adapter(temp.path()).await?;

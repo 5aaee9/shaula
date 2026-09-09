@@ -6,7 +6,7 @@ Status: accepted, 2026-09-09. 本文定义目标契约；Jobs、持久 Operation
 
 Web UI 增加 **Jobs**，以 GitHub Actions **Workflow Job** 为主对象。每个 job 可查看已观测执行状态、实际服务它的 Runner Generation，以及该 Generation 的 Apply / Destroy 日志；基础设施销毁后日志仍保留供 debug。预热、未被领取和创建失败的 Generation 也必须能查到日志。
 
-本规范拥有 Jobs 读模型、Operation Log 捕获/保留/读取和 Setup Info 交付契约。它扩展 [spec 0008](0008-embedded-web-ui.md) 的 UI 与 [spec 0004](0004-template-profile-runtime.md) 的受控日志发布；不改变 Create/Destroy-only、一次 Create apply、Busy-safe removal、state-empty proof、Worker Claim 或 Occupancy 规则。后者继续由 specs [0001](0001-shaula-runner-scale-set.md)、[0004](0004-template-profile-runtime.md)、[0010](0010-lifecycle-worker-and-http-state-backend.md) 维护。
+本规范拥有 Jobs 读模型、Operation Log 捕获/保留/读取和 Setup Info 内容契约；容器交付及启动顺序归 [spec 0020](0020-official-container-runner-bootstrap.md)。它扩展 [spec 0008](0008-embedded-web-ui.md) 的 UI 与 [spec 0004](0004-template-profile-runtime.md) 的受控日志发布；不改变 Create/Destroy-only、一次 Create apply、Busy-safe removal、state-empty proof、Worker Claim 或 Occupancy 规则。后者继续由 specs [0001](0001-shaula-runner-scale-set.md)、[0004](0004-template-profile-runtime.md)、[0010](0010-lifecycle-worker-and-http-state-backend.md) 维护。
 
 v1 展示 Shaula 从已管理 Scale Set 收到并保存的 job 观测，不宣称是 GitHub 全部 workflow 的完整历史。不新增 workflow rerun/cancel、Terraform 手动重跑、浏览器直接访问平台、raw credential 日志下载或 workflow step 日志镜像。完整 workflow 日志链接到 GitHub。
 
@@ -80,7 +80,7 @@ Scale Set 消息是可能重复、乱序、缺失和批次截断的提示。页�
 - 各 command 的有限 `phase`（init、plan、apply）、command ordinal、启动/结束时间、实际 exit code/termination、是否根本未 spawn；不保存 argv/env 作为日志 metadata。
 - Runtime result 与日志 `capture_status` 分开。前者为 running/succeeded/failed/interrupted/unknown/skipped；后者为 capturing/complete/partial/withheld/unavailable/expired，另带有限原因码。
 - 已保存区间、截断/丢失计数、sanitization policy version、封存时间与内容版本；数值只描述日志，不泄露 secret 长度/指纹。
-- Setup Info 的 publication/delivery 状态独立记录；下载响应成功不等于文件已写入或 job 已展示。
+- Setup Info 的 publication/delivery 状态独立记录；交付完成不等于 GitHub job 已展示。
 
 init/plan/apply 的 stdout 与 stderr 都捕获；Destroy 是 delete-only saved plan 的 `terraform apply`，不是新增未经检查的 `terraform destroy`。`terraform show -json`、`output -json`、`state pull` 的数据 body、tfvars/plan/state 文件不进入日志流。允许有 phase/outcome 元数据，不能借 debug 把这些材料公开。
 
@@ -168,74 +168,36 @@ Unassigned runners 作为 Jobs 的次级入口，同时在 Fleet 详情可达；
 
 活跃页面默认每 5 秒轮询，后台隐藏时暂停、失败指数退避至 60 秒；不强制引入 WebSocket/SSE。分页有界，刷新保留筛选、选择和滚动位置，不一次把全部日志载入 DOM。UI 明确显示 loading、empty、stale、withheld、partial/gap、expired、unavailable 和关联冲突。退出登录/终局 401 清除内存缓存；不把日志存入 localStorage、service worker、analytics 或错误上报。
 
-## 7. Delivering Apply to the Runner
+## 7. Runner Setup Info delivery
 
-### 7.1 Ordering and transport
+Setup Info 是该 Generation 本次 **Create apply 阶段**的批准投影，包含实际结束/partial 信息；Destroy 日志只保留到管理档案。apply 进程结束、pipe drain 与有界归档先于投影读取，不从 frozen tfvars、plan/state JSON 或其他 Generation 的日志拼接。
 
-Setup Info 是该 Generation 的 **Create apply 阶段**安全投影，包含已确认 exit/partial 信息；不是 Destroy 日志，也不把 plan/state/JIT 数据混入。apply 进程结束、pipe 已 drain 并完成有界归档后封存可发布副本；apply 失败/中断也可封存已有安全内容，不把发布成功当作 Create 成功。
-
-Runner 在 Terraform apply 创建容器的过程中可能已经启动。必须由 pinned bootstrap shim 在 `exec Runner.Listener` **之前**等待并获取副本，原子写入 `<runner_root>/.setup_info`，然后按原 JIT 规则启动 Listener。不能等 GitHub Started 事件后才写，也不能把整个 generation Workspace 挂进容器。
-
-```mermaid
-sequenceDiagram
-    participant T as Terraform
-    participant R as Runner 主容器 shim
-    participant S as Shaula 日志交付
-    T->>R: 创建并启动容器
-    Note over R: 有界等待，Listener 尚未启动
-    T-->>S: apply 结束，输出归档并封存
-    R->>S: 读取本 Generation Setup Info
-    S-->>R: 已过滤 JSON 或明确不可用
-    R->>R: 原子写入，再 exec Runner.Listener
-```
-
-新增专用 loopback delivery listener，经受信 reverse proxy 暴露 Runner 可达的 **HTTPS** origin；只转发 `/runner/v1/generations/{id}/setup-info`，不暴露管理或内部 state/control listener。启用交付时必须配置/验证 advertised origin、证书验证、路由和独立速率/并发上限；不提供跳过 TLS 验证选项。管理 listener 的 OIDC 规则不变。
-
-URL 只能由 daemon 受信配置与 Generation identity 生成，不能来自 Fleet 参数或 provider output。shim 禁止自动跟随 HTTP redirect，避免 bearer 离开固定 origin；响应为 JSON，使用 private/no-store/nosniff，不进入 proxy body/access credential logs。默认每 capability 每秒 2 次请求、burst 4、全局最多 64 个并发请求；可配置但必须有有限上限，超限返回 429/Retry-After 且仍受 shim 总 deadline 限制。
-
-GET 使用 daemon 生成的独立高熵 bearer capability，仅能读该 Generation 的 Create 投影，不能列举其他日志、读 Destroy、写日志或访问 JIT/state/control/管理接口。身份先验证再查 body；所有其他方法/route 拒绝。不要复用 OIDC、worker control 或 state token；这是本规范新增的窄化 Runner-readable 能力，不是把 spec 0010 内部权限交给 Runner。
-
-capability 的认证记录只保存 verifier 与 scope/expiry；明文通过 protected input/bootstrap 文件交付，不放 URL/query、argv、declarative env、普通 workflow env 或访问日志。明文也可能随原 protected input、平台 bootstrap Secret、Terraform state 和备份留存，仍按其 credential-grade 恢复契约保护，不能为了删 token 改写 frozen inputs/state。默认有效 1 小时、最大 24 小时，到期或 Generation 终结撤销授权，不等于物理擦除所有副本；重新部署不借读取签发新 token。GET 幂等且可重试，不能第一次 GET 就消费 token。下载后清除本地 staged capability 文件和继承环境；同 Runner Execution Domain 的进程检查仍不被宣称隔离。
-
-| GET 结果 | shim 行为 |
-| --- | --- |
-| 200：sealed `.setup_info` 数组 | 校验大小/格式、合并并原子落盘；重复读取同版本相同内容 |
-| 202 + Retry-After：仍在捕获/封存 | 在总 deadline 内退避重试 |
-| unavailable/withheld 的安全条目，或 timeout/网络/401/404/410/5xx | 有界重试适用的暂态错误；最后写固定 unavailable 条目或保留原文件，继续正常 JIT 启动 |
-
-默认总等待 60 秒、最大 300 秒；每请求 timeout 5 秒且受剩余总 budget 限制。capability/正文限流与请求并发有界。等待、下载、JSON、写盘失败使用独立降级分支，不能落进原 JIT fatal 分支；真正的 JIT 验证/unlink 失败仍按原规则拒绝启动。
-
-降级必须诚实：无法同时保证任意慢 apply 的完整日志、零启动延迟和永不阻塞 Runner。v1 保证有限等待后继续；错过首 job 后不在正在读取的文件上追写。持久 Operation Log 仍可稍后在 Web 查询。若 provision 根本没产生 Runner，就不会出现对应 GitHub Set up job 日志。
-
-### 7.2 File and Template contract
-
-输出是 JSON 对象数组，键为 `Group` / `Detail`，例如：
+新的 Docker/Kubernetes bundled Template 采用 [spec 0020](0020-official-container-runner-bootstrap.md) / [ARD-0024](../ard/0024-bootstrap-official-runner-images-outside-containers.md) 的官方镜像及宿主 bootstrap。Terraform 创建尚不能运行 Listener 的资源；Shaula 生命周期执行端在 apply/output/state 验证后生成 JSON，并在开启启动门槛前交付。Runner 容器不包含 shim、helper、下载或等待逻辑，不获得日志 capability，也不需要独立 Setup Info HTTPS origin。
 
 ```json
-[{"Group":"Terraform apply (runner provisioning)","Detail":"docker_container.runner: Creating...\nApply complete! Resources: 1 added, 0 changed, 0 destroyed."}]
+[
+  {
+    "Group": "Terraform apply (runner provisioning)",
+    "Detail": "<approved Create apply output>"
+  }
+]
 ```
 
-Group 固定且不以 `_internal_` 开头。用 JSON serializer 编码 UTF-8，不能通过 shell 拼字符串。默认 bundled image 的 root 是 `/home/runner`；实际路径由 pinned shim/镜像安装位置确定，不能使用 `_work` 或 daemon workspace。固定临时文件在同目录写入、校验、原子替换并保留 Runner 可读权限；不跟随任意 symlink。
+Group 固定为单行，不能以 `_internal_` 开头。以 JSON serializer 编码 UTF-8，规范化危险控制标记，并按 §5 限制正文大小；缺失、withheld、截断与安全降级必须如实记录。普通日志内容读取/投影失败使用空数组或固定 unavailable 标记继续固定 bootstrap；Docker 的可选文件准备/copy 失败也可跳过诊断后继续；资源身份、必需的 Kubernetes Secret publish 或启动门槛失败按 spec 0020 进入 Create 清理，不能把它当作日志缺失而假报资源创建成功。
 
-已存在合法 `.setup_info` 时保留其他条目，仅替换 Shaula 自己的固定组，重试不重复追加；原文件损坏/超限时不无条件覆盖镜像信息，降级继续。总字节/行数受限，head/tail 截断有可见说明。普通 JSON/读写错误可降级不等于任意尺寸内容都无性能影响。
+新能力由 `container_bootstrap_contract: shaula.container-bootstrap/v1` 声明，使用原 v1 input。旧 `input_contract_version: 2` / `setup_info_contract: shaula.setup-info/v1` 与独立 bearer HTTPS listener 只保留给已固定旧 v2 artifact 的 retained Generation 兼容；新的 publication/Create 必须使用官方镜像与宿主能力；它不再是默认容器模板的实现方式。旧输入/凭据/制品及其清理契约保持冻结，不重写历史、不将两种能力叠加。
 
-交付支持由新 immutable Template Revision 的 manifest 显式声明 `setup_info_contract: shaula.setup-info/v1`，并声明 `input_contract_version: 2`。缺省仍为 v1、无交付；未知版本拒绝。v2 保留原输入字段，增加 system-owned `setup_info`（disabled 或包含固定 URL、capability、expiry/wait budget）；不允许 Fleet 参数覆盖这些值。v1 Template 始终收到原 v1 envelope；缺乏交付能力显示 unsupported，不静默升级原 Generation。
-
-v2 protected input 及 bootstrap 材料继续是 credential-grade，参与原 inputs/provenance 检查；Setup Info 内容本身在 apply 结束后生成，不回写已冻结 tfvars、不改变 saved plan。`shaula_result` 仍沿用原 output contract。若交付未配置，v2 使用 disabled，不把日志依赖变成 Create 的前置网络条件。
-
-Docker 通过现有 provider upload 在 start 前加入 bootstrap 元数据文件；Kubernetes 通过同一个 generation bootstrap Secret 与 init 拷贝到 memory volume。**等待必须放在 runner 主容器的 shim，不能放在 init container**：pinned Kubernetes provider 等 Pod Running，init 等 apply 结束会形成循环等待。Docker 不开启依赖 Listener 健康的 `wait`；后续 startup/liveness/readiness/外部 Create gate 不能形成等待 Listener online/Setup Info 与 apply 互相依赖的环。
-
-不添加 daemon Docker/Kubernetes client、`docker cp`、`kubectl exec`、第二次 apply 或 provider-managed 更新来补文件。两个 bundled Template 保持原 managed resource shape。发布新的 image/artifact/runtime policy，按 spec 0017 静态校验；旧 exact pin 保留原 Create/Destroy/recovery 能力，完整交付声明需要新的 exact-tuple conformance。
+Setup Info 的批准内容策略、归档和访问记录仍由本文维护，传输/启动顺序、宿主依赖、官方镜像与平台资源要求只由 spec 0020 维护。写入完成不证明 GitHub job 已经显示它；首 job 的 Set up job 仍需真实 Runner 验收。
 
 ## 8. Implementation and rollout boundaries
 
-当前 `engine.rs` 每流只保留前 1 MiB，`runtime.rs` 在 apply success 检查后丢弃输出；没有 Operation Log archive。`port_jobs.rs` 未保留完整 workflow metadata/result，store 写 observation 时丢弃 numeric runner ID。`serve` 仍用 daemon-owned local-state Runtime；不能把尚未接线的 spec 0010 worker/state listener 当作现成 Runner 交付端。
+原始设计基线只有有限进程输出、没有持久日志档案，job observation 也缺少完整关联字段。实现现已增加这些能力，当前代码/验证的唯一进度记录是 [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md)。`serve` 仍采用 daemon-owned local-state Runtime；不能把尚未接线的 spec 0010 worker/state 组合当作已部署的交付端。
 
-实现按模块职责分配：core 拥有 Jobs/关联/日志端口；scaleset 映射批准 wire 字段；store 保存观察、投影与日志；template 捕获执行输出；daemon 组合生命周期/日志与交付；http 提供管理读取和独立 delivery；web 只呈现读模型；pinned image shim 完成容器内写入。具体 Rust 类型、物理表与文件拆分可按这些接口设计，不引入每个平台的 core 分支。
+实现按模块职责分配：core 拥有 Jobs/关联/日志端口；scaleset 映射批准 wire 字段；store 保存观察、投影与日志；template 捕获执行输出；daemon 组合生命周期/日志与交付；http 提供管理读取及旧 v2 delivery 兼容；web 只呈现读模型；template 内部固定 bootstrap 能力按 spec 0020 在宿主交付文件并控制启动。具体 Rust 类型、物理表与文件拆分可按这些接口设计，不引入每个平台的 core 分支。
 
 迁移只增加可版本化的观察/日志记录和索引，不重写已运行 Generation 的输入、provenance 或资源。旧 job observation 的缺失字段保持 null，旧 invocation 没有日志显示 not_recorded；不得运行 Terraform 生成历史日志。新流程不被迁移自动重新执行。
 
-先实现持久捕获、Jobs 关联/API/UI，再发布支持 delivery 的新 Template/image；operator 日志保存不依赖 Runner delivery。Schema 与 rollback 必须保留既有 ledger/recovery 语义；旧 binary 不理解新 contract 时拒绝新 Create，不能拿 v1 去处理已固定 v2 输入的资源。实施进度和真实验收单独记入 [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md)。
+先实现持久捕获、Jobs 关联/API/UI，再发布支持宿主 bootstrap 的新官方镜像 Template Revision；operator 日志保存不依赖 Runner delivery。Schema 与 rollback 必须保留既有 ledger/recovery 语义；旧 binary 不理解新 contract 时拒绝新 Create，不能拿 v1 去处理已固定 v2 输入的资源。实施进度和真实验收单独记入 [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md)。
 
 ## 9. Acceptance
 
@@ -247,9 +209,9 @@ Docker 通过现有 provider upload 在 start 前加入 bootstrap 元数据文�
 6. 超 1 MiB、长行、UTF-8 分片、交错流、超时/cancel、child crash、pipe reader error、满队列/满磁盘不阻塞 Terraform或改变安全清理；缺口与真实 execution outcome 分开。
 7. 在 chunk/多行、被丢块及重启边界注入假 JIT、解码 credential、binding、token 及编码值，验证持久文本、API、浏览器、Setup Info 和 telemetry 不含秘密或残片；withheld 不回退 raw，HTML/ANSI/UI 标记不被执行。
 8. 文件发布/索引提交每个 crash 窗口、重传 changed chunk、备份缺文件、seal 中断、GC 与 reader lease 竞争，均产生可解释 availability，不丢 lifecycle/state 证据。
-9. OIDC/scopes、不同 invocation cursor、过期/跨 Generation capability、正文上限、TLS/代理路由隔离经验证；Runner 凭据读不到 Destroy、管理、JIT 或 state。
-10. Docker 与 Kubernetes 真实 pinned Runner 均在首 job 的 **Set up job** 显示正确 apply 组；Kubernetes 主容器等待不阻塞 provider Running，测试故意将慢 apply 跨过 shim 启动。
-11. disabled/unsupported、delivery断网/超时/坏JSON、既有setup条目、总文件超限/写失败均在deadline内继续原Runner启动；JIT失败不被吞掉。没有Runner时不宣称GitHub已展示日志。
+9. OIDC/scopes、不同 invocation cursor、正文上限经验证；新容器不获得日志/管理/state capability。旧 v2 兼容路径仍验证过期/跨 Generation capability 与 HTTPS 路由隔离。
+10. Docker 与 Kubernetes 真实官方 pinned Runner 均在首 job 的 **Set up job** 显示正确 apply 组；慢 apply、外部启动门槛与身份校验按 spec 0020 验证。
+11. 无归档/withheld/投影错误按 spec 0020 降级为空数组；身份冲突、必需 patch/start 的失败或不确定结果进入 CleanupRequired；Docker 可选 copy 失败后仍复验身份并执行正常 start。JIT 失败不被吞掉。没有真实 Runner 时不宣称 GitHub 已展示日志。
 12. retention/quota、Destroyed/Fleet Decommission/retirement、登录到期、UI分页/轮询/退避/深链接、旧记录迁移均有验证。只通过 unit tests 或 `.setup_info` 静态源码审查不能替代真实 GitHub/平台冒烟。
 
 ## 10. Evidence

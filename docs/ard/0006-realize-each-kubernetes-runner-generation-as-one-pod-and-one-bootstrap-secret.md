@@ -5,6 +5,8 @@ date: 2026-09-04
 
 # Realize each Kubernetes Runner Generation as one Pod and one bootstrap Secret
 
+> **Bootstrap amendment:** [ARD-0024](0024-bootstrap-official-runner-images-outside-containers.md) supersedes the original container handoff/platform-tool clauses below for new official-image Templates. Docker uses native JIT env and stopped-container copy/start; Kubernetes uses a Secret env reference and conditional host publication before startup. No custom shim/init image is used. The fixed Runtime bootstrap may use host platform tools and exact Revision credentials; no general Update or core platform API is added. The original clauses below describe retained v1/v2 artifacts only. Credential-grade state, no Runner provider/control-plane credentials, and original-state Destroy remain current.
+
 Shaula v1 的 Kubernetes Template Profile 为每个 Runner Generation 只管理一个短生命周期 Pod 和一个不可变 JIT bootstrap Secret，并将它们放入平台预先创建的 namespace。具备 `template.publish` 权限的用户通过 Template Profile binding 选择 namespace；模板不管理 Namespace、ServiceAccount 或 RBAC。Pod 设置 `automountServiceAccountToken: false`，且 Runner 不获得 Kubernetes API credential。
 
 artifact manifest 独占声明 `platform: kubernetes`、`bindings_contract: shaula.bindings.kubernetes/v1` 与 `schemas/bindings.schema.json`，输入和输出以 wire name 为 `bindings_digest` 的 exact opaque commitment 绑定该 Revision；该值不得是 sensitive plaintext 的 unkeyed digest/offline verifier。Shaula core 只处理通用 Template Runtime 的 inputs、opaque outputs、state 与 Create/Destroy 结果，不包含 Kubernetes client、watch、object model、admission inspection 或专用 reconcile path。

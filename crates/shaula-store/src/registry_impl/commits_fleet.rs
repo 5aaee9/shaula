@@ -36,6 +36,7 @@ async fn fleet_replacement_occupancy_in_tx(
                 "Pending",
                 "Starting",
                 "ApplyStarting",
+                "BootstrapStarting",
                 "Running",
                 "Blocked",
             ]))

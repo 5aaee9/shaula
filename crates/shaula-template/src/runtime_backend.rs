@@ -81,6 +81,11 @@ impl TemplateRuntime {
         artifact_digest: &str,
         timeout: Duration,
     ) -> Result<(), TemplateOutcomeError> {
+        let manifest = std::fs::read_to_string(artifact_dir.join("profile.yaml"))
+            .map_err(|_| state_err("input.contract"))?;
+        crate::manifest::parse_manifest(&manifest)
+            .and_then(|manifest| manifest.validate_new_container_profile())
+            .map_err(|_| state_err("input.contract"))?;
         let expected = crate::artifact_integrity::material_digest(artifact_dir, artifact_digest)
             .map_err(|_| state_err("create.materialize"))?;
         self.require_fresh_http_workspace(workspace)?;

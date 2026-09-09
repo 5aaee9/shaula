@@ -77,6 +77,9 @@ fn manifest_requires_exact_input_and_setup_contract_pair() -> TestResult {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../templates/docker/profile.yaml");
     let mut manifest: ProfileManifest = serde_yaml::from_str(&std::fs::read_to_string(path)?)?;
+    // This fixture exercises the retained descriptor contract, independent of
+    // the new official-container capability's intentionally separate version.
+    manifest.container_bootstrap_contract = None;
     let original = serde_json::to_value(&manifest)?;
     assert!(original.get("input_contract_version").is_none());
     input().validate_for_manifest(&manifest)?;

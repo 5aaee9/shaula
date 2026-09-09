@@ -7,6 +7,8 @@ amends: [0001, 0004, 0005, 0008, 0010, 0013]
 
 # Run lifecycle workers with a database HTTP state backend
 
+> [ARD-0024](0024-bootstrap-official-runner-images-outside-containers.md) adds a fixed host-side container bootstrap within the same Create after apply. It remains subject to execution admission/fencing and does not introduce Update, a second apply, or an implemented worker/HTTP-state composition claim.
+
 Supersedes [ADR-0002](0002-run-immutable-runner-lifecycles-as-local-subprocesses.md); amends earlier orchestration/state ownership and ADR-0013's HTTP scope. The normative contract lives in [spec 0010](../specs/0010-lifecycle-worker-and-http-state-backend.md).
 
 ## Context

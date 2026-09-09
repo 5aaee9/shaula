@@ -7,10 +7,9 @@
     "runner_image": {
       "type": "string",
       "enum": [
-        "ghcr.io/actions/actions-runner:2.323.0",
-        "ghcr.io/actions/actions-runner:2.322.1"
+        "ghcr.io/actions/actions-runner:2.337.0"
       ],
-      "description": "Finite image alias; the conformance attestation pins the resolved digest for the exact compatibility tuple."
+      "description": "Finite official GitHub Runner image alias; profile.yaml pins the unmodified upstream image digest."
     },
     "cpu_request": {
       "type": "string",

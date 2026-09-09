@@ -1,6 +1,7 @@
 """Fail-closed checks for the external Docker smoke harness, not daemon policy."""
 
 import base64
+import copy
 import datetime
 import hashlib
 import json
@@ -210,7 +211,9 @@ def admit_plan(plan, operation, bound_addresses):
         )
 
 
-def inspect_container(container, expected_name, expected_image_id, jit):
+def inspect_container(
+    container, expected_name, expected_image_id, jit, *, expected_labels=None
+):
     config = container.get("Config", {})
     host = container.get("HostConfig", {})
     require(container.get("Name") == "/" + expected_name, "container_name")
@@ -233,15 +236,30 @@ def inspect_container(container, expected_name, expected_image_id, jit):
         user not in ("", "root") and not re.fullmatch(r"0+", user),
         "container_root_user",
     )
-    require(config.get("Cmd") == ["/usr/local/bin/bootstrap-shim"], "container_command")
+    require(
+        config.get("Cmd") == ["/home/runner/bin/Runner.Listener", "run"],
+        "container_command",
+    )
     require(not config.get("Entrypoint"), "container_entrypoint")
     require(config.get("Labels"), "container_ownership_labels_missing")
     require(
         any(key.startswith("shaula.") for key in config["Labels"]),
         "container_ownership_label",
     )
-    env_names = [entry.split("=", 1)[0] for entry in config.get("Env", [])]
-    for name in env_names:
+    if expected_labels is not None:
+        require(
+            all(config["Labels"].get(key) == value for key, value in expected_labels.items()),
+            "container_ownership_labels_mismatch",
+        )
+    environment = config.get("Env", [])
+    require(isinstance(environment, list), "container_environment_shape")
+    require(all(isinstance(entry, str) for entry in environment), "container_environment_shape")
+    native_jit = "ACTIONS_RUNNER_INPUT_JITCONFIG=" + jit
+    require(environment.count(native_jit) == 1, "container_native_jit_input")
+    for entry in environment:
+        if entry == native_jit:
+            continue
+        name = entry.split("=", 1)[0].upper()
         require(
             not name.startswith(
                 (
@@ -256,7 +274,11 @@ def inspect_container(container, expected_name, expected_image_id, jit):
             ),
             "container_secret_environment",
         )
-    require(jit not in json.dumps(container), "container_metadata_jit")
+    # The one native input is the explicit exception. Reject every additional
+    # occurrence, including another environment key, label, argv or host path.
+    filtered = copy.deepcopy(container)
+    filtered["Config"]["Env"].remove(native_jit)
+    require(jit not in json.dumps(filtered), "container_metadata_jit")
 
 
 def lock_providers(lock_bytes, selected):

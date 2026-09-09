@@ -5,20 +5,22 @@
 Run the commands below from the repository root.
 
 This Linux-only Python standard-library harness executes the Docker Template
-through the exact Terraform subprocess supplied by the operator. Docker CLI
-inspection is confined to this external tool; it is not a daemon capability.
+through the exact Terraform subprocess supplied by the operator. Its host-side Docker copy/start verifies the official-image bootstrap ordering.
+The production Runtime has its own fixed bootstrap under spec 0020; this external
+harness does not exercise the production archive/projection integration.
 It uses a protected **local** state workspace and does not implement or prove the
 spec 0010 `exec` Driver, independent `shaula job` worker, or database HTTP backend.
 
 The generated sanitized report always has `full_conformance_passed: false`.
 It is evidence for the scenarios actually executed, not a passing activation
-attestation. Do not activate a Candidate on the strength of this smoke report.
+attestation. Automatic static activation follows spec 0017; this report does not establish
+full runtime conformance.
 
 ## Run
 
 Use a dedicated disposable directory owned by the invoking administrator, mode
 0700, containing an exact materialized copy of the reviewed Template and its real
-provider lock. Pre-pull the pinned shim image into the intended Docker Engine.
+provider lock. Pre-pull the pinned official GitHub Runner image into the intended Docker Engine.
 Keep the caller's original input JSON outside the workspace, mode 0600, with sole
 top-level key `shaula`; JIT is `shaula.jit_config`, and the Docker binding is
 `shaula.bindings.docker_host`. Never place secrets directly on the command line.
@@ -33,13 +35,19 @@ python3 scripts/docker-conformance/run.py prepare \
   --docker /run/current-system/sw/bin/docker \
   --socket unix:///var/run/docker.sock \
   --vars /protected/smoke/input.tfvars.json \
-  --image registry.example/shaula-runner:VERSION@sha256:EXACT_DIGEST \
+  --image ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4 \
   --report /protected/smoke/report.json
 ```
 
 `prepare` freezes the input in `.docker-conformance`, runs readonly locked init
 and validation, admits one saved create-only plan with empty prior state, then
-applies it once. It checks `must_run=false` and `rm=false` in the real plan. It
+applies it once. It checks `start=false`, `must_run=false`, `rm=false`, the
+official image and native Listener/JIT input in the real plan. After apply it
+verifies the exact stopped container, copies a host-generated `.setup_info` and
+reads back the same bytes before recording `start_possible` and starting it.
+The fixed group is `Shaula bootstrap smoke test`; its text explicitly says this
+marker does not prove production operation-log delivery. No raw Terraform output
+is put into the marker. The harness
 rejects a repeated prepare even if the first apply was uncertain. State, input,
 plan, and journal remain protected in the workspace. Each subprocess retains raw
 stdout and stderr in exclusive 0600 files under `.docker-conformance/commands`,
@@ -55,8 +63,9 @@ Run `inspect` with the same workspace, executables, socket, and report arguments
 after `Runner.Listener` starts and **before** its one job completes. It checks
 the exact image/container identity, ownership labels, non-root user, restart,
 auto-removal, namespaces, capabilities, devices, mounts, declarative metadata,
-the consumed JIT file, and process argv. Its Docker exec command is only
-`test ! -e /shaula/jit_config`; it does not read the secret or modify the runner.
+the official Listener command and process argv. The sole permitted secret env
+input is `ACTIONS_RUNNER_INPUT_JITCONFIG`; Docker configuration retains it and
+remains protected. No container exec, shim or staged JIT file is used.
 
 Independently verify the registered runner identity and online status with
 GitHub, dispatch a bounded manual job selecting its unique label, and retain
@@ -136,7 +145,8 @@ digest or an opaque server-issued binding commitment. Attestation assembly must
 separately bind the exact archive and admitted binding revision and retain all
 required full-suite evidence.
 
-Real GitHub job success, ordinary workflow environment/context, management
+The smoke marker does not verify production apply-log projection or Jobs archive
+retention. Real GitHub job success, ordinary workflow environment/context, management
 HTTP/audit/log/telemetry redaction, fault injection, lifecycle worker composition,
 HTTP state semantics, and capability fencing require separate tests. The harness
 does not prove `/proc` isolation or memory zeroization. Same-identity IaC children
@@ -150,7 +160,7 @@ python3 -m unittest discover -s scripts/docker-conformance -p 'test_*.py'
 ```
 
 These checks exercise unsafe container shapes, create/replacement refusal,
-destroy state coverage, JIT metadata rejection, and checksum compatibility.
+destroy state coverage, the single approved native JIT env exception, host bootstrap refusal, and checksum compatibility.
 They do not substitute for a real Docker/GitHub run.
 
 ## Local GitHub App helper

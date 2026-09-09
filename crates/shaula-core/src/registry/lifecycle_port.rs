@@ -107,6 +107,18 @@ pub trait LifecycleStore: super::ListenerMessageStore + Send + Sync {
         saved_plan_path: &str,
         now: i64,
     ) -> CoreResult<()>;
+    /// Atomically consumes Create ApplyStarting and rechecks its Fleet fence.
+    /// BootstrapStarting remains an open, non-retryable Create operation.
+    async fn operation_record_bootstrap_starting(
+        &self,
+        _: &crate::ports::PlanProvenance,
+        _: i64,
+    ) -> CoreResult<()> {
+        Err(crate::error::CoreError::new(
+            crate::error::ReasonCode::OwnershipConflict,
+            "container bootstrap authorization unavailable",
+        ))
+    }
     /// The durable ORIGINAL provenance of the generation's Create — the
     /// exact pin a later Destroy must re-verify against (spec 0004 §5).
     async fn operation_original_provenance(

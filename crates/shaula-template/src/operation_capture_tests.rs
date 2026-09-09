@@ -11,6 +11,53 @@ struct SlowArchive {
     result: Mutex<Option<FinishInvocation>>,
 }
 
+#[tokio::test]
+async fn flush_waits_for_queued_apply_text_without_sealing_invocation() -> TestResult {
+    let sink = Arc::new(SlowArchive::default());
+    let tasks = CaptureTasks::default();
+    let guard = InvocationGuard::begin(
+        Some(sink.clone()),
+        &tasks,
+        "generation",
+        "Create",
+        SensitiveValues::default(),
+    )
+    .await
+    .ok_or("capture unavailable")?;
+    guard
+        .scope(async {
+            let mut command = command("apply").ok_or("apply capture missing")?;
+            let mut pipe = command.pipe("stdout");
+            pipe.feed(b"Apply complete! Resources: 1 added, 0 changed, 0 destroyed.\n");
+            pipe.finish(true);
+            command.finish(Some(0), "exited");
+            let barrier = flush();
+            tokio::pin!(barrier);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(10), &mut barrier)
+                    .await
+                    .is_err()
+            );
+            sink.release.add_permits(1);
+            barrier.await;
+            assert!(!sink
+                .texts
+                .lock()
+                .map_err(|_| "text lock poisoned")?
+                .is_empty());
+            assert!(sink
+                .result
+                .lock()
+                .map_err(|_| "result lock poisoned")?
+                .is_none());
+            Ok::<(), Box<dyn std::error::Error>>(())
+        })
+        .await?;
+    guard.finish("succeeded").await;
+    tasks.drain().await;
+    Ok(())
+}
+
 impl Default for SlowArchive {
     fn default() -> Self {
         Self {

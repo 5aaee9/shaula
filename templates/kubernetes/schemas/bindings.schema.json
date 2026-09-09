@@ -16,7 +16,7 @@
     "kubeconfig": {
       "type": "string",
       "minLength": 1,
-      "description": "Kubernetes API credential for the pinned provider, namespace-scoped to read the namespace and manage Pods/Secrets. Schema-sensitive: write-only plaintext stored in the immutable SQLite Revision; never enters the Runner Execution Domain.",
+      "description": "Protected kubeconfig file path for the pinned provider and Shaula bootstrap owner, authorized to read the existing namespace and manage its Pods/Secrets. Bootstrap adds only the prepared .setup_info key and freezes its Generation Secret. Schema-sensitive: write-only value stored in the immutable SQLite Revision; never enters the Runner Execution Domain.",
       "sensitive": true
     }
   }

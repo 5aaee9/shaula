@@ -91,6 +91,9 @@ pub struct ProfileManifest {
     pub input_contract_version: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub setup_info_contract: Option<String>,
+    /// Explicit permission for the Runtime's fixed post-apply container bootstrap.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container_bootstrap_contract: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -122,6 +125,7 @@ impl ProfileManifest {
     /// Static structural validation; platform identity stays an opaque
     /// string mapped through [`TemplatePlatform::from_manifest_value`].
     pub fn validate(&self) -> CoreResult<()> {
+        self.validate_container_bootstrap()?;
         match (
             self.input_contract_version,
             self.setup_info_contract.as_deref(),
@@ -295,6 +299,10 @@ pub use envelope::{
 #[path = "template_setup_info.rs"]
 mod setup_info;
 pub use setup_info::{SetupInfoDescriptor, SETUP_INFO_CONTRACT};
+
+#[path = "template_container.rs"]
+mod container;
+pub use container::CONTAINER_BOOTSTRAP_CONTRACT;
 
 fn default_input_contract_version() -> u32 {
     1

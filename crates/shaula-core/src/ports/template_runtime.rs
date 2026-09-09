@@ -103,6 +103,13 @@ pub trait ApplyIntentSink: Send + Sync {
         &self,
         provenance: &PlanProvenance,
     ) -> Result<ApplyClaim, String>;
+
+    /// Single-use continuation of an admitted Create. Rechecks the Fleet head
+    /// and durably marks bootstrap before publishing data or starting a runner.
+    /// Legacy callers cannot implicitly acquire this new capability.
+    async fn authorize_bootstrap(&self, _: &PlanProvenance) -> Result<ApplyClaim, String> {
+        Err("container bootstrap authorization unavailable".into())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

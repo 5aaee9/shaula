@@ -218,6 +218,11 @@ impl ControlPlane {
             }
         }
 
+        // Old immutable revisions remain readable and replayable, but a new
+        // revision cannot opt out of the current official-container policy.
+        if let Err(error) = manifest.validate_new_container_profile() {
+            return Ok(Err(unprocessable(error.code, error.summary)));
+        }
         let now = self.now_ms();
         let incarnation = existing
             .as_ref()

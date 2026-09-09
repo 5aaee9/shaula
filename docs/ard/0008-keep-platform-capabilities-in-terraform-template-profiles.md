@@ -5,6 +5,8 @@ date: 2026-09-04
 
 # Keep platform capabilities in Terraform Template Profiles
 
+> **Bootstrap amendment:** [ARD-0024](0024-bootstrap-official-runner-images-outside-containers.md) supersedes the original container handoff/platform-tool clauses below for new official-image Templates. Docker uses native JIT env and stopped-container copy/start; Kubernetes uses a Secret env reference and conditional host publication before startup. No custom shim/init image is used. The fixed Runtime bootstrap may use host platform tools and exact Revision credentials; no general Update or core platform API is added. The original clauses below describe retained v1/v2 artifacts only. Credential-grade state, no Runner provider/control-plane credentials, and original-state Destroy remain current.
+
 Shaula 原生实现 pure-Rust daemon/CLI、GitHub Adapter、HTTP/SQLite、artifact/workspace、Template Runtime 与 OTel。[ADR-0014](0014-run-lifecycle-workers-with-a-database-http-state-backend.md) 将完整 Generation 生命周期下沉到 exec 启动的 `shaula job`，state/locks 交给内部数据库 HTTP backend；平台能力边界不变。Kubernetes 与 Docker 都由 Terraform Template Profile 负责调用 provider；Shaula 不链接 Kubernetes 或 Docker client，不构造平台请求，也不把平台 object model 暴露给 Fleet Reconciler 或 Runner Lifecycle Interface。
 
 ## Consequences

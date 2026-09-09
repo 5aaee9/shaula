@@ -2,7 +2,7 @@
 
 - Status: Draft
 - Date: 2026-09-04
-- Native platform clients: none
+- Platform APIs: no linked SDK; fixed host bootstrap CLI capability under spec 0020
 - v1 bundled Template Platforms: Kubernetes and Docker
 - IaC engine: Terraform required; OpenTofu gated by compatibility
 
@@ -14,7 +14,7 @@ Worker ownership and the database state protocol are defined by [spec 0010](0010
 
 Shaula is a pure-Rust daemon plus one Lifecycle Worker (`shaula job`) per Generation, not a platform-controller framework. The daemon owns Fleet/GitHub/capacity, worker supervision and the SQLite-backed HTTP state backend. The worker owns sequential Create/wait/Destroy and its Template Runtime; exec is the only v1 Executor Driver. Both use the same binary and Day 0 observability, but GitHub credentials remain in the daemon.
 
-It does not own Kubernetes or Docker capability. The daemon imports no Kubernetes/Docker client, constructs no platform request, watches no platform event, and interprets no Pod, Secret or container schema. Platform behavior is executable infrastructure code inside a Template Profile.
+Terraform owns infrastructure creation/deletion. [Spec 0020](0020-official-container-runner-bootstrap.md) adds a fixed external bootstrap capability inside Template Runtime for official container images, using host Docker/kubectl tools after apply. It does not add a platform SDK, watch/controller, arbitrary hook or platform object type to Fleet/core. This explicitly amends the previous absolute platform-tool prohibition.
 
 ```mermaid
 flowchart LR
@@ -32,13 +32,13 @@ flowchart LR
 ## 2. Required invariants
 
 1. Fleet Reconciler and Runner Lifecycle have no branch on Kubernetes/Docker object kinds.
-2. The only mutating infrastructure Operations are Create and Destroy. Profile publication, validation, state inspection and read-only diagnosis are not Update primitives.
+2. The only mutating infrastructure Operations are Create and Destroy. The fixed bootstrap from spec 0020 is part of Create, not an Update primitive. Profile publication, validation, state inspection and read-only diagnosis are not Update primitives.
 3. Every Runner Generation pins one immutable Template Profile Revision, artifact digest, normalized input digest, Workspace and state.
 4. An uncertain Create result is never retried with a second apply. It enters `CleanupRequired` and proceeds through the same GitHub removal and Destroy safety path.
 5. Destroy always uses the original artifact/inputs/runtime tuple and that Generation's authoritative database state. An ordinary Workspace copy may be reconstructed after fencing; missing unique emergency state or original materials cannot. A newer Profile Revision never repairs or destroys an older Generation.
 6. The daemon treats platform-specific declared outputs as protected opaque evidence. It persists them for recovery but does not reproduce platform reconciliation logic in Rust or expose their bodies through ordinary diagnostics.
 7. Adding a Template Platform requires a conforming profile and test suite, not a new Fleet/Runner lifecycle method.
-8. Provider administration credentials may enter the isolated IaC subprocess when the Profile declares them, but never the Runner Resource or workflow.
+8. Provider administration credentials may enter the exact Revision's approved IaC and fixed bootstrap subprocesses, but never the Runner Resource or workflow.
 9. Runner readiness and busy safety are proven through GitHub inventory/removal semantics, not through platform-specific “running” status.
 10. The artifact manifest is the sole authority for `platform` and `bindings_contract`. HTTP and SQLite representations derive those values from the verified artifact and cannot accept an independent platform selector.
 11. A current Template Profile Revision automatically becomes Active after successful static validation under [spec 0017](0017-automatic-template-activation.md). Claims of tested platform compatibility require independent conformance evidence for the exact tuple; Active alone does not establish that claim.
@@ -140,7 +140,7 @@ The only output is `shaula_result` with a fixed provider-neutral envelope：
 }
 ```
 
-The core verifies envelope version, echoed Generation ID, exact `bindings_digest`, declared roles/cardinality and bounded sizes. It stores the body as protected opaque evidence and does not interpret provider IDs or expose output values through normal HTTP/log/telemetry paths.
+The core verifies envelope version, echoed Generation ID, exact `bindings_digest`, declared roles/cardinality and bounded sizes. It stores protected opaque evidence. The private fixed bootstrap adapter may interpret the contract-bound IDs/incarnations under spec 0020; no output body is exposed through normal HTTP/log/telemetry paths.
 
 The Profile separates three input classes：
 
@@ -165,7 +165,7 @@ The Template Runtime Module runs inside the Lifecycle Worker; it is not a daemon
 - Destroy that same Generation from its original state；
 - inspect state and run explicitly read-only diagnosis needed for recovery.
 
-The exact Rust types, traits and method names are implementation details. Callers never supply Terraform argv, environment maps or platform manifests. The Module hides artifact materialization, secret files, environment allowlists, provider installation, locking, timeouts, saved-plan inspection, output parsing, redaction and state-empty verification. A Profile cannot add executable lifecycle hooks or redefine command names.
+The exact Rust types, traits and method names are implementation details. Callers never supply Terraform argv, environment maps or platform manifests. The Module hides artifact materialization, secret files, environment allowlists, provider installation, locking, timeouts, saved-plan inspection, output parsing, redaction, fixed official-container bootstrap and state-empty verification. A Profile cannot add executable lifecycle hooks or redefine command names.
 
 `Validate` MAY run `terraform init -backend=false` and `terraform validate` in an isolated candidate directory. Any command that can contact or mutate external infrastructure is asynchronous, explicitly classified and never executed in the HTTP request transaction.
 
@@ -175,7 +175,7 @@ Lifecycle-visible template failures use only the provider-neutral reason `Templa
 
 ## 5. Saved-plan admission and provenance
 
-Operation Log 捕获、保留和安全发布由 [spec 0019](0019-workflow-jobs-and-operation-logs.md) 维护。其显式 `input_contract_version: 2` / `setup_info_contract` manifest 扩展只用于新 Template Revision；本文的 v1 input 示例和既有 Generation 保持原格式，`shaula_result` 不变。日志内容在 apply 后生成，不修改原始 input 或 saved plan，也不增加 Update。
+Operation Log 捕获、保留和安全内容归 [spec 0019](0019-workflow-jobs-and-operation-logs.md)；官方镜像的宿主 bootstrap 归 [spec 0020](0020-official-container-runner-bootstrap.md)。新 manifest 声明 `container_bootstrap_contract: shaula.container-bootstrap/v1`，继续使用 v1 input；旧 v2 `setup_info_contract` 仅供原 artifact 兼容，不能与新能力叠加。日志在 apply 后生成，不回写原 input/saved plan；bootstrap 是同次 Create 的固定尾部，不添加 Update 或第二次 apply。
 
 Every mutating Terraform invocation applies a previously inspected saved plan, never a directory. The worker retains protected plan provenance in its exclusive Workspace: plan digest, exact engine executable/kind/version/binary digest, artifact/protected-input digests, backend Generation identity/revision and Terraform lineage/serial, Generation ID and current Worker Claim. This does not require a central per-command operation record or promise that Create resumes from an arbitrary saved plan after a crash.
 
@@ -189,6 +189,8 @@ Saved-plan admission is fail closed：
 4. Create requires both the bound state snapshot and plan prior state to contain no managed instance. Every manifest-declared managed instance appears exactly once with `mode=managed` and `actions=["create"]`, and the role/type/cardinality is exact.
 5. Destroy may skip apply for already-empty bound state only when spec 0010's trusted terminal classification is satisfied; an empty initial state after an uncertain Create is not proof of cleanup. Otherwise every managed instance in that bound state appears exactly once with `mode=managed` and `actions=["delete"]`；the set may be a subset after a partial Destroy but may contain no new address or type.
 6. Only `mode=data` entries may use exactly `["read"]` or `["no-op"]`. All other actions, modes and combinations are rejected.
+
+For an explicit `container_bootstrap_contract`, spec 0020 additionally validates known startup-gate, official-image and native Listener/JIT attributes after these generic checks and before `ApplyStarting`. This fixed capability check cannot be deferred to post-apply live inspection and does not add generic plan actions or hooks.
 
 A standalone Terraform `check` is advisory and cannot satisfy a lifecycle safety gate. Failed or errored checks reject plan admission when present, but every property required before mutation must also be expressed through a blocking mechanism such as an ordinary data source plus resource `lifecycle.precondition`.
 
@@ -207,19 +209,19 @@ Native platform discovery, import, out-of-state/reconstructed-name deletion and 
 
 ## 7. Kubernetes v1 Profile
 
-`templates/kubernetes` uses a pinned Kubernetes Terraform provider. All Kubernetes semantics live in HCL, the profile manifest and its tests：
+`templates/kubernetes` uses a pinned Kubernetes Terraform provider. Kubernetes resource semantics live in HCL, the manifest and its tests; spec 0020 owns the fixed host bootstrap adapter：
 
 - a user with `template.publish` authority selects the already-existing namespace through an HTTP-managed Profile binding；Fleet input cannot override it；
-- each Generation manages exactly one immutable Secret and one Pod；
+- each Generation manages exactly one Secret and one Pod; the fixed bootstrap freezes the initially mutable Secret before runner startup；
 - it manages no Namespace, ServiceAccount, RBAC, Job, Deployment or other shared object；
 - the Pod has no mounted ServiceAccount token；
-- only the init container mounts the JIT Secret read-only and copies it into a `medium: Memory` `emptyDir`；the read-only Secret source remains until Pod/Secret Destroy. The runner mounts only the memory volume, and its pinned shim unlinks that staged copy before spawning `Runner.Listener` with the single bootstrap variable described below；
+- the official Runner uses native JIT Secret env input; a required missing `.setup_info` volume key prevents startup until host publication after apply. There is no init/sidecar/shim; the Secret is initially mutable and frozen by the single conditional bootstrap publish under spec 0020；
 - Shaula persists a collision-resistant Generation name before external effects；the bundled Profile uses it as the exact Pod and Secret `metadata.name`, and Terraform outputs each exact target/namespace/kind/name key as protected evidence. Any normalized/truncated key collision fails before JIT or external mutation；
 - the pinned HashiCorp provider deletes from exact original state by namespace/name. Target/namespace continuity and names are reserved until Destroy；repointing the target, recreating the namespace or replacing an object under the same name may cause deletion of the replacement, which is an accepted v1 risk rather than a UID-safety claim；
 - missing/corrupt state never authorizes native discovery, reconstructed/out-of-state name deletion, import or adopt；
 - an ordinary provider data source plus blocking resource `lifecycle.precondition` verifies the pre-created namespace；standalone `check` blocks are advisory only；
 
-Shaula does not preflight the namespace with a Kubernetes client and does not inspect the Pod after apply. If the blocking data lookup/precondition makes Create planning fail, no plan is admitted or applied and core reports `TemplatePlanFailed` with phase `create.plan`. If JIT was already generated, the Generation follows `CleanupRequired` and Destroy. The external test harness MAY use `kubectl` or a Kubernetes client；that does not become daemon capability.
+Shaula does not preflight namespace existence through a new platform client; the fixed bootstrap does inspect the exact Pod/Secret after apply under spec 0020. If the blocking data lookup/precondition makes Create planning fail, no plan is admitted or applied and core reports `TemplatePlanFailed` with phase `create.plan`. If JIT was already generated, the Generation follows `CleanupRequired` and Destroy. The external harness may use additional platform inspection; production kubectl usage is limited to the fixed bootstrap contract.
 
 ## 8. Docker v1 Profile
 
@@ -228,10 +230,10 @@ Shaula does not preflight the namespace with a Kubernetes client and does not in
 The initial Docker Runner Resource has these constraints：
 
 1. one generation-scoped `docker_container` is the only managed runtime object；the image is pre-pulled or read as shared data rather than owned by each Generation；
-2. the image is selected by a finite alias and pinned digest；
-3. the container uses `restart = "no"`, `must_run = false`, `rm = false` and runs one ephemeral Runner job；
+2. the image is selected by a finite alias and official `ghcr.io/actions/actions-runner` digest；
+3. the container initially uses `start = false`, `restart = "no"`, `must_run = false`, `rm = false` and runs one ephemeral Runner job；
 4. its name is deterministic from the already-persisted Generation ID；
-5. `docker_container.upload.content = var.shaula.jit_config` copies JIT to a fixed file before container start. The pinned shim consumes and unlinks it, then spawns `Runner.Listener` with the single bootstrap variable described below；the container layer and original protected input remain sensitive until state-empty Destroy, and memory-only handoff is not claimed；
+5. the official Listener receives native JIT env input; the Runtime writes Setup Info from the completed apply archive to the stopped exact container and starts it under spec 0020. No custom image/shim or host Workspace mount is used；
 6. GitHub App/PAT material and Docker registry credentials are not placed in the Runner container；
 7. the default Profile never mounts `/var/run/docker.sock` into the Runner container；
 8. Destroy removes the recorded container through original state and finishes only when state is empty.
@@ -240,19 +242,19 @@ Access to the Docker daemon is effectively host-administrative. When the daemon 
 
 ## 9. Security
 
-For a new Template Revision explicitly opting into [spec 0019](0019-workflow-jobs-and-operation-logs.md), its separately scoped Setup Info read capability is an additional permitted bootstrap value alongside JIT. It only reads this Generation's sanitized Create projection, cannot access management/control/state/SQLite, and does not relax protection of any credential classes below. Existing v1 inputs and JIT-only Templates are unchanged.
+New container Templates use spec 0020's host bootstrap and receive no log capability. The separately scoped Setup Info bearer remains permitted only for already retained v2 Generations under their original contract; it does not authorize new custom-image Create; it never grants management/control/state/SQLite access.
 
 Template artifact publication is equivalent to deploying code that can run provider plugins with infrastructure credentials. The HTTP authorization model separates `template.publish` from `fleet.write`, `auth.write` and read-only roles.
 
-The Template Runtime uses a per-process environment allowlist, dedicated Workspace, restricted files, bounded output and redaction. It never forwards the daemon's full environment. Terraform state, plans, variable files, provider credentials, JIT, Docker registry credentials and sensitive Profile bindings are credential-grade data. JIT never enters Shaula/Terraform argv or environment, declarative Pod/container env/args/commands, ordinary inherited job environment, workflow context, management HTTP reads, audit, logs or telemetry. Bundled Profiles prohibit secret-bearing argv. Their pinned shim may set only `ACTIONS_RUNNER_INPUT_JITCONFIG` on the spawned `Runner.Listener`; `CommandSettings` captures it into a private in-memory map and unsets the ordinary environment entry before `GetJitConfig()` reads that copy. Linux may retain initial exec environment through `/proc/<pid>/environ`, so v1 explicitly accepts possible JIT access by workflow code with process-inspection capability inside the same Runner Execution Domain. This is not an activation failure and no process-isolation or memory-zeroization claim is made. The exception is JIT-only；GitHub control-plane/derived tokens, provider credentials, sensitive Template bindings and Shaula HTTP/SQLite credentials never enter that domain.
-Schema-sensitive Kubernetes/Docker bindings are write-only HTTP fields whose original plaintext is retained in the immutable Template Profile Revision. The SQLite main DB, WAL/SHM, online/migration copies, backups and crash dumps therefore share the credential boundary. Read APIs, audit, errors, logs, OTel and diagnostics expose only approved non-secret fields and bounded presence metadata, never a secret value or derived prefix/suffix/hash/length. Each sensitive binding is resolved only into the exact approved IaC child and never into the Runner/workflow.
+The Template Runtime uses a per-process environment allowlist, dedicated Workspace, restricted files, bounded output and redaction. It never forwards the daemon's full environment. Terraform state, plans, variable files, provider credentials, JIT, Docker registry credentials and sensitive Profile bindings are credential-grade data. JIT never enters Shaula/Terraform argv or environment, container args/commands/labels, ordinary inherited job environment, workflow context, management reads, audit, logs or telemetry. The only declarative Runner env exception is the official `ACTIONS_RUNNER_INPUT_JITCONFIG` (Kubernetes uses a Secret reference); no arbitrary secret env keys are allowed. Official `CommandSettings` captures the value and removes the ordinary environment entry. Linux may retain initial exec environment through `/proc/<pid>/environ`, so v1 explicitly accepts possible JIT access by workflow code with process-inspection capability inside the same Runner Execution Domain. This is not an activation failure and no process-isolation or memory-zeroization claim is made. The exception is JIT-only；GitHub control-plane/derived tokens, provider credentials, sensitive Template bindings and Shaula HTTP/SQLite credentials never enter that domain.
+Schema-sensitive Kubernetes/Docker bindings are write-only HTTP fields whose original plaintext is retained in the immutable Template Profile Revision. The SQLite main DB, WAL/SHM, online/migration copies, backups and crash dumps therefore share the credential boundary. Read APIs, audit, errors, logs, OTel and diagnostics expose only approved non-secret fields and bounded presence metadata, never a secret value or derived prefix/suffix/hash/length. Each sensitive binding is resolved only into the exact approved IaC and fixed bootstrap children and never into the Runner/workflow.
 
 
 The Kubernetes and Docker provider credentials are not GitHub Control-Plane Credentials. Neither class reaches the Runner. Workflow credentials such as per-job `GITHUB_TOKEN` remain a separate GitHub/workflow concern.
 
 ## 10. Day 0 observability
 
-[Spec 0019](0019-workflow-jobs-and-operation-logs.md) 增加独立的已脱敏 Operation Log 制品及受控读取，不把正文放入下述 spans/metrics。Runner 可接收的独立 Setup Info capability 仅限本 Generation 的 Create 安全投影，是本文新增的窄化 bootstrap 能力；GitHub/provider/management/control/state/SQLite credentials 仍不进入 Runner。Operator 与 workflow 发布策略分别验证，不能从 raw diagnostics 直接输出。
+[Spec 0019](0019-workflow-jobs-and-operation-logs.md) 增加独立已脱敏日志及受控读取，不把正文放入 spans/metrics。新容器由宿主生成/交付批准投影，无 Runner log capability；spec 0020 的 bootstrap 也必须过滤固定子进程输出。GitHub/provider/management/control/state/SQLite credentials 不进入 Runner。
 
 Generic spans cover Profile validation, artifact materialization, `init`, `apply`, read-only diagnosis, `destroy`, output classification and state-empty verification. Attributes include bounded engine/operation/result and safe Profile/Generation correlation in spans/logs. They do not contain argv, environment, Profile input values, output bodies, state or provider responses.
 
@@ -262,12 +264,12 @@ Metrics use finite operation/result dimensions. The Observability Adapter derive
 
 Implementation is incomplete until：
 
-1. `cargo metadata`/`cargo tree` architecture tests prove the pure-Rust Shaula binary contains no Kubernetes or Docker client dependency and no platform object type crosses a core Interface.
+1. `cargo metadata`/`cargo tree` architecture tests prove the pure-Rust Shaula binary contains no Kubernetes or Docker client dependency and no platform object type crosses a core Interface; fixed bootstrap platform schemas stay private to Template Runtime.
 2. The same fake-Profile contract suite exercises Create, Destroy, uncertain apply, crash recovery, redaction and state-empty verification without a platform branch in Fleet/Runner lifecycle.
 3. Both bundled Profile artifacts pass the static validation and automatic activation contract in spec 0017 before becoming Active or selectable. Independent release conformance covers the exact artifact, engine binary, provider lock, bindings, runtime policy, images, manifest contracts and suite tuple; activation must not be reported as completion of that runtime suite.
 4. A real Kubernetes workflow passes the specialization's complete one-Pod/one-Secret lifecycle tests, including stable exact `metadata.name`, non-reuse/normalization-collision failure, original-state name-based Destroy, target/namespace continuity assumptions and object/namespace same-name replacement residual-risk scenarios.
 5. A real Docker workflow creates one container through the Terraform provider and Docker socket, runs one job, safely unregisters, destroys the container and leaves empty state.
-6. Neither real Runner can read Shaula's GitHub App/PAT, provider administration credential or sensitive Profile binding；GitHub control credentials never enter Terraform, while binding/provider secrets reach only the exact approved IaC child.
+6. Neither real Runner can read Shaula's GitHub App/PAT, provider administration credential or sensitive Profile binding；GitHub control credentials never enter Terraform, while binding/provider secrets reach only the exact approved IaC and fixed bootstrap children.
 7. The default Docker Runner container has no Docker socket mount；an external inspection test proves it.
 8. A malicious Fleet input cannot change provider endpoints, socket paths, namespaces outside the Profile schema, provider source, executable or artifact code.
 9. Publishing a third fake platform Profile requires no change to Fleet Reconciler or Runner Lifecycle Interfaces.

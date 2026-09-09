@@ -14,17 +14,26 @@ impl TemplateRuntime {
         &self,
         artifact: &Path,
         input: &shaula_core::template::ShaulaInputEnvelope,
-    ) -> Result<(), TemplateOutcomeError> {
+    ) -> Result<shaula_core::template::ProfileManifest, TemplateOutcomeError> {
         let bytes = std::fs::read_to_string(artifact.join("profile.yaml"))
             .map_err(|_| super::state_err("input.contract"))?;
         let manifest = crate::manifest::parse_manifest(&bytes)
             .map_err(|_| super::state_err("input.contract"))?;
         input
             .validate_for_manifest(&manifest)
-            .map_err(|_| super::state_err("input.contract"))
+            .map_err(|_| super::state_err("input.contract"))?;
+        Ok(manifest)
     }
     pub fn with_operation_logs(mut self, archive: Arc<dyn OperationLogSink>) -> Self {
         self.operation_logs = Some(archive);
+        self
+    }
+
+    pub fn with_operation_log_reader(
+        mut self,
+        archive: Arc<dyn shaula_core::operation_log::OperationLogReadPort>,
+    ) -> Self {
+        self.operation_log_reader = Some(archive);
         self
     }
 

@@ -465,7 +465,7 @@ Implementation is incomplete until：
 6. Fleet 无法提交 platform binding、provider credential 或 executable；conceptual Fleet/Runner schema 无平台 object columns。
 7. Same-Profile promotion 和 zero-occupancy cross-Profile replacement 都写入完整 desired Auth Revision Ref，经过同一 quiesce/read-only proof/context handoff 后才推进完整 observed tuple；handoff 不 create/adopt、不写 ID、不建 session。
 8. Handoff crash 从 SQLite 恢复；失败 Fleet 暴露完整 tuple lag、保持 quiesced/degraded，且 `Blocked` 不释放任一 desired/observed/in-flight/Decommission/recovery reference。
-9. v2 GitHub App private key 与 sensitive Template bindings 以 plaintext SQLite bytes 跨重启可用；历史 PAT/旧格式 bytes 保留但不得执行。任何 Fleet/Profile GET、status、revision、attestation、audit、error、log、trace、metric 或 diagnostic 均不含原文或可推导表示；受支持凭据各自只进入 GitHub Access Module 或 exact-Revision IaC child，绝不进入 Runner/workflow。
+9. v2 GitHub App private key 与 sensitive Template bindings 以 plaintext SQLite bytes 跨重启可用；历史 PAT/旧格式 bytes 保留但不得执行。任何 Fleet/Profile GET、status、revision、attestation、audit、error、log、trace、metric 或 diagnostic 均不含原文或可推导表示；受支持凭据各自只进入 GitHub Access Module 或 exact-Revision IaC / spec 0020 固定 bootstrap child，绝不进入 Runner/workflow。
 10. Template artifact publication 只有 `template.publish` 可执行并授权静态校验后的自动激活，conformance attestation 只有 `template.attest` 可提交且不改变激活状态；Fleet 只能选择由 manifest 派生 platform 且已有 durable activation provenance 的 current Active Revision。
 11. Capacity-only replacement 不 Update Runner/Scale Set；降低 max 到 Busy/Occupancy 以下只阻止新建。Template inputs/pin 或 Auth-key 改变受事务化零占用/effect barrier；idle session 的 cross-Auth replacement 可达并经 Handoff quiesce。
 12. DELETE/Create race 使用 mutation fence：commit 后不 spawn 新 Create-capable subprocess；uncertain older Create 进入 cleanup。

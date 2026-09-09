@@ -16,6 +16,7 @@ mod fleet_observations;
 pub mod fleet_repo;
 pub mod http_state;
 pub mod jobs;
+mod lifecycle_bootstrap;
 pub mod lifecycle_repo;
 mod listener_acquisitions;
 mod listener_messages;

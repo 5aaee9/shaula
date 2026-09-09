@@ -51,7 +51,12 @@ exit /b 1
         "contract_version": 1, "generation_id": "g1", "bindings_digest": "commitment",
         "resources": [{"role": "bootstrap", "id": "bootstrap-id"}, {"role": "runner", "id": "runner-id"}]
     }}}).to_string()).unwrap();
-    let (digest, archive) = common::fixture_artifact();
+    // This test exercises Terraform provenance, not an external platform launch.
+    let (digest, archive) = common::artifact_variants::with_manifest(|manifest| {
+        manifest.platform = "protocol-fixture".into();
+        manifest.container_bootstrap_contract = None;
+    })
+    .unwrap();
     let published = shaula_template::ArtifactStore::new(tmp.path().join("artifacts"))
         .publish(&archive, &digest)
         .unwrap();

@@ -37,10 +37,10 @@ def container():
         "Mounts": [],
         "Config": {
             "User": "1001",
-            "Cmd": ["/usr/local/bin/bootstrap-shim"],
+            "Cmd": ["/home/runner/bin/Runner.Listener", "run"],
             "Entrypoint": None,
             "Labels": {"shaula.generation": "g1"},
-            "Env": ["PATH=/bin"],
+            "Env": ["PATH=/bin", "ACTIONS_RUNNER_INPUT_JITCONFIG=jit-canary"],
         },
         "HostConfig": {
             "RestartPolicy": {"Name": "no"},
@@ -264,8 +264,15 @@ class SafetyTests(unittest.TestCase):
 
     def test_jit_metadata_and_root_user_reject(self):
         for key, value in (
-            ("Env", ["ACTIONS_RUNNER_INPUT_JITCONFIG=jit-canary"]),
+            ("Env", ["PATH=/bin"]),
+            ("Env", ["ACTIONS_RUNNER_INPUT_JITCONFIG=wrong-value"]),
+            ("Env", ["ACTIONS_RUNNER_INPUT_JITCONFIG=jit-canary"] * 2),
+            ("Env", ["ACTIONS_RUNNER_INPUT_JITCONFIG=jit-canary", "JIT=jit-canary"]),
+            ("Env", ["ACTIONS_RUNNER_INPUT_JITCONFIG=jit-canary", "GH_TOKEN=secret"]),
+            ("Env", ["ACTIONS_RUNNER_INPUT_JITCONFIG=jit-canary", "actions_runner_input_token=secret"]),
             ("Labels", {"shaula.generation": "jit-canary"}),
+            ("Cmd", ["/usr/local/bin/bootstrap-shim"]),
+            ("Cmd", ["/home/runner/bin/Runner.Listener", "run", "--jitconfig", "jit-canary"]),
             ("User", "root"),
             ("User", "root:1001"),
             ("User", "000:1001"),
@@ -277,6 +284,20 @@ class SafetyTests(unittest.TestCase):
                 inspect_container(
                     document, "shaula-smoke-g1", "sha256:abcd", "jit-canary"
                 )
+
+    def test_generation_labels_must_match_when_supplied(self):
+        expected = {"shaula.generation": "g1"}
+        inspect_container(
+            container(), "shaula-smoke-g1", "sha256:abcd", "jit-canary",
+            expected_labels=expected,
+        )
+        document = container()
+        document["Config"]["Labels"]["shaula.generation"] = "g2"
+        with self.assertRaises(Rejected):
+            inspect_container(
+                document, "shaula-smoke-g1", "sha256:abcd", "jit-canary",
+                expected_labels=expected,
+            )
 
     def test_provider_commitment_has_sorted_hashes_and_final_newline(self):
         hashes = ["zh:" + "b" * 64, "zh:" + "a" * 64]

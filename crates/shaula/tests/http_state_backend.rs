@@ -200,7 +200,30 @@ async fn pinned_terraform_uses_standard_lock_query_protocol_and_keeps_state_in_d
             "main.tf",
             b"resource \"terraform_data\" \"runner\" { input = \"protected\" }\n".as_slice(),
         ),
-        ("profile.yaml", b"protocol_fixture: true\n".as_slice()),
+        (
+            "profile.yaml",
+            br#"api_version: shaula.io/template-profile/v1
+kind: RunnerTemplateProfile
+platform: protocol-fixture
+runtime:
+  protocol: terraform-cli/v1
+  engine: terraform
+  root_module: .
+  required_version: ">= 1.9, < 2.0"
+bindings_contract: protocol-fixture/v1
+schemas:
+  bindings: schemas/bindings.schema.json
+  parameters: schemas/parameters.schema.json
+managed_resource_shape:
+  - role: runner
+    terraform_type: terraform_data
+    exact_count: 1
+runner_image_digests:
+  - fixture@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+runtime_policy_digest: sha256:fixture
+"#
+            .as_slice(),
+        ),
         (".terraform.lock.hcl", b"".as_slice()),
     ] {
         let mut header = tar::Header::new_gnu();

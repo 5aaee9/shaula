@@ -24,30 +24,14 @@ operation_logs:
 
 ## 将 Apply 日志送入 GitHub Set up job
 
-该交付需要支持 `shaula.setup-info/v1` 的新 shim 镜像以及 `input_contract_version: 2` 的 Template。已有 v1 Template 继续使用原始输入格式。更改 daemon 不会让旧镜像自动获得新 helper。
+新的 Docker/Kubernetes Template 直接使用官方 Runner 镜像，并声明 `container_bootstrap_contract: shaula.container-bootstrap/v1`，输入仍为 v1。按 [Setup Info 模板指南](setup-info-templates.md) 导入新的 immutable source/Revision，准备执行主机的 Docker/kubectl 依赖与原 Profile 平台权限。无需自行打包镜像或为 Runner 配置 HTTPS 日志服务。
 
-1. 使用更新后的 `templates/docker/image/Dockerfile` 构建镜像，取得部署环境实际可用的新内容 digest。
-2. 按 [Setup Info 模板指南](setup-info-templates.md) 使用 v2 Template 生成器，从 Docker 或 Kubernetes bundled Template 生成独立 source，传入新镜像 pin。
-3. 按正常模板库流程导入、验证并发布该 source；选择其新 revision。
-4. 配置专属 HTTPS origin，其可信反向代理只转发到下面的独立 loopback listener。该 origin 应与管理 UI 和 worker/state origin 分离；代理不得记录 Authorization 请求头。
+Terraform 创建尚不能启动 Listener 的资源。Shaula 在本次 apply 结束、归档和 output/state 验证后生成批准的 `.setup_info`，再通过固定宿主 bootstrap 交付并启动。Docker 使用 stopped container；Kubernetes 以 required missing Secret item 阻止 main-container 启动，Shaula 条件发布后冻结 Secret。Setup Info 的 Group 为 `Terraform apply (runner provisioning)`；容器只运行官方 Listener，不下载或加工日志。Destroy 日志仅从管理档案读取。
 
-```yaml
-setup_info:
-  listen: 127.0.0.1:9091
-  advertised_origin: https://runner-setup.example.com
-  capability_ttl_seconds: 3600
-  wait_seconds: 60
-  requests_per_second: 2
-  burst: 4
-  max_concurrent_requests: 64
-```
-
-这个 listener 只提供 `GET /runner/v1/generations/{id}/setup-info`。daemon 在冻结输入前签发只读 Generation capability；容器主进程 shim 在启动 Runner Listener 前通过受保护 descriptor 获取 Apply 投影，原子合并到 runner 根目录 `.setup_info`。Kubernetes 的等待发生在主容器，避免 init container 等待 Terraform apply 完成形成依赖循环。Destroy 日志仅在管理 UI 中读取。
-
-服务未配置、日志不可用、请求失败或等待超时会跳过交付并继续原本的 JIT 启动流程；JIT 校验本身的失败仍按原契约处理。`.setup_info` 的 Group 为 `Terraform apply (runner provisioning)`。已有分组会保留，已有文件不合法时会保留原文件并放弃本次写入。
+日志正文不可用或投影失败退化为空数组或固定 unavailable 标记；Docker 诊断文件准备/copy 失败可跳过文件并在复验身份后继续 start；无法安全确认资源或完成必需的 Secret patch/start 则进入 Create 的清理路径，不作为单纯日志缺失忽略。旧 v2 HTTPS listener/能力只保留给已固定旧 artifact 的 retained Generation 兼容；新 publication/Create 必须使用官方镜像与宿主能力，新模板不使用该路径，也不会重写旧 Generation。
 
 ## 验证与排查
 
-先在 UI 检查 Runner 的执行尝试、命令结束状态及日志可用性，再检查所选 Template 的 v2 契约和镜像 pin。实际部署应各执行一次 Docker/Kubernetes workflow job，确认首次 `Set up job` 出现上述分组，并在销毁后仍能从 UI 读取对应 Destroy 日志。源码、单元测试和浏览器 fixture 测试不替代这一真实环境验收。
+先在 UI 检查 Runner 的执行尝试、命令结束状态及日志可用性，再检查所选 Template 的 container bootstrap 契约、官方镜像 pin 和宿主工具权限。实际部署应各执行一次 Docker/Kubernetes workflow job，确认首次 `Set up job` 出现上述分组，并在销毁后仍能从 UI 读取对应 Destroy 日志。源码、单元测试和浏览器 fixture 测试不替代这一真实环境验收。
 
-契约与验收要求见 [spec 0019](specs/0019-workflow-jobs-and-operation-logs.md)；架构理由见 [ARD-0023](ard/0023-retain-operation-logs-and-present-workflow-jobs.md)。
+日志与 Jobs 契约见 [spec 0019](specs/0019-workflow-jobs-and-operation-logs.md)；官方容器 bootstrap 见 [spec 0020](specs/0020-official-container-runner-bootstrap.md) 与 [ARD-0024](ard/0024-bootstrap-official-runner-images-outside-containers.md)。

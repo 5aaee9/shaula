@@ -24,6 +24,8 @@ let
     runtimeInputs = [
       pkgs.coreutils
       pkgs.jq
+      pkgs.docker-client
+      pkgs.kubectl
     ];
     text = ''
       umask 077

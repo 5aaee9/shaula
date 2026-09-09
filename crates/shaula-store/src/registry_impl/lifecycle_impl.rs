@@ -11,6 +11,26 @@ use super::SqliteControlPlane;
 
 #[async_trait]
 impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
+    async fn operation_record_bootstrap_starting(
+        &self,
+        provenance: &shaula_core::ports::PlanProvenance,
+        now: i64,
+    ) -> CoreResult<()> {
+        if self
+            .store
+            .operation_bootstrap_starting(provenance, now)
+            .await
+            .map_err(core_err)?
+        {
+            Ok(())
+        } else {
+            Err(CoreError::new(
+                shaula_core::error::ReasonCode::OwnershipConflict,
+                "container bootstrap already consumed or Create authority changed",
+            ))
+        }
+    }
+
     async fn session_close_authorize(
         &self,
         fleet_key: &str,

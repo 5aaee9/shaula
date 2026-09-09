@@ -85,7 +85,7 @@ _Avoid_: PAT by default, control-plane credential, runner registration
 _Avoid_: Template Provider, executor, backend
 
 **Runner Execution Domain**:
-一个 Runner Resource 内 bootstrap shim、`Runner.Listener` 与 job process 共享的执行信任边界。v1 不保证对具备同域进程检查能力的 workflow 隐藏 JIT，但 GitHub Control-Plane Credential、Platform Provider Credential 与 sensitive Template bindings 永不进入该域。
+一个 Runner Resource 内官方 `Runner.Listener` 与 job process 共享的执行信任边界；宿主生命周期执行端不属于此域。v1 不保证对具备同域进程检查能力的 workflow 隐藏 JIT，但 GitHub Control-Plane Credential、Platform Provider Credential 与 sensitive Template bindings 永不进入该域。
 _Avoid_: Tenant sandbox, credential broker, control-plane trust domain
 
 **Template Profile**:
@@ -177,7 +177,7 @@ _Avoid_: Workflow Job, workflow rerun, log chunk
 _Avoid_: Terraform state, lifecycle authority, workflow step log
 
 **Setup Info**:
-随 Runner 交付、在 workflow job 初始化时展示的 provisioning 信息；它是创建日志的可公开副本，不是运行结果或完整诊断档案。
+由生命周期执行端交付、在 workflow job 初始化时由官方 Runner 展示的 provisioning 信息；它是创建日志的批准投影，不是运行结果或完整诊断档案。
 _Avoid_: Operation Log archive, workflow output, job conclusion
 
 **Quarantine**:

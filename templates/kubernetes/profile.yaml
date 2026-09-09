@@ -7,6 +7,7 @@ runtime:
   root_module: .
   required_version: ">= 1.9, < 2.0"
 bindings_contract: shaula.bindings.kubernetes/v1
+container_bootstrap_contract: shaula.container-bootstrap/v1
 schemas:
   bindings: schemas/bindings.schema.json
   parameters: schemas/parameters.schema.json
@@ -19,6 +20,5 @@ managed_resource_shape:
     terraform_type: kubernetes_pod_v1
     exact_count: 1
 runner_image_digests:
-  - ghcr.io/actions/actions-runner:2.323.0@sha256:3f2a1b9c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8
-  - ghcr.io/actions/actions-runner:2.322.1@sha256:abababababababababababababababababababababababababababababababab
-runtime_policy_digest: sha256:shaula-runtime-policy-v1
+  - ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4
+runtime_policy_digest: sha256:ba099bb44ab705f7829e352d2423fb0deda27bca5684ebd3b814b007253c961e

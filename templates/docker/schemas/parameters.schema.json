@@ -6,8 +6,8 @@
   "properties": {
     "runner_image": {
       "type": "string",
-      "enum": ["localhost:5001/shaula-runner:2.337.0-bootstrap-v1"],
-      "description": "Finite image alias; the conformance attestation pins the resolved digest for the exact compatibility tuple."
+      "enum": ["ghcr.io/actions/actions-runner:2.337.0"],
+      "description": "Finite official GitHub Runner image alias; profile.yaml pins the unmodified upstream image digest."
     }
   }
 }

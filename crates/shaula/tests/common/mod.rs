@@ -2,6 +2,7 @@
 //! artifact packaging, and authorized request helpers.
 #![allow(dead_code)]
 
+pub mod artifact_variants;
 pub mod attestation_harness;
 pub mod auth_fixture;
 #[path = "../../../shaula-http/tests/support/mod.rs"]
@@ -158,7 +159,7 @@ pub fn fixture_artifact() -> (String, Vec<u8>) {
     for (name, content) in [
         (
             "profile.yaml",
-            "api_version: shaula.io/template-profile/v1\nkind: RunnerTemplateProfile\nplatform: kubernetes\nruntime:\n  protocol: terraform-cli/v1\n  engine: terraform\n  root_module: .\n  required_version: \">= 1.9, < 2.0\"\nbindings_contract: shaula.bindings.kubernetes/v1\nschemas:\n  bindings: schemas/bindings.schema.json\n  parameters: schemas/parameters.schema.json\nmanaged_resource_shape:\n  - role: bootstrap\n    terraform_type: kubernetes_secret_v1\n    exact_count: 1\n  - role: runner\n    terraform_type: kubernetes_pod_v1\n    exact_count: 1\nrunner_image_digests:\n  - ghcr.io/actions/actions-runner:2.323.0@sha256:3f2a1b9c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8\nruntime_policy_digest: sha256:policy-v1\n",
+            "api_version: shaula.io/template-profile/v1\nkind: RunnerTemplateProfile\nplatform: kubernetes\nruntime:\n  protocol: terraform-cli/v1\n  engine: terraform\n  root_module: .\n  required_version: \">= 1.9, < 2.0\"\nbindings_contract: shaula.bindings.kubernetes/v1\ncontainer_bootstrap_contract: shaula.container-bootstrap/v1\nschemas:\n  bindings: schemas/bindings.schema.json\n  parameters: schemas/parameters.schema.json\nmanaged_resource_shape:\n  - role: bootstrap\n    terraform_type: kubernetes_secret_v1\n    exact_count: 1\n  - role: runner\n    terraform_type: kubernetes_pod_v1\n    exact_count: 1\nrunner_image_digests:\n  - ghcr.io/actions/actions-runner:2.323.0@sha256:3f2a1b9c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8\nruntime_policy_digest: sha256:policy-v1\n",
         ),
         (".terraform.lock.hcl", FIXTURE_LOCK_HCL),
         ("schemas/bindings.schema.json", "{}"),
@@ -348,7 +349,7 @@ pub async fn attest_body(
 /// A docker-platform fixture artifact for incarnation-identity tests:
 /// same shape as [`fixture_artifact`] but with the Docker authority.
 pub fn fixture_artifact_docker() -> (String, Vec<u8>) {
-    let manifest = "api_version: shaula.io/template-profile/v1\nkind: RunnerTemplateProfile\nplatform: docker\nruntime:\n  protocol: terraform-cli/v1\n  engine: terraform\n  root_module: .\n  required_version: \">= 1.9, < 2.0\"\nbindings_contract: shaula.bindings.docker/v1\nschemas:\n  bindings: schemas/bindings.schema.json\n  parameters: schemas/parameters.schema.json\nmanaged_resource_shape:\n  - role: runner\n    terraform_type: docker_container\n    exact_count: 1\nrunner_image_digests:\n  - ghcr.io/actions/actions-runner:2.323.0@sha256:3f2a1b9c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8\nruntime_policy_digest: sha256:policy-v1\n";
+    let manifest = "api_version: shaula.io/template-profile/v1\nkind: RunnerTemplateProfile\nplatform: docker\nruntime:\n  protocol: terraform-cli/v1\n  engine: terraform\n  root_module: .\n  required_version: \">= 1.9, < 2.0\"\nbindings_contract: shaula.bindings.docker/v1\ncontainer_bootstrap_contract: shaula.container-bootstrap/v1\nschemas:\n  bindings: schemas/bindings.schema.json\n  parameters: schemas/parameters.schema.json\nmanaged_resource_shape:\n  - role: runner\n    terraform_type: docker_container\n    exact_count: 1\nrunner_image_digests:\n  - ghcr.io/actions/actions-runner:2.323.0@sha256:3f2a1b9c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8\nruntime_policy_digest: sha256:policy-v1\n";
     let mut builder = tar::Builder::new(Vec::new());
     for (name, content) in [
         ("profile.yaml", manifest),

@@ -62,6 +62,7 @@ pub struct TemplateRuntime {
     engine_executable: PathBuf,
     http_backend: Option<crate::http_backend::HttpBackendConfig>,
     operation_logs: Option<Arc<dyn shaula_core::operation_log::OperationLogSink>>,
+    operation_log_reader: Option<Arc<dyn shaula_core::operation_log::OperationLogReadPort>>,
     capture_tasks: Arc<crate::operation_capture::CaptureTasks>,
 }
 
@@ -73,6 +74,7 @@ impl TemplateRuntime {
             engine_executable,
             http_backend: None,
             operation_logs: None,
+            operation_log_reader: None,
             capture_tasks: Arc::default(),
         }
     }
@@ -87,6 +89,7 @@ impl TemplateRuntime {
             engine_executable,
             http_backend: Some(backend),
             operation_logs: None,
+            operation_log_reader: None,
             capture_tasks: Arc::default(),
         }
     }
@@ -132,6 +135,8 @@ impl TemplateRuntimePort for TemplateRuntime {
 }
 #[path = "runtime_backend.rs"]
 mod backend;
+#[path = "runtime_bootstrap.rs"]
+mod bootstrap;
 #[path = "runtime_create.rs"]
 mod create_flow;
 #[path = "runtime_destroy.rs"]
