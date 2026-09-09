@@ -36,6 +36,7 @@ pub(crate) struct ListenerMock {
     pub ignore_label_updates: AtomicBool,
     pub malformed_label_response: AtomicBool,
     pub unknown_runner: AtomicBool,
+    pub inventory_response: Mutex<Option<Value>>,
     pub inventory_barrier: Mutex<Option<InventoryBarrier>>,
 }
 
@@ -67,7 +68,8 @@ impl ListenerMock {
                         entered.notify_one();
                         release.notified().await;
                     }
-                    Json(if state.unknown_runner.load(Ordering::SeqCst) {
+                    let response = state.inventory_response.lock().unwrap().clone();
+                    Json(if let Some(response) = response { response } else if state.unknown_runner.load(Ordering::SeqCst) {
                         json!({"count":1,"value":[{"id":101,"name":"foreign-runner","runnerScaleSetId":42}]})
                     } else { json!({"count":0,"value":[]}) })
                 }

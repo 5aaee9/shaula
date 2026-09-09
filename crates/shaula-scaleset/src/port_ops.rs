@@ -200,6 +200,11 @@ impl ScalesetClient {
         scale_set_id: i64,
         runner_name: &str,
     ) -> Result<RunnerLookup, shaula_core::ports::AccessFailure> {
+        if scale_set_id <= 0 {
+            return Err(shaula_core::ports::AccessFailure::Unavailable {
+                summary: "invalid scale set identity".into(),
+            });
+        }
         let response = self
             .actions_service_request(
                 reqwest::Method::GET,
@@ -223,7 +228,14 @@ impl ScalesetClient {
         match list.value.as_slice() {
             [] => Ok(RunnerLookup::None),
             [runner] => {
-                if runner.runner_scale_set_id != 0 && runner.runner_scale_set_id != scale_set_id {
+                if runner.name != runner_name || runner.runner_scale_set_id == 0 {
+                    // A name match without membership is not ownership or
+                    // authoritative absence of our runner.
+                    return Err(shaula_core::ports::AccessFailure::Unavailable {
+                        summary: "runner identity is not proven".into(),
+                    });
+                }
+                if runner.runner_scale_set_id != scale_set_id {
                     // Same name in a different scale set: exact-name lookup
                     // for our scale set sees nothing.
                     Ok(RunnerLookup::None)
@@ -283,6 +295,11 @@ impl ScalesetClient {
         &self,
         scale_set_id: i64,
     ) -> Result<Vec<RunnerRef>, shaula_core::ports::AccessFailure> {
+        if scale_set_id <= 0 {
+            return Err(shaula_core::ports::AccessFailure::Unavailable {
+                summary: "invalid scale set identity".into(),
+            });
+        }
         let response = self
             .actions_service_request(
                 reqwest::Method::GET,
@@ -323,7 +340,10 @@ fn validate_runner_list(
         || list
             .value
             .iter()
-            .any(|r| r.id <= 0 || r.name.is_empty() || r.runner_scale_set_id <= 0)
+            // Target-wide inventories also contain ordinary runners. The
+            // wire's omitted/default 0 membership is valid, but never proves
+            // membership of a requested positive Scale Set.
+            .any(|r| r.id <= 0 || r.name.is_empty() || r.runner_scale_set_id < 0)
     {
         return Err(shaula_core::ports::AccessFailure::Unavailable {
             summary: "inconsistent runner inventory".into(),

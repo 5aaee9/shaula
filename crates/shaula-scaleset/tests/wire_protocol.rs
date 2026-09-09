@@ -18,6 +18,9 @@ mod statistics;
 #[path = "wire_protocol/labels.rs"]
 mod labels;
 
+#[path = "wire_protocol/inventory.rs"]
+mod inventory;
+
 use shaula_core::github::GitHubTarget;
 use shaula_core::ports::Clock;
 use shaula_core::ports::GitHubAccessPort;

@@ -20,6 +20,7 @@ Supervisor 先证明同一 identity、owned ID 与已知 Runner inventory，再�
 ## Consequences
 
 - 只放宽已证明归属对象的 labels 配置；首次 adoption、未知 Runner 和所有其他身份冲突仍 fail closed。
+- Inventory 先验证 Target 范围清单的结构，再筛选明确属于当前 Scale Set 的 Runner；普通 Runner（归属缺失/为 0）和其他 Scale Set 成员不构成本 Fleet 的 ownership conflict。精确名称查询缺少归属不能证明 ownership 或 absence，详见 spec 0001 §7。
 - 复用现有 session 恢复协议，不重置 durable job/acquisition facts，不为 labels 变化运行 Terraform。
 - 未确认更新不发布 Ready，不启动新的 acquisition/Create；已经执行的 job 继续。
 - GitHub 没有由此获得本地 fence 或幂等保证。超时后读回、周期性重试实现最终收敛，不保证既有排队/分配 job 在更新瞬间重新路由。

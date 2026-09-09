@@ -313,6 +313,8 @@ Fleet supervisor 激活时 MUST：
 
 Label type 在 GitHub wire boundary 解析为有限类型；服务端返回的 `system` / `System`、`customer` / `Customer` 按同一语义比较，不得仅因 type 大小写不同把正常 Scale Set 分类为 access failure。未知 type、不同 label name、缺失/额外 label 仍不构成 compatible ownership；不能通过整体忽略 labels 来修复大小写问题。
 
+Runner inventory endpoint 返回 Target 范围的清单，可能同时包含普通 Runner 和多个 Scale Set。缺失或为 `0` 的 `runnerScaleSetId` 表示没有声明 Scale Set 归属，不能使整个 Fleet 验证失败；inventory port 只返回明确匹配当前正数 Scale Set ID 的条目。响应 count、Runner ID/name 和非负归属值仍须有效，当前 Scale Set 的未知 Runner 仍阻塞 adoption。精确名称查询中，返回名称不符或归属缺失/为 `0` 必须 fail closed，不能据此声称匹配当前 Scale Set 或证明 Runner 已不存在。
+
 Shaula 仅按 spec 0002 §6.1 对 proven-owned Scale Set 更新 labels，不通过 Update 修复其他 identity drift；首次 adoption 仍要求完整 labels 兼容。普通 shutdown、restart、Fleet replacement 和 Decommission 都不删除 Scale Set。若已持久化 Scale Set 被 authenticated read 确认缺失，而 Resource Occupancy 非零或存在 non-terminal Generation，Fleet MUST 进入 `ScaleSetMissingWithResources`：停止 create-or-adopt、session、acquisition 和重新绑定；Scale Set/Runner 的 absent 或 `404` 不能单独证明一个可能 Busy 的既有资源可 Destroy。只有 JIT 与 IaC Create 均可证明从未开始的 Generation 可以本地终结；任何可能已注册或已创建基础设施的 Generation 必须继续计入 Occupancy 并 Blocked/Quarantined，直到恢复 consistency-set 证据或未来显式 operator procedure。仅当 Occupancy 和 active Runner Operations 都为零时，普通 reconciliation 才可从 `ScaleSetMissing` 建立新的 create-or-adopt binding。
 
 ## 8. Listener, demand and eventual convergence

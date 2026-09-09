@@ -20,12 +20,13 @@ pub(crate) async fn spawn_mock_github_with_label_type(label_type: &'static str) 
             "totalIdleRunners": 1
         }),
         Router::new(),
+        default_inventory(),
     )
     .await
 }
 
 pub(crate) async fn spawn_mock_github_with_statistics(statistics: serde_json::Value) -> String {
-    spawn_mock("system", statistics, Router::new()).await
+    spawn_mock("system", statistics, Router::new(), default_inventory()).await
 }
 
 pub(crate) async fn spawn_mock_github_with_routes(routes: Router) -> String {
@@ -33,14 +34,33 @@ pub(crate) async fn spawn_mock_github_with_routes(routes: Router) -> String {
         "system",
         serde_json::json!({"totalAssignedJobs": 0}),
         routes,
+        default_inventory(),
     )
     .await
+}
+
+pub(crate) async fn spawn_mock_github_with_inventory(inventory: serde_json::Value) -> String {
+    spawn_mock(
+        "system",
+        serde_json::json!({"totalAssignedJobs": 0}),
+        Router::new(),
+        inventory,
+    )
+    .await
+}
+
+fn default_inventory() -> serde_json::Value {
+    serde_json::json!({
+        "count": 1,
+        "value": [{"id": 9001, "name": "shaula-gen-1", "runnerScaleSetId": 42}]
+    })
 }
 
 async fn spawn_mock(
     label_type: &'static str,
     statistics: serde_json::Value,
     routes: Router,
+    inventory: serde_json::Value,
 ) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -175,11 +195,9 @@ async fn spawn_mock(
         )
         .route(
             "/actions-service/_apis/distributedtask/pools/0/agents",
-            get(|| async {
-                Json(serde_json::json!({
-                    "count": 1,
-                    "value": [{"id": 9001, "name": "shaula-gen-1", "runnerScaleSetId": 42}]
-                }))
+            get(move || {
+                let inventory = inventory.clone();
+                async move { Json(inventory) }
             }),
         )
         .route(

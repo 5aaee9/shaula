@@ -1,5 +1,7 @@
 //! Composition regressions for the production Pending-to-Ready path.
 
+#[path = "wiring_inventory_tests.rs"]
+mod inventory_tests;
 #[path = "wiring_labels_fence_tests.rs"]
 mod labels_fence_tests;
 #[path = "wiring_labels_tests.rs"]

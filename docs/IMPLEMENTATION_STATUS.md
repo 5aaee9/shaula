@@ -16,6 +16,32 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Mixed organization Runner inventory (2026-09-09)
+
+The production `pve-builder-tyo` failure was reproduced through its observed
+`indexyz-org/r3` GitHub App binding. Installation, registration, runner-group and
+Scale Set reads succeeded; the organization-wide inventory returned HTTP 200 with
+384 ordinary Blacksmith runners lacking `runnerScaleSetId`. The adapter defaulted
+that field to zero and rejected the whole list before filtering for Scale Set 9,
+surfacing `AccessVerificationFailed` despite successful authentication.
+
+The inventory validator now accepts zero/omitted membership while retaining count,
+Runner ID/name and negative-membership checks. Fleet inventory contains only explicit
+matches for the requested positive Scale Set ID. Exact-name lookup rejects missing
+membership or a different returned name instead of manufacturing ownership or absence.
+Unknown runners explicitly belonging to the current Scale Set still block adoption;
+removal and Busy-safe cleanup semantics are unchanged. Spec 0001 §7 and ARD-0027
+record the distinction between Target-wide inventory and Fleet ownership proof.
+
+Before the fix, mixed-list wire tests and both production wiring regressions failed
+with `AccessVerificationFailed`. After the fix, all 68 adapter tests and 16 listener
+composition tests pass, including ordinary/foreign membership, malformed envelopes,
+exact-name uncertainty, current-set unknown runners and subsequent labels updates.
+Independent review found no remaining actionable issue in inventory/absence handling.
+No schema migration, Profile/Fleet revision or infrastructure-template change is needed.
+Full local workspace verification passes: 707 tests with 2 platform skips, strict
+all-target/all-feature Clippy, rustfmt, diff checks and the 400-line Rust module limit.
+
 ## Mutable Fleet labels (2026-09-09)
 
 [Spec 0002 §6.1](specs/0002-fleet-http-control-plane.md#61-mutable-scale-set-labels)
