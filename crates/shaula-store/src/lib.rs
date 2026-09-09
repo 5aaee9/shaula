@@ -55,6 +55,7 @@ mod tests {
     mod profiles_attestation;
     mod runtime_observations;
     mod runtime_sessions;
+    mod scale_set_ownership;
     mod session_support;
     mod template_activation;
     mod template_activation_support;

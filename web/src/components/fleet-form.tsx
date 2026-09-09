@@ -291,6 +291,11 @@ export function FleetForm({
                 onChange={(event) => setLabels(event.target.value)}
                 placeholder="linux, x64"
               />
+              <p className="text-muted-foreground text-sm">
+                Separate labels with commas. Leave empty to use the scale set name as the label.
+                {resource &&
+                  " Changes sync to GitHub after saving. Running jobs continue while labels update."}
+              </p>
             </Field>
           </AdvancedSettings>
         </fieldset>

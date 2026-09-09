@@ -40,10 +40,11 @@ async fn repository_management_and_acquisition_use_numeric_runner_token_scope() 
         scale_set_name: "test".into(),
     };
     client.create_scale_set(&identity, 7, &[]).await.unwrap();
+    client.update_scale_set_labels(9, &[]).await.unwrap();
     client.establish_session(9, "owner").await.unwrap();
     client.generate_jit(9, "runner").await.unwrap();
     client.acquire_jobs(9, &f.session(), &[1]).await.unwrap();
-    assert_eq!(f.script.effects.load(Ordering::SeqCst), 4);
+    assert_eq!(f.script.effects.load(Ordering::SeqCst), 5);
     assert_numeric_scopes(&f);
     f.advance(60_000);
     client.generate_jit(9, "runner").await.unwrap();

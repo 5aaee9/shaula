@@ -22,6 +22,7 @@ pub(crate) async fn ready() -> TestResult<(crate::Store, SessionEffectContext)> 
         .scale_set_upsert(shaula_core::registry::ScaleSetRow {
             fleet_key: "fleet".into(),
             scale_set_id: Some(1),
+            owned_scale_set_id: None,
             name: "test".into(),
             runner_group: "default".into(),
             fingerprint: "fixture".into(),

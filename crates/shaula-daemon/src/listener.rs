@@ -78,6 +78,18 @@ impl FleetListener {
             .await
     }
 
+    /// Recheck the complete Fleet/Auth authority while holding the effect gate.
+    pub(crate) async fn authorize_runtime(&self) -> CoreResult<bool> {
+        self.deps
+            .store
+            .session_authorize(
+                &self.config.fleet_key,
+                &self.config.guard,
+                &self.config.auth_context,
+            )
+            .await
+    }
+
     async fn current(&self, epoch: i64) -> CoreResult<bool> {
         self.deps
             .store

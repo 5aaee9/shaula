@@ -122,6 +122,7 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
             .map(|s| shaula_core::registry::ScaleSetRow {
                 fleet_key: s.fleet_key,
                 scale_set_id: s.scale_set_id,
+                owned_scale_set_id: s.owned_scale_set_id,
                 name: s.name,
                 runner_group: s.runner_group,
                 fingerprint: s.fingerprint,

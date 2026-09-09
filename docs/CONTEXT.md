@@ -13,7 +13,7 @@ _Avoid_: Cluster, pool, daemon
 _Avoid_: Scale Set ID, template name
 
 **Fleet Spec**:
-一个 Fleet 的完整期望状态，包含 GitHub Target、GitHub Auth Profile、Template Profile Revision 与容量策略。
+一个 Fleet 的完整期望状态，包含 GitHub Target、GitHub Auth Profile、Template Profile Revision、可更新的 Scale Set labels 与容量策略。
 _Avoid_: Bootstrap configuration, Terraform plan, current state
 
 **Fleet Revision**:

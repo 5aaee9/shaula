@@ -19,15 +19,29 @@ pub(crate) async fn spawn_mock_github_with_label_type(label_type: &'static str) 
             "totalRunningJobs": 0, "totalRegisteredRunners": 1, "totalBusyRunners": 0,
             "totalIdleRunners": 1
         }),
+        Router::new(),
     )
     .await
 }
 
 pub(crate) async fn spawn_mock_github_with_statistics(statistics: serde_json::Value) -> String {
-    spawn_mock("system", statistics).await
+    spawn_mock("system", statistics, Router::new()).await
 }
 
-async fn spawn_mock(label_type: &'static str, statistics: serde_json::Value) -> String {
+pub(crate) async fn spawn_mock_github_with_routes(routes: Router) -> String {
+    spawn_mock(
+        "system",
+        serde_json::json!({"totalAssignedJobs": 0}),
+        routes,
+    )
+    .await
+}
+
+async fn spawn_mock(
+    label_type: &'static str,
+    statistics: serde_json::Value,
+    routes: Router,
+) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -172,6 +186,7 @@ async fn spawn_mock(label_type: &'static str, statistics: serde_json::Value) -> 
             "/actions-service/_apis/distributedtask/pools/0/agents/{id}",
             delete(|| async { axum::http::StatusCode::NO_CONTENT }),
         )
+        .merge(routes)
         .with_state(());
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();

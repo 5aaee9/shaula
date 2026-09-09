@@ -17,6 +17,7 @@ pub mod m0012_workflow_jobs;
 pub mod m0013_operation_logs;
 pub mod m0014_setup_info_capabilities;
 pub mod m0015_template_revision_sources;
+pub mod m0016_scale_set_ownership;
 
 use sea_orm_migration::prelude::*;
 
@@ -43,6 +44,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0013_operation_logs::Migration),
             Box::new(m0014_setup_info_capabilities::Migration),
             Box::new(m0015_template_revision_sources::Migration),
+            Box::new(m0016_scale_set_ownership::Migration),
         ]
     }
 }

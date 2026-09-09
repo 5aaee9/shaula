@@ -19,6 +19,7 @@ pub(super) async fn install(
         .scale_set_upsert(shaula_core::registry::ScaleSetRow {
             fleet_key: fleet.into(),
             scale_set_id: Some(scale_set_id),
+            owned_scale_set_id: None,
             name: "fixture".into(),
             runner_group: "Default".into(),
             fingerprint: "fixture".into(),

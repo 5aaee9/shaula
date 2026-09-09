@@ -132,7 +132,6 @@ impl FleetRegistryPort for ControlPlane {
             if previous_spec.github.target != spec.github.target
                 || previous_spec.github.scale_set_name != spec.github.scale_set_name
                 || previous_spec.github.runner_group != spec.github.runner_group
-                || previous_spec.github.labels != spec.github.labels
             {
                 return Ok(Err(MutationError::IdentityConflict));
             }

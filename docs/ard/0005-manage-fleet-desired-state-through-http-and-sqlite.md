@@ -19,7 +19,7 @@ HTTP Adapter 调用 Fleet Registry Module。一次有效 mutation 在一个短 S
 - mutation 返回可查询的异步 Fleet Change；
 - `DELETE` 请求安全 Fleet Decommission，不是 database-row purge 或 force destroy。
 
-Fleet-level replacement 不是 Runner Update primitive。每个既有 Runner Generation 仍然不可变，只能经过 Create 或 Destroy；Fleet Revision 的变化只能影响后续 Create 或通过 Destroy/Create 替换 Generation。
+Fleet-level replacement 不是 Runner Update primitive。每个既有 Runner Generation 仍然不可变，只能经过 Create 或 Destroy；capacity/profile Revision 的变化影响后续 Create 或通过 Destroy/Create 替换 Generation。[ARD-0027](0027-reconcile-labels-on-owned-scale-sets.md) 允许 labels Revision 原地更新已证明归属的 Scale Set 路由配置，不改变 Runner Generation。
 
 ## Consequences
 

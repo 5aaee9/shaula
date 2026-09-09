@@ -305,7 +305,7 @@ List endpoint 使用 bounded page size 和 opaque cursor。Tombstone 默认不�
 Fleet full replacement 不意味着任意 Update：
 
 - `capacity.min_runners` / `max_runners` 可在 active 时变化，要求 `0 <= min <= max`。max 可以暂时低于已有 Occupancy/Busy；禁止新增 Generation，安全清退直到满足新 max，不强杀 Busy 或谎报 Converged；
-- Fleet Key、typed GitHub Target、Scale Set name、runner group 和 labels 在一个 incarnation 内 immutable；
+- Fleet Key、typed GitHub Target、Scale Set name 和 runner group 在一个 incarnation 内 immutable；`github.labels` 是可更新的 Scale Set 路由配置，按 §6.1 收敛；
 - `auth_profile_ref` 可替换，但必须零 Occupancy，且无 non-terminal worker/Runner Operation、unresolved Create-start handover、acquisition 或 mutating GitHub effect；Target 与 Scale Set identity/ID 不变。既有 idle session/只读 poll 本身允许存在，由提交后的 Auth Handoff quiesce/release；
 - exact Template pin 的实际改变只接受 current Active subject，并要求零 Occupancy、无 non-terminal worker/Runner Operation 或 unresolved start；未改变的 pin 按 §4.1 保留；
 - `template_inputs` 的 normalized value 变化也要求相同零占用 barrier，以保持 Fleet 同质；原 inputs 的重排/等价 canonical no-op 不触发替换。并发 Create claim 与该检查必须在同一 admission/Store fence 下排序，不能在事务外先数 Occupancy 再提交；
@@ -316,6 +316,18 @@ Fleet full replacement 不意味着任意 Update：
 上述 reference/input barrier 与 Create/Acquire authorization 共用 side-effect admission gate；不能把“先人工停掉 session”作为 Auth Handoff 可达性的隐含要求。未改变的 Auth key 不因 capacity/no-op mutation 回退其已持久化 desired Auth ref。
 
 Auth Profile 内同 numeric App identity 的 credential、policy 或 binding publication 不是 Fleet replacement，并须通过 spec 0011 的 identity/coverage 检查。异步 validation 成功后，Profile active head 推进并触发 section 7 handoff；Fleet key、Fleet Revision 和 desired ETag 保持不变。跨 Profile replacement 会产生 Fleet Revision/Change，但复用同一 handoff protocol。
+
+### 6.1 Mutable Scale Set labels
+
+已有 Fleet 可以通过同一 conditional `PUT` 增加、删除或替换 `github.labels`。它使用既有 `fleet.write`、CSRF、`If-Match` 和 idempotency 检查；有效修改提交新的 immutable Fleet Revision、mutation fence、Change、audit 和 wake marker 后返回 `202`。只修改 labels 不要求零 Occupancy，允许 Busy jobs 存在，不改变 Fleet incarnation、Scale Set identity/ID、Auth 或 Template pin。混合修改仍须满足各字段原有 barrier；旧 ETag 返回 `412`，accepted request replay 不重复提交。
+
+显式 labels 使用现有 GitHub `Customer` wire type；空列表恢复以 Scale Set name 为名的 `System` fallback label，不发送含义不明的空 PATCH。比较使用完整 `(name, normalized type)` 集合，忽略顺序和重复项；删除 label 必须收敛，不能仅检查 desired 是 observed 的子集。
+
+普通 Fleet supervisor 独占 labels 收敛。首次 create/adopt 仍要求完整 identity、labels 和 inventory 兼容；同名对象或仅保存了候选 ID 不构成修改授权。只有持久化的 proven-owned ID、当前 authenticated identity lookup 和已知 Runner inventory 均匹配时，才允许对该 ID 发出仅含 labels 的 Scale Set PATCH。Target、name、runner group、fingerprint 或未知 Runner 冲突仍阻塞，不能借更新 labels 接管未知 Scale Set。
+
+PATCH 前取得与 Fleet PUT/DELETE、session/Acquire 共用的 per-Fleet exclusive effect gate，重新检查 captured incarnation/revision/fence、deletion marker 和完整 observed Auth Context，并持久化非 `Adopted` 的 pending ownership state。SQLite transaction 不跨 HTTP。更新未确认时禁止新 acquisition/Create；已经运行的 jobs、acquired facts 和 Generations 保留，不能为 labels 变化重建或强杀 Runner。
+
+PATCH response 不是收敛证明：必须 authenticated readback 同一 ID、identity、完整 labels 和 inventory 后才恢复 `Adopted`，随后按原 session 协议恢复 Ready。timeout、丢失 response 或失败保持可见 pending/Degraded reason；下次 reconcile（包括重启后）先 readback，再决定是否重试当前 desired labels。新 Revision supersede 旧 desired，DELETE 阻止新的 PATCH；不宣称 GitHub 提供 remote mutation fence，也不保证已经排队或分配的 job 在更新瞬间重新路由。
 
 ## 7. Auth Revision handoff
 
@@ -365,6 +377,7 @@ Conceptual Fleet schema 包含：
 - `fleet_status`：observed revision、phase、Conditions、capacity summary；
 - `fleet_auth_handoffs`：desired/observed `(profile_key, revision)` tuples、access/ownership context、state、attempt、lease、retry；
 - `fleet_changes`：mutation kind、target revision、state、lease、retry 和 sanitized result；
+- `scale_set_state`：candidate/bound ID 与单独的 `owned_scale_set_id` 证明、identity fingerprint、ownership/pending state。owned marker 只由成功 create/adopt 建立，限同一 ID/identity 保留，重新绑定时清除；迁移只从明确 `Adopted` 且正数 ID 的旧记录回填，旧 blocked/candidate ID 必须重新证明归属；
 - `reconcile_outbox`、`idempotency_records`、append-only `audit_records`。
 
 Generation/Worker Claim、GitHub observation 和 tombstone records 由 Fleet Key namespace，保留 exact material refs、protected opaque result、数据库 state/locks 与最小 side-effect/terminal facts；字段和恢复契约由 spec 0010 定义，不建立中央 saved-plan command ledger。核心 schema 不含 namespace、Pod、Secret、container、socket 或其他平台 object columns。

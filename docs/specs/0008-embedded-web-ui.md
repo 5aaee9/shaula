@@ -63,6 +63,10 @@ Revision 的静态校验失败原因，不提供额外 Activate 操作。
 - UI creates, edits and retirement preserve conditional mutation and idempotency
   semantics. An editor keeps the version originally displayed even as background
   queries refresh. Conflicts retain user input and require explicit reload/review.
+- Existing Fleet editors allow adding, removing and clearing labels. Labels-only
+  updates may be submitted with running jobs; other field barriers remain in force.
+  The editor retains its original resource version and draft on conflicts, and
+  accepted updates show the asynchronous Change/status until GitHub convergence.
 - Creation dialogs start with the required identity, source/target and credential
   fields. Optional settings other than Template inputs live in a collapsed
   **Advanced settings** section; all Template input controls remain visible.

@@ -4,7 +4,7 @@ use axum::{
     extract::Query,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
     Json, Router,
 };
 use serde_json::{json, Value};
@@ -15,6 +15,9 @@ use std::{
         Arc, Mutex,
     },
 };
+use tokio::sync::Notify;
+
+type InventoryBarrier = (Arc<Notify>, Arc<Notify>);
 
 #[derive(Default)]
 pub(crate) struct ListenerMock {
@@ -28,6 +31,12 @@ pub(crate) struct ListenerMock {
     pub expired_ack: AtomicBool,
     pub denied: AtomicBool,
     pub label_type: Mutex<Option<String>>,
+    pub label_values: Mutex<Option<Value>>,
+    pub label_updates: AtomicUsize,
+    pub ignore_label_updates: AtomicBool,
+    pub malformed_label_response: AtomicBool,
+    pub unknown_runner: AtomicBool,
+    pub inventory_barrier: Mutex<Option<InventoryBarrier>>,
 }
 
 impl ListenerMock {
@@ -35,7 +44,8 @@ impl ListenerMock {
         json!({
             "id":42, "name":"shaula-x64", "runnerGroupId":7,
             "runnerGroupName":"Default",
-            "labels":[{"name":"shaula-x64", "type": self.label_type.lock().unwrap().as_deref().unwrap_or("system")}]
+            "labels": self.label_values.lock().unwrap().clone().unwrap_or_else(||
+                json!([{"name":"shaula-x64", "type": self.label_type.lock().unwrap().as_deref().unwrap_or("system")}]))
         })
     }
 
@@ -45,9 +55,38 @@ impl ListenerMock {
         let polls = self.clone();
         let acks = self.clone();
         let acquisitions = self.clone();
+        let labels = self.clone();
+        let inventory = self.clone();
         let queue = format!("{base}/queue/f1");
         Router::new()
-            .route("/actions/_apis/distributedtask/pools/0/agents", get(|| async { Json(json!({"count":0,"value":[]})) }))
+            .route("/actions/_apis/distributedtask/pools/0/agents", get(move || {
+                let state = inventory.clone();
+                async move {
+                    let barrier = state.inventory_barrier.lock().unwrap().take();
+                    if let Some((entered, release)) = barrier {
+                        entered.notify_one();
+                        release.notified().await;
+                    }
+                    Json(if state.unknown_runner.load(Ordering::SeqCst) {
+                        json!({"count":1,"value":[{"id":101,"name":"foreign-runner","runnerScaleSetId":42}]})
+                    } else { json!({"count":0,"value":[]}) })
+                }
+            }))
+            .route("/actions/_apis/runtime/runnerscalesets/42", patch(move |Query(query): Query<HashMap<String,String>>, Json(body): Json<Value>| {
+                let state = labels.clone();
+                async move {
+                    assert_eq!(query.get("api-version").map(String::as_str), Some("6.0-preview"));
+                    assert_eq!(body.as_object().unwrap().len(), 1);
+                    assert!(body["labels"].is_array());
+                    state.label_updates.fetch_add(1, Ordering::SeqCst);
+                    if !state.ignore_label_updates.load(Ordering::SeqCst) {
+                        *state.label_values.lock().unwrap() = Some(body["labels"].clone());
+                    }
+                    if state.malformed_label_response.load(Ordering::SeqCst) {
+                        (StatusCode::OK, "{").into_response()
+                    } else { Json(state.scale_set()).into_response() }
+                }
+            }))
             .route("/actions/_apis/runtime/runnerscalesets/42/sessions", post(move || {
                 let state = sessions.clone();
                 let queue = queue.clone();

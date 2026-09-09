@@ -304,16 +304,16 @@ Fleet supervisor 激活时 MUST：
 4. 只有成功认证的 read 证明不存在时才允许 Create；调用 POST 前先在一个 transaction 中写 `ScaleSetCreateStarting`、唯一 attempt identity 和 exact Target/group/name/fingerprint。重启或重试不得换 name。
 5. Create success、`409`、timeout、connection reset 或 response body 丢失都先进入同一 uncertain-outcome reconciliation：按原 tuple lookup，不直接再发 POST。
 6. 恰有一个 compatible match 时 adopt，并在 session 前持久化 Scale Set ID、normalized Target、完整 exact Auth Revision Ref、fingerprint 和 attempt result；multiple/conflicting match 时 fail closed。
-7. 只有 authenticated lookup 再次给出 authoritative absence，且 retry budget 允许时，才可沿同一 intent、name 和 attempt lineage 重试 Create；永不调用 Update，也不以新 name 绕开不确定性。
+7. 只有 authenticated lookup 再次给出 authoritative absence，且 retry budget 允许时，才可沿同一 intent、name 和 attempt lineage 重试 Create；不能用 Update 或新 name 绕开 Create 的不确定性。
 8. 任何 access/ownership classification 与 retry deadline 都必须 durable，进程内 wakeup 只用于降低延迟。
 
 `401`、`403`、access-filtered `404`、Target malformed 或 permission mismatch 是 access failure，不是 absence proof，必须 fail closed 且不得进入 Create。
 
-存在以下情况时 Fleet 必须停止新 Create 并暴露 bounded Condition：multiple matches、runner group/labels/fingerprint conflict、persisted ID identity mismatch、duplicate local ownership、或 remote inventory 中有无法映射到 non-terminal Generation 的 Runner。空 ledger 只可 adopt 空 Scale Set；未知 remote Runner 不自动删除。
+存在以下情况时 Fleet 必须停止新 Create 并暴露 bounded Condition：multiple matches、runner group/fingerprint conflict、首次 adoption 的 labels conflict、persisted ID identity mismatch、duplicate local ownership、或 remote inventory 中有无法映射到 non-terminal Generation 的 Runner。空 ledger 只可 adopt 空 Scale Set；未知 remote Runner 不自动删除。
 
 Label type 在 GitHub wire boundary 解析为有限类型；服务端返回的 `system` / `System`、`customer` / `Customer` 按同一语义比较，不得仅因 type 大小写不同把正常 Scale Set 分类为 access failure。未知 type、不同 label name、缺失/额外 label 仍不构成 compatible ownership；不能通过整体忽略 labels 来修复大小写问题。
 
-Shaula 不调用 Scale Set Update 修复 drift。普通 shutdown、restart、Fleet replacement 和 Decommission 都不删除 Scale Set。若已持久化 Scale Set 被 authenticated read 确认缺失，而 Resource Occupancy 非零或存在 non-terminal Generation，Fleet MUST 进入 `ScaleSetMissingWithResources`：停止 create-or-adopt、session、acquisition 和重新绑定；Scale Set/Runner 的 absent 或 `404` 不能单独证明一个可能 Busy 的既有资源可 Destroy。只有 JIT 与 IaC Create 均可证明从未开始的 Generation 可以本地终结；任何可能已注册或已创建基础设施的 Generation 必须继续计入 Occupancy 并 Blocked/Quarantined，直到恢复 consistency-set 证据或未来显式 operator procedure。仅当 Occupancy 和 active Runner Operations 都为零时，普通 reconciliation 才可从 `ScaleSetMissing` 建立新的 create-or-adopt binding。
+Shaula 仅按 spec 0002 §6.1 对 proven-owned Scale Set 更新 labels，不通过 Update 修复其他 identity drift；首次 adoption 仍要求完整 labels 兼容。普通 shutdown、restart、Fleet replacement 和 Decommission 都不删除 Scale Set。若已持久化 Scale Set 被 authenticated read 确认缺失，而 Resource Occupancy 非零或存在 non-terminal Generation，Fleet MUST 进入 `ScaleSetMissingWithResources`：停止 create-or-adopt、session、acquisition 和重新绑定；Scale Set/Runner 的 absent 或 `404` 不能单独证明一个可能 Busy 的既有资源可 Destroy。只有 JIT 与 IaC Create 均可证明从未开始的 Generation 可以本地终结；任何可能已注册或已创建基础设施的 Generation 必须继续计入 Occupancy 并 Blocked/Quarantined，直到恢复 consistency-set 证据或未来显式 operator procedure。仅当 Occupancy 和 active Runner Operations 都为零时，普通 reconciliation 才可从 `ScaleSetMissing` 建立新的 create-or-adopt binding。
 
 ## 8. Listener, demand and eventual convergence
 

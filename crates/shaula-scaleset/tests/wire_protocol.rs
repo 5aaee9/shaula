@@ -15,6 +15,9 @@ mod wire_mock_router;
 #[path = "wire_protocol/statistics.rs"]
 mod statistics;
 
+#[path = "wire_protocol/labels.rs"]
+mod labels;
+
 use shaula_core::github::GitHubTarget;
 use shaula_core::ports::Clock;
 use shaula_core::ports::GitHubAccessPort;

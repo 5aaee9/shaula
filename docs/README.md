@@ -27,6 +27,7 @@
 | 领域术语 | [CONTEXT.md](CONTEXT.md)；只定义术语 |
 | 产品范围、全局安全不变量 | [spec 0001](specs/0001-shaula-runner-scale-set.md) |
 | Fleet admission、replacement、Auth Handoff、Decommission | [spec 0002](specs/0002-fleet-http-control-plane.md) |
+| 已有 Fleet labels 更新与 owned Scale Set 收敛 | [spec 0002 §6.1](specs/0002-fleet-http-control-plane.md#61-mutable-scale-set-labels) / [ARD-0027](ard/0027-reconcile-labels-on-owned-scale-sets.md) |
 | Kubernetes / Docker Runner Resource 差异与外部验收 | [spec 0003](specs/0003-kubernetes-runner-resource.md) / [spec 0006](specs/0006-docker-runner-resource.md) |
 | Template materialization、inputs/outputs、Terraform plan policy | [spec 0004](specs/0004-template-profile-runtime.md) |
 | Profile publication、retirement、sensitive reads、attestation | [spec 0005](specs/0005-profile-http-control-plane.md) |

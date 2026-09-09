@@ -306,6 +306,8 @@ pub(crate) fn fingerprint(identity: &shaula_core::github::ScaleSetIdentity) -> S
     format!("sha256:{}", hex::encode(hasher.finalize()))
 }
 
+#[path = "supervisor_labels.rs"]
+mod labels_impl;
 #[path = "supervisor_ownership.rs"]
 mod ownership_impl;
 

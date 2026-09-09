@@ -1,5 +1,9 @@
 //! Composition regressions for the production Pending-to-Ready path.
 
+#[path = "wiring_labels_fence_tests.rs"]
+mod labels_fence_tests;
+#[path = "wiring_labels_tests.rs"]
+mod labels_tests;
 #[path = "wiring_listener_replacement_tests.rs"]
 mod replacement_tests;
 
@@ -212,22 +216,13 @@ async fn existing_blocked_binding_recovers_from_lowercase_system_labels() {
     *listener.label_type.lock().unwrap() = Some("customer".into());
     tick(&mut wiring, &clock, NOW + 3_000).await;
     let drifted = plane.control_plane.fleet_get(FLEET).await.unwrap().unwrap();
-    assert_eq!(drifted.phase, "Degraded");
-    assert_eq!(
-        drifted.last_condition_reason.as_deref(),
-        Some("OwnershipConflict")
-    );
-    assert!(plane
-        .control_plane
-        .session_get(FLEET)
-        .await
-        .unwrap()
-        .is_none());
-    *listener.label_type.lock().unwrap() = Some("system".into());
+    assert_eq!(drifted.phase, "Ready", "{drifted:?}");
+    assert_eq!(listener.label_updates.load(Ordering::SeqCst), 1);
     tick(&mut wiring, &clock, NOW + 4_000).await;
     let recovered = plane.control_plane.fleet_get(FLEET).await.unwrap().unwrap();
     assert_eq!(recovered.phase, "Ready");
-    assert_eq!(listener.session_creates.load(Ordering::SeqCst), 2);
+    assert_eq!(listener.session_creates.load(Ordering::SeqCst), 1);
+    assert_eq!(listener.label_updates.load(Ordering::SeqCst), 1);
     assert_eq!(mock.scale_set_creates.load(Ordering::SeqCst), 0);
     wiring.tasks.shutdown().await;
 }

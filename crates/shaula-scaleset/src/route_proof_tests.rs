@@ -183,11 +183,12 @@ async fn assert_new_effects_blocked(f: &Fixture, client: &crate::ScalesetClient)
     assert!(client.generate_jit(9, "runner").await.is_err());
     assert!(client.establish_session(9, "owner").await.is_err());
     assert!(client.create_scale_set(&identity, 7, &[]).await.is_err());
+    assert!(client.update_scale_set_labels(9, &[]).await.is_err());
 }
 
 #[tokio::test]
 async fn admin_401_cannot_retry_a_new_management_effect_without_reproof() {
-    for effect in ["create", "session", "jit"] {
+    for effect in ["create", "session", "jit", "labels"] {
         let f = Fixture::start().await;
         let client = f.client(false, true);
         client.ensure_route_proof().await.unwrap();
@@ -205,6 +206,7 @@ async fn admin_401_cannot_retry_a_new_management_effect_without_reproof() {
                 .unwrap_err(),
             "session" => client.establish_session(9, "owner").await.unwrap_err(),
             "jit" => client.generate_jit(9, "runner").await.unwrap_err(),
+            "labels" => client.update_scale_set_labels(9, &[]).await.unwrap_err(),
             _ => unreachable!(),
         };
         assert!(matches!(error, AccessFailure::PermissionDenied));

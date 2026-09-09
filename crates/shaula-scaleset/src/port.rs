@@ -208,6 +208,15 @@ impl GitHubAccessPort for ScalesetClient {
         Ok(outcome.map(|view_wire| scale_set_view(&view_wire)))
     }
 
+    async fn update_scale_set_labels(
+        &self,
+        scale_set_id: i64,
+        labels: &[Label],
+    ) -> Result<EffectOutcome<ScaleSetView>, shaula_core::ports::AccessFailure> {
+        self.update_scale_set_labels_impl(scale_set_id, labels)
+            .await
+    }
+
     async fn establish_session(
         &self,
         scale_set_id: i64,
@@ -373,3 +382,6 @@ mod port_ops;
 
 #[path = "port_identity.rs"]
 mod port_identity;
+
+#[path = "port_labels.rs"]
+mod port_labels;

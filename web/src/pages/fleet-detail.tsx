@@ -187,7 +187,7 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
                           {label}
                         </span>
                       ))
-                    : "None"}
+                    : `${data.spec.github.scale_set_name} (default)`}
                 </div>
               </KeyValue>
               <KeyValue label="Incarnation">

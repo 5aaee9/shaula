@@ -25,6 +25,7 @@ impl FleetSupervisor {
             .scale_set_upsert(ScaleSetRow {
                 fleet_key: self.config.fleet_key.clone(),
                 scale_set_id,
+                owned_scale_set_id: None,
                 name: self.identity.scale_set_name.clone(),
                 runner_group: self.identity.runner_group.clone(),
                 fingerprint: fingerprint(&self.identity),

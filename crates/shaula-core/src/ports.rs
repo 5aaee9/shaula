@@ -224,6 +224,18 @@ pub trait GitHubAccessPort: Send + Sync {
         labels: &[Label],
     ) -> Result<EffectOutcome<ScaleSetView>, AccessFailure>;
 
+    /// Replaces only routing labels on an already-proven owned scale set.
+    /// Callers must read back the same identity after an uncertain effect.
+    async fn update_scale_set_labels(
+        &self,
+        _scale_set_id: i64,
+        _labels: &[Label],
+    ) -> Result<EffectOutcome<ScaleSetView>, AccessFailure> {
+        Err(AccessFailure::Unavailable {
+            summary: "scale set label updates are not supported by this adapter".into(),
+        })
+    }
+
     async fn establish_session(
         &self,
         scale_set_id: i64,

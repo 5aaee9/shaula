@@ -16,6 +16,42 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Mutable Fleet labels (2026-09-09)
+
+[Spec 0002 §6.1](specs/0002-fleet-http-control-plane.md#61-mutable-scale-set-labels)
+and [ARD-0027](ard/0027-reconcile-labels-on-owned-scale-sets.md) now allow labels
+updates through the existing Fleet PUT/Revision/Change pipeline. The reproduced
+HTTP/SQLite regression initially returned `409 immutable identity change rejected`;
+it now accepts the change with a Busy Generation retained, stable identity/pins,
+durable replay and stale-version rejection.
+
+The supervisor updates only a proven-owned Scale Set. Migration 16 backfills the
+new owned-ID marker only from positive Adopted IDs, preserving the distinction
+between ownership and a conflicting candidate. Complete label-set comparison
+supports removal and the empty-list System fallback. The shared Fleet effect gate
+covers ownership reads/writes, PATCH and readback, including recovery. A second
+current-authority check after inventory rejects an intervening revision, deletion
+or Auth Context change. No labels update changes Runner Generations or invokes IaC.
+
+Local verification: 697 Rust tests passed with 2 platform skips; all 168 browser
+component tests passed. This includes 14 production listener composition tests,
+5 label PATCH wire tests, HTTP admission and SQLite migration/ownership tests.
+The composition tests prove same-ID add/remove/clear, ignored-success pending state,
+unknown/candidate rejection, effect-gate serialization and stale-authority refusal.
+An applied PATCH with a damaged response remains AccessBlocked with its owned marker;
+recreating wiring reads back the update and restores Ready without a second PATCH.
+Strict all-target/all-feature Clippy, rustfmt, Web build/lint, changed-Web formatting
+and diff checks pass. Whole-Web formatting still reports the 10 untouched files
+listed by the previous increment; no unrelated formatting changes are included.
+The literal AGENTS `--workspace test` gate also passed: 556 tests, with 143
+filtered/platform skips; the unfiltered workspace result above is the full gate.
+
+Independent runtime/ownership review found a stale readback write outside the
+effect gate; ownership reconciliation now holds the gate across that path too,
+and the reviewed final implementation has no remaining actionable findings.
+Production deployment and actual GitHub job routing are separate from these local
+checks; no live Fleet labels are changed merely to exercise the feature.
+
 ## Authentication management pages and focused simplification (2026-09-09)
 
 [Spec 0011 §6](specs/0011-multi-account-github-authentication.md#6-http-and-ui-contract)

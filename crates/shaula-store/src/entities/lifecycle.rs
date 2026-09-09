@@ -136,6 +136,7 @@ pub mod scale_set_state {
         #[sea_orm(primary_key, auto_increment = false)]
         pub fleet_key: String,
         pub scale_set_id: Option<i64>,
+        pub owned_scale_set_id: Option<i64>,
         pub name: String,
         pub runner_group: String,
         pub fingerprint: String,

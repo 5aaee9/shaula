@@ -34,6 +34,13 @@ impl FleetSupervisor {
             {
                 self.verify_inventory(bound_id, now).await
             }
+            Ok(LookupOutcome::ExactlyOne(view))
+                if view.id == bound_id
+                    && self.identity_compatible(&view, group_id)
+                    && row.as_ref().and_then(|row| row.owned_scale_set_id) == Some(bound_id) =>
+            {
+                self.reconcile_labels(bound_id, group_id, now).await
+            }
             Ok(LookupOutcome::ExactlyOne(view)) if view.id == bound_id => {
                 // The bound identity still exists, but its routing changed.
                 self.upsert_ownership(Some(bound_id), "AccessBlocked", attempt, now)
@@ -75,7 +82,7 @@ impl FleetSupervisor {
         Ok(OwnershipOutcome::Blocked(reason))
     }
 
-    async fn access_blocked(
+    pub(super) async fn access_blocked(
         &self,
         scale_set_id: Option<i64>,
         attempt: Option<String>,
@@ -87,26 +94,41 @@ impl FleetSupervisor {
         Ok(OwnershipOutcome::access_failure(failure))
     }
 
-    /// Every required label must be observable. The adapter normalizes known
-    /// wire label types; names and distinct types still match exactly.
+    /// Compare complete sets so removing a label also requires reconciliation.
     fn labels_compatible(&self, observed: &[shaula_core::github::Label]) -> bool {
-        self.fallback_labels().iter().all(|required| {
-            observed
+        let desired = self.fallback_labels();
+        let keys = |labels: &[shaula_core::github::Label]| {
+            labels
                 .iter()
-                .any(|label| label.name == required.name && label.label_type == required.label_type)
-        })
+                .map(|label| (label.name.clone(), label.label_type.clone()))
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+        keys(&desired) == keys(observed)
     }
 
-    fn view_compatible(&self, view: &ScaleSetView, group_id: i64) -> bool {
-        view.id > 0
-            && view.name == self.identity.scale_set_name
-            && view.runner_group_id == group_id
-            && self.labels_compatible(&view.labels)
+    pub(super) fn identity_compatible(&self, view: &ScaleSetView, group_id: i64) -> bool {
+        view.id > 0 && view.name == self.identity.scale_set_name && view.runner_group_id == group_id
+    }
+
+    pub(super) fn view_compatible(&self, view: &ScaleSetView, group_id: i64) -> bool {
+        self.identity_compatible(view, group_id) && self.labels_compatible(&view.labels)
     }
 
     /// Persist-before-POST create-or-adopt (spec 0001 section 7). Adoption proves
     /// identity and routing; a same-name match alone never grants ownership.
     pub(crate) async fn ensure_ownership(&self, now: i64) -> CoreResult<OwnershipOutcome> {
+        // Readback may restore Adopted too: serialize every ownership proof
+        // with replacement and acquisition, not only the PATCH itself.
+        let _gate = match &self.listener {
+            Some(listener) => {
+                let gate = listener.handoff_gate().await;
+                if !listener.authorize_runtime().await? {
+                    return Ok(OwnershipOutcome::Blocked(ReasonCode::OwnershipProofFailed));
+                }
+                Some(gate)
+            }
+            None => None,
+        };
         let proof = self.github.ensure_route_proof().await;
         self.record_route_health(&proof, now).await?;
         if let Err(failure) = proof {
@@ -116,7 +138,11 @@ impl FleetSupervisor {
         if let Some(row) = &existing {
             if matches!(
                 row.state.as_str(),
-                "Adopted" | "AccessBlocked" | "UnknownRemoteRunner"
+                "Adopted"
+                    | "AccessBlocked"
+                    | "UnknownRemoteRunner"
+                    | "LabelsUpdating"
+                    | "LabelsUpdateUncertain"
             ) {
                 if let Some(bound_id) = row.scale_set_id {
                     return self.verify_adopted(bound_id, now).await;
@@ -220,7 +246,24 @@ impl FleetSupervisor {
         }
     }
 
-    async fn verify_inventory(&self, scale_set_id: i64, now: i64) -> CoreResult<OwnershipOutcome> {
+    pub(super) async fn verify_inventory(
+        &self,
+        scale_set_id: i64,
+        now: i64,
+    ) -> CoreResult<OwnershipOutcome> {
+        let outcome = self.check_inventory(scale_set_id, now).await?;
+        if matches!(outcome, OwnershipOutcome::Ready) {
+            self.upsert_ownership(Some(scale_set_id), "Adopted", None, now)
+                .await?;
+        }
+        Ok(outcome)
+    }
+
+    pub(super) async fn check_inventory(
+        &self,
+        scale_set_id: i64,
+        now: i64,
+    ) -> CoreResult<OwnershipOutcome> {
         let runners = match self.github.list_runners(scale_set_id).await {
             Ok(runners) => runners,
             Err(failure) => {
@@ -245,8 +288,6 @@ impl FleetSupervisor {
                 .await?;
             return Ok(OwnershipOutcome::Blocked(ReasonCode::UnknownRemoteRunner));
         }
-        self.upsert_ownership(Some(scale_set_id), "Adopted", None, now)
-            .await?;
         Ok(OwnershipOutcome::Ready)
     }
 }
