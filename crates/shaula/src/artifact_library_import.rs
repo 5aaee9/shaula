@@ -1,9 +1,10 @@
-//! Trusted filesystem sources import once; database selections never follow files.
+//! Trusted filesystem sources form the current default catalog; revisions stay pinned.
 
 use super::{invalid, storage, DbArtifactPublisher, MAX_ARCHIVE};
 use sha2::{Digest, Sha256};
 use shaula_core::error::CoreResult;
 use shaula_core::registry::TemplateSource;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 impl DbArtifactPublisher {
@@ -35,48 +36,47 @@ impl DbArtifactPublisher {
         Ok(())
     }
 
-    pub(super) async fn import_defaults(&self, root: &Path, now: i64) -> CoreResult<()> {
-        let root = root.to_owned();
-        let entries = tokio::task::spawn_blocking(move || default_directories(&root))
-            .await
-            .map_err(storage)??;
-        for (key, directory) in entries {
-            if self
-                .store
-                .template_source_exists(&key)
+    pub(super) async fn sync_defaults(&self, roots: &[PathBuf], now: i64) -> CoreResult<()> {
+        let mut entries = BTreeMap::new();
+        for root in roots {
+            let root = root.clone();
+            for (key, directory) in tokio::task::spawn_blocking(move || default_directories(&root))
                 .await
-                .map_err(storage)?
+                .map_err(storage)??
             {
-                continue;
+                if entries.insert(key, directory).is_some() {
+                    return Err(invalid(
+                        "duplicate template source key in configured directories",
+                    ));
+                }
             }
+        }
+        let mut sources = Vec::with_capacity(entries.len());
+        for (key, directory) in entries {
             let (bytes, manifest) = tokio::task::spawn_blocking(move || package(&directory))
                 .await
                 .map_err(storage)??;
             let digest = format!("sha256:{}", hex::encode(Sha256::digest(&bytes)));
             self.save(bytes, digest.clone(), now, true).await?;
-            self.store
-                .template_source_insert(
-                    &TemplateSource {
-                        key,
-                        artifact_digest: digest,
-                        platform: manifest.platform,
-                        engine_ref: manifest.runtime.engine,
-                    },
-                    now,
-                )
-                .await
-                .map_err(storage)?;
+            sources.push(TemplateSource {
+                key,
+                artifact_digest: digest,
+                platform: manifest.platform,
+                engine_ref: manifest.runtime.engine,
+            });
         }
+        // A failed validation/cache write leaves the previous catalog intact.
+        // Original archives are immutable and may be reused on startup retry.
+        self.store
+            .template_sources_replace(&sources, now)
+            .await
+            .map_err(storage)?;
         Ok(())
     }
 }
 
 fn default_directories(root: &Path) -> CoreResult<Vec<(String, PathBuf)>> {
-    let metadata = match std::fs::symlink_metadata(root) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(storage(error)),
-    };
+    let metadata = std::fs::symlink_metadata(root).map_err(storage)?;
     if redirected(&metadata) {
         return Err(invalid("template source root must not be redirected"));
     }

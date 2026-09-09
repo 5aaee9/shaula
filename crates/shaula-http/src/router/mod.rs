@@ -9,13 +9,14 @@ pub mod profile_auth_reads;
 pub mod profile_reads;
 pub mod profile_routes;
 mod template_library;
+mod template_update;
 
 use std::sync::Arc;
 
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, put};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use shaula_core::registry::{
     Actor, FleetRegistryPort, HealthPort, MutationAccepted, ProfileRegistryPort, Scope,
@@ -244,6 +245,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/template-profiles",
             get(profile_reads::template_profile_list),
+        )
+        .route(
+            "/api/v1/template-profiles/{profileKey}/updates",
+            post(template_update::update),
         )
         .route(
             "/api/v1/template-profiles/{profileKey}/revisions/{revision}",

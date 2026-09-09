@@ -6,19 +6,24 @@ use super::shaula_template_manifest;
 use super::{request_hash, unprocessable, ControlPlane};
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::registry::{
-    Actor, ChangeView, MutationAccepted, MutationError, MutationFacts, Scope, TemplateProfilePut,
+    Actor, ChangeView, MutationAccepted, MutationError, MutationFacts, Scope,
 };
 
 impl ControlPlane {
-    pub(crate) async fn template_put_impl(
+    pub(super) async fn template_publish_admit(
         &self,
         actor: &Actor,
         key: &str,
-        payload: TemplateProfilePut,
-        if_none_match: bool,
-        if_match: Option<(String, i64)>,
-        idempotency_key: Option<String>,
+        publication: super::profile_update::TemplatePublication,
     ) -> CoreResult<Result<MutationAccepted, MutationError>> {
+        let canonical = publication.canonical();
+        let super::profile_update::TemplatePublication {
+            payload,
+            if_none_match,
+            if_match,
+            idempotency_key,
+            update_identity: _,
+        } = publication;
         // Authorization BEFORE any replay/conflict classification: a caller
         // without the publish scope must never learn stored state through
         // an idempotency key it observed (fleet/auth PUTs are scope-first).
@@ -37,44 +42,15 @@ impl ControlPlane {
         // Idempotent replay: hash covers NON-secret members (artifact,
         // engine, policy); bindings are compared in protected memory
         // against the stored immutable Revision (spec 0005 section 3).
-        let canonical = format!(
-            "{}|{}|{}",
-            payload.artifact_digest,
-            payload.engine_ref,
-            serde_json::to_string(&payload.fleet_input_policy).unwrap_or_default(),
-        );
         if let Some(idem) = &idempotency_key {
-            let hash = request_hash(&[
-                b"template_profile",
-                key.as_bytes(),
-                idem.as_bytes(),
-                canonical.as_bytes(),
-            ]);
+            let submitted = serde_json::to_string(&payload.bindings).unwrap_or_default();
             match self
-                .store
-                .idempotency_find("template_profile", key, idem, &hash)
+                .template_publication_replay(key, idem, &canonical, &submitted)
                 .await?
             {
-                shaula_core::registry::IdempotencyLookup::Miss => {}
-                shaula_core::registry::IdempotencyLookup::Conflict => {
-                    return Ok(Err(MutationError::IdempotencyConflict));
-                }
-                shaula_core::registry::IdempotencyLookup::Replay(body) => {
-                    let accepted: MutationAccepted = serde_json::from_str(&body)
-                        .map_err(|e| CoreError::new(ReasonCode::Internal, e.to_string()))?;
-                    let revision = accepted.change.revision;
-                    let stored = self
-                        .store
-                        .template_protected_bindings(key, revision)
-                        .await?
-                        .map(|(json, _)| json)
-                        .unwrap_or_default();
-                    let submitted = serde_json::to_string(&payload.bindings).unwrap_or_default();
-                    if stored != submitted {
-                        return Ok(Err(MutationError::IdempotencyConflict));
-                    }
-                    return Ok(Ok(accepted));
-                }
+                Ok(None) => {}
+                Ok(Some(accepted)) => return Ok(Ok(accepted)),
+                Err(mutation) => return Ok(Err(mutation)),
             }
         }
         let existing = self.store.template_profile_get(key).await?;

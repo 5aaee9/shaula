@@ -120,6 +120,9 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
                     <TableHead>Status</TableHead>
                     <TableHead>Active revision</TableHead>
                     <TableHead>Desired revision</TableHead>
+                    <TableHead>
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -143,6 +146,22 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
                         {item.activeRevision ? `r${item.activeRevision}` : "--"}
                       </TableCell>
                       <TableCell className="font-mono text-xs">r{item.desiredRevision}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={
+                            !scopes.includes("template.publish") ||
+                            ["Retiring", "Retired"].includes(item.status)
+                          }
+                          aria-label={`Update ${item.key} from default`}
+                          onClick={() =>
+                            navigate(`/templates/${encodeURIComponent(item.key)}/update`)
+                          }
+                        >
+                          Update
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -192,6 +211,16 @@ function TemplateDetails({
       <div className="section-heading">
         <h2 className="break-all">{profileKey}</h2>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={
+              !scopes.includes("template.publish") || ["Retiring", "Retired"].includes(data.status)
+            }
+            onClick={() => navigate(`/templates/${encodeURIComponent(profileKey)}/update`)}
+          >
+            Update from default
+          </Button>
           <Button
             variant="outline"
             size="sm"

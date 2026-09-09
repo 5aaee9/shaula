@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use crate::error::CoreResult;
 use crate::registry::{
     Actor, AttestationPut, AuthProfilePut, AuthProfileView, ChangeView, MutationAccepted,
-    MutationError, TemplateProfilePut, TemplateProfileView,
+    MutationError, TemplateProfilePut, TemplateProfileUpdate, TemplateProfileView,
 };
 
 /// Read model of ONE immutable Template Revision (R10-05).
@@ -69,6 +69,17 @@ pub trait ProfileRegistryPort: Send + Sync {
         key: &str,
         payload: TemplateProfilePut,
         if_none_match: bool,
+        if_match: Option<(String, i64)>,
+        idempotency_key: Option<String>,
+    ) -> CoreResult<Result<MutationAccepted, MutationError>>;
+
+    /// Publish an update using the exact If-Match base's protected bindings.
+    /// Head advancement permits replay, but never changes the inherited base.
+    async fn template_update(
+        &self,
+        actor: &Actor,
+        key: &str,
+        payload: TemplateProfileUpdate,
         if_match: Option<(String, i64)>,
         idempotency_key: Option<String>,
     ) -> CoreResult<Result<MutationAccepted, MutationError>>;

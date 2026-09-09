@@ -16,6 +16,35 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Default template synchronization and Update (2026-09-09)
+
+[Spec 0021](specs/0021-default-template-updates.md) and
+[ARD-0025](ard/0025-sync-default-templates-and-explicitly-update-published-revisions.md)
+are implemented. Startup validates the complete configured source set before replacing
+the catalog in one transaction; obsolete entries disappear and old archives/revisions
+remain immutable. Missing configured roots, duplicate keys and invalid templates fail
+without publishing a partial catalog. The NixOS module uses the current package's
+stable default directories; an empty list clears only the default catalog.
+
+Published templates expose **Update** and an explicit **Update from default** review.
+The server inherits protected bindings and omitted policy from the exact If-Match base;
+explicit policy replacement preserves JSON numeric precision. Conditional publication,
+validation and activation share the existing path, including authoritative replay after
+concurrent idempotency races. Fleet and Generation pins are not changed. Source choices
+are explicit; matching a platform does not infer provenance for customized templates.
+
+Local verification: 632 workspace Nextest tests passed (2 platform-specific tests skipped),
+strict all-target Clippy and rustfmt passed; the 95-case browser suite and one additional
+mobile action-layout regression passed (14 Update cases), with desktop/mobile screenshots
+checked. Targeted SQLite/HTTP tests cover
+secret inheritance/redaction, history/Fleet preservation, permission and input rejection,
+exact-base retries, concurrent CAS and concurrent idempotency. A clock barrier forces both
+requests past the initial replay lookup: disabling result reclassification makes all three
+race tests fail, and restoring the identical production file makes them pass. Web build/lint and changed
+Web files' format checks passed; the full Web format check still reports 14 unchanged
+files with pre-existing formatting differences. These checks do not establish a real
+GitHub job run or Kubernetes resource conformance.
+
 ## Official container images and host bootstrap (2026-09-09)
 
 [Spec 0020](specs/0020-official-container-runner-bootstrap.md) and
@@ -577,9 +606,11 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
   and [ADR-0019](ard/0019-store-template-sources-and-discover-terraform-variables.md)
   are implemented (2026-09-08). Migration m0010 stores immutable original archives
   and default source selections in SQLite. Startup imports legacy sidecars without
-  repacking, restores missing execution material, and seeds each configured source
-  key once. Source removal or a package update cannot replace that selection or
-  publish/activate a Profile. Runtime reads and Create/Destroy also verify cache
+  repacking and restores missing execution material. The original one-time source
+  seed is superseded by [spec 0021](specs/0021-default-template-updates.md): startup
+  atomically synchronizes the complete configured default catalog, retaining old
+  archives and published revisions. Source changes do not publish/activate a Profile.
+  Runtime reads and Create/Destroy also verify cache
   material against database authority. Missing legacy authority and changed cache
   contents remain explicit errors. Default packaging excludes image build context,
   state, tfvars and unrelated files; the Nix package/module installs and imports

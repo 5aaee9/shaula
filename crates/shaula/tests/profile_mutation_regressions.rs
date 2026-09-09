@@ -2,6 +2,8 @@
 mod common;
 #[path = "support/container_profile_policy.rs"]
 mod container_profile_policy;
+#[path = "support/template_profile_updates.rs"]
+mod template_profile_updates;
 use axum::http::{HeaderValue, StatusCode};
 use common::*;
 use shaula_core::registry::ControlPlaneStore;

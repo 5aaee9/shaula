@@ -30,62 +30,8 @@ async fn adapter(root: &Path) -> CoreResult<(Store, Arc<DbArtifactPublisher>)> {
     Ok((store, library))
 }
 
-#[tokio::test]
-async fn default_import_survives_source_removal_and_rebuilds_cache_from_database() -> TestResult {
-    let temp = tempfile::tempdir()?;
-    let defaults = fixture_source(temp.path())?;
-    let (store, library) = adapter(temp.path()).await?;
-    library
-        .initialize(std::slice::from_ref(&defaults), 1)
-        .await?;
-    let sources = library.sources().await?;
-    assert_eq!(sources.len(), 1);
-    let source = sources.first().ok_or("source missing")?;
-    assert_eq!(source.key, "docker");
-    let stored = store
-        .artifact_archive_get(&source.artifact_digest)
-        .await?
-        .ok_or("archive missing")?;
-    let plane = SqliteControlPlane::new(store.clone(), library.root.clone())
-        .with_artifact_cache(library.clone());
-    assert!(plane.template_profile_keys().await?.is_empty());
-    assert!(library
-        .variables(&source.artifact_digest)
-        .await?
-        .is_some_and(|v| v.available));
-
-    // New package content never overwrites the source selected in the database.
-    std::fs::write(
-        defaults.join("docker/main.tf"),
-        "invalid replacement source",
-    )?;
-    library
-        .initialize(std::slice::from_ref(&defaults), 2)
-        .await?;
-    assert_eq!(library.sources().await?, sources);
-    std::fs::remove_dir_all(&defaults)?;
-    std::fs::remove_dir_all(&library.root)?;
-    std::fs::create_dir_all(&library.root)?;
-    library
-        .initialize(std::slice::from_ref(&defaults), 3)
-        .await?;
-    assert_eq!(
-        store.artifact_archive_get(&source.artifact_digest).await?,
-        Some(stored)
-    );
-    let cached = shaula_core::artifact_layout::artifact_dir(&library.root, &source.artifact_digest)
-        .ok_or("bad digest")?;
-    assert!(cached.join("main.tf").is_file());
-
-    // The same restoration seam runs during daemon operation, before store reads.
-    std::fs::remove_dir_all(&cached)?;
-    assert!(plane
-        .artifact_parameter_schema(&source.artifact_digest)
-        .await?
-        .contains("runner_image"));
-    assert!(cached.join("main.tf").is_file());
-    Ok(())
-}
+#[path = "artifact_library_sync_tests.rs"]
+mod sync;
 
 #[tokio::test]
 async fn rejected_uploads_leave_neither_database_nor_usable_cache_artifacts() -> TestResult {
@@ -145,7 +91,7 @@ async fn legacy_container_upload_is_rejected_but_original_archive_still_recovers
     let digest = format!("sha256:{}", hex::encode(Sha256::digest(&bytes)));
     let (store, library) = adapter(temp.path()).await?;
     assert!(library.publish(&bytes, &digest).await.is_err());
-    assert!(library.import_defaults(&defaults, 1).await.is_err());
+    assert!(library.sync_defaults(&[defaults], 1).await.is_err());
     assert!(store.artifact_archive_get(&digest).await?.is_none());
     assert!(library.sources().await?.is_empty());
 

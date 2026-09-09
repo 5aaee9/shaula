@@ -7,7 +7,7 @@ use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::registry::{
     Actor, AttestationPut, AttestationView, AuthProfilePut, AuthProfileView, AuthRevisionView,
     ChangeView, MutationAccepted, MutationError, ProfileRegistryPort, Scope, TemplateProfilePut,
-    TemplateProfileView, TemplateRevisionView,
+    TemplateProfileUpdate, TemplateProfileView, TemplateRevisionView,
 };
 
 #[async_trait]
@@ -38,12 +38,27 @@ impl ProfileRegistryPort for ControlPlane {
         self.template_put_impl(
             actor,
             key,
-            payload,
-            if_none_match,
-            if_match,
-            idempotency_key,
+            super::profile_update::TemplatePublication {
+                payload,
+                if_none_match,
+                if_match,
+                idempotency_key,
+                update_identity: None,
+            },
         )
         .await
+    }
+
+    async fn template_update(
+        &self,
+        actor: &Actor,
+        key: &str,
+        payload: TemplateProfileUpdate,
+        if_match: Option<(String, i64)>,
+        idempotency_key: Option<String>,
+    ) -> CoreResult<Result<MutationAccepted, MutationError>> {
+        self.template_update_impl(actor, key, payload, if_match, idempotency_key)
+            .await
     }
 
     async fn template_get(

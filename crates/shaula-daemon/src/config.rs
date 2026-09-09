@@ -12,8 +12,8 @@ use serde::Deserialize;
 pub struct BootstrapConfig {
     pub version: u32,
     pub storage: StorageConfig,
-    /// Trusted read-only directories containing bundled template sources. Only
-    /// previously absent source keys are imported; they never define Profiles.
+    /// Trusted read-only directories synchronized as the complete source catalog.
+    /// They never define published Profiles.
     #[serde(default)]
     pub template_source_dirs: Vec<PathBuf>,
     pub http: HttpConfigDto,

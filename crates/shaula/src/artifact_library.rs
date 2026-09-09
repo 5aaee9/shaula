@@ -40,9 +40,6 @@ impl DbArtifactPublisher {
         {
             self.ensure_cached(&digest).await?;
         }
-        for root in defaults {
-            self.import_defaults(root, now).await?;
-        }
         for digest in self
             .store
             .template_referenced_artifacts()
@@ -54,6 +51,7 @@ impl DbArtifactPublisher {
                     "referenced template archive is missing; restore its original digest-addressed archive"));
             }
         }
+        self.sync_defaults(defaults, now).await?;
         Ok(())
     }
 

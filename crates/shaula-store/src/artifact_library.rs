@@ -1,6 +1,6 @@
 //! Immutable archive bytes are authoritative; filesystem material is a cache.
 
-use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{ActiveValue::Set, EntityTrait, QueryOrder};
 use sha2::{Digest, Sha256};
 use shaula_core::registry::TemplateSource;
 
@@ -109,36 +109,28 @@ impl Store {
             .await?)
     }
 
-    /// First imported selection wins. A later package cannot move the DB selection.
-    pub async fn template_source_insert(
+    /// Atomically replaces the discovery catalog with the current trusted sources.
+    /// Archive bytes and published revisions remain available independently.
+    pub async fn template_sources_replace(
         &self,
-        source: &TemplateSource,
+        current_sources: &[TemplateSource],
         now: i64,
     ) -> StoreResult<()> {
-        sources::Entity::insert(sources::ActiveModel {
-            key: Set(source.key.clone()),
-            artifact_digest: Set(source.artifact_digest.clone()),
-            platform: Set(source.platform.clone()),
-            engine_ref: Set(source.engine_ref.clone()),
-            created_at: Set(now),
-        })
-        .on_conflict(
-            sea_orm::sea_query::OnConflict::column(sources::Column::Key)
-                .do_nothing()
-                .to_owned(),
-        )
-        .do_nothing()
-        .exec(self.connection())
-        .await?;
+        let tx = self.begin().await?;
+        sources::Entity::delete_many().exec(&tx).await?;
+        for source in current_sources {
+            sources::Entity::insert(sources::ActiveModel {
+                key: Set(source.key.clone()),
+                artifact_digest: Set(source.artifact_digest.clone()),
+                platform: Set(source.platform.clone()),
+                engine_ref: Set(source.engine_ref.clone()),
+                created_at: Set(now),
+            })
+            .exec(&tx)
+            .await?;
+        }
+        tx.commit().await?;
         Ok(())
-    }
-
-    pub async fn template_source_exists(&self, key: &str) -> StoreResult<bool> {
-        Ok(sources::Entity::find()
-            .filter(sources::Column::Key.eq(key))
-            .one(self.connection())
-            .await?
-            .is_some())
     }
 
     pub async fn template_sources(&self) -> StoreResult<Vec<TemplateSource>> {

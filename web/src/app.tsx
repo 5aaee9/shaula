@@ -17,6 +17,7 @@ import { FleetsPage } from "@/pages/fleets";
 import { FleetDetail } from "@/pages/fleet-detail";
 import { TemplatesPage } from "@/pages/templates";
 import { TemplatePublishPage } from "@/pages/template-publish";
+import { TemplateUpdatePage } from "@/pages/template-update";
 import { AuthPage } from "@/pages/auth";
 import { ChangesPage } from "@/pages/changes";
 import { JobsPage } from "@/pages/jobs";
@@ -94,6 +95,10 @@ export function App() {
                 <Route path="/jobs/:id" element={<JobDetail scopes={scopes} />} />
                 <Route path="/fleets/:key" element={<FleetDetail scopes={scopes} />} />
                 <Route path="/templates" element={<TemplatesPage scopes={scopes} />} />
+                <Route
+                  path="/templates/:key/update"
+                  element={<TemplateUpdatePage scopes={scopes} />}
+                />
                 <Route
                   path="/templates/new"
                   element={<TemplatePublishPage key="new" scopes={scopes} />}

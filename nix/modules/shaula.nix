@@ -63,9 +63,10 @@ in
       default = [ "${cfg.package}/share/shaula/templates" ];
       defaultText = lib.literalExpression ''[ "''${config.services.shaula.package}/share/shaula/templates" ]'';
       description = ''
-        Trusted read-only directories of default template sources. Missing source
-        keys are imported into SQLite once; package changes never replace an
-        existing database source or activate a Profile. Use [] to disable import.
+        Trusted read-only directories synchronized to the default template catalog
+        at startup. Package changes replace source entries, while published Profile
+        revisions stay immutable. Missing configured directories fail startup.
+        Use [] to clear the default catalog without removing published templates.
       '';
     };
     stateDirectory = lib.mkOption {

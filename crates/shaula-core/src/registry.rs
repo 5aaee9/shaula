@@ -178,6 +178,15 @@ pub struct TemplateProfilePut {
     pub fleet_input_policy: serde_json::Value,
 }
 
+/// An explicit artifact update that inherits protected bindings from its base.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TemplateProfileUpdate {
+    pub artifact_digest: String,
+    pub engine_ref: String,
+    /// None preserves the base revision's policy; Some replaces it in full.
+    pub fleet_input_policy: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
 /// Submission payload for a GitHub Auth Candidate revision. Secret bytes
 /// are carried as [`crate::secret::SecretString`] and never logged.
 /// Only explicit schema version 2 and GitHub App policy are supported.

@@ -261,6 +261,8 @@ mod profile_registry;
 
 #[path = "service_profile_registry_put.rs"]
 mod profile_registry_put;
+#[path = "service_profile_update.rs"]
+mod profile_update;
 pub(crate) use profile_registry::shaula_template_manifest;
 
 #[path = "service_profile_attestation.rs"]
