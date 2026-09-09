@@ -73,6 +73,8 @@ Login 的 return target 只允许本 origin 的已知 UI document path 和经校
 
 ## 5. API identity and authorization
 
+[Spec 0019](0019-workflow-jobs-and-operation-logs.md) 的 Jobs/Generation metadata 需要 `fleet.read`，已脱敏 Operation Log 正文还需独立 `logs.read`。这些仍为同一 OIDC 管理面的权限，不从其他写权限隐含获得。该规范新增的 Runner Setup Info 只读 capability 经独立 listener/HTTPS route 使用，不能登录管理 UI 或替代 OIDC、worker/control/state 权限。
+
 API 接受同一 Provider 的 OAuth2 **access token**，使用 `Authorization: Bearer`。v1 支持 RFC 9068 的 asymmetric signed JWT access token，校验 `typ=at+jwt`（或 `application/at+jwt`）、signature/algorithm、exact issuer、configured API audience、`exp`、`iat`、`nbf`（若存在）、`sub`、`client_id` 和 `jti`，时间校验至多允许 60 秒 clock skew。Opaque tokens / introspection 不属于 v1；ID Token 不能用作 API bearer credential。Token 不得放入 URL 或请求 body。
 
 认证成功不等于管理权限。Authorization policy 属于 daemon bootstrap concerns，以 exact `(issuer, subject)` grants 映射现有 `fleet.*`、`template.*`、`auth.*` permissions；未知 principal 默认没有资源权限，不提供首次登录自动 admin。Bearer 的有效权限还必须与已验证 access-token `scope` 中的 Shaula scopes 取交集；`openid/profile/email` 不是管理权限。无权限的已认证调用返回 `403`，不重新登录或提升权限。Health 和 session read 只要求有效身份，不授予资源权限。

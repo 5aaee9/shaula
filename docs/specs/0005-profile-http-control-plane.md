@@ -254,6 +254,7 @@ Retirement and new-reference/activation transactions use the same admission fenc
 At minimum, management authorization separates：
 
 - `fleet.read` and `fleet.write`；
+- independently grantable `logs.read` for sanitized Operation Log bodies, in addition to `fleet.read` for Jobs/Generation metadata, under [spec 0019](0019-workflow-jobs-and-operation-logs.md)；
 - `template.read` and high-trust `template.publish`；
 - independently grantable high-trust `template.attest`；
 - `auth.read` and high-trust `auth.write`；

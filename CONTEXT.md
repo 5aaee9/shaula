@@ -116,6 +116,10 @@ _Avoid_: Fleet Change, Runner Operation, request
 在 Scale Set 中注册且至多执行一个 GitHub Actions job 的短生命周期执行者；其执行环境由一个 Runner Resource 承载。
 _Avoid_: VM, Pod, container
 
+**Workflow Job**:
+一次 GitHub Actions workflow 中实际调度执行的 job，是 Jobs 视图中的业务对象；重跑的执行分别保留，不能按显示名称合并。
+_Avoid_: Lifecycle Worker, Runner Generation, Terraform command
+
 **Runner Generation**:
 一次不可变 Runner 创建尝试所产生的身份；更换模板或输入会产生新的 Generation，而不是更新原 Generation。
 _Avoid_: Version, revision
@@ -164,6 +168,18 @@ _Avoid_: Kubernetes UID, metadata.uid, reusable name, proof against out-of-band 
 作用于一个 Generation 的 Create 或 Destroy 生命周期行为；必要的外部副作用意图/结果持久化，但不是由 daemon 逐 Terraform 命令派发的 durable task。
 _Avoid_: Update, worker process, one Terraform command
 
+**Execution Attempt**:
+一个 Runner Operation 中的一次实际基础设施执行尝试；同一 Destroy 的后续尝试拥有独立结果和日志，不能覆盖前一次证据。
+_Avoid_: Workflow Job, workflow rerun, log chunk
+
+**Operation Log**:
+一个 Execution Attempt 的基础设施执行输出及其完整性记录；它可用于后续排障，但不能证明资源已安全销毁或 job 已成功。
+_Avoid_: Terraform state, lifecycle authority, workflow step log
+
+**Setup Info**:
+随 Runner 交付、在 workflow job 初始化时展示的 provisioning 信息；它是创建日志的可公开副本，不是运行结果或完整诊断档案。
+_Avoid_: Operation Log archive, workflow output, job conclusion
+
 **Quarantine**:
 Shaula 无法证明某个 Runner Generation 的资源身份、状态归属或安全销毁条件时进入的持久化隔离状态；该 Generation 继续占用容量，直到显式、可审计的恢复流程解决。
 _Avoid_: Retry loop, Destroyed, forgotten resource
@@ -173,7 +189,7 @@ GitHub Actions Service 为一个 Scale Set 最近一次报告的已分配 job �
 _Avoid_: Queue length, event count
 
 **Job Observation**:
-Shaula 收到的 JobStarted 或 JobCompleted 提示；它可能重复、乱序或缺失，不是审计日志。
+Shaula 收到的 workflow job 可用、分配、开始或完成提示；它可能重复、乱序或缺失，保留这些观测也不使其成为完整的 GitHub 审计记录。
 _Avoid_: Durable event, source of truth
 
 **Retirement**:

@@ -7,6 +7,8 @@ The UI is an API client, not a second source of Fleet/Profile desired state.
 
 ## Contracts
 
+**Jobs** 导航及 `/jobs`、`/jobs/{id}` 以 GitHub workflow job 为主，显示已观测状态、关联 Runner 和 Apply/Destroy 各次尝试的日志。未关联的预热/创建失败 Runner 有次级排障入口。身份与结论的来源、日志保留与权限、轮询/分页及失败状态由 [spec 0019](0019-workflow-jobs-and-operation-logs.md) 唯一维护；本 UI 不把 Terraform operation 当成 Workflow Job。
+
 The multi-account GitHub authentication form and per-binding status
 are specified in [spec 0011 §6](0011-multi-account-github-authentication.md#6-http-and-ui-contract).
 Authentication inventory and detail discovery are specified in

@@ -88,6 +88,7 @@ The Secret has all of the following properties：
 - type `Opaque`；
 - `immutable: true`；
 - one required data key containing only the encoded JIT configuration；
+- a new Template Revision opting into [spec 0019](0019-workflow-jobs-and-operation-logs.md) may also carry its versioned Setup Info descriptor in this same Secret; it grants only this Generation's Create-log read capability, never worker/control/state access；
 - generation-scoped name and ownership markers；
 - no reusable GitHub App key, PAT, Kubernetes credential or unrelated value.
 
@@ -101,6 +102,8 @@ The accepted handoff is a reviewed init-to-memory path：
 6. conformance proves JIT is absent from every process command line, the consumed staged-memory path, ordinary inherited job environment, workflow context and other intentionally workflow-facing state before GitHub reports the Runner ready. It does not claim isolation from process inspection inside the Runner Execution Domain.
 
 JIT never appears in the declarative Pod/container environment, args or command, and never enters management HTTP reads, audit, logs or telemetry. Directly mounting the Secret into the runner container is forbidden by this Profile contract. Runner startup unset prevents ordinary child-environment inheritance but is not `/proc` or memory isolation；v1 accepts that workflow code with process-inspection capability inside the same Runner Execution Domain may read `Runner.Listener` initial environment or memory. That residual risk does not block activation and makes no memory-zeroization claim. This exception applies only to JIT：GitHub App/PAT/derived control-plane tokens, provider credentials, sensitive Template bindings and Shaula HTTP/SQLite credentials never enter the Runner Execution Domain. The exact bindings, runtime/trust policy and Runner/init/shim image tuple are release-gated by the attestation in section 10.
+
+For the explicit Setup Info contract in [spec 0019](0019-workflow-jobs-and-operation-logs.md), the init container only copies the additional descriptor to the memory volume. The main runner container's pinned shim performs bounded HTTPS retrieval and writes `.setup_info` before starting the Listener. Init must not wait for apply completion, because the pinned provider waits for Pod Running. This separately scoped log-read capability is the sole addition to the JIT-only bootstrap credential rule above; it is not a management, worker/control/state or SQLite credential. Old Template revisions retain the original contract.
 
 The init container, runner container and bootstrap shim images or executables are fixed by digest in the immutable Profile. The Pod has no long-running sidecar in v1. A normal job later receives GitHub's per-job `GITHUB_TOKEN`; a custom PAT is visible only if the workflow owner deliberately stores and references it as an Actions Secret. Neither fact authorizes exposure of Shaula control-plane credentials.
 

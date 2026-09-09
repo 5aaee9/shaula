@@ -175,6 +175,8 @@ Lifecycle-visible template failures use only the provider-neutral reason `Templa
 
 ## 5. Saved-plan admission and provenance
 
+Operation Log 捕获、保留和安全发布由 [spec 0019](0019-workflow-jobs-and-operation-logs.md) 维护。其显式 `input_contract_version: 2` / `setup_info_contract` manifest 扩展只用于新 Template Revision；本文的 v1 input 示例和既有 Generation 保持原格式，`shaula_result` 不变。日志内容在 apply 后生成，不修改原始 input 或 saved plan，也不增加 Update。
+
 Every mutating Terraform invocation applies a previously inspected saved plan, never a directory. The worker retains protected plan provenance in its exclusive Workspace: plan digest, exact engine executable/kind/version/binary digest, artifact/protected-input digests, backend Generation identity/revision and Terraform lineage/serial, Generation ID and current Worker Claim. This does not require a central per-command operation record or promise that Create resumes from an arbitrary saved plan after a crash.
 
 Immediately before spawning apply, the Template Runtime re-hashes the plan, inputs and engine binary and re-reads the state lineage/serial. Any mismatch, missing member or changed engine/artifact rejects the plan. The plan file, inspection result and provenance record are credential-grade and never appear in HTTP or telemetry.
@@ -238,6 +240,8 @@ Access to the Docker daemon is effectively host-administrative. When the daemon 
 
 ## 9. Security
 
+For a new Template Revision explicitly opting into [spec 0019](0019-workflow-jobs-and-operation-logs.md), its separately scoped Setup Info read capability is an additional permitted bootstrap value alongside JIT. It only reads this Generation's sanitized Create projection, cannot access management/control/state/SQLite, and does not relax protection of any credential classes below. Existing v1 inputs and JIT-only Templates are unchanged.
+
 Template artifact publication is equivalent to deploying code that can run provider plugins with infrastructure credentials. The HTTP authorization model separates `template.publish` from `fleet.write`, `auth.write` and read-only roles.
 
 The Template Runtime uses a per-process environment allowlist, dedicated Workspace, restricted files, bounded output and redaction. It never forwards the daemon's full environment. Terraform state, plans, variable files, provider credentials, JIT, Docker registry credentials and sensitive Profile bindings are credential-grade data. JIT never enters Shaula/Terraform argv or environment, declarative Pod/container env/args/commands, ordinary inherited job environment, workflow context, management HTTP reads, audit, logs or telemetry. Bundled Profiles prohibit secret-bearing argv. Their pinned shim may set only `ACTIONS_RUNNER_INPUT_JITCONFIG` on the spawned `Runner.Listener`; `CommandSettings` captures it into a private in-memory map and unsets the ordinary environment entry before `GetJitConfig()` reads that copy. Linux may retain initial exec environment through `/proc/<pid>/environ`, so v1 explicitly accepts possible JIT access by workflow code with process-inspection capability inside the same Runner Execution Domain. This is not an activation failure and no process-isolation or memory-zeroization claim is made. The exception is JIT-only；GitHub control-plane/derived tokens, provider credentials, sensitive Template bindings and Shaula HTTP/SQLite credentials never enter that domain.
@@ -247,6 +251,8 @@ Schema-sensitive Kubernetes/Docker bindings are write-only HTTP fields whose ori
 The Kubernetes and Docker provider credentials are not GitHub Control-Plane Credentials. Neither class reaches the Runner. Workflow credentials such as per-job `GITHUB_TOKEN` remain a separate GitHub/workflow concern.
 
 ## 10. Day 0 observability
+
+[Spec 0019](0019-workflow-jobs-and-operation-logs.md) 增加独立的已脱敏 Operation Log 制品及受控读取，不把正文放入下述 spans/metrics。Runner 可接收的独立 Setup Info capability 仅限本 Generation 的 Create 安全投影，是本文新增的窄化 bootstrap 能力；GitHub/provider/management/control/state/SQLite credentials 仍不进入 Runner。Operator 与 workflow 发布策略分别验证，不能从 raw diagnostics 直接输出。
 
 Generic spans cover Profile validation, artifact materialization, `init`, `apply`, read-only diagnosis, `destroy`, output classification and state-empty verification. Attributes include bounded engine/operation/result and safe Profile/Generation correlation in spans/logs. They do not contain argv, environment, Profile input values, output bodies, state or provider responses.
 

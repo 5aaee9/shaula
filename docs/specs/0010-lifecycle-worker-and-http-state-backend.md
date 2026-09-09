@@ -76,6 +76,8 @@ Credential 由 daemon 通过受保护 handoff 交付。Terraform 的 password �
 
 ## 5. Terraform HTTP backend wire contract
 
+[Spec 0019](0019-workflow-jobs-and-operation-logs.md) 的 Operation Log 使用独立存储接口，不复用本节 state route、lock 或 state capability。未来 worker 只可向 daemon 交付本 Claim/Generation 的日志；Runner 仅可通过另一独立 capability 读取 Create 安全投影，仍不得访问本规范的内部 capabilities/listener。
+
 State key 由 daemon 的 Generation identity 派生，不是 caller 的任意 workspace/path。v1 对一个 URI 提供以下固定协议，无需额外 method aliases：
 
 `/internal/v1/generations/{generationId}/state`

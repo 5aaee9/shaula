@@ -28,6 +28,8 @@ Shaula 是 pure-Rust 多进程执行模型：一个 daemon 管理 Fleet/GitHub/�
 
 OpenTelemetry tracing、metrics 和日志关联是 Day 0 Interface。HTTP commit、Profile validation/activation、Auth rollout、Fleet session、reconcile、Runner lifecycle、IaC subprocess、recovery 和 reaper 从首次实现开始就必须可观察。
 
+Web UI 的 Jobs 以已观测 GitHub workflow job 为主，关联 Runner Generation 与持久化 Apply/Destroy 日志。日志保留、状态来源、未关联 Runner 排障入口和容器 Setup Info 的唯一契约见 [spec 0019](0019-workflow-jobs-and-operation-logs.md) / [ARD-0023](../ard/0023-retain-operation-logs-and-present-workflow-jobs.md)；它们不改变 demand、Busy-safe removal 或资源销毁的事实来源。
+
 详细契约：
 
 - [Fleet HTTP Control-Plane Specification](0002-fleet-http-control-plane.md)
@@ -36,6 +38,7 @@ OpenTelemetry tracing、metrics 和日志关联是 Day 0 Interface。HTTP commit
 - [Template Profile Runtime Specification](0004-template-profile-runtime.md)
 - [Profile HTTP Control-Plane Specification](0005-profile-http-control-plane.md)
 - [Rust Workspace Architecture Specification](0007-rust-workspace-architecture.md)
+- [Workflow Jobs and retained operation logs](0019-workflow-jobs-and-operation-logs.md)
 
 相关 Architecture Decision Records：
 
@@ -524,6 +527,8 @@ Shaula MUST 在 ledger migration 或 remote side effect 之前由 `shaula-observ
 process lifetime、listener lifetime 和 successful empty poll 不建立长时间 span；用 metrics 表示 uptime/session age。跨重启与异步 handoff 通过持久化 correlation context 建 span links，而不伪装成原 request 的长子 span。
 
 ### 13.2 Metrics and logs
+
+Operation Log 是 spec 0019 定义的专门持久制品，不通过 OTel/普通请求日志承载正文。经脱敏的 operator 读取与面向 workflow 的 Setup Info 采用各自发布策略；raw credentials、state/input body 与 provider secret 仍不得公开。新增 Runner Setup Info capability 只允许读取本 Generation 的 Create 安全投影，经独立 loopback listener/HTTPS proxy 交付；它不属于管理或 worker/control/state 通道，也不能访问它们。
 
 Metrics 至少覆盖 HTTP、registry admission、desired-to-observed lag、Profile Change、Auth rollout、active Fleets、capacity/occupancy、reconcile/queue、Runner Operation、GitHub access、IaC operation、listener/inventory/reaper、quarantine 和 exporter degradation。
 

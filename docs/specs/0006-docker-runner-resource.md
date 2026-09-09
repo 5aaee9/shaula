@@ -52,6 +52,8 @@ Plaintext unauthenticated TCP access is outside v1. A later remote-Docker Profil
 
 The Template Runtime obtains JIT only after artifact materialization and locked initialization. It writes JIT as the sensitive fixed input `shaula.jit_config`, without placing it in Shaula or Terraform argv/environment, logs or telemetry. The Docker Profile sets `docker_container.upload.content = var.shaula.jit_config` to copy the value to a fixed file before container start；it does not depend on a host source-file path.
 
+New Template revisions may explicitly opt into the versioned Setup Info contract in [spec 0019](0019-workflow-jobs-and-operation-logs.md). The provider uploads its additional protected descriptor before start; the shim retrieves only this Generation's Create-log projection and atomically writes `.setup_info` before the Listener. The wait is bounded and independent of JIT failure handling. No Docker CLI, host Workspace mount, second apply or Listener-dependent provider health wait is introduced. Old revisions use their original bootstrap contract; log retention and UI reads do not depend on delivery support.
+
 A reviewed bootstrap shim:
 
 1. reads the fixed JIT file exactly once;

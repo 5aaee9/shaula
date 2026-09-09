@@ -14,6 +14,7 @@
 | Profile publication、retirement、sensitive reads、attestation | [spec 0005](specs/0005-profile-http-control-plane.md) |
 | Rust crate ownership 与依赖方向 | [spec 0007](specs/0007-rust-workspace-architecture.md) |
 | UI 行为 | [spec 0008](specs/0008-embedded-web-ui.md) |
+| Workflow Jobs、Apply/Destroy 日志保留与 Runner Setup Info 交付 | [spec 0019](specs/0019-workflow-jobs-and-operation-logs.md) / [ARD-0023](ard/0023-retain-operation-logs-and-present-workflow-jobs.md)；目标已接受，尚未实现 |
 | Fleet Template inputs 可视化编辑 | [spec 0014](specs/0014-visual-template-inputs.md) / [ADR-0018](ard/0018-render-fleet-inputs-from-approved-template-options.md) |
 | 数据库模板库、默认文件导入与 Terraform 变量发现 | [spec 0015](specs/0015-template-library-and-variable-discovery.md) / [ARD-0019](ard/0019-store-template-sources-and-discover-terraform-variables.md) |
 | Fleet authentication/template Profile 服务端列表选择 | [spec 0016](specs/0016-fleet-profile-selection.md) / [ARD-0020](ard/0020-load-fleet-profile-choices-from-registry.md) |
@@ -40,6 +41,7 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 - Fleet Decommission 保留空 Scale Set；Profile DELETE 是异步 retirement，不因正在使用而改成同步删除或 force delete。
 - Template 当前候选静态校验通过后自动激活，已有 Ready 在扫描时重新校验并激活；独立 `template.attest` 的 exact conformance 记录作为运行验证证据保留，不再控制激活，见 spec 0017。
 - 默认 Docker Runner 不挂载 host socket；JIT 同 Runner Execution Domain 的进程检查风险、Kubernetes name-based deletion 风险和同 OS identity IaC children 的 ambient host-admin 风险按相应 ARD 记录。
+- Jobs 以已观测 workflow job 为主；Apply/Destroy 日志属于 Generation 的各次执行尝试，销毁后仍按独立策略保留。Apply 的安全投影由主容器 shim 在 Listener 启动前有界取回；交付凭据与管理、worker/state 权限分离，见 spec 0019。
 
 以上是设计基线；实现差距必须留在 implementation status，不能通过修改此表宣称已完成。
 
@@ -50,8 +52,8 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 | ID | 类型 | 尚缺事实或选择 | 所属契约 |
 | --- | --- | --- | --- |
 | D1 | 协议验收 | GitHub App × organization/repository 的真实 GitHub 验收，包含多 org 和个人动态仓库路由；PAT 支持已由 spec 0018 明确取消，不再待决定 | 0001 §6.3 / 0011 / 0018 |
-| D2 | 运行策略 | Changes、幂等记录、audit、tombstones、retired credentials、artifacts、state snapshots、emergency state 与 Workspace 的 retention 时限；原始凭据的外部撤销时机 | 0005 §7 |
-| D3 | 运行策略 | operation/recovery timeout、retry budget、reaper interval、worker/backend body/rate/backlog/concurrency 的最终默认值与硬上限；OIDC 已有具体值见部署说明，不重新标为待定 | 0001 §5 / 0009 |
+| D2 | 运行策略 | Changes、幂等记录、audit、tombstones、retired credentials、artifacts、state snapshots、emergency state 与 Workspace 的 retention 时限；原始凭据的外部撤销时机。Operation Log/Jobs 历史的独立默认值已由 spec 0019 冻结，不扩展为上述恢复材料的 GC 规则 | 0005 §7 / 0019 §5 |
+| D3 | 运行策略 | operation/recovery timeout、retry budget、reaper interval、worker/backend body/rate/backlog/concurrency 的最终默认值与硬上限；OIDC 已有具体值见部署说明，Operation Log/Setup Info 的默认值见 spec 0019，不重新标为待定 | 0001 §5 / 0009 / 0019 |
 | D4 | 持久格式，阻塞发布冻结 | `bindings_digest` 是否继续作为独立 commitment，以及 exact Revision/incarnation 绑定、编码和兼容迁移；本轮不新增 bd2/HMAC 格式，不重写旧记录 | 0004 §3 / 0005 §5 |
 | R1 | 发布配置与验收 | Rust toolchain/features、Terraform binary、provider locks/checksums、Runner/init/shim images、runtime/trust policy 与 conformance suite 的 exact tuple | 0003 / 0004 / 0006 / 0007 |
 | R2 | 协议验收 | Go oracle 的 commit/module/checksum、获取方式和完整 differential suite；真实已注册 OIDC Provider 的 browser/API 验收 | 0007 §4 / 0009 §7 |

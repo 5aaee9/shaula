@@ -16,6 +16,26 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Jobs and retained operation logs: specification only (2026-09-09)
+
+[Spec 0019](specs/0019-workflow-jobs-and-operation-logs.md) and
+[ARD-0023](ard/0023-retain-operation-logs-and-present-workflow-jobs.md) now define
+workflow-job-oriented Jobs, retained Apply/Destroy attempt logs, and optional
+bootstrap delivery of the Create apply projection through `.setup_info`.
+No implementation or real Runner acceptance is claimed by this documentation change.
+
+The current engine retains only bounded stdout/stderr prefixes in memory
+(`shaula-template/src/engine.rs`); `runtime.rs` discards the successful apply output.
+The wire mapping in `shaula-scaleset/src/port_jobs.rs` omits workflow metadata/result,
+and `shaula-store/src/listener_observations.rs` omits numeric Runner identity.
+There is no Jobs API/page, durable Operation Log archive, `logs.read` permission,
+or Setup Info delivery listener/shim contract yet. Production still uses the
+daemon-owned local-state Runtime; the future worker/state integration remains staged.
+
+Implementation must separately verify observation/reassignment identity, safe
+streaming capture, retention/recovery, OIDC log reads, and both real platform
+bootstrap paths. Older generations have no retroactively generated logs or metadata.
+
 ## Fleet listener and Pending diagnosis repair (2026-09-08)
 
 This increment closes the missing listener/message-ledger composition seam under
