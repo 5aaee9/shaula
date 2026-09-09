@@ -269,10 +269,24 @@ class SafetyTests(unittest.TestCase):
             ("Env", ["ACTIONS_RUNNER_INPUT_JITCONFIG=jit-canary"] * 2),
             ("Env", ["ACTIONS_RUNNER_INPUT_JITCONFIG=jit-canary", "JIT=jit-canary"]),
             ("Env", ["ACTIONS_RUNNER_INPUT_JITCONFIG=jit-canary", "GH_TOKEN=secret"]),
-            ("Env", ["ACTIONS_RUNNER_INPUT_JITCONFIG=jit-canary", "actions_runner_input_token=secret"]),
+            (
+                "Env",
+                [
+                    "ACTIONS_RUNNER_INPUT_JITCONFIG=jit-canary",
+                    "actions_runner_input_token=secret",
+                ],
+            ),
             ("Labels", {"shaula.generation": "jit-canary"}),
             ("Cmd", ["/usr/local/bin/bootstrap-shim"]),
-            ("Cmd", ["/home/runner/bin/Runner.Listener", "run", "--jitconfig", "jit-canary"]),
+            (
+                "Cmd",
+                [
+                    "/home/runner/bin/Runner.Listener",
+                    "run",
+                    "--jitconfig",
+                    "jit-canary",
+                ],
+            ),
             ("User", "root"),
             ("User", "root:1001"),
             ("User", "000:1001"),
@@ -288,14 +302,20 @@ class SafetyTests(unittest.TestCase):
     def test_generation_labels_must_match_when_supplied(self):
         expected = {"shaula.generation": "g1"}
         inspect_container(
-            container(), "shaula-smoke-g1", "sha256:abcd", "jit-canary",
+            container(),
+            "shaula-smoke-g1",
+            "sha256:abcd",
+            "jit-canary",
             expected_labels=expected,
         )
         document = container()
         document["Config"]["Labels"]["shaula.generation"] = "g2"
         with self.assertRaises(Rejected):
             inspect_container(
-                document, "shaula-smoke-g1", "sha256:abcd", "jit-canary",
+                document,
+                "shaula-smoke-g1",
+                "sha256:abcd",
+                "jit-canary",
                 expected_labels=expected,
             )
 

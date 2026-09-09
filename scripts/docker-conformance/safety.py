@@ -248,12 +248,18 @@ def inspect_container(
     )
     if expected_labels is not None:
         require(
-            all(config["Labels"].get(key) == value for key, value in expected_labels.items()),
+            all(
+                config["Labels"].get(key) == value
+                for key, value in expected_labels.items()
+            ),
             "container_ownership_labels_mismatch",
         )
     environment = config.get("Env", [])
     require(isinstance(environment, list), "container_environment_shape")
-    require(all(isinstance(entry, str) for entry in environment), "container_environment_shape")
+    require(
+        all(isinstance(entry, str) for entry in environment),
+        "container_environment_shape",
+    )
     native_jit = "ACTIONS_RUNNER_INPUT_JITCONFIG=" + jit
     require(environment.count(native_jit) == 1, "container_native_jit_input")
     for entry in environment:

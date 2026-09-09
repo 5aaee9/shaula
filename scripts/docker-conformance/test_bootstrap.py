@@ -15,10 +15,12 @@ from test_safety import container
 class Commands:
     def __init__(self):
         self.info = container()
-        self.info.update({
-            "Id": "a" * 64,
-            "State": {"Running": False, "Status": "created"},
-        })
+        self.info.update(
+            {
+                "Id": "a" * 64,
+                "State": {"Running": False, "Status": "created"},
+            }
+        )
         self.info["Config"]["Labels"]["shaula.fleet"] = "smoke"
         self.events = []
         self.wrong_readback = False
@@ -51,10 +53,12 @@ class BootstrapTests(unittest.TestCase):
             "image_id": "sha256:abcd",
             "generation_id": "g1",
         }
-        self.inputs = {"shaula": {
-            "jit_config": "jit-canary",
-            "generation": {"fleet_key": "smoke"},
-        }}
+        self.inputs = {
+            "shaula": {
+                "jit_config": "jit-canary",
+                "generation": {"fleet_key": "smoke"},
+            }
+        }
         self.report = {"checks": {}}
         self.saved_journals = []
 
@@ -70,14 +74,17 @@ class BootstrapTests(unittest.TestCase):
 
     def test_stopped_container_marker_is_verified_before_journaled_start(self):
         self.stage()
-        self.assertEqual(self.commands.events, [
-            "bootstrap_container_inspect",
-            "bootstrap_setup_info_copy",
-            "bootstrap_setup_info_readback",
-            "journal_saved",
-            "bootstrap_start",
-            "journal_saved",
-        ])
+        self.assertEqual(
+            self.commands.events,
+            [
+                "bootstrap_container_inspect",
+                "bootstrap_setup_info_copy",
+                "bootstrap_setup_info_readback",
+                "journal_saved",
+                "bootstrap_start",
+                "journal_saved",
+            ],
+        )
         self.assertTrue(self.saved_journals[0]["start_possible"])
         self.assertNotIn("bootstrap_completed", self.saved_journals[0])
         self.assertTrue(self.saved_journals[1]["bootstrap_completed"])

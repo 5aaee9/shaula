@@ -91,9 +91,11 @@ fn resolve(name: &str) -> Result<PathBuf, TemplateOutcomeError> {
     // the executable. Resolve before env_clear so the child needs no PATH.
     let paths = std::env::var_os("PATH").ok_or_else(failed)?;
     #[cfg(windows)]
-    let name = format!("{name}.exe");
+    let executable_name = format!("{name}.exe");
+    #[cfg(windows)]
+    let name = executable_name.as_str();
     for directory in std::env::split_paths(&paths).filter(|path| path.is_absolute()) {
-        let candidate = directory.join(&name);
+        let candidate = directory.join(name);
         if candidate.is_file() {
             return candidate.canonicalize().map_err(|_| failed());
         }

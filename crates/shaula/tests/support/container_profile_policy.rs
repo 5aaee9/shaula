@@ -113,7 +113,7 @@ fn cleanup_engine(directory: &Path) -> Result<std::path::PathBuf, Box<dyn std::e
     #[cfg(windows)]
     let (name, body) = ("engine.cmd", "@echo off\r\nif \"%1\"==\"version\" (echo {\"terraform_version\":\"1.9.8\"} & exit /b 0)\r\nif \"%1\"==\"state\" (type terraform.tfstate & exit /b 0)\r\nexit /b 1\r\n");
     #[cfg(not(windows))]
-    let (name, body) = ("engine.sh", "#!/bin/sh\nif [ \"$1\" = version ]; then printf '%s\\n' '{\"terraform_version\":\"1.9.8\"}'; exit 0; fi\nif [ \"$1\" = state ]; then /bin/cat terraform.tfstate; exit 0; fi\nexit 1\n");
+    let (name, body) = ("engine.sh", "#!/bin/sh\nif [ \"$1\" = version ]; then printf '%s\\n' '{\"terraform_version\":\"1.9.8\"}'; exit 0; fi\nif [ \"$1\" = state ]; then while IFS= read -r line; do printf '%s\\n' \"$line\"; done < terraform.tfstate; printf '%s' \"$line\"; exit 0; fi\nexit 1\n");
     let path = directory.join(name);
     std::fs::write(&path, body)?;
     #[cfg(unix)]

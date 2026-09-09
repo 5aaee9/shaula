@@ -60,7 +60,8 @@ def prepare(args, commands, workspace, evidence, report):
     require(runner_name == generation["runner_name"], "jit_runner_name_mismatch")
     image = args.image
     require(
-        image and re.fullmatch(
+        image
+        and re.fullmatch(
             r"ghcr\.io/actions/actions-runner(?::[A-Za-z0-9_.-]+)?@sha256:[a-f0-9]{64}",
             image,
         ),
@@ -163,13 +164,15 @@ def prepare(args, commands, workspace, evidence, report):
     )
     after = resource["change"]["after"]
     require(
-        after.get("must_run") is False and after.get("rm") is False
+        after.get("must_run") is False
+        and after.get("rm") is False
         and after.get("start") is False,
         "template_lifecycle_flags",
     )
     require(
         after.get("command") == ["/home/runner/bin/Runner.Listener", "run"]
-        and after.get("env") == ["ACTIONS_RUNNER_INPUT_JITCONFIG=" + shaula["jit_config"]]
+        and after.get("env")
+        == ["ACTIONS_RUNNER_INPUT_JITCONFIG=" + shaula["jit_config"]]
         and not after.get("upload"),
         "template_native_bootstrap_required",
     )
@@ -208,7 +211,10 @@ def inspect(args, commands, journal, inputs, report):
         "container", "inspect", journal["container_id"], phase="container_inspect"
     )[0]
     inspect_container(
-        info, journal["name"], journal["image_id"], inputs["shaula"]["jit_config"],
+        info,
+        journal["name"],
+        journal["image_id"],
+        inputs["shaula"]["jit_config"],
         expected_labels={
             "shaula.fleet": inputs["shaula"]["generation"]["fleet_key"],
             "shaula.generation": journal["generation_id"],
