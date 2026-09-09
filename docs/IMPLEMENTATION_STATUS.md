@@ -16,6 +16,36 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Proxmox runner template (2026-09-09)
+
+[Spec 0022](specs/0022-proxmox-runner-template.md) and
+[ARD-0026](ard/0026-provision-proxmox-runners-with-nocloud.md) are implemented locally.
+The bundled `proxmox` source uses locked `indexyz/proxmox` 0.4.0 to manage a full
+VM clone and a Generation-owned NoCloud ISO, with fixed DHCP and publisher-only
+platform bindings. An explicit operator-managed VM image contract preserves
+existing container content-pin rules. The image itself is not content-pinned.
+Default import and Nix packaging retain root `.tftpl` assets; the database recovery
+test restores all render sources after both local cache and archive are removed.
+
+Local verification passed: 652 unfiltered Rust workspace tests (2 platform tests
+skipped), the literal AGENTS filtered suite (532 passed, 122 skipped), strict
+all-feature/all-target workspace Clippy, rustfmt, and the 400-line Rust file gate.
+Actual Terraform 1.9.8 plus the locked provider against a loopback HTTPS PVE fixture
+passed six negative plans, custom-script/JIT rendering, token splitting, upload →
+clone → attach → start → stop → VM delete → ISO delete, and final empty state.
+Normal refresh-enabled Destroy succeeds after the source template disappears.
+The captured Create/Destroy plan projections also pass Shaula's production plan
+admission API. Nine mocked guest shell tests cover handoff, failure propagation,
+uppercase `CIDATA`, seed restrictions and prevention of a repeated registration.
+
+Test entry points are `templates/proxmox/tests/conformance.py`,
+`scripts/proxmox-conformance/test_guest_bootstrap.py`,
+`crates/shaula-template/src/proxmox_tests.rs`, and the artifact library sync tests.
+Real PVE guest boot, Linux permissions/PAM/systemd/cloud-init, DHCP, GitHub JIT/job
+execution and safe removal remain unverified. Nix installation rules were inspected;
+the Linux Nix package was not built and this feature has not been deployed.
+These local checks do not constitute platform conformance or production readiness.
+
 ## Template approval controls and optional inputs (2026-09-09)
 
 [Spec 0015](specs/0015-template-library-and-variable-discovery.md) and

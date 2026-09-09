@@ -33,7 +33,7 @@ crates/
   shaula-observability/      # OTel/tracing setup, exporters and redaction policy
 ```
 
-Kubernetes and Docker do not get production crates. Their implementation remains Terraform artifacts under `templates/`; platform-aware conformance harnesses are test-only and outside the `shaula` normal/build dependency closure.
+Kubernetes, Docker and Proxmox do not get production crates. Their implementation remains Terraform artifacts under `templates/`; platform-aware conformance harnesses are test-only and outside the `shaula` normal/build dependency closure.
 
 ## 2. Dependency direction
 

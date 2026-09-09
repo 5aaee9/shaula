@@ -6,7 +6,7 @@
 - Supported scopes: organization and repository
 - Supported GitHub authentication: schema 2 GitHub App with explicit TargetPolicy (spec 0018)
 - Platform SDK clients: none; fixed host container bootstrap is owned by spec 0020
-- v1 bundled Template Platforms: Kubernetes and Docker
+- Bundled Template Platforms: Kubernetes, Docker and Proxmox (spec 0022)
 - Lifecycle primitives: Create and Destroy only
 - Lifecycle execution: one `shaula job` per Generation; exec Executor only in v1
 - Terraform state authority: daemon HTTP backend backed by SQLite
@@ -430,7 +430,7 @@ worker 从原始 materials 和 database state 执行 delete-only saved plan；pa
 
 ### 10.4 Template specializations
 
-核心 lifecycle 不知道 Template Platform。v1 随附 Kubernetes 与 Docker 两个 Terraform Profile；其全部 resource shape、bootstrap、provider access 和安全约束分别由 [Kubernetes Runner Resource Specification](0003-kubernetes-runner-resource.md)、[Docker Runner Resource Specification](0006-docker-runner-resource.md)、[Template Profile Runtime Specification](0004-template-profile-runtime.md)、Profile artifact 和外部 integration harness 定义。
+核心 lifecycle 不知道 Template Platform。随附 Kubernetes、Docker 与 Proxmox Terraform Profile；其全部 resource shape、bootstrap、provider access 和安全约束分别由 [Kubernetes Runner Resource Specification](0003-kubernetes-runner-resource.md)、[Docker Runner Resource Specification](0006-docker-runner-resource.md)、[Proxmox Runner Template](0022-proxmox-runner-template.md)、[Template Profile Runtime Specification](0004-template-profile-runtime.md)、Profile artifact 和外部 integration harness 定义。
 
 Shaula 不新增通用平台 preflight 或 reconcile。Profile-side Terraform checks 和外部验收观察平台；spec 0020 仅允许固定 bootstrap 对 exact 新建资源的身份及启动门槛进行检查，不能替代 GitHub readiness/safe-removal 权威。
 The Kubernetes Profile uses a user-published, Revision-pinned namespace binding and a collision-resistant Generation name persisted before external effects；the bundled Profile uses that exact value as both objects' `metadata.name`, with kind separating their Resource Keys. v1 accepts the HashiCorp provider's Terraform-state-driven namespace/name deletion and never calls that name a Kubernetes UID. The target binding and namespace must retain continuity, and all namespace writers must reserve Shaula names until Destroy；if an external actor repoints the target, recreates the namespace or replaces an object under the same name, a later Destroy may delete that replacement. This residual risk is accepted, while missing/corrupt state still quarantines and never authorizes reconstructed-name deletion.
@@ -532,7 +532,7 @@ Operation Log 是 spec 0019 定义的专门持久制品，不通过 OTel/普通�
 
 Metrics 至少覆盖 HTTP、registry admission、desired-to-observed lag、Profile Change、Auth rollout、active Fleets、capacity/occupancy、reconcile/queue、Runner Operation、GitHub access、IaC operation、listener/inventory/reaper、quarantine 和 exporter degradation。
 
-属性必须来自 finite allowlist。`action=create|destroy`；Template `platform=kubernetes|docker|other` 仅作为 bounded metadata。Fleet/Profile key、revision、artifact digest、actor、Target owner/repository、Runner/job/Workspace/resource identity、URL 和 error text 不得作为 metric labels。
+属性必须来自 finite allowlist。`action=create|destroy`；Template `platform=kubernetes|docker|proxmox|other` 仅作为 bounded metadata。Fleet/Profile key、revision、artifact digest、actor、Target owner/repository、Runner/job/Workspace/resource identity、URL 和 error text 不得作为 metric labels。
 
 结构化日志始终写 local sink，并在适用时携带 `trace_id`、`span_id` 和高基数 correlation identifiers。所有字段经过统一 redaction。SQLite audit 是 mutation audit truth；OTel 可以 sampled/lost，不能替代 audit。
 
@@ -629,7 +629,7 @@ Implementation is incomplete until：
 22. Fleet Decommission 永久停止新 acquisition/Create，允许 cleanup-only Auth Handoff，等待 Busy Runner，Destroy 已知 owned Generations，保留 Scale Set 并写 tombstone；unknown ownership/Quarantine 显示 Blocked 而非假成功。
 23. Day 0 in-memory OTel tests 覆盖 startup、HTTP、Profile/Auth、session、reconcile、Create/Destroy、recovery 和 exporter failure；metric cardinality 有显式上界。
 24. hung exporter 不超过 queue/timeout budget，也不延迟 commit/lifecycle；本地 rate-limited warning 和 counters 可见。
-25. JIT、PAT/App key、derived token、provider credential、Profile sensitive binding、tfvars、state、request body、Authorization 和 OTel headers 不进入任何进程 argv、普通管理读取、audit、log 或 telemetry。JIT 的唯一 Runner env 例外按 spec 0020 使用官方 `ACTIONS_RUNNER_INPUT_JITCONFIG`（Kubernetes 用 Secret 引用）；其他 env/args/metadata 与普通 job environment/context 无这些凭据。Docker 初始配置/env 保留 JIT，因此属于 credential-grade；官方 Runner 捕获并 unset 普通环境项，不表示同域 process isolation。Provider/binding secrets 只进入 exact-Revision IaC 与固定 bootstrap child，GitHub/HTTP/SQLite 控制凭据永不进入 Runner。
+25. JIT、PAT/App key、derived token、provider credential、Profile sensitive binding、tfvars、state、request body、Authorization 和 OTel headers 不进入任何进程 argv、普通管理读取、audit、log 或 telemetry。JIT 的唯一 Runner env 例外按 specs 0020/0022 使用官方 `ACTIONS_RUNNER_INPUT_JITCONFIG`（Kubernetes 用 Secret 引用，Proxmox 用受保护的 cloud-init 文件交付后导出）；其他 env/args/metadata 与普通 job environment/context 无这些凭据。Docker 初始配置/env、Proxmox ISO/cloud-init 缓存可能保留 JIT，因此属于 credential-grade；官方 Runner 捕获并 unset 普通环境项，不表示同域 process isolation。Provider/binding secrets 只进入 exact-Revision IaC 与固定 bootstrap child，GitHub/HTTP/SQLite 控制凭据永不进入 Runner。
 26. graceful stop 和 forced kill 都不删除 Scale Set 或主动 fleet-wide Destroy；backend 在 worker 最后写入后关闭，restart/backup/migration 从 spec 0010 consistency set 恢复。
 
 Verification SHOULD 组合 deep-Interface unit tests、fake Scale Set/IaC Adapters、pinned Go-oracle differential tests、in-memory OTel exporter、crash injection、real GitHub Scale Sets，以及由外部 harness 执行的 Kubernetes/Docker integration tests。外部 harness 的额外平台检查不扩大 spec 0020 明确限定的生产 bootstrap 能力。

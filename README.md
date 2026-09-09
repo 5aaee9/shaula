@@ -8,7 +8,7 @@ Shaula 是一个自托管的 GitHub Actions Runner Scale Set 容量控制器。�
 
 - **按需扩缩容**：为每个 Fleet（一组独立管理的 Runner）设置容量上下限，根据 GitHub 分配的任务调整 Runner 数量。
 - **多 Fleet 管理**：一个服务管理多个组织或仓库的 Scale Set，各自选择 GitHub 认证、基础设施模板和容量策略。
-- **Terraform 模板**：提供 Docker 和 Kubernetes 模板来源，支持导入自定义模板、发布固定版本，并在 UI 中配置 Runner 参数。
+- **Terraform 模板**：提供 Docker、Kubernetes 和 Proxmox 模板来源，支持导入自定义模板、发布固定版本，并在 UI 中配置 Runner 参数。
 - **Jobs 视图**：按 workflow job 展示已观测的状态，关联执行它的 Runner，查看创建和清理进度。
 - **保留执行日志**：按执行尝试保存 apply / destroy 日志，Runner 销毁后仍可在保留期内排查问题；可选将脱敏后的 apply 输出交付到 GitHub 的 **Set up job** 日志。
 - **集中认证与权限**：通过 GitHub App 管理 GitHub 连接，使用 OIDC 登录 Web UI，并分别控制管理操作和日志读取权限。
@@ -32,6 +32,7 @@ Docker、Kubernetes Runner 直接使用 GitHub 官方镜像；Shaula 在容器�
 | 部署、开发与全部文档 | [文档索引](docs/README.md) |
 | 构建二进制、开发 UI 和运行检查 | [开发指南](docs/development.md) |
 | 官方 Runner 镜像与 Setup Info | [Runner 镜像](docs/runner-image.md) · [Setup Info 模板](docs/setup-info-templates.md) |
+| 克隆 Proxmox VM 运行 Runner | [Proxmox Runner](docs/proxmox-runners.md) |
 | 功能完成度与已验证环境 | [实现状态](docs/IMPLEMENTATION_STATUS.md) |
 | 产品契约与架构选择 | [Specs](docs/specs/) · [ARD](docs/ard/) |
 | Fleet、Runner 等领域术语 | [术语表](docs/CONTEXT.md) |

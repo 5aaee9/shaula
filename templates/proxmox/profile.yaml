@@ -1,0 +1,22 @@
+api_version: shaula.io/template-profile/v1
+kind: RunnerTemplateProfile
+platform: proxmox
+runtime:
+  protocol: terraform-cli/v1
+  engine: terraform
+  root_module: .
+  required_version: ">= 1.9, < 2.0"
+bindings_contract: shaula.bindings.proxmox/v1
+vm_image_contract: shaula.proxmox-template/v1
+schemas:
+  bindings: schemas/bindings.schema.json
+  parameters: schemas/parameters.schema.json
+managed_resource_shape:
+  - role: bootstrap
+    terraform_type: proxmox_nocloud_iso
+    exact_count: 1
+  - role: runner
+    terraform_type: proxmox_qemu_vm
+    exact_count: 1
+runner_image_digests: []
+runtime_policy_digest: sha256:afb9f3c5a157d0f3e82d011b5b4e9585bf803844a4667e5b1e5f9d55ab9ac024

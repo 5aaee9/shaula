@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shaula Proxmox Profile bindings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["proxmox_host", "proxmox_token"],
+  "properties": {
+    "proxmox_host": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://[^/?#@\\s]+/?$",
+      "description": "Proxmox HTTPS API origin, for example https://pve.example.com:8006. Use the template node's endpoint with local storage; shared storage must be verified visible on both the upload and VM nodes.",
+      "sensitive": false
+    },
+    "proxmox_token": {
+      "type": "string",
+      "pattern": "^[^\\s!=@]+@[^\\s!=@]+![^\\s!=]+=[^\\s]+$",
+      "maxLength": 8192,
+      "description": "Proxmox API token in user@realm!tokenid=secret format. The first equals sign separates the ID; any later equals signs remain in the secret. Stored as a sensitive publisher binding and never delivered to the VM.",
+      "sensitive": true
+    },
+    "proxmox_insecure": {
+      "type": "boolean",
+      "description": "Skip Proxmox TLS certificate verification, default true. Disable when the API certificate has a trusted issuer.",
+      "sensitive": false
+    },
+    "proxmox_template_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "\\S",
+      "description": "Exact, case-sensitive name of one visible template VM, default GitHub-Runner. The trusted image must contain a clean cloud-init installation, systemd, a runner user, and /opt/actions-runner with its dependencies.",
+      "sensitive": false
+    },
+    "proxmox_vmid_begin": {
+      "type": "integer",
+      "description": "Start automatic VMID allocation at this integer, default 100. Terraform requires a value between 100 and 999999999; existing VMs are never adopted.",
+      "sensitive": false
+    },
+    "proxmox_iso_storage": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+      "description": "Enabled, active storage supporting ISO uploads and visible on the cloned VM's node, default local. One credential-bearing NoCloud ISO is owned per Generation.",
+      "sensitive": false
+    },
+    "proxmox_cloud_init_cmd": {
+      "type": "string",
+      "maxLength": 65536,
+      "description": "Optional publisher-authored Bash preparation body, executed as root before the mandatory JIT handoff. Default empty. Use code only, never credentials; no variable substitution or JIT environment is provided. Failure prevents runner startup. This does not replace the one-job Listener bootstrap.",
+      "sensitive": false
+    }
+  }
+}

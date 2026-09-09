@@ -81,7 +81,7 @@ GitHub 为单个 job 提供的 `GITHUB_TOKEN`，或 workflow 作者显式注入�
 _Avoid_: PAT by default, control-plane credential, runner registration
 
 **Template Platform**:
-承载 Runner Resource 的基础设施环境类型；Kubernetes 与 Docker 是 v1 的两个 Template Platform，其身份只能从 admitted Template Artifact manifest 派生。
+承载 Runner Resource 的基础设施环境类型；Kubernetes、Docker 与 Proxmox 是 bundled Template Platform，其身份只能从 admitted Template Artifact manifest 派生。
 _Avoid_: Template Provider, executor, backend
 
 **Runner Execution Domain**:

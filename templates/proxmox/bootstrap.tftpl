@@ -1,0 +1,43 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+# This unit is never enabled at boot. The durable marker also fails closed on
+# a manual restart or a repeated cloud-init invocation after any partial run.
+chmod 0700 /var/lib/shaula
+mkdir /var/lib/shaula/started
+test -x /opt/actions-runner/bin/Runner.Listener
+id runner >/dev/null
+
+# Publisher-authored preparation code receives no JIT environment. A failed
+# hook prevents registration; its text is data to Terraform, not a template.
+/bin/bash -euo pipefail /var/lib/shaula/pre-start
+rm -- /var/lib/shaula/pre-start
+
+# cloud-final has finished reading the seed. Restrict its guest-side copies
+# and the attached block device before starting any workflow process.
+# The remote ISO and Terraform state still require privileged protection.
+chmod 0700 /var/lib/cloud /run/cloud-init
+udevadm control --reload-rules
+seed=$(blkid -L CIDATA)
+test -b "$seed"
+chmod 0600 "$seed"
+chown root:root "$seed"
+if mounts=$(findmnt -rn -S "$seed" -o TARGET); then
+  while IFS= read -r mountpoint; do
+    test -z "$mountpoint" || umount -- "$mountpoint"
+  done <<< "$mounts"
+else
+  # Exit 1 means the device is already unmounted; other errors fail closed.
+  test "$?" -eq 1
+fi
+
+# No credential enters a command argument or generated executable. The
+# Listener captures this supported environment input and clears it before
+# executing jobs. runuser preserves custom variables while selecting runner.
+ACTIONS_RUNNER_INPUT_JITCONFIG=$(cat -- /var/lib/shaula/jit-config)
+test -n "$ACTIONS_RUNNER_INPUT_JITCONFIG"
+rm -- /var/lib/shaula/jit-config
+export ACTIONS_RUNNER_INPUT_JITCONFIG
+cd /opt/actions-runner
+exec runuser -u runner -- /opt/actions-runner/bin/Runner.Listener run

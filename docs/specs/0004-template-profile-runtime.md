@@ -3,8 +3,12 @@
 - Status: Draft
 - Date: 2026-09-04
 - Platform APIs: no linked SDK; fixed host bootstrap CLI capability under spec 0020
-- v1 bundled Template Platforms: Kubernetes and Docker
+- Bundled Template Platforms: Kubernetes, Docker and Proxmox (spec 0022)
 - IaC engine: Terraform required; OpenTofu gated by compatibility
+
+The operator-managed Proxmox VM image exception, NoCloud carrier and guest JIT environment
+handoff are defined by [spec 0022](0022-proxmox-runner-template.md). Container image pins and
+host bootstrap remain governed by spec 0020; a VM image contract does not enable container hooks.
 
 This specification defines the platform-neutral seam between Shaula and infrastructure templates. It extends the [Multi-Fleet Runner Scale Set Controller Specification](0001-shaula-runner-scale-set.md). Platform details live in the [Kubernetes Runner Resource Specification](0003-kubernetes-runner-resource.md) and [Docker Runner Resource Specification](0006-docker-runner-resource.md), while profile publication is defined by the [Profile HTTP Control-Plane Specification](0005-profile-http-control-plane.md).
 
@@ -258,7 +262,7 @@ The Kubernetes and Docker provider credentials are not GitHub Control-Plane Cred
 
 Generic spans cover Profile validation, artifact materialization, `init`, `apply`, read-only diagnosis, `destroy`, output classification and state-empty verification. Attributes include bounded engine/operation/result and safe Profile/Generation correlation in spans/logs. They do not contain argv, environment, Profile input values, output bodies, state or provider responses.
 
-Metrics use finite operation/result dimensions. The Observability Adapter derives `platform` from the verified artifact manifest and maps it to `kubernetes`, `docker` or `other`; exact Profile keys, revisions, artifact digests, socket paths, namespaces and resource IDs are excluded.
+Metrics use finite operation/result dimensions. The Observability Adapter derives `platform` from the verified artifact manifest and maps it to `kubernetes`, `docker`, `proxmox` or `other`; exact Profile keys, revisions, artifact digests, socket paths, namespaces and resource IDs are excluded.
 
 ## 11. Acceptance criteria
 

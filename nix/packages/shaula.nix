@@ -52,11 +52,16 @@ rustPlatform.buildRustPackage {
     npm exec --prefix web -- tsc --noEmit --project web/tsconfig.json
   '';
   postInstall = ''
-    for name in docker kubernetes; do
+    for name in docker kubernetes proxmox; do
       destination="$out/share/shaula/templates/$name"
       mkdir -p "$destination"
-      cp "templates/$name/profile.yaml" "templates/$name/main.tf" \
+      cp "templates/$name/profile.yaml" \
         "templates/$name/.terraform.lock.hcl" "$destination/"
+      for source in "templates/$name"/*.tf "templates/$name"/*.tf.json "templates/$name"/*.tftpl; do
+        if test -f "$source"; then
+          cp "$source" "$destination/"
+        fi
+      done
       cp -R "templates/$name/schemas" "$destination/"
       if test -f "templates/$name/runtime-policy.md"; then
         cp "templates/$name/runtime-policy.md" "$destination/"

@@ -1,4 +1,6 @@
 templates/docker/** text eol=lf
 templates/kubernetes/** text eol=lf
+templates/proxmox/** text eol=lf
 scripts/docker-conformance/** text eol=lf
+scripts/proxmox-conformance/** text eol=lf
 docs/evidence/docker-smoke-2026-09-08/** text eol=lf

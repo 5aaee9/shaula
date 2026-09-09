@@ -35,6 +35,7 @@ impl TemplateProfileKey {
 pub enum TemplatePlatform {
     Kubernetes,
     Docker,
+    Proxmox,
     Other,
 }
 
@@ -44,6 +45,7 @@ impl TemplatePlatform {
         match value {
             "kubernetes" => TemplatePlatform::Kubernetes,
             "docker" => TemplatePlatform::Docker,
+            "proxmox" => TemplatePlatform::Proxmox,
             _ => TemplatePlatform::Other,
         }
     }
@@ -52,6 +54,7 @@ impl TemplatePlatform {
         match self {
             TemplatePlatform::Kubernetes => "kubernetes",
             TemplatePlatform::Docker => "docker",
+            TemplatePlatform::Proxmox => "proxmox",
             TemplatePlatform::Other => "other",
         }
     }
@@ -80,7 +83,8 @@ pub struct ProfileManifest {
     pub managed_resource_shape: Vec<ManagedResourceRole>,
     /// The exact runner image set the publisher admits and the conformance
     /// run attested. The registry compares the attestation subject against
-    /// THIS list — the only authority (spec 0005 §5.1).
+    /// THIS list — the only authority (spec 0005 §5.1). It is empty only
+    /// when `vm_image_contract` explicitly admits an operator-managed VM image.
     pub runner_image_digests: Vec<String>,
     /// Publisher-declared digest of the pinned runtime policy document.
     pub runtime_policy_digest: String,
@@ -94,6 +98,10 @@ pub struct ProfileManifest {
     /// Explicit permission for the Runtime's fixed post-apply container bootstrap.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_bootstrap_contract: Option<String>,
+    /// Explicit trust in an operator-managed Proxmox base VM; this does not
+    /// claim an immutable image digest or authorize a Runtime bootstrap hook.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vm_image_contract: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -187,43 +195,7 @@ impl ProfileManifest {
                 "managed_resource_shape must declare 1..=8 roles",
             ));
         }
-        if self.runner_image_digests.is_empty() || self.runner_image_digests.len() > 8 {
-            return Err(CoreError::new(
-                ReasonCode::TemplateInvalid,
-                "runner_image_digests must declare 1..=8 admitted images",
-            ));
-        }
-        for image in &self.runner_image_digests {
-            // Immutable content pins only: a mutable tag would let the
-            // conformance subject "match" while a different image ships
-            // (spec 0005 §5.1: finite runner-image DIGEST set).
-            let Some(digest) = image.trim().split_once("@sha256:") else {
-                return Err(CoreError::new(
-                    ReasonCode::TemplateInvalid,
-                    "runner_image_digests entries must be content pins (repo@sha256:<64 hex>)",
-                ));
-            };
-            let digest = digest.1;
-            if digest.len() != 64 || !digest.bytes().all(|b| b.is_ascii_hexdigit()) {
-                return Err(CoreError::new(
-                    ReasonCode::TemplateInvalid,
-                    "runner_image_digests sha256 digest must be exactly 64 hex characters",
-                ));
-            }
-        }
-        let mut images: Vec<&str> = self
-            .runner_image_digests
-            .iter()
-            .map(|s| s.as_str())
-            .collect();
-        images.sort_unstable();
-        images.dedup();
-        if images.len() != self.runner_image_digests.len() {
-            return Err(CoreError::new(
-                ReasonCode::TemplateInvalid,
-                "duplicate runner_image_digests entries",
-            ));
-        }
+        self.validate_image_contract()?;
         if self.runtime_policy_digest.trim().is_empty() {
             return Err(CoreError::new(
                 ReasonCode::TemplateInvalid,
@@ -303,6 +275,10 @@ pub use setup_info::{SetupInfoDescriptor, SETUP_INFO_CONTRACT};
 #[path = "template_container.rs"]
 mod container;
 pub use container::CONTAINER_BOOTSTRAP_CONTRACT;
+
+#[path = "template_image.rs"]
+mod image;
+pub use image::PROXMOX_VM_IMAGE_CONTRACT;
 
 fn default_input_contract_version() -> u32 {
     1

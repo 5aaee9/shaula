@@ -107,7 +107,7 @@ secret values. `DynamicUser`, private state/runtime directory permissions,
 it across service restarts and OS reboots. The module owns `storage.data_dir`
 and `execution.engines`; use `stateDirectory` and `terraformPackage` instead.
 
-The package also installs default Docker and Kubernetes template sources under
+The package also installs default Docker, Kubernetes and Proxmox template sources under
 `share/shaula/templates`. `services.shaula.templateSourceDirectories` defaults to
 that package directory; set it to `[]` for an empty default catalog, or provide trusted
 absolute source directories whose direct children contain template modules. Outside

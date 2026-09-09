@@ -13,6 +13,7 @@
 | 官方 Runner 镜像、JIT 输入与版本升级 | [Runner 镜像](runner-image.md) |
 | 启用 GitHub Set up job 中的 apply 输出 | [Setup Info 模板](setup-info-templates.md) |
 | 真实 Docker Runner 的创建、运行与清理验证 | [Docker 冒烟验证](docker-conformance.md) |
+| Proxmox 基础 VM、DHCP 与 cloud-init 配置 | [Proxmox Runner](proxmox-runners.md) |
 | 已实现范围、集成缺口与验收证据 | [实现状态](IMPLEMENTATION_STATUS.md) |
 
 ## 设计与决策
@@ -36,6 +37,7 @@
 | Fleet Template inputs 可视化编辑 | [spec 0014](specs/0014-visual-template-inputs.md) / [ADR-0018](ard/0018-render-fleet-inputs-from-approved-template-options.md) |
 | 数据库模板库、默认文件导入与 Terraform 变量发现 | [spec 0015](specs/0015-template-library-and-variable-discovery.md) / [ARD-0019](ard/0019-store-template-sources-and-discover-terraform-variables.md) |
 | 内置模板同步与已发布模板 Update | [spec 0021](specs/0021-default-template-updates.md) / [ARD-0025](ard/0025-sync-default-templates-and-explicitly-update-published-revisions.md) |
+| Proxmox VM clone、NoCloud 和基础镜像信任 | [spec 0022](specs/0022-proxmox-runner-template.md) / [ARD-0026](ard/0026-provision-proxmox-runners-with-nocloud.md) |
 | Fleet authentication/template Profile 服务端列表选择 | [spec 0016](specs/0016-fleet-profile-selection.md) / [ARD-0020](ard/0020-load-fleet-profile-choices-from-registry.md) |
 | Template 静态校验后的自动激活与旧 Ready 升级 | [spec 0017](specs/0017-automatic-template-activation.md) / [ARD-0021](ard/0021-activate-templates-after-static-validation.md) |
 | 仅支持 v2 GitHub App authentication、历史格式停用与部署检查 | [spec 0018](specs/0018-github-app-only-authentication.md) / [ARD-0022](ard/0022-retire-legacy-github-authentication.md) |
@@ -53,7 +55,7 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 - Terraform state 通过 daemon 内部 HTTP backend 写入 SQLite；LOCK/UNLOCK、锁持有者校验和 state 写入是数据库事务契约，不以本地 `terraform.tfstate` 为主状态。
 - daemon 保管 GitHub 控制面凭据，worker 通过受授权控制通道请求 JIT、观察与安全删除；管理 HTTP 保持 OIDC，内部 worker/state HTTP 使用分权的 Generation/worker 专用凭据。
 - Runner Generation 不可变；Create 与 Destroy 是唯一基础设施 mutation，Busy-safe removal、原始 inputs/artifact、worker fencing 和故障时保留证据不因进程拆分而取消。
-- Kubernetes 与 Docker 都是 v1 bundled Template Platforms；GitHub authentication 只支持 schema 2 GitHub App、显式 TargetPolicy 和 Revision-scoped account bindings，不做运行时 credential fallback。PAT、旧 allowlist 和固定 installation publication 已按 spec 0018 停用。
+- Kubernetes、Docker 与 Proxmox 是 bundled Template Platforms；GitHub authentication 只支持 schema 2 GitHub App、显式 TargetPolicy 和 Revision-scoped account bindings，不做运行时 credential fallback。PAT、旧 allowlist 和固定 installation publication 已按 spec 0018 停用。
 - Fleet Decommission 保留空 Scale Set；Profile DELETE 是异步 retirement，不因正在使用而改成同步删除或 force delete。
 - Template 当前候选静态校验通过后自动激活，已有 Ready 在扫描时重新校验并激活；独立 `template.attest` 的 exact conformance 记录作为运行验证证据保留，不再控制激活，见 spec 0017。
 - 默认 Docker Runner 不挂载 host socket；JIT 同 Runner Execution Domain 的进程检查风险、Kubernetes name-based deletion 风险和同 OS identity IaC children 的 ambient host-admin 风险按相应 ARD 记录。

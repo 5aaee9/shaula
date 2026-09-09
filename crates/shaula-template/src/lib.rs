@@ -15,3 +15,6 @@ pub use runtime::TemplateRuntime;
 mod artifact_integrity;
 mod operation_capture;
 mod operation_sanitize;
+
+#[cfg(test)]
+mod proxmox_tests;

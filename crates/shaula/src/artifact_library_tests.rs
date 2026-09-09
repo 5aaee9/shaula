@@ -156,10 +156,16 @@ fn default_pack_never_imports_nested_repository_state_or_credentials() -> TestRe
     let directory = defaults.join("docker");
     let (before, _) = import::package(&directory)?;
     for relative in [
+        "bootstrap.sh",
+        "bootstrap.cmd",
+        "private.tfvars",
+        "terraform.tfstate",
         "schemas/.git/config",
         "schemas/private.tfvars",
         "schemas/terraform.tfstate",
         "schemas/credentials.json",
+        "schemas/bootstrap.tftpl",
+        "nested/bootstrap.tftpl",
         "image/private.json",
     ] {
         let path = directory.join(relative);
@@ -235,6 +241,18 @@ async fn cache_write_failure_preserves_committed_archive_for_retry() -> TestResu
     std::fs::remove_file(prefix)?;
     library.publish(&bytes, &digest).await?;
     assert!(cached.join("main.tf").is_file());
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn default_pack_rejects_redirected_render_templates() -> TestResult {
+    let temp = tempfile::tempdir()?;
+    let defaults = fixture_source(temp.path())?;
+    let outside = temp.path().join("outside.tftpl");
+    std::fs::write(&outside, "outside render template")?;
+    std::os::unix::fs::symlink(&outside, defaults.join("docker/bootstrap.tftpl"))?;
+    assert!(import::package(&defaults.join("docker")).is_err());
     Ok(())
 }
 

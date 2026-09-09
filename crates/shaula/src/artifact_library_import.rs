@@ -204,6 +204,7 @@ fn collect_files(directory: &Path, root: &Path, files: &mut Vec<PathBuf>) -> Cor
             && name != "schemas"
             && !(name.ends_with(".tf")
                 || name.ends_with(".tf.json")
+                || name.ends_with(".tftpl")
                 || matches!(
                     name.as_str(),
                     "profile.yaml" | ".terraform.lock.hcl" | "runtime-policy.md"
