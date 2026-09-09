@@ -83,7 +83,7 @@ Bootstrap 在 API ready 前验证并在 process lifetime 内冻结。它 MUST NO
 - Template Profile；
 - GitHub Auth Profile。
 
-YAML、Git 或其他系统可以调用 HTTP，但只是 client。Template bytes 先通过 digest endpoint 发布为 immutable artifact，再由 Template Profile Revision 引用。PAT/App private key 通过 Auth Profile PUT 写入 SQLite；schema-sensitive Kubernetes/Docker bindings 通过 Template Profile PUT 写入其 immutable Revision。完整 Profile endpoints 和 state machines 见 [0005](0005-profile-http-control-plane.md)。
+YAML、Git 或其他系统可以调用 HTTP，但只是 client。Template bytes 先通过 digest endpoint 发布为 immutable artifact，再由 Template Profile Revision 引用。GitHub App private key 通过 schema 2 Auth Profile PUT 写入 SQLite；PAT 与旧格式输入按 [spec 0018](0018-github-app-only-authentication.md) 拒绝。schema-sensitive Kubernetes/Docker bindings 通过 Template Profile PUT 写入其 immutable Revision。完整 Profile endpoints 和 state machines 见 [0005](0005-profile-http-control-plane.md)。
 
 ### 3.3 Runtime artifacts
 
@@ -309,11 +309,11 @@ Fleet full replacement 不意味着任意 Update：
 
 上述 reference/input barrier 与 Create/Acquire authorization 共用 side-effect admission gate；不能把“先人工停掉 session”作为 Auth Handoff 可达性的隐含要求。未改变的 Auth key 不因 capacity/no-op mutation 回退其已持久化 desired Auth ref。
 
-Auth Profile 内的 same-identity credential rotation 不是 Fleet replacement。异步 validation 成功后，Profile active head 推进并触发 section 7 handoff；Fleet key、Fleet Revision 和 desired ETag 保持不变。跨 Profile replacement 会产生 Fleet Revision/Change，但复用同一 handoff protocol。
+Auth Profile 内同 numeric App identity 的 credential、policy 或 binding publication 不是 Fleet replacement，并须通过 spec 0011 的 identity/coverage 检查。异步 validation 成功后，Profile active head 推进并触发 section 7 handoff；Fleet key、Fleet Revision 和 desired ETag 保持不变。跨 Profile replacement 会产生 Fleet Revision/Change，但复用同一 handoff protocol。
 
 ## 7. Auth Revision handoff
 
-待审扩展：[spec 0011 §5](0011-multi-account-github-authentication.md#5-publication-handoff-and-isolation) 为同 App 的 policy/binding publication 增加 exact Resolved Auth Context。它保留本节完整 Auth Revision Ref、quiesce 与 ownership/effect 边界；在提案接受前不改变下述基线。
+[spec 0011 §5](0011-multi-account-github-authentication.md#5-publication-handoff-and-isolation) 为同 App 的 policy/binding publication 定义 exact Resolved Auth Context。它保留本节完整 Auth Revision Ref、quiesce 与 ownership/effect 边界。[Spec 0018](0018-github-app-only-authentication.md) 进一步要求所有 handoff、session 和 retained execution 都使用 schema 2 GitHub App 与完整已验证 context；旧格式和 reference-only authorization 已停用，历史证据保留且不能作为执行 fallback。
 
 Auth Revision Ref 是不可拆分的 `(profile_key, revision)` tuple。每个 Fleet 有 durable `desired_auth_ref`、nullable `observed_auth_ref`、handoff state、attempt、lease、`next_retry_at` 和 sanitized reason；所有 GitHub intent/effect 记录其使用的 exact tuple，不能仅凭裸 revision number 关联。
 
@@ -322,10 +322,10 @@ Desired tuple 有两个合法来源：同 Profile Candidate promotion 将每个 
 两种来源都执行同一个可恢复 Auth Handoff：
 
 1. Fleet supervisor 关闭新的 job acquisition，并等待跨越 quiesce fence 的 acquisition 返回或被分类。Decommissioning Fleet 保持 acquisition 永久关闭，但允许 handoff 以 cleanup-only mode 继续。
-2. 使用 desired tuple 构造 matching Rust `shaula-scaleset` App/PAT client；不尝试另一 auth kind、旧 revision 或另一 Profile。
+2. 使用 desired tuple 的 v2 GitHub App、TargetPolicy 与冻结 account binding 构造 matching Rust `shaula-scaleset` client；不尝试旧格式、旧 revision 或另一 Profile。
 3. 已绑定 Scale Set ID 的 Fleet 只执行 authenticated read-only lookup，证明 persisted Target、runner group、Scale Set name/ID/fingerprint 匹配，或持久化可信的 absence classification。尚未绑定 Scale Set 的 Fleet 只验证 Target/runner-group access 并记录 authenticated context。Handoff 本身绝不 create/adopt Scale Set、写或改 Scale Set ID、创建 session、获取 JIT。
-4. 只有相应 access/ownership/absence classification durable 后，才在一个 transaction 中推进 `observed_auth_ref` 到完整 desired tuple，并唤醒普通 Fleet reconciliation。
-5. 普通 Fleet reconciliation 独占 create-or-adopt、Scale Set ID/fingerprint binding 和 session establish/replace。Active Fleet 只在 desired/observed tuple 相等且新 session ready 后恢复 acquisition；Decommissioning Fleet 不建立 acquiring session，只使用 observed tuple 执行 inventory/removal 等 cleanup。
+4. 只有相应 access/ownership/absence classification 与 exact numeric Target identity 已验证，且 captured fence/desired context 仍匹配时，才在一个 transaction 中原子推进 `observed_auth_ref` 与 verified exact context，并唤醒普通 Fleet reconciliation。ref equality 本身不是 handoff 成功或授权。
+5. 普通 Fleet reconciliation 独占 create-or-adopt、Scale Set ID/fingerprint binding 和 session establish/replace。Active Fleet 只在 desired/observed ref 与已验证 context 匹配且新 session ready 后恢复 acquisition；Decommissioning Fleet 不建立 acquiring session，只使用 v2 observed tuple/exact context 执行 inventory/removal 等 cleanup。旧格式或缺失 context 的 retained references 必须 fail closed 并保留证据。
 
 Production GitHub access 使用 Rust `shaula-scaleset`。测试固定一个 reviewed `github.com/actions/scaleset` Go commit 作为协议与行为 oracle；Go oracle 只运行 conformance/differential suites，不被 production daemon 链接或启动。
 
@@ -395,7 +395,7 @@ Profile/Fleet invalid、Auth Handoff lag、listener failure 或外部依赖 fail
 - 所有 UI、静态资源、API 和 health routes，无论经 proxy 还是 direct loopback，均必须验证 OIDC-derived session 或相应 API access token；仅 exact login/callback GET 有匿名例外。缺失/无效身份的 API 请求返回 `401`，有效身份缺少权限返回 `403`；body actor、caller identity/scopes headers 和 legacy backend token 均不建立身份。Cookie mutations 必须通过 Origin/CSRF 校验，全部响应 private/no-store；loopback 不是 tenant boundary。
 - Strict JSON 拒绝 unknown fields，并限制 body、strings、lists、pagination、rate 和 backlog。
 - Fleet JSON 不接受 PAT、App private key、derived token、JIT、provider credential、platform identity/binding、conformance attestation、raw endpoint 或 executable；它只引用 typed Target、Auth Profile key、current active exact Template Revision 和 bounded inputs。
-- Auth Profile PUT 可以携带 write-only PAT/App private key；Template Profile PUT 可以携带 binding schema 标记为 sensitive 的 write-only value。SQLite 允许把两者原始 plaintext 存入对应 immutable Revision。所有 GET/list/status/revision/attestation、Fleet response、audit、errors、logs、traces、metrics 和 panic/diagnostic middleware 永不回显 request body、secret、prefix/suffix/hash/length 或 parser content。
+- Auth Profile PUT 只接受 v2 GitHub App 的 write-only private key；Template Profile PUT 可以携带 binding schema 标记为 sensitive 的 write-only value。SQLite 允许把两者原始 plaintext 存入对应 immutable Revision。历史 PAT bytes 保留且继续受同等 secret boundary 保护，但不能作为输入或执行凭据。所有 GET/list/status/revision/attestation、Fleet response、audit、errors、logs、traces、metrics 和 panic/diagnostic middleware 永不回显 request body、secret、prefix/suffix/hash/length 或 parser content。
 - GitHub control-plane credentials 只交给 GitHub Access Module，永不进入 Template/Terraform/Runner；sensitive Template bindings 只交给 exact Revision 获准的 IaC child，永不进入 Runner/workflow。
 - SQLite main DB、WAL/SHM、online copy、backup、migration artifact、crash dump 和 retention/disposal 都是 credential-grade boundary；application-level encryption 不是 v1 requirement，host/filesystem/backup protection 是 deployment responsibility。
 - Template artifact upload 是高权限 remote code publication。Server streaming 验证 declared digest/length、archive containment、path/link/device、expansion limit 和 atomic publication；普通 Fleet caller 只能选择已有 durable activation provenance 的 current Active Revision，不能注入 code 或自行 attest。
@@ -459,7 +459,7 @@ Implementation is incomplete until：
 6. Fleet 无法提交 platform binding、provider credential 或 executable；conceptual Fleet/Runner schema 无平台 object columns。
 7. Same-Profile promotion 和 zero-occupancy cross-Profile replacement 都写入完整 desired Auth Revision Ref，经过同一 quiesce/read-only proof/context handoff 后才推进完整 observed tuple；handoff 不 create/adopt、不写 ID、不建 session。
 8. Handoff crash 从 SQLite 恢复；失败 Fleet 暴露完整 tuple lag、保持 quiesced/degraded，且 `Blocked` 不释放任一 desired/observed/in-flight/Decommission/recovery reference。
-9. PAT/App private key 与 sensitive Template bindings 以 plaintext SQLite bytes 跨重启可用，但任何 Fleet/Profile GET、status、revision、attestation、audit、error、log、trace、metric 或 diagnostic 均不含原文或可推导表示；各自只进入 GitHub Access Module 或 exact-Revision IaC child，绝不进入 Runner/workflow。
+9. v2 GitHub App private key 与 sensitive Template bindings 以 plaintext SQLite bytes 跨重启可用；历史 PAT/旧格式 bytes 保留但不得执行。任何 Fleet/Profile GET、status、revision、attestation、audit、error、log、trace、metric 或 diagnostic 均不含原文或可推导表示；受支持凭据各自只进入 GitHub Access Module 或 exact-Revision IaC child，绝不进入 Runner/workflow。
 10. Template artifact publication 只有 `template.publish` 可执行并授权静态校验后的自动激活，conformance attestation 只有 `template.attest` 可提交且不改变激活状态；Fleet 只能选择由 manifest 派生 platform 且已有 durable activation provenance 的 current Active Revision。
 11. Capacity-only replacement 不 Update Runner/Scale Set；降低 max 到 Busy/Occupancy 以下只阻止新建。Template inputs/pin 或 Auth-key 改变受事务化零占用/effect barrier；idle session 的 cross-Auth replacement 可达并经 Handoff quiesce。
 12. DELETE/Create race 使用 mutation fence：commit 后不 spawn 新 Create-capable subprocess；uncertain older Create 进入 cleanup。
@@ -470,7 +470,7 @@ Implementation is incomplete until：
 17. v1 non-loopback bind 始终在 startup fail closed；缺少 clap/env OIDC Provider/client 配置或 discovery validation 失败同样不启动 listener/workers。UI/assets/API/health/fallback 均通过 spec 0009 认证矩阵验收；forged actor headers 与 legacy backend token 无法绕过。生产路径无 native inbound HTTP TLS/mTLS serving，但必须有 OIDC verification；GitHub/OTLP outbound TLS 不受此限制。
 18. In-memory OTel tests 覆盖 HTTP、commit、async links、Auth Handoff、reconcile 和 exporter outage；credential/request body 不泄漏，metric series 数量有显式上界。
 19. Continuously changing Assigned Demand 不让 Fleet Change 永久 open；Change 记录明确 demand checkpoint，后续 demand 触发新 reconcile。
-20. Organization/repository Target canonical round-trip；unknown kind、malformed name、arbitrary URL 和 Auth allowlist 外 Target 都 fail admission。
+20. Organization/repository Target canonical round-trip；unknown kind、malformed name、arbitrary URL、不受 v2 TargetPolicy 允许的 Target，以及旧版/未知 authentication revision 都 fail admission。
 
 ## 15. Open decisions
 

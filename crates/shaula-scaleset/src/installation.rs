@@ -85,13 +85,10 @@ pub enum MetadataReachability {
     Transient { retry_after_ms: Option<i64> },
 }
 
-/// The `/app` identity proof: the numeric App id plus the App's public
-/// `client_id` string, used to prove legacy client-ID ↔ numeric-App
-/// continuity on an explicit upgrade (spec 0011 §7.5).
+/// The `/app` proof of the declared numeric App identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppVerification {
     pub app_id: i64,
-    pub client_id: Option<String>,
 }
 
 /// Classified outcome of one repository identity lookup.
@@ -148,8 +145,7 @@ impl AppInstallationResolver {
 
     /// Proves the private key authenticates as the DECLARED App
     /// (`GET /app`): the returned numeric id must equal the App id the
-    /// operator declared. A client-id string identity is reconciled to
-    /// its numeric id here (spec 0011 §7.5).
+    /// operator declared.
     pub async fn verify_app(
         &self,
         app_id: &str,
@@ -177,14 +173,7 @@ impl AppInstallationResolver {
                 summary: "authenticated app differs from the declared app id".into(),
             });
         }
-        Ok(AppVerification {
-            app_id: id,
-            client_id: body
-                .get("client_id")
-                .and_then(|v| v.as_str())
-                .map(str::to_string)
-                .filter(|v| !v.is_empty()),
-        })
+        Ok(AppVerification { app_id: id })
     }
 
     /// Resolves and classifies the installation behind one selector via

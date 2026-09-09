@@ -55,8 +55,7 @@ async fn fleet_delete_commission_flow_and_preconditions() {
 
     // Activate the auth profile via the validation outcome before fleet
     // admission.
-    control_plane
-        .auth_apply_validation("prod-app", 1, true, None, 1_800_000_001_500)
+    common::auth_fixture::promote(control_plane.as_ref(), "prod-app", 1, 1_800_000_001_500)
         .await
         .unwrap();
     let expected = expected_bindings_digest("k8s-linux", 1);
@@ -213,8 +212,7 @@ async fn decommission_commit_waits_for_an_in_flight_admission_claim() {
         .periodic_scan(1_800_000_001_000)
         .await
         .unwrap();
-    control_plane
-        .auth_apply_validation("prod-app", 1, true, None, 1_800_000_001_500)
+    common::auth_fixture::promote(control_plane.as_ref(), "prod-app", 1, 1_800_000_001_500)
         .await
         .unwrap();
     let expected = expected_bindings_digest("k8s-linux", 1);

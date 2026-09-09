@@ -98,7 +98,7 @@ test("real daemon activates a legacy Ready template and loads its approved Fleet
   expect(response.status()).toBe(422);
   expect(await response.json()).toMatchObject({
     code: "Unprocessable",
-    detail: "auth profile target allowlist does not cover the fleet target",
+    detail: "auth profile target policy does not cover the fleet target",
   });
   expect((await page.request.get("/api/v1/fleets/browser-visual-inputs")).status()).toBe(404);
   await expect(image.locator("option:checked")).toHaveText("runner:approved");

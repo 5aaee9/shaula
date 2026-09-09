@@ -64,7 +64,7 @@ async fn refreshed_equal_intent_cannot_acknowledge_an_old_network_attempt() {
             "fleet",
             PROFILE,
             1,
-            captured.desired_context_json.as_deref(),
+            captured.desired_context_json.as_deref().unwrap(),
             10,
         )
         .await
@@ -137,7 +137,7 @@ async fn changed_intent_and_incomplete_or_drifted_authority_never_acknowledge() 
             "fleet",
             PROFILE,
             1,
-            Some(&serde_json::to_string(&modified).unwrap()),
+            &serde_json::to_string(&modified).unwrap(),
             10,
         )
         .await
@@ -176,7 +176,7 @@ async fn first_repository_resolution_cannot_overwrite_an_admission_pin() {
     let json = serde_json::to_string(&context).unwrap();
     let tx = store.begin().await.unwrap();
     store
-        .fleet_auth_context_set_desired_tx(&tx, "fleet", PROFILE, 1, Some(&json), 10)
+        .fleet_auth_context_set_desired_tx(&tx, "fleet", PROFILE, 1, &json, 10)
         .await
         .unwrap();
     tx.commit().await.unwrap();

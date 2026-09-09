@@ -21,29 +21,30 @@ impl Store {
         let tx = self.begin().await?;
         let handoff = crate::entities::fleet::fleet_auth_handoffs::Entity::find_by_id(fleet_key)
             .one(&tx)
-            .await?;
-        if let Some(handoff) = handoff {
-            let reference = handoff
-                .observed_profile_key
-                .as_deref()
-                .zip(handoff.observed_revision);
-            let (key, revision) =
-                reference.unwrap_or((&handoff.desired_profile_key, handoff.desired_revision));
-            let auth = self
-                .auth_revision_get_tx(&tx, key, revision)
-                .await?
-                .ok_or_else(|| StoreError::Corrupt("session auth revision missing".into()))?;
-            if auth.schema_version >= 2
-                && (reference.is_none()
-                    || self
-                        .auth_execution_context_tx(&tx, fleet_key, key, revision)
-                        .await?
-                        .is_none())
-            {
-                return Err(StoreError::Corrupt(
-                    "session requires observed exact auth context".into(),
-                ));
-            }
+            .await?
+            .ok_or_else(|| StoreError::Corrupt("session auth handoff missing".into()))?;
+        let (key, revision) = handoff
+            .observed_profile_key
+            .as_deref()
+            .zip(handoff.observed_revision)
+            .ok_or_else(|| StoreError::Corrupt("session observed auth reference missing".into()))?;
+        let auth = self
+            .auth_revision_get_tx(&tx, key, revision)
+            .await?
+            .ok_or_else(|| StoreError::Corrupt("session auth revision missing".into()))?;
+        if auth.schema_version != 2 || auth.kind != "github_app" {
+            return Err(StoreError::PolicyDenied {
+                reason: "UnsupportedAuthFormat",
+            });
+        }
+        if self
+            .auth_execution_context_tx(&tx, fleet_key, key, revision)
+            .await?
+            .is_none()
+        {
+            return Err(StoreError::Corrupt(
+                "session requires observed exact auth context".into(),
+            ));
         }
         let previous = fleet_sessions::Entity::find_by_id(fleet_key.to_string())
             .one(&tx)

@@ -47,8 +47,6 @@ pub struct AuthRevisionView {
     pub reason: Option<String>,
     pub kind: String,
     pub app_id: Option<String>,
-    pub installation_id: Option<i64>,
-    pub pat_principal: Option<String>,
     /// 1 = legacy, 2 = multi-account policy format.
     pub schema_version: i64,
     /// Non-secret selectors of a v2 revision.

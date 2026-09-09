@@ -22,15 +22,12 @@ async fn auth_credential_plaintext_round_trip() {
                 key: "prod-app".into(),
                 incarnation: "inc-1".into(),
                 revision: 1,
-                kind: "pat".into(),
-                app_id: None,
-                installation_id: None,
-                pat_principal: Some("octocat".into()),
-                allowlist_json: r#"[{"kind":"organization","owner":"example-org"}]"#.into(),
-                schema_version: 1,
-                policy_json: None,
+                kind: "github_app".into(),
+                app_id: Some("4863460".into()),
+                schema_version: 2,
+                policy_json: Some(super::auth_fixture::POLICY.into()),
             },
-            b"github_pat_SECRETBYTES",
+            b"github_app_SECRETBYTES",
             1,
         )
         .await
@@ -38,7 +35,18 @@ async fn auth_credential_plaintext_round_trip() {
     tx.commit().await.unwrap();
 
     store
-        .auth_apply_full("prod-app", 1, true, None, 2, None)
+        .auth_apply_full(
+            "prod-app",
+            1,
+            true,
+            None,
+            2,
+            Some(
+                super::auth_fixture::promotion(&store, "prod-app", 1)
+                    .await
+                    .unwrap(),
+            ),
+        )
         .await
         .unwrap();
 
@@ -47,9 +55,9 @@ async fn auth_credential_plaintext_round_trip() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(active.credential_bytes, b"github_pat_SECRETBYTES");
-    assert_eq!(active.kind, "pat");
-    assert_eq!(active.pat_principal.as_deref(), Some("octocat"));
+    assert_eq!(active.credential_bytes, b"github_app_SECRETBYTES");
+    assert_eq!(active.kind, "github_app");
+    assert_eq!(active.app_id.as_deref(), Some("4863460"));
 
     // Rejected candidate leaves the previous active untouched.
     let tx = store.begin().await.unwrap();
@@ -60,15 +68,12 @@ async fn auth_credential_plaintext_round_trip() {
                 key: "prod-app".into(),
                 incarnation: "inc-1".into(),
                 revision: 2,
-                kind: "pat".into(),
-                app_id: None,
-                installation_id: None,
-                pat_principal: Some("octocat".into()),
-                allowlist_json: r#"[{"kind":"organization","owner":"example-org"}]"#.into(),
-                schema_version: 1,
-                policy_json: None,
+                kind: "github_app".into(),
+                app_id: Some("4863460".into()),
+                schema_version: 2,
+                policy_json: Some(super::auth_fixture::POLICY.into()),
             },
-            b"github_pat_NEW",
+            b"github_app_NEW",
             3,
         )
         .await
@@ -88,7 +93,7 @@ async fn auth_credential_plaintext_round_trip() {
         active.revision, 1,
         "staged activation keeps the prior credential"
     );
-    assert_eq!(active.credential_bytes, b"github_pat_SECRETBYTES");
+    assert_eq!(active.credential_bytes, b"github_app_SECRETBYTES");
 }
 
 #[tokio::test]
@@ -169,13 +174,10 @@ async fn auth_rotation_retargets_pinned_fleet_handoffs() {
                     key: "prod-app".into(),
                     incarnation: "inc-1".into(),
                     revision,
-                    kind: "pat".into(),
-                    app_id: None,
-                    installation_id: None,
-                    pat_principal: Some("octocat".into()),
-                    allowlist_json: r#"[{"kind":"organization","owner":"example-org"}]"#.into(),
-                    schema_version: 1,
-                    policy_json: None,
+                    kind: "github_app".into(),
+                    app_id: Some("4863460".into()),
+                    schema_version: 2,
+                    policy_json: Some(super::auth_fixture::POLICY.into()),
                 },
                 format!("cred-{revision}").as_bytes(),
                 revision,
@@ -196,7 +198,7 @@ async fn auth_rotation_retargets_pinned_fleet_handoffs() {
                 key: "fleet-live".into(),
                 incarnation: "inc-l".into(),
                 revision: 1,
-                spec_json: "{}".into(),
+                spec_json: super::auth_fixture::SPEC.into(),
                 template: None,
                 auth_desired: ("prod-app".into(), 1),
                 inputs_digest: "d".into(),
@@ -218,7 +220,7 @@ async fn auth_rotation_retargets_pinned_fleet_handoffs() {
                 key: "fleet-dying".into(),
                 incarnation: "inc-d".into(),
                 revision: 1,
-                spec_json: "{}".into(),
+                spec_json: super::auth_fixture::SPEC.into(),
                 template: None,
                 auth_desired: ("prod-app".into(), 1),
                 inputs_digest: "d".into(),
@@ -243,7 +245,18 @@ async fn auth_rotation_retargets_pinned_fleet_handoffs() {
     // Rotating the active revision to 2 must retarget ONLY the live fleet,
     // in the same transaction as the head advance.
     store
-        .auth_apply_full("prod-app", 2, true, None, 9, None)
+        .auth_apply_full(
+            "prod-app",
+            2,
+            true,
+            None,
+            9,
+            Some(
+                super::auth_fixture::promotion(&store, "prod-app", 2)
+                    .await
+                    .unwrap(),
+            ),
+        )
         .await
         .unwrap();
 

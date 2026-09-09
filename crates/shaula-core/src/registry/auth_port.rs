@@ -5,22 +5,16 @@
 
 use crate::error::CoreResult;
 
-/// One revision's read state, attributed to ITS OWN revision and format
-/// version. Legacy members (identity/target_allowlist) and v2 members
-/// (app_id/target_policy/bindings) never mix inside one state, and the
-/// active state is never merged with the Candidate (spec 0011 §6).
+/// Revision-attributed read state. Unsupported historical revisions carry
+/// no policy or bindings; active authority is never merged with a Candidate.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AuthRevisionState {
     pub revision: i64,
     pub state: String,
     pub reason: Option<String>,
     pub binding_health: Vec<AuthBindingHealth>,
-    /// 1 = legacy single-installation format, 2 = multi-account policy.
+    /// Only 2 is supported; other stored formats are historical metadata.
     pub schema_version: i64,
-    /// Legacy: the composed `app/…/installation/…` or PAT principal.
-    pub identity: Option<String>,
-    /// Legacy: exact allowlist as config URLs.
-    pub target_allowlist: Vec<String>,
     /// v2: the App id in the stored representation.
     pub app_id: Option<String>,
     /// v2: the frozen Target policy.
@@ -89,10 +83,7 @@ pub struct AuthRevisionRow {
     pub reason: Option<String>,
     pub kind: String,
     pub app_id: Option<String>,
-    pub installation_id: Option<i64>,
-    pub pat_principal: Option<String>,
-    pub allowlist_json: String,
-    /// 1 = legacy single-installation format, 2 = multi-account policy.
+    /// Only 2 is executable; other stored formats are historical metadata.
     pub schema_version: i64,
     /// Canonical TargetPolicy JSON for schema version 2.
     pub policy_json: Option<String>,
@@ -143,7 +134,7 @@ pub struct AuthDependentTarget {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthHandoffExpectation {
     pub mutation_fence: i64,
-    /// None is valid only for a legacy revision.
+    /// Missing context is refused at the acknowledgement boundary.
     pub desired_context_json: Option<String>,
 }
 
@@ -181,8 +172,6 @@ pub struct FleetAuthContextRow {
 pub enum FleetContextAck {
     /// Observed ref + context advanced.
     Acknowledged,
-    /// No context row exists: legacy profile resolution is ref-only.
-    NotApplicable,
     /// The stored desired ref moved on; the caller lost the race.
     Stale,
     /// The verified context contradicts a durable identity pin.

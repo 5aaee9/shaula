@@ -17,7 +17,7 @@ Operator 打开 `/auth` 时必须能够发现 Shaula 中已经保存的 GitHub a
 本规范补充 [spec 0008](0008-embedded-web-ui.md)，并明确
 [spec 0005 §4](0005-profile-http-control-plane.md#4-http-interface) 的 Auth collection 契约。
 [spec 0011](0011-multi-account-github-authentication.md) 继续拥有 active/desired policy、
-bindings 与 health 的含义；凭据发布、轮换、retirement 和 conditional writes 不变。
+bindings 与 health 的含义；[spec 0018](0018-github-app-only-authentication.md) 拥有仅支持 v2 GitHub App 与历史记录退出支持契约。retirement 和 conditional writes 边界不变。
 
 ## 2. Collection contract
 
@@ -25,15 +25,16 @@ bindings 与 health 的含义；凭据发布、轮换、retirement 和 condition
 
 - 使用现有 OIDC/session middleware；未认证返回 `401`，缺少 `auth.read` 返回 `403`。
   只有 `auth.read` 的 Operator 也能查看列表；不要求 write 或 retire 权限。
-- 从 Shaula 的持久 Profile registry 枚举所有现存 Auth Profiles，包括 legacy GitHub App、
-  PAT、v2 多账户 App，以及尚未激活或处于 retirement 的记录；不得仅从 Fleet 引用、
+- 从 Shaula 的持久 Profile registry 枚举所有现存 Auth Profiles，包括 v2 多账户 App、
+  不支持的历史记录，以及尚未激活或处于 retirement 的记录；不得仅从 Fleet 引用、
   浏览器历史或已访问的详情拼出列表。
 - 返回 `200 application/json` 和 `{ "profiles": [...] }`。没有记录时返回空数组。
   每个 key 最多出现一次，按 key 升序排列。
 - 每项复用单 Profile GET 的脱敏表示：key/incarnation、status、kind、
   desired/active Revision、credential presence，以及各自 Revision 的 policy、bindings
   和已有的非 secret metadata。读取列表与详情时发生并发更新可能使两次结果不同；
-  本接口不承诺全部 Profiles 的跨记录事务快照。
+  本接口不承诺全部 Profiles 的跨记录事务快照。不支持的历史记录标明 schema/state，
+  不解析或投影旧 identity/allowlist credential metadata。
 - 遵循现有 private/no-store 响应策略。不得返回 private key、PAT、installation token，
   或凭据值的前后缀、长度、摘要。GET 不调用 GitHub，不创建或修改 Profile、installation、
   binding、validation job、Fleet 或授权范围。
@@ -60,16 +61,17 @@ Collection 响应不为行提供写入凭证。编辑或 retirement 必须读取
 | 内容 | 语义 |
 | --- | --- |
 | Connection | 稳定 Profile key；可点击打开详情 |
-| Credential type | GitHub App / Personal access token；缺失时显示占位符 |
-| Status | 持久 Profile 状态；不能推导为所有目标的实时可用性 |
-| Active targets | active Revision 的 typed target policy 或 legacy exact allowlist |
+| Credential type | GitHub App；历史记录可显示原 kind 的非 secret 名称，缺失时显示占位符 |
+| Status | Profile 状态；不支持的历史格式显示 Unsupported，不能推导为目标的实时可用性 |
+| Active targets | 支持的 active Revision 的 typed target policy；不支持的历史记录显示占位符 |
 | Active revision | 生效版本；没有 active head 时显示占位符 |
 | Desired revision | 当前 desired head，允许与 active 不同 |
 
 Active targets MUST NOT 展示 desired Candidate 的新增范围为已生效；
 首个 Candidate 尚未激活时显示占位符。动态个人/组织仓库 selector 保留规则语义，
 不能枚举仓库快照替代规则。逐账户 health 和 Candidate 原因继续放在现有详情中，
-`Active` 不能取代 health 或 Fleet access 结果。
+`Active` 不能取代 health 或 Fleet access 结果。`Unsupported` 记录不能用于新的 Fleet 引用，
+不提供旧凭据轮换或 upgrade；有权限的 Operator 仍可退休该记录。
 
 列表 MUST 支持：
 
@@ -88,10 +90,11 @@ Active targets MUST NOT 展示 desired Candidate 的新增范围为已生效；
 
 ## 4. Acceptance
 
-1. 在真实 Router → ControlPlane → SQLite 测试中保存 legacy/PAT 与 v2 Profiles，
-   不给 URL 提供 key，collection 返回这些记录，且每项与单 Profile GET 的脱敏字段相同。
+1. 在真实 Router → ControlPlane → SQLite 测试中保存 v2 Profiles 与不支持的历史行，
+   不给 URL 提供 key，collection 返回这些记录，且每项与单 Profile GET 的脱敏字段相同；
+   历史格式显示 Unsupported 且不返回旧 identity/allowlist。
 2. 证明 `401`、`403`、仅 `auth.read` 可读取、空数组、错误传播和 secret redaction。
-3. 浏览器测试直接打开 `/auth`，看到已有连接；点击可进入详情，legacy 和多账户记录均可读。
+3. 浏览器测试直接打开 `/auth`，看到已有连接；点击可进入详情，不支持的历史标识和多账户记录均可读，历史记录不可轮换或新引用。
 4. 搜索、刷新后新增记录、空列表、API 失败、缺少 read scope 各有独立断言。
 5. Candidate 与 active 不同时，只把 active policy 显示在列表；尚无 active 的记录不显示
    Candidate policy 为生效目标。

@@ -72,6 +72,23 @@ pub async fn run_handoff(
             .filter(|row| row.desired.as_ref() == Some(&handoff.desired))
             .and_then(|row| row.desired_context_json.clone()),
     };
+    let revision = store
+        .auth_revision_get(&desired_key, desired_revision)
+        .await?;
+    if revision
+        .as_ref()
+        .is_none_or(|row| row.schema_version != 2 || row.kind != "github_app")
+    {
+        return record_failure(
+            store,
+            fleet_key,
+            authority,
+            &expectation,
+            "UnsupportedAuthenticationRevision",
+            now + backoff_secs * 1000,
+        )
+        .await;
+    }
     if let Err(failure) = github.ensure_route_proof().await {
         return record_failure(
             store,
@@ -106,26 +123,6 @@ pub async fn run_handoff(
             )
             .await?
             {
-                ExactContext::None => {
-                    match store
-                        .handoff_acknowledge(
-                            fleet_key,
-                            &desired_key,
-                            desired_revision,
-                            None,
-                            &expectation,
-                        )
-                        .await?
-                    {
-                        shaula_core::registry::FleetContextAck::Stale => {
-                            // A genuinely stale CAS aborts this tick and
-                            // retries from CURRENT authority (G5) — it is
-                            // never successful settlement.
-                            Ok(HandoffProgress::Retry)
-                        }
-                        _ => Ok(HandoffProgress::Acknowledged),
-                    }
-                }
                 ExactContext::Verified(context_json) => {
                     match store
                         .handoff_acknowledge(
@@ -137,8 +134,7 @@ pub async fn run_handoff(
                         )
                         .await?
                     {
-                        shaula_core::registry::FleetContextAck::Acknowledged
-                        | shaula_core::registry::FleetContextAck::NotApplicable => {
+                        shaula_core::registry::FleetContextAck::Acknowledged => {
                             Ok(HandoffProgress::Acknowledged)
                         }
                         shaula_core::registry::FleetContextAck::Stale => Ok(HandoffProgress::Retry),
@@ -204,8 +200,6 @@ async fn record_failure(
 
 /// The exact-context resolution outcome for one handoff attempt.
 enum ExactContext {
-    /// Legacy revision (or no context intent): ref-only ack.
-    None,
     /// The verified context JSON to persist atomically with the ref.
     Verified(String),
     /// A durable block reason; nothing is written.
@@ -213,8 +207,7 @@ enum ExactContext {
 }
 
 /// Whether the observed side of a fleet's context rollout already
-/// matches the desired ref (F7). Legacy profiles (no v2 context intent)
-/// settle on ref equality alone.
+/// matches the desired ref (F7). Ref equality never proves authority.
 async fn observed_context_settled(
     store: &Arc<dyn ControlPlaneStore>,
     fleet_key: &str,
@@ -223,8 +216,8 @@ async fn observed_context_settled(
     let Some(revision_row) = store.auth_revision_get(&desired.0, desired.1).await? else {
         return Ok(false);
     };
-    if revision_row.schema_version < 2 {
-        return Ok(true);
+    if revision_row.schema_version != 2 || revision_row.kind != "github_app" {
+        return Ok(false);
     }
     let Some(context_row) = store.fleet_auth_context_get(fleet_key).await? else {
         return Ok(false);
@@ -262,8 +255,10 @@ async fn resolve_exact_context(
     let Some(revision_row) = store.auth_revision_get(profile_key, revision).await? else {
         return Ok(ExactContext::Blocked("AuthRevisionMissing".into()));
     };
-    if revision_row.schema_version < 2 {
-        return Ok(ExactContext::None);
+    if revision_row.schema_version != 2 || revision_row.kind != "github_app" {
+        return Ok(ExactContext::Blocked(
+            "UnsupportedAuthenticationRevision".into(),
+        ));
     }
     let Some(json) = desired_json else {
         return Ok(ExactContext::Blocked("AuthContextMissing".into()));

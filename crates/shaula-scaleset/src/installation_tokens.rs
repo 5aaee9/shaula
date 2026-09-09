@@ -234,11 +234,8 @@ impl AppInstallationResolver {
         if parsed.id != installation_id {
             return InstallationLookup::IdentityMismatch;
         }
-        // F3: a client-ID issuer representation is NOT comparable with
-        // the numeric response id — the JWT signature plus the
-        // installation id anchor the identity; a NUMERIC declaration is
-        // compared exactly.
-        if app_id.bytes().all(|b| b.is_ascii_digit()) && parsed.app_id.to_string() != app_id {
+        // Every route remains bound to the declared numeric App identity.
+        if parsed.app_id.to_string() != app_id {
             return InstallationLookup::IdentityMismatch;
         }
         if parsed.suspended_at.is_some() {

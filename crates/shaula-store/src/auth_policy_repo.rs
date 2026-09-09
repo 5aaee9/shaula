@@ -13,8 +13,8 @@ use shaula_core::github::GitHubTarget;
 impl Store {
     /// Derives the desired Resolved Auth Context JSON for one fleet
     /// target from the ACTIVE revision read ON the transaction (spec 0011
-    /// §4.2 admission). `Ok(None)` for legacy revisions — they have no
-    /// context model. `Err` distinguishes structural denial (fleet target
+    /// §4.2 admission). Unsupported revisions cannot establish authority.
+    /// `Err` distinguishes structural denial (fleet target
     /// matches no selector) from corruption.
     pub(crate) async fn auth_desired_context_tx(
         &self,
@@ -22,14 +22,16 @@ impl Store {
         profile_key: &str,
         revision: i64,
         spec_json: &str,
-    ) -> StoreResult<Option<String>> {
+    ) -> StoreResult<String> {
         let Some(revision_row) = self.auth_revision_get_tx(tx, profile_key, revision).await? else {
             return Err(StoreError::Corrupt(format!(
                 "auth revision {profile_key}/{revision} missing"
             )));
         };
-        if revision_row.schema_version < 2 {
-            return Ok(None);
+        if revision_row.schema_version != 2 || revision_row.kind != "github_app" {
+            return Err(StoreError::PolicyDenied {
+                reason: "UnsupportedAuthFormat",
+            });
         }
         let policy: shaula_core::auth_policy::TargetPolicy =
             serde_json::from_str(revision_row.policy_json.as_deref().unwrap_or_default())
@@ -103,7 +105,6 @@ impl Store {
                     ));
                 }
                 serde_json::to_string(&context)
-                    .map(Some)
                     .map_err(|e| StoreError::Corrupt(format!("context serialization failed: {e}")))
             }
             DesiredContextResolution::NoMatchingSelector => Err(StoreError::PolicyDenied {
@@ -151,7 +152,7 @@ impl Store {
                     fleet_key,
                     profile_key,
                     revision,
-                    context_json.as_deref(),
+                    &context_json,
                     now,
                 )
                 .await

@@ -1,4 +1,4 @@
-//! Credential chain: GitHub App JWT → installation token, or PAT →
+//! Credential chain: GitHub App JWT → installation token →
 //! registration token → Actions Service admin connection (URL + JWT).
 //! Secrets stay inside this module; derived tokens never leak through
 //! `Debug` or errors.
@@ -16,8 +16,6 @@ use crate::error::ScalesetError;
 use crate::wire;
 #[path = "auth_repository.rs"]
 mod repository;
-#[path = "auth_validation.rs"]
-mod validation;
 
 #[derive(Serialize)]
 struct AppJwtClaims {
@@ -62,7 +60,6 @@ pub struct AdminConnection {
 /// Credential kind handed to the bootstrap chain.
 #[derive(Clone)]
 pub enum Credential {
-    Pat(SecretString),
     GitHubApp {
         client_id: String,
         installation_id: i64,
@@ -73,7 +70,6 @@ pub enum Credential {
 impl std::fmt::Debug for Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Credential::Pat(_) => f.write_str("Credential::Pat(REDACTED)"),
             Credential::GitHubApp {
                 client_id,
                 installation_id,
@@ -105,10 +101,7 @@ const REFRESH_MARGIN: i64 = 60;
 
 impl AdminTokenManager {
     pub(crate) fn credential_kind(&self) -> shaula_core::auth::AuthKind {
-        match &self.credential {
-            Credential::Pat(_) => shaula_core::auth::AuthKind::Pat,
-            Credential::GitHubApp { .. } => shaula_core::auth::AuthKind::GithubApp,
-        }
+        shaula_core::auth::AuthKind::GithubApp
     }
 
     pub fn new(
@@ -146,25 +139,21 @@ impl AdminTokenManager {
     /// A fresh GitHub REST installation token (metadata reads such as
     /// `GET /repos/{owner}/{repo}` for the target identity proof).
     pub(crate) async fn installation_token(&self) -> Result<String, ScalesetError> {
-        match &self.credential {
-            Credential::Pat(pat) => Ok(pat.expose().to_string()),
-            Credential::GitHubApp {
-                client_id,
-                installation_id,
-                private_key,
-            } => {
-                let now = self.clock.now_unix_ms() / 1000;
-                let jwt = app_jwt(client_id, private_key.expose(), now)?;
-                let token = self
-                    .fetch_installation_token(
-                        &jwt,
-                        *installation_id,
-                        &serde_json::json!({"permissions": {"metadata": "read"}}),
-                    )
-                    .await?;
-                Ok(token.token)
-            }
-        }
+        let Credential::GitHubApp {
+            client_id,
+            installation_id,
+            private_key,
+        } = &self.credential;
+        let now = self.clock.now_unix_ms() / 1000;
+        let jwt = app_jwt(client_id, private_key.expose(), now)?;
+        let token = self
+            .fetch_installation_token(
+                &jwt,
+                *installation_id,
+                &serde_json::json!({"permissions": {"metadata": "read"}}),
+            )
+            .await?;
+        Ok(token.token)
     }
 
     /// Read access to the exact credential this manager authenticates.
@@ -207,28 +196,18 @@ impl AdminTokenManager {
         })?;
         let url = format!("{}{path}", self.github_api_base.trim_end_matches('/'));
 
-        let bearer = match &self.credential {
-            Credential::Pat(pat) => format!("Bearer {}", pat.expose()),
-            Credential::GitHubApp {
-                client_id,
-                private_key,
-                ..
-            } => {
-                let now = self.clock.now_unix_ms() / 1000;
-                let jwt = app_jwt(client_id, private_key.expose(), now)?;
-                let installation_id = match &self.credential {
-                    Credential::GitHubApp {
-                        installation_id, ..
-                    } => *installation_id,
-                    _ => unreachable!("guarded by match above"),
-                };
-                let scope = self.runner_token_scope().await?;
-                let token = self
-                    .fetch_installation_token(&jwt, installation_id, &scope)
-                    .await?;
-                format!("Bearer {}", token.token)
-            }
-        };
+        let Credential::GitHubApp {
+            client_id,
+            installation_id,
+            private_key,
+        } = &self.credential;
+        let now = self.clock.now_unix_ms() / 1000;
+        let jwt = app_jwt(client_id, private_key.expose(), now)?;
+        let scope = self.runner_token_scope().await?;
+        let token = self
+            .fetch_installation_token(&jwt, *installation_id, &scope)
+            .await?;
+        let bearer = format!("Bearer {}", token.token);
 
         let response = self
             .http

@@ -1,13 +1,13 @@
 import { expect, test } from "@playwright/test";
 import { mockApi, scopes } from "./fixtures";
-import { LEGACY_APP_PROFILE, V2_PROFILE } from "./auth-fixtures";
+import { UNSUPPORTED_PROFILE, V2_PROFILE } from "./auth-fixtures";
 
 test("authentication lists existing connections without a key and opens their details", async ({
   page,
 }) => {
   await mockApi(page);
   await page.route("**/api/v1/github-auth-profiles", (route) =>
-    route.fulfill({ json: { profiles: [V2_PROFILE, LEGACY_APP_PROFILE] } }),
+    route.fulfill({ json: { profiles: [V2_PROFILE, UNSUPPORTED_PROFILE] } }),
   );
   await page.route("**/api/v1/github-auth-profiles/shared-github", (route) =>
     route.fulfill({ headers: { etag: '"auth-inc:2"' }, json: V2_PROFILE }),
@@ -18,7 +18,7 @@ test("authentication lists existing connections without a key and opens their de
   await expect(connection.getByText("GitHub App", { exact: true })).toBeVisible();
   await expect(connection.getByText("Active", { exact: true })).toBeVisible();
   await expect(connection.getByText("5aaee9 (user repositories)")).toBeVisible();
-  await expect(page.getByRole("row").filter({ hasText: "legacy-app" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "old-auth" })).toBeVisible();
   await connection.getByRole("button", { name: "shared-github", exact: true }).click();
   await expect(page).toHaveURL(/\/auth\?key=shared-github$/);
   await expect(connection).toHaveAttribute("data-state", "selected");

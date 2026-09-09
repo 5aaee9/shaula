@@ -111,3 +111,68 @@ async fn v2_stale_context_acknowledgement_is_retry_not_settlement() {
         .observed
         .is_none());
 }
+
+#[tokio::test]
+async fn unsupported_revision_never_settles_or_reaches_github() {
+    for (schema, kind) in [(1, "github_app"), (3, "github_app"), (2, "pat")] {
+        let (store, identity) = prepared().await;
+        *store.revision_kind.lock().await = Some((schema, kind.into()));
+        // Even matching ref tuples plus a complete old context cannot settle.
+        let mut handoffs = store.handoffs.lock().await;
+        let handoff = handoffs.get_mut("fleet").unwrap();
+        handoff.observed = Some(handoff.desired.clone());
+        drop(handoffs);
+        let github = Arc::new(HealthyGitHub::default());
+        let github_port: Arc<dyn GitHubAccessPort> = github.clone();
+        let store_port: Arc<dyn ControlPlaneStore> = store.clone();
+        let progress = run_handoff(
+            &store_port,
+            "fleet",
+            &github_port,
+            &("profile".into(), 2),
+            &identity,
+            None,
+            100,
+        )
+        .await
+        .unwrap();
+        assert_eq!(progress, HandoffProgress::Blocked);
+        assert_eq!(github.proof_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            store
+                .handoff_get("fleet")
+                .await
+                .unwrap()
+                .unwrap()
+                .blocked_reason
+                .as_deref(),
+            Some("UnsupportedAuthenticationRevision")
+        );
+    }
+}
+
+#[tokio::test]
+async fn missing_desired_context_never_acknowledges_a_ref_only_handoff() {
+    let (store, identity) = prepared().await;
+    *store.context.lock().await = None;
+    let github: Arc<dyn GitHubAccessPort> = Arc::new(HealthyGitHub::default());
+    let store_port: Arc<dyn ControlPlaneStore> = store.clone();
+    let progress = run_handoff(
+        &store_port,
+        "fleet",
+        &github,
+        &("profile".into(), 2),
+        &identity,
+        None,
+        100,
+    )
+    .await
+    .unwrap();
+    assert_eq!(progress, HandoffProgress::Blocked);
+    let handoff = store.handoff_get("fleet").await.unwrap().unwrap();
+    assert!(handoff.observed.is_none());
+    assert_eq!(
+        handoff.blocked_reason.as_deref(),
+        Some("AuthContextMissing")
+    );
+}

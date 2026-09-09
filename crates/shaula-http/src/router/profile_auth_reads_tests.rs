@@ -12,11 +12,6 @@ fn legacy() -> AuthRevisionState {
         reason: None,
         binding_health: vec![],
         schema_version: 1,
-        identity: Some("app/Iv23legacy/installation/34".into()),
-        target_allowlist: vec![
-            "https://github.com/acme".into(),
-            "https://github.com/acme/repo".into(),
-        ],
         app_id: None,
         target_policy: None,
         bindings: vec![],
@@ -41,20 +36,19 @@ fn view() -> AuthProfileView {
 }
 
 #[test]
-fn pure_legacy_get_preserves_exact_baseline_shape_used_by_upgrade_form() {
-    assert_eq!(
-        auth_profile_body(&view()),
-        serde_json::json!({
-            "key": "legacy-app", "incarnation": "auth-inc", "desiredRevision": 1,
-            "activeRevision": 1, "status": "Active", "kind": "github_app", "credential_present": true,
-            "identity": "app/Iv23legacy/installation/34",
-            "target_allowlist": ["https://github.com/acme", "https://github.com/acme/repo"],
-        })
-    );
+fn legacy_get_is_unsupported_without_old_authorization_fields() {
+    let body = auth_profile_body(&view());
+    assert_eq!(body["status"], "Unsupported");
+    assert_eq!(body["active"]["state"], "Unsupported");
+    assert_eq!(body["active"]["reason"], "UnsupportedAuthenticationFormat");
+    for field in ["identity", "target_allowlist", "bindings", "app_id"] {
+        assert!(body.get(field).is_none());
+        assert!(body["active"].get(field).is_none());
+    }
 }
 
 #[test]
-fn failed_upgrade_retains_legacy_active_and_attributes_rejection_to_candidate() {
+fn historical_upgrade_does_not_make_old_active_revision_available() {
     let mut view = view();
     view.schema_version = 2;
     view.desired_revision = 2;
@@ -64,7 +58,6 @@ fn failed_upgrade_retains_legacy_active_and_attributes_rejection_to_candidate() 
     candidate.schema_version = 2;
     candidate.state = "Rejected".into();
     candidate.reason = Some("AuthIdentityMismatch".into());
-    candidate.identity = None;
     candidate.app_id = Some("123".into());
     candidate.target_policy = Some(
         serde_json::from_str::<TargetPolicy>(
@@ -75,7 +68,9 @@ fn failed_upgrade_retains_legacy_active_and_attributes_rejection_to_candidate() 
     view.desired = Some(candidate);
     let body = auth_profile_body(&view);
     assert_eq!(body["active"]["schema_version"], 1);
-    assert_eq!(body["identity"], "app/Iv23legacy/installation/34");
+    assert_eq!(body["status"], "Unsupported");
+    assert_eq!(body["active"]["state"], "Unsupported");
+    assert!(body.get("identity").is_none());
     assert_eq!(body["desired"]["state"], "Rejected");
     assert_eq!(body["desired"]["reason"], "AuthIdentityMismatch");
     assert_eq!(body["desired"]["bindings"], serde_json::json!([]));

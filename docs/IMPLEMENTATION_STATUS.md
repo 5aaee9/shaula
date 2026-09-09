@@ -18,6 +18,14 @@ integration boundaries are recorded below.
 
 ## Multi-account GitHub authentication (spec 0011 / ADR-0015): local implementation (2026-09-07)
 
+The v1/PAT and legacy-upgrade contracts below have been retired by
+[spec 0018](specs/0018-github-app-only-authentication.md) /
+[ADR-0022](ard/0022-retire-legacy-github-authentication.md). Current publication,
+admission and execution require v2 GitHub App policy and exact contexts.
+Historical rows remain intact and visible as unsupported without decoding old
+credential metadata; live/retained references require deployment preflight.
+Earlier dated test results remain historical evidence, not a current support promise.
+
 The authentication increment extends the existing control plane, supervisor and
 GitHub adapter. It does not close the production lifecycle integration gaps
 listed below. The accepted spec remains the release contract.
@@ -30,15 +38,15 @@ listed below. The accepted spec remains the release contract.
   they neither create Fleets nor expand GitHub installation permissions.
 - **Validation and promotion:** every declared account and exact target is checked
   through the GitHub API adapter. Numeric App/account/repository/owner identity,
-  permissions and installation suspension are verified. Legacy client-ID upgrades
-  prove same-App continuity through `/app`. Candidate rejection leaves the active
+  permissions and installation suspension are verified. App continuity is checked
+  between supported v2 revisions. Candidate rejection leaves the active
   revision untouched; transient and rate-limit failures retry with per-revision
   deadlines. Promotion atomically freezes bindings and the validation snapshot,
   rechecks all live dependencies and their mutation fences, and retargets handoffs.
 - **Persistence and retention:** migrations m0008/m0009 add versioned policies,
   frozen bindings, Fleet contexts, immutable context history and session auth
-  references. Legacy credential and replay encodings keep their original meaning;
-  older binaries refuse the new durable format. Dependencies include desired and
+  references. Historical credential bytes and replay records remain stored but
+  cannot authorize or replay a removed format. Dependencies include desired and
   observed Fleet references, sessions, generations and unfinished operations.
   Cleanup resolves each generation's original credential and context; missing or
   corrupt authority keeps the resource occupied instead of selecting a fallback.
@@ -56,18 +64,21 @@ listed below. The accepted spec remains the release contract.
   recheck authorization after credential/connection waits and retries. Repository
   administration tokens are narrowed by the proven numeric repository ID.
 - **HTTP and UI:** versioned views attribute active and desired policy, validation
-  state, reasons and bindings to their exact revisions. Pure legacy reads keep
-  their original shape. Typed policy previews include actual live Fleet coverage;
-  unavailable impact data blocks publication rather than claiming no impact.
-  Explicit legacy upgrades require the numeric App ID. Fleet details show the
-  full desired/observed route identity and handoff status. Bounded, process-local
+  state, reasons and bindings to their exact revisions. Unsupported historical
+  profiles expose only non-secret identifying metadata. Typed policy previews
+  include actual live Fleet coverage; unavailable impact data blocks publication
+  rather than claiming no impact. The UI has no PAT, fixed-installation or
+  legacy-upgrade publication. Fleet details show the full desired/observed route
+  identity and handoff status. Bounded, process-local
   runtime observations provide per-binding health; expired evidence or restart
   returns Unknown. Candidate validation is shown separately from current access.
 
 Local verification covers real HTTP admission, the scheduled worker, SQLite
 promotion and handoff transactions, supervisor-to-GitHub-adapter composition,
-scripted GitHub responses, token request bodies, delayed-response races, legacy
-migration/replay and browser interactions. Required verification commands are
+scripted GitHub responses, token request bodies, delayed-response races and browser
+interactions. Legacy migration/replay support in earlier evidence has been retired;
+current regression coverage verifies unsupported publication and authorization
+rejection. Required verification commands are
 `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
 `cargo nextest run --manifest-path Cargo.toml --workspace test` and the full
 unfiltered `cargo nextest run --manifest-path Cargo.toml --workspace`; the trailing
@@ -109,8 +120,8 @@ open. Scripted-server evidence does not establish those end-to-end workflows.
   safety, atomic), template publish → scan-driven static validation →
   automatic activation under spec 0017, independent conformance evidence
   (full subject verification), auth rotation with staged activation (prior active kept).
-- Scale Set wire adapter (reqwest): GitHub App JWT + installation token
-  and PAT flows, registration → Actions Service bootstrap with expiry
+- Scale Set wire adapter (reqwest): GitHub App JWT + installation token,
+  registration → Actions Service bootstrap with expiry
   refresh, scale set lookup/create, sessions with `X-ScaleSetMaxCapacity`
   long-poll, ACK, acquire, JIT (redacted), inventory and safe removal
   with `JobStillRunning` classification. Fixture-tested against a
@@ -180,12 +191,12 @@ verifies the stamp after migrating.
   Handwritten query escaping was replaced with the URL library's structured API.
 - Bundled image aliases resolve through the manifest's digest map. Protected
   tfvars use private temporary files and atomic publication without replacement.
-- Auth validation is scheduled by the binary. PAT principal and GitHub App /
-  installation identity are checked before target access and activation. The
-  organization/repository x PAT/App matrix is tested against local HTTP servers;
-  identity mismatch is rejected and transient failures leave validation pending.
-  Endpoint contracts follow the official [GitHub App API](https://docs.github.com/en/rest/apps/apps)
-  and [authenticated user API](https://docs.github.com/en/rest/users/users).
+- Auth validation is scheduled by the binary. GitHub App/account/installation
+  identity is checked before target access and activation. The earlier PAT
+  validation matrix has been retired under spec 0018; current tests cover v2 App
+  targets and unsupported-format rejection. Identity mismatch is rejected and
+  transient failures leave validation pending. Endpoint contracts follow the
+  official [GitHub App API](https://docs.github.com/en/rest/apps/apps).
 
 ## HTTP state backend increment (2026-09-07)
 

@@ -11,7 +11,6 @@ use axum::http::Request;
 use shaula_core::registry::ControlPlaneStore;
 use shaula_daemon::service::ControlPlane;
 use shaula_http::router::AppState;
-use shaula_store::registry_impl::SqliteControlPlane;
 use std::sync::Arc;
 use tower::ServiceExt;
 /// The HTTPS identity-provider fixture used by every control-plane test.
@@ -124,14 +123,10 @@ async fn head_etag(app: &axum::Router, uri: &str) -> Vec<u8> {
         .expect("profile view carries an ETag")
 }
 
-/// G9: with an ACTIVE LEGACY profile whose stored identity is a
-/// client-ID string (any numeric v2 App id is admitted — continuity is
-/// proven by the validator), a wrong-App Candidate (numeric B) is
-/// REJECTED by the real worker, and the corrected same-App publication
-/// (numeric A) is admitted with the latest ETag and promoted — the
-/// original active credential stays continuously preserved.
+/// A rejected first publication never becomes the profile's App identity.
+/// A corrected numeric App declaration can be verified and activated.
 #[tokio::test]
-async fn http_wrong_app_rejection_does_not_block_corrected_same_app_publication() {
+async fn http_wrong_app_rejection_does_not_block_corrected_publication() {
     let mock = crate::auth_worker_mock::mock_server(false).await;
     let plane = test_plane().await;
     let app = http_app(&plane).await;
@@ -142,159 +137,49 @@ async fn http_wrong_app_rejection_does_not_block_corrected_same_app_publication(
     )
     .await;
 
-    // 0. Seed the established ACTIVE identity through the store the way
-    // a pre-existing legacy profile looks: a client-ID STRING, not a
-    // numeric App id. The mock's /app identity is (id 4863460,
-    // client_id "Iv23tester").
-    seed_active_legacy_profile(&plane.control_plane).await;
-    let original_bytes =
-        ControlPlaneStore::auth_credential_bytes(plane.control_plane.as_ref(), KEY, 1)
-            .await
-            .unwrap()
-            .unwrap();
-
-    // 1. Publish the WRONG numeric App B: admitted (a legacy client-ID
-    // identity cannot be compared literally), then rejected by the real
-    // validator (/app reports 4863460 ≠ 999999).
-    let etag1 = head_etag(&app, &uri).await;
     assert_eq!(
-        put(&app, &uri, v2_body("999999"), Some(&etag1)).await,
+        put(&app, &uri, v2_body("999999"), None).await,
         axum::http::StatusCode::ACCEPTED,
-        "wrong-App publication admitted against the legacy identity"
     );
     tick_and_drain(&mut wiring, T0).await;
-    let head = ControlPlaneStore::auth_profile_get(plane.control_plane.as_ref(), KEY)
+    let head = plane
+        .control_plane
+        .auth_profile_get(KEY)
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(
-        head.active_revision,
-        Some(1),
-        "the active credential is untouched"
-    );
-    assert_eq!(
-        head.desired_revision, 2,
-        "the rejected candidate is the desired head"
-    );
-    let rejected = ControlPlaneStore::auth_revision_get(plane.control_plane.as_ref(), KEY, 2)
+    assert_eq!(head.active_revision, None);
+    assert_eq!(head.desired_revision, 1);
+    let rejected = plane
+        .control_plane
+        .auth_revision_get(KEY, 1)
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(
-        rejected.app_id.as_deref(),
-        Some("999999"),
-        "the wrong-App candidate stored"
-    );
-    assert!(
-        ControlPlaneStore::auth_bindings_get(plane.control_plane.as_ref(), KEY, 2)
-            .await
-            .unwrap()
-            .is_empty(),
-        "the wrong-App candidate was rejected: no bindings ever froze"
-    );
-    assert_eq!(
-        ControlPlaneStore::auth_credential_bytes(plane.control_plane.as_ref(), KEY, 1)
-            .await
-            .unwrap()
-            .unwrap(),
-        original_bytes,
-        "the original active credential bytes are continuously preserved"
-    );
+    assert_eq!(rejected.state, "Rejected");
+    assert_eq!(rejected.app_id.as_deref(), Some("999999"));
+    assert!(plane
+        .control_plane
+        .auth_bindings_get(KEY, 1)
+        .await
+        .unwrap()
+        .is_empty());
 
-    // 2. Corrected SAME-App publication (numeric A, proven to be the
-    // same App as the stored client-ID) with the latest ETag: admitted
-    // (a rejected candidate is history, not authorization) and promoted
-    // by the real worker.
-    let etag2 = head_etag(&app, &uri).await;
+    let etag = head_etag(&app, &uri).await;
     assert_eq!(
-        put(&app, &uri, v2_body("4863460"), Some(&etag2)).await,
+        put(&app, &uri, v2_body("4863460"), Some(&etag)).await,
         axum::http::StatusCode::ACCEPTED,
-        "the corrected same-App publication must be admitted after rejection"
+        "a rejected candidate must not prevent correction of the App id",
     );
     tick_and_drain(&mut wiring, T0 + 1_000).await;
-    let head = ControlPlaneStore::auth_profile_get(plane.control_plane.as_ref(), KEY)
+    let head = plane
+        .control_plane
+        .auth_profile_get(KEY)
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(
-        head.active_revision,
-        Some(3),
-        "the corrected candidate (rev 3, after the rejected rev 2) validated and activated"
-    );
+    assert_eq!(head.active_revision, Some(2));
 }
-
-/// Seeds an ACTIVE legacy revision (schema 1) whose identity is the
-/// client-ID string the mock's `/app` reports — the exact established
-/// state the v2 upgrade path upgrades FROM.
-async fn seed_active_legacy_profile(control_plane: &Arc<SqliteControlPlane>) {
-    use shaula_core::registry::ControlPlaneStore as _;
-    use shaula_core::registry::{AuthRevisionRow, MutationFacts};
-    let change = shaula_core::registry::ChangeView {
-        id: "legacy-create".into(),
-        resource_kind: "github_auth_profile".into(),
-        resource_key: KEY.into(),
-        revision: 1,
-        kind: "Put".into(),
-        state: "Pending".into(),
-        reason: None,
-    };
-    let facts = MutationFacts {
-        resource_kind: "github_auth_profile",
-        resource_key: KEY.into(),
-        incarnation: "inc-legacy".into(),
-        revision: 1,
-        spec_json: String::new(),
-        template: None,
-        auth_desired: None,
-        inputs_digest: String::new(),
-        actor: "tester".into(),
-        now: 1,
-        change,
-        outbox_topic: "profile.auth_validate".into(),
-        outbox_payload: format!(r#"{{"key":"{KEY}","revision":1}}"#),
-        idempotency: None,
-    };
-    let credential = AuthRevisionRow {
-        profile_key: KEY.into(),
-        revision: 1,
-        kind: "github_app".into(),
-        app_id: Some("Iv23tester".into()),
-        installation_id: Some(11),
-        pat_principal: None,
-        allowlist_json: String::new(),
-        schema_version: 1,
-        policy_json: None,
-        validation_snapshot_json: None,
-        state: "Validating".into(),
-        reason: None,
-    };
-    control_plane
-        .commit_auth_revision(
-            facts,
-            credential,
-            crate::auth_worker_v2::tests::real_pem().as_bytes(),
-        )
-        .await
-        .unwrap()
-        .unwrap();
-    let outcome = ControlPlaneStore::auth_apply_validation_v2(
-        control_plane.as_ref(),
-        KEY,
-        1,
-        true,
-        None,
-        2,
-        None,
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        outcome,
-        shaula_core::registry::AuthPromotionOutcome::Promoted,
-        "fixture: the legacy identity is active"
-    );
-}
-
 /// G9 control: a DIFFERENT numeric App against an established ACTIVE
 /// identity is still a conflict — the correction loop does not weaken
 /// the identity rule.

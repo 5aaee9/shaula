@@ -78,7 +78,7 @@ async fn v2_context_ack_is_atomic_and_refuses_same_name_rebuild() {
             "fleet-repo",
             PROFILE,
             1,
-            Some(serde_json::to_string(&desired).unwrap().as_str()),
+            serde_json::to_string(&desired).unwrap().as_str(),
             6,
         )
         .await
@@ -294,7 +294,6 @@ async fn admission_context_carries_exact_repo_proofs_from_snapshot() {
     let context_json = store
         .auth_desired_context_tx(&tx, PROFILE, 1, spec)
         .await
-        .unwrap()
         .expect("v2 admission derives a context");
     let context: ResolvedAuthContext = serde_json::from_str(&context_json).unwrap();
     assert_eq!(context.repository_id, Some(700));

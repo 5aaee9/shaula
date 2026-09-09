@@ -18,6 +18,7 @@
 | 数据库模板库、默认文件导入与 Terraform 变量发现 | [spec 0015](specs/0015-template-library-and-variable-discovery.md) / [ARD-0019](ard/0019-store-template-sources-and-discover-terraform-variables.md) |
 | Fleet authentication/template Profile 服务端列表选择 | [spec 0016](specs/0016-fleet-profile-selection.md) / [ARD-0020](ard/0020-load-fleet-profile-choices-from-registry.md) |
 | Template 静态校验后的自动激活与旧 Ready 升级 | [spec 0017](specs/0017-automatic-template-activation.md) / [ARD-0021](ard/0021-activate-templates-after-static-validation.md) |
+| 仅支持 v2 GitHub App authentication、历史格式停用与部署检查 | [spec 0018](specs/0018-github-app-only-authentication.md) / [ARD-0022](ard/0022-retire-legacy-github-authentication.md) |
 | GitHub authentication 连接列表、搜索、详情发现 | [spec 0012](specs/0012-github-authentication-inventory.md) / [ADR-0016](ard/0016-list-authentication-connections-from-the-profile-registry.md) |
 | 管理 HTTP 的 OIDC、session、CSRF | [spec 0009](specs/0009-mandatory-openid-connect.md) |
 | Browser session 到期后的 Provider 续期、页面保留 | [spec 0013](specs/0013-provider-backed-browser-session-renewal.md) / [ADR-0017](ard/0017-renew-browser-sessions-in-the-authentication-guard.md) |
@@ -35,7 +36,7 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 - Terraform state 通过 daemon 内部 HTTP backend 写入 SQLite；LOCK/UNLOCK、锁持有者校验和 state 写入是数据库事务契约，不以本地 `terraform.tfstate` 为主状态。
 - daemon 保管 GitHub 控制面凭据，worker 通过受授权控制通道请求 JIT、观察与安全删除；管理 HTTP 保持 OIDC，内部 worker/state HTTP 使用分权的 Generation/worker 专用凭据。
 - Runner Generation 不可变；Create 与 Destroy 是唯一基础设施 mutation，Busy-safe removal、原始 inputs/artifact、worker fencing 和故障时保留证据不因进程拆分而取消。
-- Kubernetes 与 Docker 都是 v1 bundled Template Platforms；GitHub App 与 PAT 都受支持，不做运行时 credential fallback。
+- Kubernetes 与 Docker 都是 v1 bundled Template Platforms；GitHub authentication 只支持 schema 2 GitHub App、显式 TargetPolicy 和 Revision-scoped account bindings，不做运行时 credential fallback。PAT、旧 allowlist 和固定 installation publication 已按 spec 0018 停用。
 - Fleet Decommission 保留空 Scale Set；Profile DELETE 是异步 retirement，不因正在使用而改成同步删除或 force delete。
 - Template 当前候选静态校验通过后自动激活，已有 Ready 在扫描时重新校验并激活；独立 `template.attest` 的 exact conformance 记录作为运行验证证据保留，不再控制激活，见 spec 0017。
 - 默认 Docker Runner 不挂载 host socket；JIT 同 Runner Execution Domain 的进程检查风险、Kubernetes name-based deletion 风险和同 OS identity IaC children 的 ambient host-admin 风险按相应 ARD 记录。
@@ -48,7 +49,7 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 
 | ID | 类型 | 尚缺事实或选择 | 所属契约 |
 | --- | --- | --- | --- |
-| D1 | 产品支持范围 | PAT classic、fine-grained 或两者的正式支持矩阵；App/PAT × organization/repository 的真实 GitHub 验收 | 0001 §6.3 |
+| D1 | 协议验收 | GitHub App × organization/repository 的真实 GitHub 验收，包含多 org 和个人动态仓库路由；PAT 支持已由 spec 0018 明确取消，不再待决定 | 0001 §6.3 / 0011 / 0018 |
 | D2 | 运行策略 | Changes、幂等记录、audit、tombstones、retired credentials、artifacts、state snapshots、emergency state 与 Workspace 的 retention 时限；原始凭据的外部撤销时机 | 0005 §7 |
 | D3 | 运行策略 | operation/recovery timeout、retry budget、reaper interval、worker/backend body/rate/backlog/concurrency 的最终默认值与硬上限；OIDC 已有具体值见部署说明，不重新标为待定 | 0001 §5 / 0009 |
 | D4 | 持久格式，阻塞发布冻结 | `bindings_digest` 是否继续作为独立 commitment，以及 exact Revision/incarnation 绑定、编码和兼容迁移；本轮不新增 bd2/HMAC 格式，不重写旧记录 | 0004 §3 / 0005 §5 |
@@ -60,7 +61,7 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 
 ## 多账户认证与后续扩展
 
-多账户 GitHub authentication 已按 [spec 0011](specs/0011-multi-account-github-authentication.md) 与 [ADR-0015](ard/0015-route-one-github-app-profile-to-multiple-accounts.md) 接受并完成本地实现：一份 App credential、多个明确账户/Target selector、个人未来仓库的按需验证。它替代单 installation、同 key policy 不可变的旧基线条款；真实 GitHub 路由验收与生产迁移仍未执行，当前能力边界以 [implementation status](IMPLEMENTATION_STATUS.md) 为准。
+多账户 GitHub authentication 已按 [spec 0011](specs/0011-multi-account-github-authentication.md) 与 [ADR-0015](ard/0015-route-one-github-app-profile-to-multiple-accounts.md) 接受并完成本地实现：一份 App credential、多个明确账户/Target selector、个人未来仓库的按需验证。它替代单 installation、同 key policy 不可变的旧基线条款。[spec 0018](specs/0018-github-app-only-authentication.md) 进一步取消 PAT、v1 publication/replay、旧格式升级和 reference-only execution。历史 rows/credential bytes 保留且不自动转换；部署前必须确认没有仍依赖旧格式的 active/desired 或 retained execution 引用。真实验收与部署证据以 [implementation status](IMPLEMENTATION_STATUS.md) 为准。
 
 以下需要新的决定和对应验收，不阻塞按现有基线实现：额外 high-trust Runner-socket Profile、Docker memory-only JIT、pre-JIT provider-backed namespace preflight、每 Profile 独立 OS identity/sandbox、OpenTofu advertisement、远程 Executor Driver、多主/HA、自动删除 Scale Set、Quarantine force-recovery。它们不能作为匿名认证、跳过 locking 或丢弃可能残留资源的理由。
 

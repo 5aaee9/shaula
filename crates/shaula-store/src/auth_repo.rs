@@ -25,11 +25,8 @@ impl Store {
     }
 
     /// Creates a Candidate credential revision and advances the desired
-    /// head. Identity fields (kind, app/installation, principal, allowlist
-    /// or v2 policy) are fixed per incarnation and validated by the caller.
-    /// A v2 Candidate carries `policy_json` and an EMPTY legacy allowlist —
-    /// an old binary reading the row fails closed instead of mistaking the
-    /// first binding for the single installation.
+    /// head. App identity is fixed per incarnation; policy is revision-scoped.
+    /// Old columns are inert storage and always empty in new revisions.
     pub(crate) async fn auth_commit_revision(
         &self,
         tx: &DatabaseTransaction,
@@ -49,9 +46,9 @@ impl Store {
             revision: Set(insert.revision),
             kind: Set(insert.kind.clone()),
             app_id: Set(insert.app_id.clone()),
-            installation_id: Set(insert.installation_id),
-            pat_principal: Set(insert.pat_principal.clone()),
-            allowlist_json: Set(insert.allowlist_json.clone()),
+            installation_id: Set(None),
+            pat_principal: Set(None),
+            allowlist_json: Set(String::new()),
             credential_bytes: Set(credential_bytes.to_vec()),
             state: Set("Validating".to_string()),
             reason: Set(None),

@@ -51,8 +51,7 @@ async fn idempotency_replay_and_conflict() {
 
     // Apply the (phase-3) credential validation outcome so the auth
     // profile reaches Active before fleet admission.
-    control_plane
-        .auth_apply_validation("prod-app", 1, true, None, 1_800_000_001_500)
+    common::auth_fixture::promote(control_plane.as_ref(), "prod-app", 1, 1_800_000_001_500)
         .await
         .unwrap();
 

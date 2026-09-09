@@ -178,22 +178,19 @@ impl ControlPlane {
                 "auth credential missing",
             ));
         };
-        let allowed = if revision.schema_version >= 2 {
-            let policy = revision.target_policy()?.ok_or_else(|| {
-                CoreError::new(ReasonCode::Internal, "active v2 auth policy missing")
-            })?;
-            policy.allows(&spec.github.target)
-        } else {
-            let allowlist: shaula_core::auth::TargetAllowlist =
-                serde_json::from_str(&revision.allowlist_json).map_err(|e| {
-                    CoreError::new(ReasonCode::Internal, format!("allowlist invalid: {e}"))
-                })?;
-            allowlist.allows(&spec.github.target)
-        };
-        if !allowed {
+        if revision.schema_version != 2 || revision.kind != "github_app" {
             return Err(CoreError::new(
                 ReasonCode::AuthTargetDenied,
-                "auth profile target allowlist does not cover the fleet target",
+                "unsupported authentication revision; publish a GitHub App v2 profile",
+            ));
+        }
+        let policy = revision
+            .target_policy()?
+            .ok_or_else(|| CoreError::new(ReasonCode::Internal, "active auth policy missing"))?;
+        if !policy.allows(&spec.github.target) {
+            return Err(CoreError::new(
+                ReasonCode::AuthTargetDenied,
+                "auth profile target policy does not cover the fleet target",
             ));
         }
         Ok(())

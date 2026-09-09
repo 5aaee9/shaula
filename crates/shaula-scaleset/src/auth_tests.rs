@@ -41,8 +41,6 @@ fn registration_token_path_parsing() {
 
 #[test]
 fn credential_debug_redacts() {
-    let pat = Credential::Pat(SecretString::new("github_pat_x"));
-    assert!(!format!("{pat:?}").contains("github_pat_x"));
     let app = Credential::GitHubApp {
         client_id: "123".into(),
         installation_id: 456,

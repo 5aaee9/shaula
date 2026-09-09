@@ -111,17 +111,10 @@ export function AuthConnections({
 
 function ActiveTargets({ profile }: { profile: AuthResource }) {
   if (!profile.activeRevision) return "--";
-  const active = profile.active;
-  const labels =
-    active?.schema_version === 2
-      ? (active.target_policy || []).map((selector) => ({
-          key: selectorKey(selector),
-          label: selectorLabel(selector),
-        }))
-      : (active?.target_allowlist || profile.target_allowlist || []).map((target) => ({
-          key: target,
-          label: target,
-        }));
+  const labels = (profile.active?.target_policy || []).map((selector) => ({
+    key: selectorKey(selector),
+    label: selectorLabel(selector),
+  }));
   if (!labels.length) return "--";
   return (
     <div className="flex flex-wrap gap-2">

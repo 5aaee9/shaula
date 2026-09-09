@@ -95,8 +95,8 @@ pub struct AuthRolloutSummary {
     pub observed: Option<(String, i64)>,
     pub handoff_state: String,
     /// Exact Resolved Auth Context rollout (spec 0011 §6): the desired
-    /// and observed context refs with the durable state/reason. `None`
-    /// for legacy profiles without a context model.
+    /// and observed context refs with the durable state/reason. Missing
+    /// context in historical data never authorizes execution.
     pub context: Option<AuthContextSummary>,
 }
 
@@ -178,19 +178,12 @@ pub struct TemplateProfilePut {
 
 /// Submission payload for a GitHub Auth Candidate revision. Secret bytes
 /// are carried as [`crate::secret::SecretString`] and never logged.
-/// `schema_version == Some(2)` selects the multi-account policy format
-/// (target_policy, GitHub App only); `None` is the legacy single-
-/// installation/exact-allowlist format and must never be version-guessed.
+/// Only explicit schema version 2 and GitHub App policy are supported.
 #[derive(Clone)]
 pub struct AuthProfilePut {
     pub kind: AuthKind,
     pub app_id: Option<String>,
-    pub installation_id: Option<i64>,
-    pub pat_identity: Option<String>,
     pub secret: crate::secret::SecretString,
-    /// Presence-preserving: `None` = member absent; `Some(vec![])` = the
-    /// member appeared with an empty value (forbidden in v2).
-    pub allowlist: Option<Vec<crate::github::GitHubTarget>>,
     pub schema_version: Option<i64>,
     pub target_policy: Option<Vec<crate::auth_policy::TargetSelector>>,
 }

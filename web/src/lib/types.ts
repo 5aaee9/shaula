@@ -94,15 +94,7 @@ export interface TemplateRevision {
 export interface AuthResource extends TemplateSummary {
   kind: string | null;
   credential_present: boolean;
-  /**
-   * Revision-attributed GET shape (spec 0011 §6): legacy members
-   * (identity/target_allowlist) come from the still-effective ACTIVE
-   * revision; the active/desired objects carry per-revision policy and
-   * bindings for v2 profiles or staged upgrades. Legacy members are
-   * absent once the active revision is v2.
-   */
-  identity?: string | null;
-  target_allowlist?: string[];
+  /** Policy and bindings are attributed to their owning revision. */
   schema_version?: number;
   app_id?: string;
   active?: AuthRevisionState;
@@ -139,8 +131,6 @@ export interface AuthRevisionState {
   state: string;
   reason: string | null;
   schema_version: number;
-  identity?: string | null;
-  target_allowlist?: string[];
   app_id?: string | null;
   target_policy?: TargetSelector[];
   bindings?: AccountBinding[];

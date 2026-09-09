@@ -126,8 +126,7 @@ async fn auth_resource_version_allows_strong_writes_but_never_weak_or_stale_ones
         .await
         .unwrap();
     assert_eq!(created.status(), StatusCode::ACCEPTED);
-    store
-        .auth_apply_validation("prod-app", 1, true, None, 1)
+    common::auth_fixture::promote(store.as_ref(), "prod-app", 1, 1)
         .await
         .unwrap();
     let mut view = app
@@ -144,7 +143,7 @@ async fn auth_resource_version_allows_strong_writes_but_never_weak_or_stale_ones
         let mut request = authorized(
             "PUT",
             uri,
-            Some(AUTH_PUT_BODY.replace("github_pat_test_token_bytes", "rotated-test-token")),
+            Some(AUTH_PUT_BODY.replace("github_app_test_key_bytes", "rotated-test-token")),
         );
         request.headers_mut().remove("if-none-match");
         request.headers_mut().insert("if-match", version);
@@ -194,15 +193,14 @@ async fn concurrent_auth_replacements_have_one_winner() {
         .await
         .unwrap();
     let etag = first.headers()["etag"].clone();
-    store
-        .auth_apply_validation("prod-app", 1, true, None, 1)
+    common::auth_fixture::promote(store.as_ref(), "prod-app", 1, 1)
         .await
         .unwrap();
     let update = |token: &str| {
         let mut req = authorized(
             "PUT",
             uri,
-            Some(AUTH_PUT_BODY.replace("github_pat_test_token_bytes", token)),
+            Some(AUTH_PUT_BODY.replace("github_app_test_key_bytes", token)),
         );
         req.headers_mut().remove("if-none-match");
         req.headers_mut().insert("if-match", etag.clone());

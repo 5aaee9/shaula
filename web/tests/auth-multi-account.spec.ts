@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { mockApi, scopes } from "./fixtures";
 
-import { LEGACY_APP_PROFILE, V2_PROFILE } from "./auth-fixtures";
+import { UNSUPPORTED_PROFILE, V2_PROFILE } from "./auth-fixtures";
 
 test("new GitHub App profiles use multi-account selectors without installation input", async ({
   page,
@@ -10,7 +10,8 @@ test("new GitHub App profiles use multi-account selectors without installation i
   await page.goto("/auth");
   await page.getByRole("button", { name: "Create profile" }).click();
   await page.getByRole("textbox", { name: "Profile key", exact: true }).fill("shared-github");
-  await page.getByLabel("Credential type").selectOption("github_app");
+  await expect(page.getByLabel("Credential type")).toHaveCount(0);
+  await expect(page.getByLabel("Personal access token", { exact: true })).toHaveCount(0);
   // No installation field: the App discovers installations per account.
   await expect(page.getByLabel("Installation ID")).toHaveCount(0);
   await page.getByLabel("App ID", { exact: true }).fill("4863460");
@@ -40,90 +41,16 @@ test("new GitHub App profiles use multi-account selectors without installation i
   ]);
 });
 
-test("legacy App rotation keeps the immutable exact scope and requires the installation", async ({
-  page,
-}) => {
+test("unsupported authentication remains visible without rotation or upgrade", async ({ page }) => {
   await mockApi(page);
-  let submitted: string | null = null;
-  await page.route("**/api/v1/github-auth-profiles/legacy-app", async (route) => {
-    if (route.request().method() === "PUT") {
-      submitted = route.request().postData();
-      return route.fulfill({
-        status: 202,
-        contentType: "application/json",
-        body: JSON.stringify({ changeId: "c2", state: "Pending", revision: 2 }),
-      });
-    }
-    return route.fulfill({
-      headers: { etag: '"auth-inc:1"' },
-      json: LEGACY_APP_PROFILE,
-    });
-  });
-  await page.goto("/auth?key=legacy-app");
-  await page.getByRole("button", { name: "Rotate credential" }).click();
-  // The immutable legacy scope is preserved and prefilled.
-  const targets = page.getByLabel("Allowed targets (immutable exact scope)");
-  await expect(targets).toHaveValue("acme\nacme/build-tools");
-  // Identity members are prefilled from the parsed legacy identity.
-  await expect(page.getByLabel("Installation ID")).toHaveValue("34");
-  // No upgrade submitted by default: opening the form never expands scope.
-  await page.getByLabel("Private key (PEM)").fill("-----BEGIN TEST-----");
-  await page.getByRole("dialog").getByRole("button", { name: "Rotate credential" }).click();
-  await expect.poll(() => submitted).not.toBeNull();
-  const body = JSON.parse(submitted!);
-  expect(body.schema_version).toBeUndefined();
-  expect(body.app_id).toBe("Iv23legacy");
-  expect(body.installation_id).toBe(34);
-  expect(body.target_allowlist).toEqual([
-    { kind: "organization", owner: "acme" },
-    { kind: "repository", owner: "acme", repository: "build-tools" },
-  ]);
-});
-
-test("legacy profiles expose an explicit upgrade path seeded from the exact scope", async ({
-  page,
-}) => {
-  await mockApi(page);
-  let submitted: string | null = null;
-  await page.route("**/api/v1/github-auth-profiles/legacy-app", async (route) => {
-    if (route.request().method() === "PUT") {
-      submitted = route.request().postData();
-      return route.fulfill({
-        status: 202,
-        contentType: "application/json",
-        body: JSON.stringify({ changeId: "c3", state: "Pending", revision: 2 }),
-      });
-    }
-    return route.fulfill({
-      headers: { etag: '"auth-inc:1"' },
-      json: LEGACY_APP_PROFILE,
-    });
-  });
-  await page.goto("/auth?key=legacy-app");
-  await page.getByRole("button", { name: "Rotate credential" }).click();
-  await page.getByRole("button", { name: "Advanced settings" }).click();
-  await page.getByLabel("Upgrade to multi-account policy").check();
-  // The legacy installation input disappears once the upgrade mode is on.
-  await expect(page.getByLabel("Installation ID")).toHaveCount(0);
-  // The legacy client-ID is NOT a valid v2 App id: the numeric id of the
-  // SAME App must be entered (continuity proven through /app later).
-  await expect(page.getByLabel("App ID")).toHaveValue("Iv23legacy");
-  expect(
-    await page
-      .getByLabel("App ID")
-      .evaluate((input) => (input as HTMLInputElement).validity.patternMismatch),
-  ).toBe(true);
-  await page.getByLabel("App ID").fill("4863460");
-  await page.getByLabel("Private key (PEM)").fill("-----BEGIN TEST-----");
-  await page.getByRole("dialog").getByRole("button", { name: "Rotate credential" }).click();
-  await expect.poll(() => submitted).not.toBeNull();
-  const body = JSON.parse(submitted!);
-  expect(body.schema_version).toBe(2);
-  expect(body.app_id).toBe("4863460");
-  expect(body.target_policy).toEqual([
-    { kind: "organization", owner: "acme" },
-    { kind: "repository", owner: "acme", repository: "build-tools" },
-  ]);
+  await page.route("**/api/v1/github-auth-profiles/old-auth", (route) =>
+    route.fulfill({ headers: { etag: '"auth-inc:1"' }, json: UNSUPPORTED_PROFILE }),
+  );
+  await page.goto("/auth?key=old-auth");
+  await expect(page.getByText("Unsupported", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Rotate credential" })).toBeDisabled();
+  await expect(page.getByLabel("Upgrade to multi-account policy")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Retire authentication profile" })).toBeEnabled();
 });
 
 test("a v2 profile shows its active policy, candidate policy and per-account bindings", async ({
@@ -143,8 +70,6 @@ test("a v2 profile shows its active policy, candidate policy and per-account bin
   await expect(page.getByText("Account bindings of r1")).toBeVisible();
   await expect(page.getByText("All repositories (includes future)")).toBeVisible();
   await expect(page.getByText("Unknown", { exact: true })).toBeVisible();
-  // The compose form never shows a single installation identity for v2.
-  await expect(page.getByText("app/Iv23legacy/installation/34")).toHaveCount(0);
 });
 
 test("all auth surfaces need the auth.write scope to publish", async ({ page }) => {

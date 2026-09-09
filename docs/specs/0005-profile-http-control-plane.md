@@ -4,7 +4,7 @@
 - Date: 2026-09-04
 - Managed resources: Template Profiles and GitHub Auth Profiles
 - Persistence: SQLite, including content-addressed Template archive bytes; reconstructable filesystem execution cache
-- Secret-at-rest decision: PAT, GitHub App private key, and schema-sensitive Template bindings may be plaintext in SQLite
+- Secret-at-rest decision: GitHub App private keys, schema-sensitive Template bindings and retained historical credentials may be plaintext in SQLite; only schema 2 GitHub App authentication is executable
 
 This specification extends the [Fleet HTTP Control-Plane Specification](0002-fleet-http-control-plane.md). Related decisions are [ADR-0005](../ard/0005-manage-fleet-desired-state-through-http-and-sqlite.md), [ADR-0007](../ard/0007-use-target-bound-github-auth-profiles.md), [ADR-0009](../ard/0009-manage-profile-resources-through-http-and-sqlite.md), and [ADR-0013](../ard/0013-require-openid-connect-for-all-http-access.md). Inbound authentication is normative in [spec 0009](0009-mandatory-openid-connect.md); GitHub Auth Profiles remain outbound credentials, not OIDC identities.
 
@@ -16,7 +16,7 @@ One `shaula serve` HTTP Interface manages three desired-resource families：
 - Template Profile；
 - GitHub Auth Profile.
 
-`template_profiles` and `github_auth_catalog` are not daemon-bootstrap truth sources. Their desired heads, immutable Revisions, conformance attestations, status, Changes, idempotency and audit facts live in SQLite. Template bytes are uploaded through HTTP and stored as immutable digest-addressed archives in SQLite; the protected filesystem artifact store is a reconstructable execution cache. Default filesystem source imports and Terraform variable discovery follow [spec 0015](0015-template-library-and-variable-discovery.md). GitHub PAT/App private-key bytes and schema-sensitive Kubernetes/Docker binding values are accepted as write-only HTTP fields and stored in their immutable SQLite Revision rows.
+`template_profiles` and `github_auth_catalog` are not daemon-bootstrap truth sources. Their desired heads, immutable Revisions, conformance attestations, status, Changes, idempotency and audit facts live in SQLite. Template bytes are uploaded through HTTP and stored as immutable digest-addressed archives in SQLite; the protected filesystem artifact store is a reconstructable execution cache. Default filesystem source imports and Terraform variable discovery follow [spec 0015](0015-template-library-and-variable-discovery.md). GitHub App private-key bytes and schema-sensitive Kubernetes/Docker binding values are accepted as write-only HTTP fields and stored in their immutable SQLite Revision rows. Authentication publication requires schema 2; PAT and old formats are rejected under [spec 0018](0018-github-app-only-authentication.md).
 
 The bootstrap file remains limited to native daemon concerns：storage paths, database, HTTP security/listen policy, IaC engine executables and installation policy, concurrency/timeout limits, artifact limits, and OpenTelemetry/logging.
 
@@ -178,54 +178,45 @@ The normalized v1 read projection is deliberately small: omit `bindings` values 
 
 ## 6. GitHub Auth Profile resource
 
-Proposed amendment: [spec 0011](0011-multi-account-github-authentication.md) / [ADR-0015](../ard/0015-route-one-github-app-profile-to-multiple-accounts.md) defines a versioned multi-account GitHub App policy and installation-routing model. Until accepted, the single-installation identity and rotation-only rules below remain the baseline. PAT and common Profile lifecycle rules are not replaced by that proposal.
+The accepted [spec 0011](0011-multi-account-github-authentication.md) owns multi-account TargetPolicy, frozen account bindings, numeric identity continuity and exact execution contexts. [Spec 0018](0018-github-app-only-authentication.md) / [ARD-0022](../ard/0022-retire-legacy-github-authentication.md) removes the earlier PAT, single-installation, allowlist and upgrade contracts. Common Profile publication, retirement, privacy, audit and recovery rules remain in force.
 
-The two request shapes are discriminated and strict：
+One strict request shape is supported:
 
 ```json
 {
   "kind": "github_app",
+  "schema_version": 2,
   "app_id": "123456",
-  "installation_id": "789012",
   "private_key": "-----BEGIN RSA PRIVATE KEY-----\n...",
-  "target_allowlist": [
+  "target_policy": [
     {"kind": "organization", "owner": "example-org"},
-    {"kind": "repository", "owner": "example-org", "repository": "example-repo"}
+    {"kind": "organization", "owner": "another-org"},
+    {"kind": "account_repositories", "account_kind": "user", "owner": "example-user"}
   ]
 }
 ```
 
-```json
-{
-  "kind": "pat",
-  "token": "github_pat_...",
-  "target_allowlist": [
-    {"kind": "organization", "owner": "example-org"}
-  ]
-}
-```
+`app_id` is a positive decimal numeric App identity. Missing, older and unknown `schema_version`, PAT, `token`, `installation_id`, `target_allowlist` and other legacy publication members are rejected before persistence or idempotent replay. The daemon discovers and verifies each selector's installation; operators do not submit a fixed installation ID.
 
-`private_key` and `token` are write-only secret fields. SQLite stores their original bytes in the immutable Auth Revision. They are omitted from every response, event, audit payload and diagnostic representation. A response exposes only `credential_present: true`, kind, non-secret identity, Target policy, Revision/state and timestamps；it exposes no prefix, suffix, hash or encrypted/plaintext representation.
+`private_key` is write-only. SQLite stores its original bytes in the immutable Auth Revision, but every response, event, audit payload and diagnostic omits them. Read metadata is limited to credential presence, supported format, non-secret policy/bindings and Revision state; it exposes no secret prefix, suffix, hash, length or encrypted/plaintext representation. Historical unsupported rows and bytes remain protected and unmodified, without decoding old credential metadata or converting it into authority.
 
-The following identity fields are immutable for one Auth Profile incarnation：kind, App ID, installation ID, initial authenticated PAT principal and normalized Target allowlist. Changing any of them requires a new Profile key and explicit Fleet reassignment. A Fleet Auth-key replacement follows spec 0002's zero-Occupancy/effect barrier; an existing idle session is quiesced by the subsequent Handoff, not an admission deadlock. Target and Scale Set identity remain immutable. A replacement PUT on the existing key is credential rotation only：new App private-key bytes for the same App/installation, or a new PAT that authenticates as the same GitHub principal. A PAT whose principal cannot be proved equal is a principal migration, not rotation.
+A verified numeric App identity is fixed for one Profile incarnation. Same-App key rotation, policy changes and installation replacement create new Candidates and must satisfy spec 0011's predecessor identity, binding convergence and live-dependent coverage checks. A different App needs a new key and explicit Fleet reassignment. An unsupported old Profile cannot be upgraded implicitly. Cross-Profile Fleet replacement retains spec 0002's zero-Occupancy/effect barrier; an idle session is quiesced by the subsequent Handoff. GitHub Target and Scale Set identity remain immutable.
 
-Asynchronous validation and activation：
+Asynchronous validation and activation:
 
-1. Parse the credential without logging parser content.
-2. Construct only the matching Rust `shaula-scaleset` client；never try the other auth kind.
-3. Perform bounded read-only identity/access checks for the declared Target policy and all currently dependent Fleet Targets.
-4. For PAT rotation, require the authenticated principal identity to match the Profile's fixed principal.
-5. If validation fails, mark the Candidate `Rejected` and leave the old active credential untouched.
-6. If validation passes and the Candidate remains desired, atomically promote it and enqueue every dependent Fleet.
-7. Same-Profile promotion sets each dependent Fleet's desired Auth Revision Ref to the full tuple `(profile_key, revision)`；every GitHub effect records the exact tuple it used.
-8. Same-Profile promotion and an admitted zero-occupancy cross-Profile Fleet replacement enter the same durable Auth Handoff state machine.
-9. Handoff quiesces new acquisition and waits for every acquisition crossing the fence to return or receive durable outcome classification.
-10. For a bound Fleet, handoff uses the desired tuple only for authenticated read-only ownership proof of the persisted Scale Set ID and immutable identity.
-11. For an unbound Fleet, handoff only validates access and records the desired access context；it does not create/adopt, bind a Scale Set ID, establish a session or mint JIT configuration.
-12. Handoff durably records its classification and advances the observed Auth Revision Ref to the exact desired tuple. Equality means Auth handoff completed, not that a Scale Set or listener session exists.
-13. Ordinary Fleet reconciliation exclusively owns create-or-adopt, Scale Set ID binding and session establishment/replacement；acquisition resumes only after that reconciliation establishes a ready session for the observed tuple.
-14. A Decommissioning Fleet permanently rejects new acquisition but may run this state machine in cleanup-only mode；it never establishes an acquiring session, creates/adopts, changes the Scale Set ID or mints JIT configuration.
-15. An old Auth Revision becomes GC-eligible only when no Profile desired/active/observed head, Fleet desired/observed tuple, in-flight effect/session, Decommission cleanup or recovery record references it. `Blocked` retains every such reference and cannot be used as acknowledgement or release.
+1. Require schema 2 GitHub App and parse the private key without logging parser content.
+2. Prove the declared numeric App identity, discover each policy selector's installation and freeze proven account bindings. Never convert a legacy predecessor or bypass numeric identity checks.
+3. Perform bounded read-only runner access/metadata checks for the policy and all live dependent Fleet Targets; preserve numeric account/repository identity, convergent routing and policy coverage under spec 0011.
+4. A transient or rate-limit failure remains retryable; terminal identity/access failure rejects the Candidate and leaves the previous Active head untouched. Preserving a historical unsupported head does not authorize its execution.
+5. If validation succeeds and the Candidate, dependent set and fences remain current, atomically promote its bindings/snapshot and enqueue every dependent Fleet.
+6. Promotion sets dependent desired Auth Revision Refs to `(profile_key, revision)` with their exact desired context; every GitHub effect records the exact observed ref/context used.
+7. Same-Profile promotion and admitted zero-occupancy cross-Profile replacement enter one durable Auth Handoff. Handoff stops acquisition and waits for every request crossing the fence to return or receive durable outcome classification.
+8. A bound Fleet uses desired authority only for authenticated read-only ownership proof of its persisted Scale Set ID and immutable identity. An unbound Fleet verifies access and numeric Target identity. Handoff never creates/adopts, binds an ID, establishes a session or mints JIT.
+9. Handoff atomically advances the observed ref and verified exact context under the captured fence. Ref equality alone is never sufficient; missing policy/context, unsupported format and identity drift cannot acknowledge.
+10. Ordinary Fleet reconciliation exclusively owns create-or-adopt, ID binding and session establishment/replacement. Acquisition resumes only after a ready session exists for verified observed authority.
+11. Decommission permanently rejects new acquisition but permits v2 cleanup-only handoff. It cannot establish acquiring sessions, create/adopt, change the Scale Set ID or mint JIT. Every cleanup effect requires its retained exact verified context.
+12. Unsupported execution references fail closed and retain ownership/cleanup evidence. Rollout must resolve such live references using the previous release before deployment, as specified in spec 0018; retaining old rows does not permit old execution.
+13. An Auth Revision becomes GC-eligible only after no Profile head, Fleet ref, in-flight effect/session, Decommission cleanup or recovery record references it. `Blocked` is never acknowledgement or release. Common retirement rules in §7.1 remain unchanged.
 
 Production validation, handoff and reconciliation use only the Rust `shaula-scaleset` implementation. A fixed, reviewed Go oracle pinned to an exact `github.com/actions/scaleset` commit exists solely for conformance/differential tests；it is neither shipped nor invoked by production Shaula.
 
@@ -243,7 +234,7 @@ The conceptual schema adds typed tables：
 - `template_artifacts` and reference counts/retention metadata；
 - explicit Fleet-to-Template-Revision-and-activation-provenance relations (retaining legacy attestation field names under spec 0017) plus `fleet_auth_handoffs` containing desired/observed Auth `(profile_key, revision)` tuples, fences, classifications and exact references held by in-flight effects, sessions, Decommission cleanup and recovery.
 
-Auth Revision rows contain PAT/App private-key plaintext, and Template Revision rows contain plaintext values for schema-sensitive bindings. SQLite main/page files, WAL/SHM, online and migration copies, crash dumps and backups MUST receive credential-grade access, retention and disposal. Application-level encryption is not a v1 requirement；deployment-level full-disk/filesystem/backup encryption is strongly recommended.
+Auth Revision rows contain App private-key plaintext and may retain historical PAT bytes, and Template Revision rows contain plaintext values for schema-sensitive bindings. SQLite main/page files, WAL/SHM, online and migration copies, crash dumps and backups MUST receive credential-grade access, retention and disposal. Application-level encryption is not a v1 requirement；deployment-level full-disk/filesystem/backup encryption is strongly recommended.
 
 The authoritative consistency set is defined by [spec 0010 §7](0010-lifecycle-worker-and-http-state-backend.md): SQLite including Terraform state/locks/worker facts, retained artifact/inputs and unresolved emergency state. Ordinary materialized copies are reconstructible. Partial restore is unsupported; no external secret-store restore is required for the credential bytes kept in SQLite.
 
@@ -307,7 +298,7 @@ Required bounded spans include：
 - `shaula.github_auth.validate`, `shaula.github_auth.handoff` and ordinary Fleet session reconciliation；
 - `shaula.profile.reference.resolve`.
 
-Metrics use finite `resource_kind=template_profile|github_auth_profile`, operation, state, `auth_kind=github_app|pat`, handoff state, result and stable reason code. Profile keys, Revision IDs, attestation IDs, artifact digests, GitHub owners/repositories, credential identity and error text are forbidden metric labels.
+Metrics use finite `resource_kind=template_profile|github_auth_profile`, operation, state, `auth_kind=github_app`, handoff state, result and stable reason code. Profile keys, Revision IDs, attestation IDs, artifact digests, GitHub owners/repositories, credential identity and error text are forbidden metric labels.
 
 Secrets, request/response bodies, archive contents, Template binding values, private keys, PATs and secret-derived identifiers never appear in logs, spans or metrics. Local rate-limited diagnostics report exporter failure independently.
 
@@ -323,8 +314,8 @@ Implementation is incomplete until：
 6. An authorized `template.attest` request durably binds artifact, dependency lock, exact providers, engine binary, runner images, protected `bindings_digest`, runtime/trust policy with accepted limitations, manifest-derived `platform`/`bindings_contract` and suite version as independent conformance evidence；it does not gate Template activation. Auth activation remains identity/access-validation gated.
 7. Passed, failed, mismatched and stale attestations remain audited and cannot activate or replace any Profile head/activation ID；`template.publish`, `template.attest` and `fleet.write` are independently testable permissions.
 8. New/changed Fleet Template references resolve current Active and pin its digest/activation provenance; unchanged pins in capacity/inputs/no-op requests are retained under spec 0002. Later publication, activation or attestation changes neither Fleet nor Generation.
-9. PAT/App private-key bytes and sensitive Template binding bytes survive daemon restart from their immutable SQLite Revisions and reconstruct the exact client or IaC input, but never appear in any GET/list/status/revision/attestation response, audit, error, log, trace, metric or diagnostic representation；GitHub credentials never enter IaC/Runner, and Template binding secrets never enter Runner/workflow.
-10. The Rust `shaula-scaleset` implementation passes the GitHub App/PAT × organization/repository matrix against real `github.com` and differential conformance against the fixed Go `github.com/actions/scaleset` oracle.
+9. Supported v2 App private-key bytes and sensitive Template binding bytes survive daemon restart from immutable SQLite Revisions and reconstruct the exact client or IaC input. Historical PAT/old-format bytes remain protected history and cannot reconstruct executable clients. No secret appears in any GET/list/status/revision/attestation response, audit, error, log, trace, metric or diagnostic；GitHub credentials never enter IaC/Runner, and Template binding secrets never enter Runner/workflow.
+10. The Rust `shaula-scaleset` implementation passes the GitHub App × organization/repository matrix, including multiple organizations and dynamic personal repositories, against real `github.com` and the fixed Go oracle. PAT, old/unknown schemas, legacy fields and matching historical replay are rejected under spec 0018.
 11. Wrong principal, App/installation mismatch, `401`, `403` and access-filtered `404` reject the Auth Candidate and never cause fallback or Scale Set Create.
 12. Same-Profile promotion and admitted zero-occupancy cross-Profile replacement use one durable handoff: full desired/observed tuples, quiescence, ownership proof or unbound access classification, Busy Runner preservation and exact acknowledgements.
 13. Handoff never creates/adopts, binds a Scale Set ID or establishes/replaces a session；ordinary Fleet reconciliation exclusively owns those effects while Target and Scale Set identity remain immutable.

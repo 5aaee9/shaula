@@ -35,7 +35,7 @@ fn fixed_clock() -> Arc<FixedClock> {
     Arc::new(FixedClock(AtomicI64::new(1_800_000_000_000)))
 }
 
-fn pat_client(github_base: String) -> ScalesetClient {
+fn app_client(github_base: String) -> ScalesetClient {
     let http = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()
@@ -43,7 +43,17 @@ fn pat_client(github_base: String) -> ScalesetClient {
     let target = GitHubTarget::organization("example-org").unwrap();
     ScalesetClient::with_local_servers(
         target,
-        Credential::Pat(SecretString::new("github_pat_test")),
+        Credential::GitHubApp {
+            client_id: "123".into(),
+            installation_id: 34,
+            private_key: SecretString::new(
+                std::fs::read_to_string(
+                    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join("tests/fixtures/app.private.pem"),
+                )
+                .unwrap(),
+            ),
+        },
         github_base,
         fixed_clock(),
         http,
@@ -53,7 +63,7 @@ fn pat_client(github_base: String) -> ScalesetClient {
 #[tokio::test]
 async fn full_auth_chain_and_port_operations() {
     let github_base = wire_mock_router::spawn_mock_github().await;
-    let client = pat_client(github_base);
+    let client = app_client(github_base);
 
     // 1. Runner group resolution through the admin token chain.
     let identity = shaula_core::github::ScaleSetIdentity {
@@ -123,7 +133,7 @@ async fn poll_202_maps_to_no_message() {
     });
 
     let github_base = wire_mock_router::spawn_mock_github().await;
-    let client = pat_client(github_base);
+    let client = app_client(github_base);
     let session = shaula_core::ports::SessionHandle {
         session_id: "s".into(),
         message_queue_url: format!("http://{addr}/queue/42"),
@@ -151,7 +161,7 @@ async fn poll_401_maps_to_session_expired_not_create() {
     });
 
     let github_base = wire_mock_router::spawn_mock_github().await;
-    let client = pat_client(github_base);
+    let client = app_client(github_base);
     let session = shaula_core::ports::SessionHandle {
         session_id: "s".into(),
         message_queue_url: format!("http://{addr}/queue/42"),
@@ -199,7 +209,7 @@ async fn poll_message_batch_parses_typed_job_messages() {
     });
 
     let github_base = wire_mock_router::spawn_mock_github().await;
-    let client = pat_client(github_base);
+    let client = app_client(github_base);
     let session = shaula_core::ports::SessionHandle {
         session_id: "s".into(),
         message_queue_url: format!("http://{addr}/queue/42"),

@@ -21,6 +21,10 @@ pub(super) struct SupervisorCacheKey {
     execution_contexts: Vec<(String, i64, Option<String>)>,
 }
 
+#[cfg(test)]
+#[path = "wiring_unsupported_auth_tests.rs"]
+mod unsupported_auth_tests;
+
 impl SupervisorWiring {
     pub(super) async fn supervisor_for(
         &mut self,
@@ -55,7 +59,12 @@ impl SupervisorWiring {
             .store
             .auth_revision_get(&exec_profile, exec_revision)
             .await?;
-        let exec_is_v2 = exec_row.as_ref().is_some_and(|r| r.schema_version >= 2);
+        if exec_row
+            .as_ref()
+            .is_none_or(|r| r.schema_version != 2 || r.kind != "github_app")
+        {
+            return Ok(None);
+        }
         let mut observed_context = None;
         if let Some(row) = &context_row {
             if row.observed.as_ref() == Some(&(exec_profile.clone(), exec_revision)) {
@@ -66,24 +75,24 @@ impl SupervisorWiring {
                         Ok(ctx) => observed_context = Some(ctx),
                         // A corrupt observed authority for a v2 execution
                         // ref can never be replaced by an in-memory pin.
-                        Err(_) if exec_is_v2 => return Ok(None),
-                        Err(_) => {}
+                        Err(_) => return Ok(None),
                     }
                 }
             }
         }
-        if exec_is_v2 && observed.is_some() {
+        if observed.is_some() {
             let Some(ctx) = &observed_context else {
                 return Ok(None);
             };
             if ctx.profile_key != exec_profile
                 || ctx.revision != exec_revision
                 || ctx.target != spec.github.target
+                || !ctx.has_complete_identity()
             {
                 return Ok(None);
             }
         }
-        let execution_ready = observed.is_some() || handoff.is_none();
+        let execution_ready = observed.is_some();
         let fence = self
             .store
             .fleet_get(key)
@@ -129,7 +138,7 @@ impl SupervisorWiring {
                 &self.store,
                 &exec_profile,
                 exec_revision,
-                Some(&spec.github.target),
+                &spec.github.target,
             )
             .await?
             else {
@@ -147,10 +156,9 @@ impl SupervisorWiring {
                     continue;
                 }
                 let row = self.store.auth_revision_get(profile, *revision).await?;
-                if row
-                    .as_ref()
-                    .is_none_or(|r| r.schema_version >= 2 && json.is_none())
-                {
+                if row.as_ref().is_none_or(|r| {
+                    r.schema_version != 2 || r.kind != "github_app" || json.is_none()
+                }) {
                     continue; // no authority: cleanup retains occupancy and retries
                 }
                 let context = json
@@ -167,10 +175,11 @@ impl SupervisorWiring {
                             "retained execution context invalid",
                         )
                     })?;
-                if context.as_ref().is_some_and(|c| {
+                if context.as_ref().is_none_or(|c| {
                     c.profile_key != *profile
                         || c.revision != *revision
                         || c.target != spec.github.target
+                        || !c.has_complete_identity()
                 }) {
                     continue;
                 }
@@ -178,7 +187,7 @@ impl SupervisorWiring {
                     &self.store,
                     profile,
                     *revision,
-                    Some(&spec.github.target),
+                    &spec.github.target,
                 )
                 .await?
                 else {
@@ -199,7 +208,7 @@ impl SupervisorWiring {
                 &self.store,
                 &desired.0,
                 desired.1,
-                Some(&spec.github.target),
+                &spec.github.target,
             )
             .await?
             else {

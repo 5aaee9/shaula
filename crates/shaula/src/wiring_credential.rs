@@ -15,39 +15,26 @@ pub(crate) async fn build_credential(
     store: &Arc<dyn ControlPlaneStore>,
     profile_key: &str,
     revision: i64,
-    target: Option<&shaula_core::github::GitHubTarget>,
+    target: &shaula_core::github::GitHubTarget,
 ) -> CoreResult<Option<shaula_scaleset::Credential>> {
-    let Some(bytes) = store.auth_credential_bytes(profile_key, revision).await? else {
-        return Ok(None);
-    };
     let Some(row) = store.auth_revision_get(profile_key, revision).await? else {
         return Ok(None);
     };
-    let secret = SecretString::new(String::from_utf8_lossy(&bytes).into_owned());
-    let credential = match row.kind.as_str() {
-        "pat" => shaula_scaleset::Credential::Pat(secret),
-        "github_app" if row.schema_version < 2 => shaula_scaleset::Credential::GitHubApp {
-            client_id: row.app_id.clone().unwrap_or_default(),
-            installation_id: row.installation_id.unwrap_or_default(),
-            private_key: secret,
-        },
-        // v2: resolve the target's account binding (frozen at promotion).
-        "github_app" => {
-            let Some(target) = target else {
-                return Ok(None);
-            };
-            let Some(binding) = resolve_binding(store, profile_key, revision, target).await? else {
-                return Ok(None);
-            };
-            shaula_scaleset::Credential::GitHubApp {
-                client_id: row.app_id.clone().unwrap_or_default(),
-                installation_id: binding.installation_id,
-                private_key: secret,
-            }
-        }
-        _ => return Ok(None),
+    if row.schema_version != 2 || row.kind != "github_app" {
+        return Ok(None);
+    }
+    let Some(binding) = resolve_binding(store, profile_key, revision, target).await? else {
+        return Ok(None);
     };
-    Ok(Some(credential))
+    let Some(bytes) = store.auth_credential_bytes(profile_key, revision).await? else {
+        return Ok(None);
+    };
+    let secret = SecretString::new(String::from_utf8_lossy(&bytes).into_owned());
+    Ok(Some(shaula_scaleset::Credential::GitHubApp {
+        client_id: row.app_id.unwrap_or_default(),
+        installation_id: binding.installation_id,
+        private_key: secret,
+    }))
 }
 
 /// Recheck frozen route convergence when constructing a client. A corrupt

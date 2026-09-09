@@ -163,13 +163,13 @@ async fn v2_head_refuses_legacy_downgrade_and_identity_change() {
         .await
         .unwrap();
 
-    // A legacy-shaped PUT on a v2 head is a 409, never a downgrade.
+    // An unsupported old request fails schema admission before any replay.
     let mut legacy = authorized("PUT", uri, Some(LEGACY_APP_PUT_BODY.into()));
     legacy.headers_mut().remove("if-none-match");
     legacy.headers_mut().insert("if-match", etag);
     assert_eq!(
         app.clone().oneshot(legacy).await.unwrap().status(),
-        StatusCode::CONFLICT
+        StatusCode::UNPROCESSABLE_ENTITY
     );
 
     // A different App id under the same key is an identity conflict.

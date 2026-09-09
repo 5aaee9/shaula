@@ -4,7 +4,7 @@
 - Date: 2026-09-04
 - GitHub target: `github.com`
 - Supported scopes: organization and repository
-- Supported GitHub authentication: GitHub App (preferred) and PAT
+- Supported GitHub authentication: schema 2 GitHub App with explicit TargetPolicy (spec 0018)
 - Native platform clients: none
 - v1 bundled Template Platforms: Kubernetes and Docker
 - Lifecycle primitives: Create and Destroy only
@@ -45,7 +45,7 @@ OpenTelemetry tracing、metrics 和日志关联是 Day 0 Interface。HTTP commit
 - [ADR-0004: Allow bootstrap secrets in provisioning state](../ard/0004-allow-bootstrap-secrets-in-provisioning-state.md)
 - [ADR-0005: Manage Fleet desired state through HTTP and SQLite revisions](../ard/0005-manage-fleet-desired-state-through-http-and-sqlite.md)
 - [ADR-0006: Realize each Kubernetes Runner Generation as one Pod and one bootstrap Secret](../ard/0006-realize-each-kubernetes-runner-generation-as-one-pod-and-one-bootstrap-secret.md)
-- [ADR-0007: Use target-bound GitHub auth profiles with GitHub App preferred and PAT supported](../ard/0007-use-target-bound-github-auth-profiles.md)
+- [ADR-0007: Target-bound GitHub auth profiles (authentication format superseded by ADR-0022)](../ard/0007-use-target-bound-github-auth-profiles.md)
 - [ADR-0008: Keep platform capabilities in Terraform Template Profiles](../ard/0008-keep-platform-capabilities-in-terraform-template-profiles.md)
 - [ADR-0009: Manage Template and GitHub Auth Profiles through HTTP and SQLite](../ard/0009-manage-profile-resources-through-http-and-sqlite.md)
 - [ADR-0010: Build a pure-Rust multi-crate daemon and use scaleset as an oracle](../ard/0010-build-a-pure-rust-multi-crate-daemon-and-use-scaleset-as-an-oracle.md)
@@ -68,8 +68,8 @@ v1 MUST：
 9. 同时交付 `templates/kubernetes` 与 `templates/docker`，并让两者遵守相同的 Template Runtime contract。
 10. 使用 SQLite desired/worker/GitHub facts、HTTP-backed Terraform state/lock、retained artifacts/inputs 和 emergency state 支持恢复，不承诺 Create 的逐指令 resume。
 11. 容忍重复、乱序和缺失的 Job Observation，且不故意销毁 GitHub 已知仍在执行 job 的 Runner。
-12. 将 GitHub App 和 PAT 都作为正式、受测试的认证方式；GitHub App 是推荐默认，认证失败不自动 fallback 到另一 kind 或旧 revision。
-13. 接受 PAT、GitHub App private key 与 schema-sensitive Kubernetes/Docker Template bindings 作为 write-only HTTP 输入并允许其明文存入各自 immutable SQLite Revision，同时禁止所有读取接口、audit、error、log、OTel 和 diagnostics 回显；GitHub credential 只进入 GitHub Access Module，Template binding secret 只进入 exact-Revision IaC child，二者都不进入 Runner/workflow。
+12. 只接受 schema 2 GitHub App authentication，支持显式多账户 TargetPolicy；PAT、旧版和未知格式必须拒绝，认证失败不自动 fallback 到另一 kind 或旧 revision，详见 spec 0018。
+13. 接受 GitHub App private key 与 schema-sensitive Kubernetes/Docker Template bindings 作为 write-only HTTP 输入并允许其明文存入各自 immutable SQLite Revision，同时禁止所有读取接口、audit、error、log、OTel 和 diagnostics 回显；GitHub credential 只进入 GitHub Access Module，Template binding secret 只进入 exact-Revision IaC child，二者都不进入 Runner/workflow。历史 PAT bytes 继续受同等保护，但不再作为输入或执行凭据。
 14. 从 Day 0 通过 Rust `tracing`/OpenTelemetry 产生 traces 和 metrics，并让结构化日志与 trace 关联。
 
 ## 3. Non-goals
@@ -140,7 +140,7 @@ Fleet Registry Module 负责 Fleet Spec admission、不可变 Fleet Revision、o
 
 Profile Registry Module 负责 Template/Auth Profile 的 typed resources、不可变 Revision、异步 validation/activation、reference integrity、Profile Change、outbox 和 redaction。Template Artifact Module 独立负责 streaming、digest、archive safety、atomic publication 和 garbage collection。完整契约见 [Profile HTTP Control-Plane Specification](0005-profile-http-control-plane.md)。
 
-GitHub Access Module 的 production Adapter 是 `shaula-scaleset`。它由稳定 Auth Profile key、指定 credential revision 和 typed GitHub Target 构造 core-owned Scale Set Interface，并隐藏 GitHub App/PAT client 构造、短期 token refresh、reqwest/wire DTO、redaction 和 typed authentication failures。Credential 或 Adapter concrete types 不跨出此 Interface；失败不触发 auth-kind 或旧 revision fallback。
+GitHub Access Module 的 production Adapter 是 `shaula-scaleset`。它由稳定 Auth Profile key、指定 v2 GitHub App revision、typed GitHub Target 和 exact Resolved Auth Context 构造 core-owned Scale Set Interface，并隐藏 GitHub App client 构造、短期 token refresh、reqwest/wire DTO、redaction 和 typed authentication failures。Credential 或 Adapter concrete types 不跨出此 Interface；失败不触发 auth-kind 或旧 revision fallback。
 
 每个 Fleet Reconciler 只处理一个 Scale Set 的 durable observations、capacity intent 和 Runner lifecycle。它不暴露 reqwest/wire DTO、Terraform、SeaORM/SQLite 或任何平台对象类型。
 
@@ -259,15 +259,15 @@ Attestation 是引用 Template Revision/canonical subject 的独立 immutable �
 
 ### 6.3 GitHub Auth Profile
 
-待审修订：[spec 0011](0011-multi-account-github-authentication.md) / [ADR-0015](../ard/0015-route-one-github-app-profile-to-multiple-accounts.md) 提议支持同一 App 的多账户 bindings 与动态仓库 policy。以下仍是提案接受前的单 installation 基线；不能把草案视为已实现的权限能力。
+[spec 0011](0011-multi-account-github-authentication.md) / [ADR-0015](../ard/0015-route-one-github-app-profile-to-multiple-accounts.md) 定义同一 App 的多账户 bindings、动态仓库 policy 和 exact context；[spec 0018](0018-github-app-only-authentication.md) / [ARD-0022](../ard/0022-retire-legacy-github-authentication.md) 取消旧单 installation/PAT publication、升级和执行兼容。这些已接受契约替代原单 installation 基线。
 
-GitHub Auth Profile 是稳定 logical key 下的一组不可变 credential Revisions。Profile kind 是 `github_app` 或 `pat`；App/installation identity、PAT principal identity 和 normalized Target allowlist 在一个 Profile incarnation 内固定。改变身份或 policy 需要新 key，不能伪装成 same-key rotation；Fleet 改引新 key 使用 spec 0002 的零占用/effect barrier；idle session 允许存在，由已持久化 Handoff 负责 quiesce，不能把“无 session”作为进入 Handoff 的前置条件。
+GitHub Auth Profile 是稳定 logical key 下的一组不可变 credential Revisions，只接受 `kind: github_app`、`schema_version: 2`、positive decimal App ID、private key 与显式 TargetPolicy。已验证 numeric App identity 在 Profile incarnation 内固定；同 App 的 key rotation、policy 调整和 installation replacement 可通过新 Candidate 验证，且必须保留 spec 0011 的 numeric account/repository identity 与 live dependent coverage。改变 App identity 需要新 key；旧格式 Profile 不得隐式转换。Fleet 改引新 key 使用 spec 0002 的零占用/effect barrier；idle session 由 Handoff quiesce，不能成为进入 Handoff 的前置阻碍。
 
-PAT 和 GitHub App private key 是 write-only HTTP fields，并允许原始明文字节保存在 SQLite Auth Revision 中。所有 GET/list/status/revision、audit、error、log、trace 和 metric 只能返回 `credential_present` 等非 secret metadata，不能返回 prefix、suffix、hash 或任何可推导 secret 的表示。
+GitHub App private key 是 write-only HTTP field，并允许原始明文字节保存在 SQLite Auth Revision 中。历史 credential bytes 保留但不授权旧格式执行。所有 GET/list/status/revision、audit、error、log、trace 和 metric 只能返回 `credential_present` 等非 secret metadata，不能返回 prefix、suffix、hash 或任何可推导 secret 的表示。
 
 Candidate credential 必须经过异步、bounded、read-only GitHub identity/access validation。失败时旧 active revision 保持不变。same-key promotion 后，Profile Registry 为每个依赖 Fleet 设置新的 `desired_auth_ref=(profile_key, revision)`；已准入的 cross-key replacement 由 Fleet mutation 写入同样完整的 desired ref。二者进入同一个 durable Auth Handoff：停止新 job acquisition、处理已在途 acquisition，并以 desired ref 对已持久化 Scale Set ID/identity 做 read-only ownership/absence classification。Handoff 只持久化 classification 并推进完整 `observed_auth_ref`；它不调用 create-or-adopt、不绑定 ID、不建立或替换 session。普通 Fleet reconciliation 独占这些副作用，并且只有为 observed ref 建立 ready session 后才恢复 acquisition。
 
-`observed_auth_ref == desired_auth_ref` 只证明指定完整 `(profile_key, revision)` access context 的 handoff 已持久化，不代表 Scale Set/session 存在或 capacity 已收敛。两者不等必须作为独立、可恢复、可告警 rollout lag 暴露，不能被 Fleet desired/observed revision 掩盖。
+Auth handoff 完成必须同时持久化匹配的完整 `(profile_key, revision)` ref 与已验证 exact Resolved Auth Context；ref equality 本身不证明授权，也不代表 Scale Set/session 存在或 capacity 已收敛。ref 或 context 不一致必须作为独立、可恢复、可告警 rollout lag 暴露，不能被 Fleet desired/observed revision 掩盖。旧版、未知版、缺失 policy/context 的引用不得执行，包括 cleanup；部署恢复要求见 spec 0018。
 
 Decommission 中的 Auth change 使用 cleanup-only handoff：候选 ref 可做只读 access/ownership validation，并原子推进完整 observed Auth Revision Ref，但不得创建 session、acquire job、Create 或 create-or-adopt。之后每次 inventory/removal effect 都记录所用 exact ref/context。旧 revision 只要仍被 Profile desired/active/observed head、Fleet desired/observed ref、in-flight effect/session、cleanup 或 recovery 引用就必须保留；`Blocked` 不释放任何引用。
 
@@ -278,10 +278,8 @@ Permission admission 与真实验收至少覆盖以下 `github.com` baseline；�
 | Credential | Organization Target | Repository Target |
 | --- | --- | --- |
 | GitHub App | Organization `Self-hosted runners: read/write`；Repository `Metadata: read` | Repository `Administration: read/write`、`Metadata: read`，以及 Scale Set Adapter/API 实际要求的 installation access |
-| PAT classic | `admin:org` | `repo` |
-| PAT fine-grained | Organization `Administration: read`、`Self-hosted runners: read/write` | Repository `Administration: read/write` |
 
-GitHub App 是推荐默认。PAT classic/fine-grained 是否都作为 v1 release-gated 输入仍是 section 18 的 scope decision；无论选哪一类，都必须在 organization/repository 两种 Target 上做真实 Scale Set/JIT/inventory/removal 验收。Profile response 可以暴露 operator 提交的非 secret PAT type metadata，但不能从 token 派生或回显 secret identifier。
+GitHub App 是唯一受支持的认证方式，必须在 organization/repository 两种 Target 上做真实 Scale Set/JIT/inventory/removal 验收，并覆盖多个 organization 与个人动态仓库。PAT variants 不再是待决定的支持项；历史 Profile 只显示受限的 unsupported 状态，不重建旧凭据身份。
 
 ### 6.4 Source-of-truth rules
 
@@ -298,7 +296,7 @@ Fleet identity 是稳定 Fleet Key。远程 Scale Set identity 是 typed GitHub 
 Fleet supervisor 激活时 MUST：
 
 1. 在任何 remote mutation 前持久化 normalized Target、stable remote identity、immutable fingerprint 和 create-or-adopt intent。
-2. 解析 Fleet 完整 `desired_auth_ref`，验证其 Target allowlist 并构造匹配的 App 或 PAT client，不 fallback。
+2. 解析 Fleet 完整 `desired_auth_ref`，只接受 v2 GitHub App，验证其 TargetPolicy 并解析冻结的 account binding/exact context；执行使用已验证 observed authority，不 fallback。
 3. 进行 bounded authenticated read，解析 runner group 并按完整稳定 tuple 查找 Scale Set。
 4. 只有成功认证的 read 证明不存在时才允许 Create；调用 POST 前先在一个 transaction 中写 `ScaleSetCreateStarting`、唯一 attempt identity 和 exact Target/group/name/fingerprint。重启或重试不得换 name。
 5. Create success、`409`、timeout、connection reset 或 response body 丢失都先进入同一 uncertain-outcome reconciliation：按原 tuple lookup，不直接再发 POST。
@@ -529,7 +527,7 @@ Credential 术语必须准确：
 
 | Class | Examples | Runner/workflow visibility |
 | --- | --- | --- |
-| GitHub Control-Plane Credential | App private key、installation/admin token、Shaula PAT | 只在 daemon GitHub Access Module，永不传入 Lifecycle Worker、IaC、Runner 或 workflow |
+| GitHub Control-Plane Credential | App private key、installation/admin token；历史 PAT bytes 仍受保护但不再执行 | 只在 daemon GitHub Access Module，永不传入 Lifecycle Worker、IaC、Runner 或 workflow |
 | Internal Worker/State Capability | Generation/worker-scoped control token、Terraform backend password | control token 仅 worker；state token 仅 worker/其 Terraform child；两者都不进入 Runner/workflow |
 | Platform Provider Credential / Sensitive Binding | Profile-owned kubeconfig、remote Docker TLS/registry credential、schema-sensitive Kubernetes/Docker binding | 原始值只从 exact Template Revision 传给获准 IaC subprocess，永不传入 Runner/workflow；local `docker.sock` 是同 OS identity children 共享的 ambient host-admin capability，不是 environment scoping 可隔离的 credential |
 | Runner Registration | one-time JIT bootstrap payload | 进入 bootstrap/Runner Execution Domain；禁止主动传递给 job，但 v1 接受同域 process inspection 风险 |
@@ -537,7 +535,7 @@ Credential 术语必须准确：
 
 GitHub 不提供标准 `${{ github.pat }}`。workflow 的默认 job credential 是 `github.token` / `${{ secrets.GITHUB_TOKEN }}`，与 Shaula PAT/App credential、JIT 都不同。
 
-PAT/App private key 与 schema-sensitive Template bindings 可以明文存入各自 immutable SQLite Revision，但必须满足：
+GitHub App private key 与 schema-sensitive Template bindings 可以明文存入各自 immutable SQLite Revision；历史 PAT bytes 继续保留但不得用于执行。所有这些材料必须满足：
 
 - secret 只能经 write request 进入 SQLite；external secret reference 不是 v1 storage mode；
 - GET/list/status/revision/attestation、audit、error、structured log、trace、metric 和 diagnostic bundle 永不回显，只可返回 schema-approved non-secret fields 与 bounded presence metadata；
@@ -595,9 +593,9 @@ Implementation is incomplete until：
 3. `cargo metadata`/`cargo tree` architecture gate 证明 production binary 是 pure Rust，不含 Go bridge/FFI 或 Kubernetes/Docker client；framework/Adapter concrete types 与平台分支不进入 `shaula-core`。
 4. Template artifact HTTP publication 对 digest idempotent，并拒绝 traversal、link/device、expansion bomb、digest mismatch 和 oversize；`template.publish`、`template.attest` 与 `fleet.write` 权限彼此独立。
 5. Static validation 通过后自动产生 `Active`，无须 conformance PUT；已有 Ready 经重新校验自动激活。新增或改变 Template reference 的 admission 只解析 current Active subject 并冻结 artifact/activation provenance，未改变的旧 pin 按 spec 0002 保留；新 Profile Revision、激活或 attestation 不改变 Fleet 和既有 Generation，Platform authority 只来自 artifact manifest。
-6. PAT/App private-key 与 sensitive Template binding bytes 能从 exact SQLite Revision 跨重启重建 client 或 IaC input，但任何 GET/list/status/revision/attestation、audit、error、log、trace、metric 或 diagnostic 中均找不到原值或可推导表示；两类 secret 都不进入 Runner/workflow，GitHub credential 也不进入 Terraform。
+6. 受支持的 v2 GitHub App private-key 与 sensitive Template binding bytes 能从 exact SQLite Revision 跨重启重建 client 或 IaC input；历史 PAT/旧格式 bytes 保留但不能重建执行客户端。任何 GET/list/status/revision/attestation、audit、error、log、trace、metric 或 diagnostic 均不含原值或可推导表示；两类 secret 都不进入 Runner/workflow，GitHub credential 也不进入 Terraform。
 7. same-key credential promotion 为每个依赖 Fleet 写入完整 desired/observed Auth Revision Refs；normal handoff 只做 quiesce、read-only ownership/absence classification 与 observed-ref acknowledgement，再由普通 reconcile 独占 create/adopt、ID binding 和 session establish/replace。Decommission cleanup-only handoff 不建 session/acquire/Create；跨 Profile key replacement 只在零 Occupancy且无 active acquisition/GitHub/Runner Operation 时接受，`Blocked` 不释放任何 exact reference。
-8. pinned Go-oracle differential suite 与 organization/repository × GitHub App/PAT 的真实 `github.com` matrix 都通过 create-or-adopt、session、ACK/acquire、JIT、inventory、safe removal 和 restart。
+8. pinned Go-oracle differential suite 与 organization/repository × GitHub App 的真实 `github.com` matrix 都通过 create-or-adopt、session、ACK/acquire、JIT、inventory、safe removal 和 restart；旧版、未知版和 PAT 的拒绝按 spec 0018 验收。
 9. Scale Set uncertain Create 先持久化 `ScaleSetCreateStarting` 并按 stable tuple lookup；missing set with resources 进入 `ScaleSetMissingWithResources`，不 Update、不换名、不重绑。
 10. 两个 Fleet 的相同 message/job/runner suffix 不发生 cross-Fleet dedup、wakeup、retirement 或 recovery。
 11. fault injection 证明 message facts 在 ACK 前提交、commit failure 不 ACK、redelivery 幂等，且旧 `session_epoch` task 无法 ACK/acquire/覆盖 demand；事件丢失仍通过 fresh snapshot、inventory、reaper 和 periodic scan 收敛。
@@ -646,7 +644,7 @@ Verification SHOULD 组合 deep-Interface unit tests、fake Scale Set/IaC Adapte
 
 ### Phase 3: GitHub access and multi-Fleet reconcile
 
-- GitHub App/PAT × organization/repository matrix。
+- GitHub App × organization/repository matrix，包含多账户和个人动态仓库路由。
 - Profile credential validation/promotion 与 per-Fleet desired/observed Auth Revision Ref rollout。
 - 以 `shaula-scaleset`/reqwest 实现 create-or-adopt、independent sessions/listeners、persist-before-ACK、Assigned Demand、JIT、inventory 和 safe removal，并通过 pinned Go oracle。
 - capacity/fair scheduler、event-loss convergence、fault isolation 和 Decommission。
@@ -666,7 +664,7 @@ Verification SHOULD 组合 deep-Interface unit tests、fake Scale Set/IaC Adapte
 
 ## 18. Open decisions
 
-统一清单见 [文档索引](../README.md#仍需决定或冻结)：D1（PAT variants）、D2/D3（retention 与运行限额）、D4（bindings commitment）及 R1–R3（发布配置/验收）。
+统一清单见 [文档索引](../README.md#仍需决定或冻结)：D1（GitHub App 真实路由验收）、D2/D3（retention 与运行限额）、D4（bindings commitment）及 R1–R3（发布配置/验收）。PAT 停用已由 spec 0018 决定。
 
 OIDC、保留 Scale Set、默认 Runner 不挂 host socket 已是基线，不重复列为未决。额外 hardening、OpenTofu 与远程 Executor 是候选扩展；未经相应决定和验收不得 advertised。
 

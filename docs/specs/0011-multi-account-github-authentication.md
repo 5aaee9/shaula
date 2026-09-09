@@ -1,11 +1,11 @@
 # Multi-account GitHub Authentication Specification
 
-- Status: Accepted — local implementation and remaining integration boundaries are recorded in [the implementation status](../IMPLEMENTATION_STATUS.md); real-GitHub multi-account acceptance and the legacy-production migration remain open release gates
+- Status: Accepted — local implementation and remaining integration boundaries are recorded in [the implementation status](../IMPLEMENTATION_STATUS.md); real-GitHub multi-account acceptance remains an external release gate; legacy retirement is governed by spec 0018
 - Date: 2026-09-07
 - Decision: [ADR-0015](../ard/0015-route-one-github-app-profile-to-multiple-accounts.md)
 - Scope: 一个 GitHub App Auth Profile 覆盖多个组织及个人账户的仓库，按具体 Fleet Target 选择 installation
 
-本规范已被接受；本地实现与现有运行时集成边界见 implementation status，真实 GitHub 路由验收待执行，替代 [spec 0001 §6.3](0001-shaula-runner-scale-set.md#63-github-auth-profile)、[spec 0005 §6](0005-profile-http-control-plane.md#6-github-auth-profile-resource) 中 GitHub App 的单 installation / 固定 exact allowlist 模型，并扩展 [spec 0002 §6–7](0002-fleet-http-control-plane.md#7-auth-revision-handoff) 的 mutation / Auth Handoff。其余 Fleet identity、conditional mutation、credential redaction、Busy-safe removal 与 retirement 契约继续适用；legacy 数据按 §7 的迁移契约保持原语义。
+本规范已被接受；本地实现与现有运行时集成边界见 implementation status，真实 GitHub 路由验收待执行，替代 [spec 0001 §6.3](0001-shaula-runner-scale-set.md#63-github-auth-profile)、[spec 0005 §6](0005-profile-http-control-plane.md#6-github-auth-profile-resource) 中 GitHub App 的单 installation / 固定 exact allowlist 模型，并扩展 [spec 0002 §6–7](0002-fleet-http-control-plane.md#7-auth-revision-handoff) 的 mutation / Auth Handoff。其余 Fleet identity、conditional mutation、credential redaction、Busy-safe removal 与 retirement 契约继续适用；旧版发布、执行兼容与升级入口已由 [spec 0018](0018-github-app-only-authentication.md) 移除；§7 仅保留历史数据与部署边界。
 
 ## 1. Outcome and boundaries
 
@@ -19,7 +19,7 @@ Operator 可以创建一个 `shared-github` authentication，保存一份 App cr
 
 本次范围不包含自动创建 Fleet、自动安装或扩大 GitHub App 权限、个人账户级 Scale Set、GitHub Enterprise、多个 App/PAT credential 的聚合或 fallback。一个 Fleet 仍只有一个具体 `GitHubTarget`（organization 或 repository）；账户选择器不是新的 Fleet Target。组织 Fleet 的仓库使用范围仍由 GitHub runner group policy 管理。
 
-PAT 保留现有 exact Target allowlist、principal identity 和 rotation 契约；本次动态账户选择器与多 installation 路由仅适用于 GitHub App。
+当前只支持 v2 GitHub App。PAT、固定 installation/exact allowlist 发布与旧版升级入口已按 [spec 0018](0018-github-app-only-authentication.md) 退出支持。
 
 ## 2. Domain and identity
 
@@ -62,7 +62,7 @@ GitHub 的 account/repository numeric ID 是归属判定依据；login/name 是�
 | `repository { owner, repository }` | 一个具体 repository Target | 同名重建仓库或其他仓库 |
 | `account_repositories { account_kind, owner }` | 指定 `user` 或 `organization` 当前拥有且 installation 获准访问的仓库 | 账户作为协作者参与的其他 owner 仓库、organization Target |
 
-Policy 是非空集合，最多 100 个 selector、50 个不同账户；重复 selector、未知字段/variant、错配 account kind 或超限输入返回 `422 SpecInvalid`。集合排序按 canonical kind/account-kind/owner/repository 编码决定，语义相同的顺序变化不产生不同 mutation。新编码使用版本化 canonical codec；旧请求 replay 继续按旧 codec 校验。
+Policy 是非空集合，最多 100 个 selector、50 个不同账户；重复 selector、未知字段/variant、错配 account kind 或超限输入返回 `422 SpecInvalid`。集合排序按 canonical kind/account-kind/owner/repository 编码决定，语义相同的顺序变化不产生不同 mutation。编码使用版本化 canonical codec；不支持的旧请求在 replay lookup 前被拒绝，历史 replay 记录不改写。
 
 `account_repositories` 的有效范围始终是 **固定 account ID 当前拥有的仓库 ∩ installation 当前可访问仓库 ∩ 所需 runner 权限**。GitHub 安装选择 `All repositories` 时可覆盖未来仓库；选择 `Only select repositories` 时只动态覆盖 GitHub 选中的集合。UI 必须显示两种覆盖范围，不能把 selected 安装标成账户全部仓库。
 
@@ -114,7 +114,7 @@ Context 至少包含 `auth_ref=(profile_key, revision)`、GitHub host、App ID�
 
 依赖检查必须在 promotion 事务中重新校验 dependent-set version / 等价 CAS；与新 Fleet admission 并发时只能有一方先以有效 policy 提交。验证期间新增的未验证 Target 使 activation 回到 validation，不能带着旧检查结果 promotion。Profile retirement 仍阻止新 admission/publication。
 
-App identity 与 kind 仍不可改；PAT policy 不因此变成可编辑。同一个账号/App 的 installation ID 因重装变化可通过显式新 Candidate 重新绑定；默认不在后台自动接受新 installation。新增账户必须显式提交 selector，即使 App JWT 已能列出其 installation。
+App identity 与 kind 仍不可改；不支持的历史 Profile 必须用显式发布的新 v2 Profile 替换。同一个账号/App 的 installation ID 因重装变化可通过显式新 Candidate 重新绑定；默认不在后台自动接受新 installation。新增账户必须显式提交 selector，即使 App JWT 已能列出其 installation。
 
 ### 5.2 Exact context handoff
 
@@ -150,7 +150,7 @@ Token cache key 至少区分 GitHub host、exact Auth Revision Ref、account ID�
 
 沿用 `/api/v1/github-auth-profiles/{key}` 的 conditional PUT/GET/DELETE、OIDC scopes、CSRF、ETag、idempotency、Profile Change 与 retirement。v2 仅扩展 GitHub App resource，不增加另一套账户凭据资源或 OAuth 登录方式。
 
-`schema_version: 2` 禁止同时提交旧 `installation_id`/`target_allowlist`。省略 schema version 的旧请求继续按 legacy 格式解析，不能因 payload 包含 wildcard 而猜测版本。重复 JSON key、未知字段与数值溢出仍按严格 schema 拒绝。
+`kind: github_app` 与 `schema_version: 2` 必须显式提交。旧 `installation_id`、`target_allowlist`、PAT 字段，以及省略、旧版或未知 schema version 的请求均在持久化和 replay 前拒绝；不猜测或转换版本。重复 JSON key、未知字段与数值溢出仍按严格 schema 拒绝。完整退出支持契约见 [spec 0018](0018-github-app-only-authentication.md)。
 
 GET 对 v2 返回 `schema_version`、kind、App ID、`credential_present`、active/desired Revision、结构化 `target_policy` 和非 secret `bindings`。每个 binding 包含 account ID/type/canonical login、installation ID、`repository_selection`、验证时间及有界 health/reason。desired Candidate 与 active bindings 必须标明归属 Revision，不可混合展示为一个已生效配置。禁止拼造单个 `identity=app/.../installation/...` 代表整个 Profile。
 
@@ -164,38 +164,36 @@ UI MUST：
 - 提交前展示 policy 增减、目标账户及 live Fleet 影响；policy publication 与仅轮换 credential 分别命名，保持相同 CAS/validation 流程。
 - 显示逐账户的解析/权限故障及 Candidate 总体状态。个人 installation 失败时，仍能查看并使用健康的组织 binding。
 - Fleet 页面明确显示具体仓库的异步 resolution/access 结果；authentication 的 Active 状态不能代替该结果，不永久展开 policy。
-- 对 legacy Profile 展示固定 installation/exact targets，并提供显式升级入口；只打开或读取页面不得扩大授权。
+- 历史不支持的 Profile 显示 `Unsupported` 和非 secret 标识，不解析旧 credential metadata，不展示升级/旧凭据轮换入口，不能选作新的 Fleet 引用。纯读取不得转换数据或扩大授权。
 
 新增有限 reason codes：`TargetNotAllowed`、`InstallationNotFound`、`InstallationSuspended`、`InstallationChanged`、`TargetIdentityChanged`、`TargetPolicyInUse`、`AmbiguousInstallation`。已有 `Unauthenticated`、`PermissionDenied`、`TargetHiddenOrNotFound`、`RateLimited` 保留。异步失败记录在 Change/status；不能用新 reason 把网络故障伪装为同步 validation 成功。
 
-## 7. Storage, compatibility and rollout
+## 7. Storage, historical records and rollout
 
-新增版本化 Auth Revision policy/binding 表示与 Fleet/effect/session 的 context refs。Profile revision、validation snapshot、promotion、handoff context/fence、audit/outbox 更新沿用 SQLite 原子提交和重启恢复；原始 PEM 与完整 protected backups 仍处于现有 credential-grade 边界。
+版本化 Auth Revision policy/bindings 与 Fleet/effect/session context refs 继续沿用 SQLite 原子提交和重启恢复。Profile revision、validation snapshot、promotion、handoff context/fence、audit/outbox 仍绑定 exact Revision；原始 PEM 与完整 protected backups 仍处于现有 credential-grade 边界。
 
-迁移 MUST 满足：
+本节原先的 legacy runtime、旧请求 replay、同 key App 升级和 client-ID 转换承诺由 [spec 0018](0018-github-app-only-authentication.md) / [ADR-0022](../ard/0022-retire-legacy-github-authentication.md) 替代：
 
-1. 旧 schema 的一个 installation + exact allowlist 保持 legacy 语义。保留 Profile key、Revision numbers、secret bytes、Fleet auth tuples、ETag、request replay 和远程 Scale Set identity；不得把 exact repository 自动扩大为账户 selector。
-2. 纯 schema migration 不调用 GitHub、不发网络 mutation、不将缺失 account/repo ID 猜测补齐。旧行保留为可识别的 legacy representation。升级后的 runtime 对未绑定 Fleet 可在首次 access 验证后建立 IDs；对已绑定 Fleet，除当前 installation/exact Target access 外，还须通过保存的 Scale Set ID/immutable fingerprint/ownership proof，并与任何已有历史 identity 证据一致，才能在下一次授权 effect 前建立 context。缺少旧 numeric ID 的历史不能由当前 metadata 追溯证明；旧格式已有的同名 replacement 识别局限必须记录为 legacy 限制。已有证据矛盾或无法完成 ownership proof 时 Block/保留证据并要求显式恢复，不能仅凭新查询自动认领。
-3. 停机升级先 quiesce/fence 旧进程；新进程不复用旧内存 token/session authorization。旧 in-flight/cleanup/recovery refs 可以恢复分类，不可因新增字段为空而删除、GC 或自动重新执行 mutation。
-4. 同 key 从 legacy App profile 显式提交 v2 可保留相同 App identity并产生新 Revision；已知账户/repository 的 identity continuity 必须验证。旧 exact policy 的权限扩大只来自这次显式 publication，并受 §5 gate 管理。legacy PAT 不自动升级到动态 policy。
-5. 旧 App ID 若以 client ID 字符串保存，保持原表示与历史编码；在异步验证 `/app` 证明相同 App 后记录 numeric identity，不能直接将其当作另一个 App。无法证明 continuity 时拒绝迁移 publication。
-6. v2 active head 不接受 legacy PUT 降格/丢弃 bindings，返回 `409 IdentityConflict`；legacy GET 保持原 wire shape，v2 GET 必须返回明确版本，旧 UI/client 不能把未知 resource 当成可安全回写的旧对象。
-7. 写入新持久格式后，旧 binary 必须通过 store format gate 拒绝启动，不能把第一个 binding 当成唯一 installation。回退依赖升级前完整受保护备份和外部资源/worker consistency 检查，不支持仅换旧 binary 或在线回写 DB。
+1. 保留旧 Profile/Revision 行、credential bytes、审计、幂等记录、revision numbers 与执行证据；不删除列，也不将旧 installation、allowlist 或身份转换为 policy/binding。
+2. 旧版 active/desired 行可识别为不支持。纯读取不解析其 credential metadata、不调用 GitHub、不自动激活；发布、准入和执行不使用旧格式。
+3. 停机部署前检查 active/desired profiles，以及 live/retained Fleet、session、operation 引用。仍依赖旧执行授权的工作须先在上一版本显式恢复；新版本拒绝旧授权并保留 ownership/cleanup 证据。惰性的旧历史本身不阻止启动。
+4. 不支持的 Profile 用新的明确 v2 Profile 替换；不再提供同 key 自动或显式 legacy upgrade。pending v2 Candidate 不使旧 active Revision 可用。
+5. 本次退出支持不改写或删除旧数据，代码回退不需要因本次改动恢复数据库；外部资源与 worker 一致性仍须按现有运行规程核对。
 
-本次用例的迁移验收可在既有 `indexyz-org` 上显式 publication 一个仍含 `Indexyz`、并新增 `5aaee9` account-repositories selector 的 v2 Revision。保留原组织 Fleet 引用 key；更名为 `shared-github` 是另一次可选 Profile/Fleet replacement，不属于 schema migration。实际生产迁移需在实现与验证完成后单独执行，本次文档不宣称部署已升级。
+Indexyz 与 5aaee9 的多账户用例继续按本规范的 v2 policy 执行。文档不以旧版迁移示例代替部署前的真实引用检查。
 
 ## 8. Ownership and implementation sequence
 
 | Owner | 新职责 / 保留边界 |
 | --- | --- |
 | `shaula-core` | Target selector、account identity、binding/context/ref 类型与纯匹配/规范化；不引入第三种 Fleet Target |
-| `shaula-store` / migration | 版本化 policy/bindings、dependent-set CAS、context refs、旧行/replay/retention 兼容 |
+| `shaula-store` / migration | 版本化 policy/bindings、dependent-set CAS、context refs、历史行保留、拒绝旧请求与授权、retention |
 | `shaula-daemon` / Profile Registry | HTTP admission、完整 publication、policy/live-reference gates；不在 handler 中调用 GitHub |
 | `shaula-scaleset` | App identity proof、target-aware installation resolution、token scope/cache、权限失败分类 |
 | `shaula` wiring / auth worker / Fleet supervisor | Candidate 验证与原子 promotion、context Handoff、健康隔离、恢复/effect fence |
-| `shaula-http` / `web` | 版本化 DTO/status、typed selector 表单、逐账户结果与升级预览 |
+| `shaula-http` / `web` | 版本化 DTO/status、typed selector 表单、逐账户结果与 policy 变更预览 |
 
-实施顺序：先冻结 schema/identity/migration golden vectors；再实现 resolver 与权限分类；接入 publication/admission/Handoff/context persistence；最后更新 UI 并执行 legacy/multi-account 端到端验收。不得先上线只接受 wildcard 的 UI 而让 runtime 继续复用单 installation credential。Rust 文件拆分、fmt/clippy/nextest 要求继续适用。
+实施顺序：先冻结 schema/identity 与历史记录拒绝边界；再实现 resolver 与权限分类；接入 publication/admission/Handoff/context persistence；最后更新 UI 并执行不支持格式拒绝与 multi-account 端到端验收。不得先上线只接受 wildcard 的 UI 而让 runtime 继续复用单 installation credential。Rust 文件拆分、fmt/clippy/nextest 要求继续适用。
 
 ## 9. Acceptance criteria
 
@@ -216,8 +214,8 @@ UI MUST：
 | rotation/Handoff/restart | refs 和 context 同时精确匹配；旧 session/effect 被 fence，Busy Runner 与 recovery 引用保留 |
 | rate limit / timeout / 401 / 403 / 404 | 分类准确、退避有界、不过期兜底、不误 Create/AlreadyAbsent/Destroy |
 | cache scope 与大量仓库 | refresh singleflight；无跨账户/Revision/Target 污染；不把全账户展开进 500-item token 请求 |
-| legacy 升级/旧 client/降级 | 旧 exact 权限不扩大、replay/ETag不改；先证明当前 ownership 再建立缺失 IDs，不补造历史 continuity；v2不会被旧 PUT降格；旧 binary拒绝新格式 |
-| UI / sensitive data | 一份凭据、多类型 selector、per-binding 状态与升级预览；任何读取/错误/日志/审计均无 PEM/token |
+| 旧格式、旧 client 与历史引用 | 旧发布/replay/授权被拒绝；历史记录和执行证据保留，不转换权限或身份；部署前检查引用，见 spec 0018 |
+| UI / sensitive data | 一份凭据、多类型 selector、per-binding 状态与 policy 变更预览；任何读取/错误/日志/审计均无 PEM/token |
 
 验证必须包含纯匹配/codec tests、真实 SQLite transaction/crash tests、scripted GitHub HTTP（含分页/redirect/限流）、API/UI integration，以及真实 `github.com` 的 App × 多 organization/repository 路由验收。真实服务需验证 Scale Set、session、JIT、inventory、安全 removal，而不只验证 Profile Active。并沿用 exact-pinned Go oracle 的协议差异测试；发布证据记录在 implementation status，不写成未运行的通过声明。
 

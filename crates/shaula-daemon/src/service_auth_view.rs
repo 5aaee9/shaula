@@ -93,17 +93,22 @@ impl ControlPlane {
             incarnation: profile.incarnation,
             desired_revision: profile.desired_revision,
             active_revision: profile.active_revision,
-            status: profile.status,
-            kind: active
-                .as_ref()
-                .or(head.filter(|row| row.schema_version >= 2))
-                .map(|row| {
-                    if row.kind == "pat" {
-                        shaula_core::auth::AuthKind::Pat
-                    } else {
-                        shaula_core::auth::AuthKind::GithubApp
-                    }
-                }),
+            status: if head.is_some_and(|row| row.schema_version != 2 || row.kind != "github_app")
+                || active
+                    .as_ref()
+                    .is_some_and(|row| row.schema_version != 2 || row.kind != "github_app")
+            {
+                "Unsupported".into()
+            } else {
+                profile.status
+            },
+            kind: active.as_ref().or(head).map(|row| {
+                if row.kind == "pat" {
+                    shaula_core::auth::AuthKind::Pat
+                } else {
+                    shaula_core::auth::AuthKind::GithubApp
+                }
+            }),
             credential_present: active.is_some(),
             schema_version: head.map_or(1, |row| row.schema_version),
             app_id: head.and_then(|row| row.app_id.clone()),
@@ -127,13 +132,11 @@ impl ControlPlane {
             reason: row.reason.clone(),
             binding_health: Vec::new(),
             schema_version: row.schema_version,
-            identity: None,
-            target_allowlist: Vec::new(),
             app_id: None,
             target_policy: None,
             bindings: Vec::new(),
         };
-        if row.schema_version >= 2 {
+        if row.schema_version == 2 && row.kind == "github_app" {
             state.app_id = row.app_id.clone();
             state.target_policy = row.target_policy()?;
             state.bindings = self
@@ -141,23 +144,8 @@ impl ControlPlane {
                 .auth_bindings_get(&row.profile_key, row.revision)
                 .await?;
         } else {
-            state.identity = Some(row.pat_principal.clone().unwrap_or_else(|| {
-                format!(
-                    "app/{}/installation/{}",
-                    row.app_id.as_deref().unwrap_or_default(),
-                    row.installation_id.unwrap_or_default()
-                )
-            }));
-            state.target_allowlist =
-                serde_json::from_str::<shaula_core::auth::TargetAllowlist>(&row.allowlist_json)
-                    .map(|allowlist| {
-                        allowlist
-                            .targets
-                            .iter()
-                            .map(|target| target.config_url())
-                            .collect()
-                    })
-                    .unwrap_or_default();
+            state.state = "Unsupported".into();
+            state.reason = Some("UnsupportedAuthenticationFormat".into());
         }
         Ok(state)
     }

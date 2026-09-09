@@ -4,9 +4,6 @@
 
 use shaula_core::registry::{MutationError, MutationFacts};
 
-use super::core_err;
-use super::SqliteControlPlane;
-
 pub(crate) fn map_generation(
     g: crate::entities::lifecycle::runner_generations::Model,
 ) -> shaula_core::registry::GenerationRecord {
@@ -44,24 +41,5 @@ pub(crate) fn fence_conflict(
     }
     MutationError::PreconditionFailed {
         current: (facts.incarnation.clone(), facts.revision.saturating_sub(1)),
-    }
-}
-
-impl SqliteControlPlane {
-    /// Applies GitHub identity/access validation outcome for an Auth
-    /// Candidate (staged activation). Called by the phase-3 validator and
-    /// available to integration tests.
-    pub async fn auth_apply_validation(
-        &self,
-        key: &str,
-        revision: i64,
-        accepted: bool,
-        reason: Option<&str>,
-        now: i64,
-    ) -> shaula_core::error::CoreResult<()> {
-        self.store
-            .auth_scan_apply(key, revision, accepted, reason, now)
-            .await
-            .map_err(core_err)
     }
 }

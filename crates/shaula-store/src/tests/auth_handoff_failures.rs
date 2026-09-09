@@ -94,7 +94,7 @@ async fn mutate(store: &crate::registry_impl::SqliteControlPlane, mutation: Muta
                     "fleet",
                     PROFILE,
                     1,
-                    Some(&serde_json::to_string(&context).unwrap()),
+                    &serde_json::to_string(&context).unwrap(),
                     20,
                 )
                 .await

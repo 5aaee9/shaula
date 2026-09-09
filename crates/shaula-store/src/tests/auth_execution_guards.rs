@@ -1,4 +1,4 @@
-//! Corrupt evidence and legacy-session replacement regressions.
+//! Corrupt evidence and unsupported-session rejection regressions.
 #![allow(clippy::unwrap_used)] // Fixed fixture assertions.
 use super::auth_execution::ready;
 use super::auth_v2::{binding, policy_json, promotion, seed_v2_candidate, PROFILE};
@@ -80,14 +80,25 @@ async fn session_requires_complete_observed_v2_authority() {
 }
 
 #[tokio::test]
-async fn legacy_session_without_observed_auth_does_not_reuse_an_old_reference() {
-    let (store, _, _) = ready().await;
-    execute(&store, "UPDATE github_auth_profile_revisions SET schema_version=1 WHERE profile_key='shared-github';
-        INSERT INTO fleet_session_auth(fleet_key,profile_key,revision) VALUES('fleet','obsolete',99)").await;
+async fn unsupported_session_cannot_replace_retained_authority() {
+    let (store, captured, context) = ready().await;
     store
-        .session_install("fleet", "replacement", 1, 10)
+        .handoff_acknowledge(
+            "fleet",
+            PROFILE,
+            1,
+            Some(&serde_json::to_string(&context).unwrap()),
+            &captured,
+        )
         .await
         .unwrap();
+    execute(&store, "UPDATE github_auth_profile_revisions SET schema_version=1 WHERE profile_key='shared-github';
+        INSERT INTO fleet_session_auth(fleet_key,profile_key,revision) VALUES('fleet','obsolete',99)").await;
+    assert!(store
+        .session_install("fleet", "replacement", 1, 10)
+        .await
+        .is_err());
+    assert!(store.session_get("fleet").await.unwrap().is_none());
     let row = store
         .connection()
         .query_one(Statement::from_string(
@@ -96,7 +107,107 @@ async fn legacy_session_without_observed_auth_does_not_reuse_an_old_reference() 
         ))
         .await
         .unwrap();
-    assert!(row.is_none());
+    assert_eq!(
+        row.unwrap().try_get::<String>("", "profile_key").unwrap(),
+        "obsolete"
+    );
+}
+
+#[tokio::test]
+async fn missing_handoff_cannot_create_or_replace_a_session() {
+    let (store, captured, context) = ready().await;
+    assert!(store
+        .session_install("missing", "new", 1, 10)
+        .await
+        .is_err());
+    assert!(store.session_get("missing").await.unwrap().is_none());
+    store
+        .handoff_acknowledge(
+            "fleet",
+            PROFILE,
+            1,
+            Some(&serde_json::to_string(&context).unwrap()),
+            &captured,
+        )
+        .await
+        .unwrap();
+    store
+        .session_install("fleet", "original", 1, 10)
+        .await
+        .unwrap();
+    execute(
+        &store,
+        "DELETE FROM fleet_auth_handoffs WHERE fleet_key='fleet'",
+    )
+    .await;
+    assert!(store
+        .session_install("fleet", "replacement", 1, 11)
+        .await
+        .is_err());
+    let session = store.session_get("fleet").await.unwrap().unwrap();
+    assert_eq!(session.session_id, "original");
+    assert_eq!(session.epoch, 1);
+    let retained = store
+        .connection()
+        .query_one(Statement::from_string(
+            DbBackend::Sqlite,
+            "SELECT profile_key,revision FROM fleet_session_auth WHERE fleet_key='fleet'",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        retained.try_get::<String>("", "profile_key").unwrap(),
+        PROFILE
+    );
+    assert_eq!(retained.try_get::<i64>("", "revision").unwrap(), 1);
+}
+
+#[tokio::test]
+async fn unsupported_execution_refs_remain_readable_without_becoming_authority() {
+    let (store, captured, context) = ready().await;
+    store
+        .handoff_acknowledge(
+            "fleet",
+            PROFILE,
+            1,
+            Some(&serde_json::to_string(&context).unwrap()),
+            &captured,
+        )
+        .await
+        .unwrap();
+    store
+        .session_install("fleet", "historical-session", 1, 10)
+        .await
+        .unwrap();
+    execute(&store, "UPDATE github_auth_profile_revisions SET schema_version=1, policy_json='{old-policy' WHERE profile_key='shared-github';
+        UPDATE fleet_auth_context_history SET context_json='{old-context' WHERE fleet_key='fleet'").await;
+    let dependents = store.auth_live_dependents(PROFILE).await.unwrap();
+    assert_eq!(dependents.len(), 1);
+    assert_eq!(dependents[0].fleet_key, "fleet");
+    assert_eq!(dependents[0].retained_refs, vec![(PROFILE.into(), 1)]);
+    assert!(dependents[0].retained_contexts.is_empty());
+    let target: serde_json::Value = serde_json::from_str(&dependents[0].target_json).unwrap();
+    assert_eq!(target["owner"], "example-org");
+    assert!(store
+        .auth_execution_context_get("fleet", PROFILE, 1)
+        .await
+        .is_err());
+    let session = store.session_get("fleet").await.unwrap().unwrap();
+    assert_eq!(session.session_id, "historical-session");
+    let history = store
+        .connection()
+        .query_one(Statement::from_string(
+            DbBackend::Sqlite,
+            "SELECT context_json FROM fleet_auth_context_history WHERE fleet_key='fleet'",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        history.try_get::<String>("", "context_json").unwrap(),
+        "{old-context"
+    );
 }
 
 #[tokio::test]

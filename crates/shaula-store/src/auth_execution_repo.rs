@@ -66,6 +66,15 @@ impl Store {
         revision: i64,
     ) -> StoreResult<Option<ResolvedAuthContext>> {
         let tx = self.begin().await?;
+        let row = self
+            .auth_revision_get_tx(&tx, key, revision)
+            .await?
+            .ok_or_else(|| StoreError::Corrupt("execution auth revision missing".into()))?;
+        if row.schema_version != 2 || row.kind != "github_app" {
+            return Err(StoreError::PolicyDenied {
+                reason: "UnsupportedAuthFormat",
+            });
+        }
         let result = self
             .auth_execution_context_tx(&tx, fleet, key, revision)
             .await?;
@@ -160,20 +169,26 @@ impl Store {
             if profile.is_some_and(|key| key != reference.0) {
                 continue;
             }
-            let context = self
-                .auth_execution_context_tx(tx, fleet, &reference.0, reference.1)
-                .await?;
             let revision = self
                 .auth_revision_get_tx(tx, &reference.0, reference.1)
                 .await?
                 .ok_or_else(|| StoreError::Corrupt("execution auth revision missing".into()))?;
-            if revision.schema_version >= 2 && context.is_none() {
-                return Err(StoreError::Corrupt("v2 execution context missing".into()));
-            }
-            let target_json = match &context {
-                Some(context) => serde_json::to_string(&context.target)
-                    .map_err(|e| StoreError::Corrupt(e.to_string()))?,
-                None => target_from_spec(&spec)?,
+            // Inventory must retain unsupported references for recovery. It
+            // never loads their policy, credential or context as authority.
+            let (target_json, context) = if revision.schema_version == 2
+                && revision.kind == "github_app"
+            {
+                let context = self
+                    .auth_execution_context_tx(tx, fleet, &reference.0, reference.1)
+                    .await?
+                    .ok_or_else(|| StoreError::Corrupt("v2 execution context missing".into()))?;
+                (
+                    serde_json::to_string(&context.target)
+                        .map_err(|e| StoreError::Corrupt(e.to_string()))?,
+                    Some(context),
+                )
+            } else {
+                (target_from_spec(&spec)?, None)
             };
             result.push(ExecutionDependency {
                 target_json,

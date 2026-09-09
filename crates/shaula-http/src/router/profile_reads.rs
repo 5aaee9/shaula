@@ -238,22 +238,17 @@ pub(crate) async fn auth_revision_get(
         .await
     {
         Ok(Ok(view)) => {
-            // F9 (spec 0011 §6): historical reads use the versioned
-            // rendering contract — v2 revisions carry schema_version, the
-            // structured policy and non-secret bindings, not a legacy
-            // installation projection.
+            // Unsupported historical revisions expose metadata only.
             let mut body = serde_json::json!({
                 "profileKey": view.profile_key,
                 "revision": view.revision,
                 "kind": view.kind,
                 "appId": view.app_id,
-                "installationId": view.installation_id,
-                "patPrincipal": view.pat_principal,
                 "schema_version": view.schema_version,
                 "state": view.state,
                 "reason": view.reason,
             });
-            if view.schema_version >= 2 {
+            if view.schema_version == 2 && view.kind == "github_app" {
                 body["target_policy"] = serde_json::json!(view.target_policy);
                 body["bindings"] = serde_json::json!(view.bindings);
             }

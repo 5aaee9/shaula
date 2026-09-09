@@ -155,12 +155,12 @@ test("template and authentication profiles use real route contracts", async ({ p
   await page.goto("/templates?key=kubernetes-linux");
   await expect(page.getByText("shaula.bindings.kubernetes/v1", { exact: true })).toBeVisible();
   await page.goto("/auth?key=github-build");
-  await expect(page.getByText("build-bot", { exact: true })).toBeVisible();
+  await expect(page.getByText("4863460", { exact: true })).toBeVisible();
   await expect(page.getByText("Configured", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Rotate credential" }).click();
-  await expect(page.getByLabel("Personal access token", { exact: true })).toHaveAttribute(
-    "type",
-    "password",
+  await expect(page.getByLabel("Private key (PEM)", { exact: true })).toHaveAttribute(
+    "autocomplete",
+    "off",
   );
   expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
 });

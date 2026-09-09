@@ -11,43 +11,18 @@ use crate::entities::auth::fleet_auth_contexts;
 use crate::store::{Store, StoreError, StoreResult};
 
 impl Store {
-    /// Writes the desired context intent inside the fleet mutation
-    /// transaction. `context_json == None` means the referenced revision
-    /// is legacy (no context model): any stale row is removed so a fleet
-    /// switching profiles never keeps a context of the old one. The
-    /// fleet's CURRENT mutation fence is captured with the intent — the
-    /// observed-side CAS later compares it, so a concurrent fleet PUT
-    /// invalidates any in-flight acknowledgement (spec 0011 §5.2 step 4).
+    /// Writes a required exact context and captures the current mutation fence.
+    /// Observed authority is retained until acknowledgement succeeds.
     pub(crate) async fn fleet_auth_context_set_desired_tx(
         &self,
         tx: &DatabaseTransaction,
         fleet_key: &str,
         profile_key: &str,
         revision: i64,
-        context_json: Option<&str>,
+        context_json: &str,
         now: i64,
     ) -> StoreResult<()> {
         use crate::entities::fleet::fleets;
-        let Some(context_json) = context_json else {
-            // Legacy desired: CLEAR the intent but RETAIN the observed
-            // context — cleanup/recovery references still execute under
-            // the old authority (F7).
-            if let Some(row) = fleet_auth_contexts::Entity::find_by_id(fleet_key.to_string())
-                .one(tx)
-                .await?
-            {
-                let mut updated: fleet_auth_contexts::ActiveModel = row.into();
-                updated.desired_profile_key = Set(None);
-                updated.desired_revision = Set(None);
-                updated.desired_fence = Set(None);
-                updated.desired_context_json = Set(None);
-                updated.updated_at = Set(now);
-                fleet_auth_contexts::Entity::update(updated)
-                    .exec(tx)
-                    .await?;
-            }
-            return Ok(());
-        };
         let fence = fleets::Entity::find_by_id(fleet_key.to_string())
             .one(tx)
             .await?

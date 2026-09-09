@@ -25,10 +25,19 @@ export const authProfile = {
   ...profile("github-build", 1),
   incarnation: "auth-inc",
   desiredRevision: 1,
-  kind: "pat",
+  kind: "github_app",
+  schema_version: 2,
   credential_present: true,
-  identity: "build-bot",
-  target_allowlist: ["acme"],
+  app_id: "4863460",
+  active: {
+    revision: 1,
+    state: "Active",
+    reason: null,
+    schema_version: 2,
+    app_id: "4863460",
+    target_policy: [{ kind: "organization", owner: "acme" }],
+    bindings: [],
+  },
 };
 export function fleet(key: string, revision = 2) {
   return {
@@ -136,17 +145,7 @@ export async function mockApi(page: Page, permissions = scopes) {
     if (path.startsWith("/github-auth-profiles/"))
       return route.fulfill({
         headers: { etag: '"auth-inc:1"' },
-        json: {
-          key,
-          incarnation: "auth-inc",
-          desiredRevision: 1,
-          activeRevision: 1,
-          status: "Active",
-          kind: "pat",
-          identity: "build-bot",
-          credential_present: true,
-          target_allowlist: ["acme"],
-        },
+        json: { ...authProfile, key },
       });
     if (/\/(fleet|profile)-changes\//.test(path))
       return route.fulfill({

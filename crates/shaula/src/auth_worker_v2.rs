@@ -46,6 +46,12 @@ pub(super) async fn validate_v2(
     row: &AuthRevisionRow,
     endpoints: &WorkerEndpoints,
 ) -> CoreResult<Verdict> {
+    if row.schema_version != 2 || row.kind != "github_app" {
+        return Err(CoreError::new(
+            ReasonCode::CredentialMalformed,
+            "unsupported authentication revision",
+        ));
+    }
     let policy = row
         .target_policy()?
         .ok_or_else(|| CoreError::new(ReasonCode::Internal, "v2 revision without target policy"))?;
@@ -69,8 +75,8 @@ pub(super) async fn validate_v2(
     let predecessor = load_predecessor(store, key).await?;
 
     // 1. The private key must authenticate as the DECLARED App.
-    let verification = match resolver.verify_app(&app_id, &private_key).await {
-        Ok(verification) => verification,
+    match resolver.verify_app(&app_id, &private_key).await {
+        Ok(_) => {}
         Err(error) => {
             return match error {
                 shaula_scaleset::ScalesetError::RateLimited {
@@ -91,22 +97,13 @@ pub(super) async fn validate_v2(
             };
         }
     };
-    // Legacy client-ID ↔ numeric-App continuity (spec 0011 §7.5): when
-    // the predecessor stored a client-ID string, the `/app` response
-    // must carry the SAME client_id — a different App rejects instead of
-    // silently rebinding the profile. This check runs for BOTH legacy
-    // and v2 predecessors.
-    let predecessor_app_id = match &predecessor {
-        Predecessor::First => None,
-        Predecessor::Legacy { app_id } | Predecessor::V2 { app_id, .. } => Some(app_id),
-    };
-    if let Some(previous_app_id) = predecessor_app_id {
-        if !is_client_id_form(previous_app_id) && previous_app_id != &app_id {
-            return reject(store, clock, key, row.revision, "InstallationChanged").await;
-        }
-        if is_client_id_form(previous_app_id)
-            && verification.client_id.as_deref() != Some(previous_app_id)
-        {
+    // A profile retains its proven numeric App identity across publications.
+    if let Predecessor::V2 {
+        app_id: previous_app_id,
+        ..
+    } = &predecessor
+    {
+        if previous_app_id != &app_id {
             return reject(store, clock, key, row.revision, "InstallationChanged").await;
         }
     }
@@ -284,10 +281,6 @@ pub(super) async fn validate_v2(
             retry_after_ms: None,
         }),
     }
-}
-
-fn is_client_id_form(app_id: &str) -> bool {
-    !app_id.is_empty() && app_id.bytes().any(|b| !b.is_ascii_digit())
 }
 
 /// Durably rejects the Candidate and reports the verdict.

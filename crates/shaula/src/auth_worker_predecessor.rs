@@ -13,10 +13,6 @@ use std::sync::Arc;
 pub(crate) enum Predecessor {
     /// No active revision: first publication.
     First,
-    /// A legacy predecessor with its stored App identity (client-ID
-    /// string or numeric): must be proven through `/app` before the
-    /// profile can be replaced.
-    Legacy { app_id: String },
     /// A v2 predecessor: App identity plus proven numeric identities.
     V2 {
         app_id: String,
@@ -35,14 +31,21 @@ pub(crate) async fn load_predecessor(
     let Some(active) = store.auth_revision_active(key).await? else {
         return Ok(Predecessor::First);
     };
-    let Some(app_id) = active.app_id.clone() else {
-        return Ok(Predecessor::Legacy {
-            app_id: String::new(),
-        });
-    };
-    if active.schema_version < 2 {
-        return Ok(Predecessor::Legacy { app_id });
+    if active.schema_version != 2 || active.kind != "github_app" {
+        return Err(CoreError::new(
+            ReasonCode::CredentialMalformed,
+            "unsupported authentication predecessor",
+        ));
     }
+    let app_id = active
+        .app_id
+        .filter(|id| id.parse::<i64>().is_ok_and(|id| id > 0))
+        .ok_or_else(|| {
+            CoreError::new(
+                ReasonCode::CredentialMalformed,
+                "active app identity invalid",
+            )
+        })?;
     let Some(json) = active.validation_snapshot_json.clone() else {
         return Err(CoreError::new(
             ReasonCode::Internal,

@@ -19,13 +19,10 @@ async fn auth_rotation_retarget_ignores_fleet_revision_collision() {
                 key: "prod-app".into(),
                 incarnation: "inc-1".into(),
                 revision: 1,
-                kind: "pat".into(),
-                app_id: None,
-                installation_id: None,
-                pat_principal: Some("octocat".into()),
-                allowlist_json: r#"[{"kind":"organization","owner":"example-org"}]"#.into(),
-                schema_version: 1,
-                policy_json: None,
+                kind: "github_app".into(),
+                app_id: Some("4863460".into()),
+                schema_version: 2,
+                policy_json: Some(super::auth_fixture::POLICY.into()),
             },
             b"cred-1",
             1,
@@ -34,7 +31,18 @@ async fn auth_rotation_retarget_ignores_fleet_revision_collision() {
         .unwrap();
     tx.commit().await.unwrap();
     store
-        .auth_apply_full("prod-app", 1, true, None, 8, None)
+        .auth_apply_full(
+            "prod-app",
+            1,
+            true,
+            None,
+            8,
+            Some(
+                super::auth_fixture::promotion(&store, "prod-app", 1)
+                    .await
+                    .unwrap(),
+            ),
+        )
         .await
         .unwrap();
 
@@ -49,7 +57,7 @@ async fn auth_rotation_retarget_ignores_fleet_revision_collision() {
                     key: "fleet-collide".into(),
                     incarnation: "inc-c".into(),
                     revision: fleet_revision,
-                    spec_json: "{}".into(),
+                    spec_json: super::auth_fixture::SPEC.into(),
                     template: None,
                     auth_desired: ("prod-app".into(), 1),
                     inputs_digest: "d".into(),
@@ -79,13 +87,10 @@ async fn auth_rotation_retarget_ignores_fleet_revision_collision() {
                 key: "prod-app".into(),
                 incarnation: "inc-1".into(),
                 revision: 2,
-                kind: "pat".into(),
-                app_id: None,
-                installation_id: None,
-                pat_principal: Some("octocat".into()),
-                allowlist_json: r#"[{"kind":"organization","owner":"example-org"}]"#.into(),
-                schema_version: 1,
-                policy_json: None,
+                kind: "github_app".into(),
+                app_id: Some("4863460".into()),
+                schema_version: 2,
+                policy_json: Some(super::auth_fixture::POLICY.into()),
             },
             b"cred-2",
             9,
@@ -94,7 +99,18 @@ async fn auth_rotation_retarget_ignores_fleet_revision_collision() {
         .unwrap();
     tx.commit().await.unwrap();
     store
-        .auth_apply_full("prod-app", 2, true, None, 10, None)
+        .auth_apply_full(
+            "prod-app",
+            2,
+            true,
+            None,
+            10,
+            Some(
+                super::auth_fixture::promotion(&store, "prod-app", 2)
+                    .await
+                    .unwrap(),
+            ),
+        )
         .await
         .unwrap();
 
@@ -120,13 +136,10 @@ async fn auth_rotation_never_undoes_cross_profile_switch() {
                     key: key.into(),
                     incarnation: "inc-1".into(),
                     revision,
-                    kind: "pat".into(),
-                    app_id: None,
-                    installation_id: None,
-                    pat_principal: Some("octocat".into()),
-                    allowlist_json: r#"[{"kind":"organization","owner":"example-org"}]"#.into(),
-                    schema_version: 1,
-                    policy_json: None,
+                    kind: "github_app".into(),
+                    app_id: Some("4863460".into()),
+                    schema_version: 2,
+                    policy_json: Some(super::auth_fixture::POLICY.into()),
                 },
                 b"cred",
                 1,
@@ -136,11 +149,33 @@ async fn auth_rotation_never_undoes_cross_profile_switch() {
     }
     tx.commit().await.unwrap();
     store
-        .auth_apply_full("old-app", 1, true, None, 6, None)
+        .auth_apply_full(
+            "old-app",
+            1,
+            true,
+            None,
+            6,
+            Some(
+                super::auth_fixture::promotion(&store, "old-app", 1)
+                    .await
+                    .unwrap(),
+            ),
+        )
         .await
         .unwrap();
     store
-        .auth_apply_full("other-app", 1, true, None, 8, None)
+        .auth_apply_full(
+            "other-app",
+            1,
+            true,
+            None,
+            8,
+            Some(
+                super::auth_fixture::promotion(&store, "other-app", 1)
+                    .await
+                    .unwrap(),
+            ),
+        )
         .await
         .unwrap();
 
@@ -155,7 +190,7 @@ async fn auth_rotation_never_undoes_cross_profile_switch() {
                     key: "fleet-switched".into(),
                     incarnation: "inc-f".into(),
                     revision: fleet_revision,
-                    spec_json: "{}".into(),
+                    spec_json: super::auth_fixture::SPEC.into(),
                     template: None,
                     auth_desired: (profile.into(), 1),
                     inputs_digest: "d".into(),
@@ -184,13 +219,10 @@ async fn auth_rotation_never_undoes_cross_profile_switch() {
                 key: "old-app".into(),
                 incarnation: "inc-1".into(),
                 revision: 2,
-                kind: "pat".into(),
-                app_id: None,
-                installation_id: None,
-                pat_principal: Some("octocat".into()),
-                allowlist_json: r#"[{"kind":"organization","owner":"example-org"}]"#.into(),
-                schema_version: 1,
-                policy_json: None,
+                kind: "github_app".into(),
+                app_id: Some("4863460".into()),
+                schema_version: 2,
+                policy_json: Some(super::auth_fixture::POLICY.into()),
             },
             b"cred-old-2",
             9,
@@ -199,7 +231,18 @@ async fn auth_rotation_never_undoes_cross_profile_switch() {
         .unwrap();
     tx.commit().await.unwrap();
     store
-        .auth_apply_full("old-app", 2, true, None, 10, None)
+        .auth_apply_full(
+            "old-app",
+            2,
+            true,
+            None,
+            10,
+            Some(
+                super::auth_fixture::promotion(&store, "old-app", 2)
+                    .await
+                    .unwrap(),
+            ),
+        )
         .await
         .unwrap();
 

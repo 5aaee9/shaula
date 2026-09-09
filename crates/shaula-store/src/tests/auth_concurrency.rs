@@ -14,13 +14,10 @@ fn revision(revision: i64) -> AuthRevisionInsert {
         key: "auth".into(),
         incarnation: "incarnation".into(),
         revision,
-        kind: "pat".into(),
-        app_id: None,
-        installation_id: None,
-        pat_principal: Some("test-principal".into()),
-        allowlist_json: "[]".into(),
-        schema_version: 1,
-        policy_json: None,
+        kind: "github_app".into(),
+        app_id: Some("4863460".into()),
+        schema_version: 2,
+        policy_json: Some(super::auth_fixture::POLICY.into()),
     }
 }
 

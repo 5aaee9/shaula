@@ -6,6 +6,9 @@
 #[path = "../../shaula-http/tests/support/mod.rs"]
 mod oidc;
 
+#[path = "common/auth_fixture.rs"]
+mod auth_fixture;
+
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -63,6 +66,10 @@ fn fixture_artifact() -> (String, Vec<u8>) {
 }
 
 async fn build_app() -> axum::Router {
+    build_app_with_store().await.0
+}
+
+async fn build_app_with_store() -> (axum::Router, Arc<SqliteControlPlane>) {
     let tmp = tempfile::tempdir().unwrap();
     let artifact_root = tmp.path().join("artifacts");
     let data_dir = tmp.path().join("data");
@@ -77,7 +84,7 @@ async fn build_app() -> axum::Router {
     let control_plane = Arc::new(SqliteControlPlane::new(store, artifact_root.clone()));
 
     let service = Arc::new(ControlPlane::new(
-        control_plane,
+        control_plane.clone(),
         fixed_clock(),
         b"test-bindings-key".to_vec(),
         100,
@@ -93,7 +100,7 @@ async fn build_app() -> axum::Router {
     ));
     service.set_ready(true);
 
-    shaula_http::router::build_router(shaula_http::router::AppState {
+    let router = shaula_http::router::build_router(shaula_http::router::AppState {
         fleets: service.clone(),
         profiles: service.clone(),
         health: service,
@@ -103,7 +110,8 @@ async fn build_app() -> axum::Router {
         artifact_publisher: Arc::new(TestPublisher {
             root: artifact_root,
         }),
-    })
+    });
+    (router, control_plane)
 }
 
 struct TestPublisher {
@@ -140,15 +148,16 @@ fn authorized(method: &str, uri: &str, body: Option<String>) -> Request<Body> {
 }
 
 const AUTH_PUT_BODY: &str = r#"{
-    "kind": "pat",
-    "token": "github_pat_test_token_bytes",
-    "pat_principal": "octocat",
-    "target_allowlist": [{"kind":"organization","owner":"example-org"}]
+    "kind": "github_app",
+    "schema_version": 2,
+    "app_id": "4863460",
+    "private_key": "github_app_test_key_bytes",
+    "target_policy": [{"kind":"organization","owner":"example-org"}]
 }"#;
 
 #[tokio::test]
 async fn auth_profile_lifecycle_and_secret_redaction() {
-    let app = build_app().await;
+    let (app, store) = build_app_with_store().await;
 
     // PUT auth profile → 202 with change.
     let response = app
@@ -172,6 +181,11 @@ async fn auth_profile_lifecycle_and_secret_redaction() {
         .expect("accepted mutation must carry an ETag")
         .clone();
 
+    // App identity becomes immutable after the first verified activation.
+    auth_fixture::promote(store.as_ref(), "prod-app", 1, fixed_clock().now_unix_ms())
+        .await
+        .unwrap();
+
     // GET returns redacted metadata only.
     let response = app
         .clone()
@@ -193,7 +207,7 @@ async fn auth_profile_lifecycle_and_secret_redaction() {
             || text.contains("true")
     );
     assert!(
-        !text.contains("github_pat_test_token_bytes"),
+        !text.contains("github_app_test_key_bytes"),
         "secret bytes must never appear"
     );
 
@@ -201,10 +215,11 @@ async fn auth_profile_lifecycle_and_secret_redaction() {
     // identity conflict (409) — the precondition itself now PASSES, so
     // this exercises the real conflict, not the stale-ETag gate.
     let conflict = r#"{
-        "kind": "pat",
-        "token": "github_pat_other",
-        "pat_principal": "someone-else",
-        "target_allowlist": [{"kind":"organization","owner":"example-org"}]
+        "kind": "github_app",
+        "schema_version": 2,
+        "app_id": "4863461",
+        "private_key": "other-private-key",
+        "target_policy": [{"kind":"organization","owner":"example-org"}]
     }"#;
     let mut request = authorized(
         "PUT",

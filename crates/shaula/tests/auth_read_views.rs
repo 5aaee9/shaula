@@ -2,6 +2,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;
+#[path = "support/unsupported_auth.rs"]
+mod history;
 #[path = "auth_read_views/list.rs"]
 mod list;
 
@@ -110,29 +112,16 @@ async fn seed_fleet(store: &SqliteControlPlane, key: &str) {
 }
 
 #[tokio::test]
-async fn real_legacy_wire_and_rejected_upgrade_keep_exact_revision_authority() {
-    let (app, store, _) = build_app_with_scan().await;
-    let legacy = r#"{"kind":"github_app","app_id":"Iv23legacy","installation_id":34,"private_key":"fixture-pem","target_allowlist":[{"kind":"organization","owner":"Indexyz"}]}"#;
-    assert_eq!(
-        app.clone()
-            .oneshot(authorized("PUT", URI, Some(legacy.into())))
-            .await
-            .unwrap()
-            .status(),
-        StatusCode::ACCEPTED
-    );
-    store
-        .auth_apply_validation("shared-github", 1, true, None, NOW)
+async fn history_reads_are_inert_and_impact_requires_read_scope() {
+    let (app, _, engine) = build_app_with_scan().await;
+    history::seed(&engine, "shared-github", "github_app")
         .await
         .unwrap();
     let body = get_json(&app, URI).await;
-    assert_eq!(body["identity"], "app/Iv23legacy/installation/34");
-    assert_eq!(
-        body["target_allowlist"],
-        serde_json::json!(["https://github.com/Indexyz"])
-    );
-    assert!(body.get("app_id").is_none());
-    assert!(body.get("schema_version").is_none());
+    assert_eq!(body["status"], "Unsupported");
+    assert_eq!(body["active"]["state"], "Unsupported");
+    assert!(body.get("identity").is_none());
+    assert!(body.get("target_allowlist").is_none());
     let impact = get_json(&app, &format!("{URI}/impact")).await;
     assert_eq!(impact["liveFleets"], serde_json::json!([]));
     for (scope, expected) in [
@@ -149,26 +138,7 @@ async fn real_legacy_wire_and_rejected_upgrade_keep_exact_revision_authority() {
             expected
         );
     }
-    replace(&app, V2.into()).await;
-    assert_eq!(get_json(&app, URI).await["desired"]["state"], "Validating");
-    store
-        .auth_apply_validation("shared-github", 2, false, Some("AuthIdentityMismatch"), NOW)
-        .await
-        .unwrap();
-    let body = get_json(&app, URI).await;
-    assert_eq!(body["active"]["revision"], 1);
-    assert_eq!(body["active"]["schema_version"], 1);
-    assert_eq!(body["identity"], "app/Iv23legacy/installation/34");
-    assert_eq!(body["desired"]["revision"], 2);
-    assert_eq!(body["desired"]["state"], "Rejected");
-    assert_eq!(body["desired"]["reason"], "AuthIdentityMismatch");
-    assert_eq!(body["desired"]["bindings"], serde_json::json!([]));
-    let revision = get_json(&app, &format!("{URI}/revisions/2")).await;
-    assert_eq!(revision["schema_version"], 2);
-    assert_eq!(revision["state"], "Rejected");
-    assert_eq!(revision["reason"], "AuthIdentityMismatch");
 }
-
 #[tokio::test]
 async fn real_http_reports_bounded_binding_health_live_impact_and_full_fleet_pins() {
     let (app, store, _) = build_app_with_scan().await;
@@ -238,7 +208,14 @@ async fn real_http_reports_bounded_binding_health_live_impact_and_full_fleet_pin
     // A failed candidate stays separate from active binding conditions.
     replace(&app, V2.replace("fixture-pem", "rotation-pem")).await;
     store
-        .auth_apply_validation("shared-github", 2, false, Some("AuthIdentityMismatch"), NOW)
+        .auth_apply_validation_v2(
+            "shared-github",
+            2,
+            false,
+            Some("AuthIdentityMismatch"),
+            NOW,
+            None,
+        )
         .await
         .unwrap();
     let body = get_json(&app, URI).await;

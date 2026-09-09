@@ -30,6 +30,7 @@ mod tests {
     mod auth_concurrency;
     mod auth_execution;
     mod auth_execution_guards;
+    mod auth_fixture;
     mod auth_handoff_failures;
     mod auth_rotation;
     mod auth_v2;

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { mockApi } from "./fixtures";
-import { LEGACY_APP_PROFILE, V2_PROFILE } from "./auth-fixtures";
+import { V2_PROFILE } from "./auth-fixtures";
 
 test("per-account observations expire locally and rejected candidate status stays separate", async ({
   page,
@@ -100,38 +100,35 @@ test("typed v2 preview distinguishes org runners from the same org repositories 
   await expect(page.getByRole("button", { name: "Publish policy" })).toBeEnabled();
 });
 
-test("legacy upgrade previews retained actual targets and refreshes impact without discarding form edits", async ({
+test("policy rotation previews retained targets and refreshes impact without discarding form edits", async ({
   page,
 }) => {
   await mockApi(page);
-  await page.route("**/api/v1/github-auth-profiles/legacy-app", (route) =>
-    route.fulfill({ headers: { etag: '"auth-inc:1"' }, json: LEGACY_APP_PROFILE }),
+  await page.route("**/api/v1/github-auth-profiles/shared-github", (route) =>
+    route.fulfill({ headers: { etag: '"auth-inc:1"' }, json: V2_PROFILE }),
   );
-  let calls = 0;
-  await page.route("**/api/v1/github-auth-profiles/legacy-app/impact", (route) => {
-    calls += 1;
+  let dependentAdded = false;
+  await page.route("**/api/v1/github-auth-profiles/shared-github/impact", (route) => {
     return route.fulfill({
       json: {
         desiredRevision: 1,
         liveFleets: [
           {
-            fleetKey: calls > 1 ? "new-dependent" : "retained-dependent",
+            fleetKey: dependentAdded ? "new-dependent" : "retained-dependent",
             phase: "Decommissioning",
-            target: { kind: "repository", owner: "acme", repository: "build-tools" },
+            target: { kind: "repository", owner: "5aaee9", repository: "build-tools" },
           },
         ],
       },
     });
   });
-  await page.goto("/auth?key=legacy-app");
+  await page.goto("/auth?key=shared-github");
   await page.getByRole("button", { name: "Rotate credential" }).click();
-  await page.getByRole("button", { name: "Advanced settings" }).click();
-  await page.getByLabel("Upgrade to multi-account policy").check();
   const preview = page.getByRole("region", { name: "Policy change preview" });
   await expect(preview.getByText(/retained-dependent.*Remains covered/)).toBeVisible();
-  await page.getByLabel("App ID").fill("4863460");
   await page.getByRole("button", { name: "Add selector" }).click();
   await page.getByLabel("Owner").last().fill("other-org");
+  dependentAdded = true;
   await expect(preview.getByText(/new-dependent.*Remains covered/)).toBeVisible({ timeout: 8_000 });
   await expect(page.getByLabel("App ID")).toHaveValue("4863460");
   await expect(page.getByLabel("Owner").last()).toHaveValue("other-org");
@@ -155,51 +152,6 @@ test("impact read failure is explicit and cannot be presented as no live depende
   ).toBeDisabled();
   await expect(page.getByText("No live Fleets reference this profile.")).toHaveCount(0);
   await expect(page.getByText(/Fleet impact is unavailable/)).toBeVisible({ timeout: 10_000 });
-});
-
-test("rejected first upgrade keeps active legacy identity and permits correcting numeric App ID", async ({
-  page,
-}) => {
-  await mockApi(page);
-  await page.route("**/api/v1/github-auth-profiles/legacy-app", (route) =>
-    route.fulfill({
-      headers: { etag: '"auth-inc:2"' },
-      json: {
-        ...LEGACY_APP_PROFILE,
-        desiredRevision: 2,
-        schema_version: 2,
-        app_id: "999",
-        active: {
-          revision: 1,
-          schema_version: 1,
-          state: "Active",
-          reason: null,
-          identity: LEGACY_APP_PROFILE.identity,
-          target_allowlist: LEGACY_APP_PROFILE.target_allowlist,
-        },
-        desired: {
-          revision: 2,
-          schema_version: 2,
-          state: "Rejected",
-          reason: "AuthIdentityMismatch",
-          app_id: "999",
-          target_policy: [{ kind: "organization", owner: "acme" }],
-          bindings: [],
-        },
-      },
-    }),
-  );
-  await page.goto("/auth?key=legacy-app");
-  await expect(page.getByText("Candidate r2: Rejected")).toBeVisible();
-  await expect(page.getByText("AuthIdentityMismatch")).toBeVisible();
-  await expect(page.getByText(LEGACY_APP_PROFILE.identity)).toBeVisible();
-  await page.getByRole("button", { name: "Rotate credential" }).click();
-  await expect(page.getByLabel("App ID")).toBeEnabled();
-  await page.getByLabel("App ID").fill("4863460");
-  await page.getByRole("button", { name: "Advanced settings" }).click();
-  await page.getByLabel("Upgrade to multi-account policy").uncheck();
-  await expect(page.getByLabel("App ID")).toHaveValue("Iv23legacy");
-  await expect(page.getByLabel("Installation ID")).toHaveValue("34");
 });
 
 test("Fleet details show exact desired and observed route identities with separate numeric pins", async ({

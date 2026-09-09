@@ -21,9 +21,7 @@ enum ValidationResult<'a> {
 }
 
 impl Store {
-    /// Full staged-activation path for legacy and v2 Candidates alike.
-    /// `promotion` carries the validator's frozen bindings + snapshot for
-    /// a v2 Candidate; `None` is the legacy single-installation path.
+    /// Staged activation requires the validator's frozen bindings and snapshot.
     pub(crate) async fn auth_apply_full(
         &self,
         key: &str,
@@ -95,22 +93,26 @@ impl Store {
                     .await?;
                 (AuthPromotionOutcome::Rejected, reason)
             }
-            ValidationResult::Accepted(promotion) if candidate.schema_version == 2 => match self
-                .auth_promote_v2(tx, &candidate, &profile, promotion, now)
-                .await?
+            ValidationResult::Accepted(promotion)
+                if candidate.schema_version == 2 && candidate.kind == "github_app" =>
             {
-                V2Promotion::Promoted => (AuthPromotionOutcome::Promoted, None),
-                V2Promotion::Rejected(reason) => {
-                    self.auth_reject_candidate(tx, &candidate, Some(reason), &profile, now)
-                        .await?;
-                    (AuthPromotionOutcome::Rejected, Some(reason))
+                match self
+                    .auth_promote_v2(tx, &candidate, &profile, promotion, now)
+                    .await?
+                {
+                    V2Promotion::Promoted => (AuthPromotionOutcome::Promoted, None),
+                    V2Promotion::Rejected(reason) => {
+                        self.auth_reject_candidate(tx, &candidate, Some(reason), &profile, now)
+                            .await?;
+                        (AuthPromotionOutcome::Rejected, Some(reason))
+                    }
+                    V2Promotion::Restaged => (AuthPromotionOutcome::Restaged, None),
                 }
-                V2Promotion::Restaged => (AuthPromotionOutcome::Restaged, None),
-            },
+            }
             ValidationResult::Accepted(_) => {
-                self.auth_promote_legacy(tx, &candidate, &profile, now)
-                    .await?;
-                (AuthPromotionOutcome::Promoted, None)
+                return Err(StoreError::PolicyDenied {
+                    reason: "UnsupportedAuthFormat",
+                });
             }
         };
 
@@ -168,25 +170,6 @@ impl Store {
             .exec(tx)
             .await?;
         Ok(())
-    }
-
-    /// Legacy single-installation promotion: head advance + fleet
-    /// handoff retarget, exactly the pre-v2 semantics.
-    async fn auth_promote_legacy(
-        &self,
-        tx: &DatabaseTransaction,
-        candidate: &github_auth_profile_revisions::Model,
-        profile: &github_auth_profiles::Model,
-        now: i64,
-    ) -> StoreResult<()> {
-        let mut candidate_updated: github_auth_profile_revisions::ActiveModel =
-            candidate.clone().into();
-        candidate_updated.state = Set("Active".to_string());
-        candidate_updated.reason = Set(None);
-        github_auth_profile_revisions::Entity::update(candidate_updated)
-            .exec(tx)
-            .await?;
-        self.auth_advance_head(tx, candidate, profile, now).await
     }
 
     /// v2 promotion gates (spec 0011 §5.1), all in the caller's

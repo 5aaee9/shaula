@@ -99,18 +99,6 @@ pub struct ScalesetClient {
 }
 
 impl ScalesetClient {
-    /// Verifies the declared principal and access to this exact configured target.
-    pub async fn validate_auth(
-        &self,
-        expected: &shaula_core::registry::AuthRevisionRow,
-    ) -> Result<(), ScalesetError> {
-        self.admin
-            .validate_identity(expected)
-            .await
-            .inspect_err(|e| self.invalidate_route_proof(e))?;
-        self.probe_actions_access().await
-    }
-
     /// The actual runner access probe (spec 0011 §4.1 step 5): a
     /// read-only runner-group listing through the installation credential.
     /// A successful client construction is NEVER treated as access proof.

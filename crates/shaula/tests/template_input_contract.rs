@@ -197,8 +197,7 @@ async fn complete_preset_selection_still_passes_through_real_fleet_admission() {
         StatusCode::ACCEPTED
     );
     store.periodic_scan(1_800_000_001_000).await.unwrap();
-    store
-        .auth_apply_validation("prod-app", 1, true, None, 1_800_000_001_500)
+    common::auth_fixture::promote(store.as_ref(), "prod-app", 1, 1_800_000_001_500)
         .await
         .unwrap();
     let attestation = attest_body(

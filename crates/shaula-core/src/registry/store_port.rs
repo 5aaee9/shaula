@@ -92,21 +92,6 @@ pub trait ControlPlaneStore: crate::registry::AuthExecutionStore + Send + Sync {
         retry_at: i64,
         now: i64,
     ) -> CoreResult<()>;
-    /// Applies GitHub identity/access validation outcome for an Auth
-    /// Candidate (staged activation; false keeps prior active). Legacy
-    /// entry point delegating to [`ControlPlaneStore::auth_apply_validation_v2`].
-    async fn auth_apply_validation(
-        &self,
-        key: &str,
-        revision: i64,
-        accepted: bool,
-        reason: Option<&str>,
-        now: i64,
-    ) -> CoreResult<()> {
-        self.auth_apply_validation_v2(key, revision, accepted, reason, now, None)
-            .await
-            .map(|_| ())
-    }
     /// v2-aware promotion: the bindings + snapshot commit ATOMICALLY with
     /// the head advance, after the coverage and fingerprint gates (spec
     /// 0011 §4.1/§5.1).

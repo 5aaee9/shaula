@@ -83,7 +83,11 @@ function AuthDetails({
           <Button
             size="sm"
             variant="outline"
-            disabled={!scopes.includes("auth.write")}
+            disabled={
+              !scopes.includes("auth.write") ||
+              data.schema_version !== 2 ||
+              data.status === "Unsupported"
+            }
             onClick={() => setRotate(true)}
           >
             <RotateCw />
@@ -111,18 +115,15 @@ function AuthDetails({
               ? "Personal access token"
               : "--"}
         </KeyValue>
-        {data.active?.schema_version === 2 ||
-        (!data.activeRevision && data.schema_version === 2) ? (
+        {data.schema_version === 2 && (
           <KeyValue label="App ID">{data.active?.app_id || data.app_id || "--"}</KeyValue>
-        ) : (
-          <KeyValue label="Identity">{data.active?.identity || data.identity || "--"}</KeyValue>
         )}
         <KeyValue label="Credential">{data.credential_present ? "Configured" : "Absent"}</KeyValue>
         <KeyValue label="Active revision">
           {data.activeRevision ? `r${data.activeRevision}` : "--"}
         </KeyValue>
         <KeyValue label="Desired revision">r{data.desiredRevision}</KeyValue>
-        {data.active?.schema_version === 2 || data.active?.target_policy ? (
+        {data.active?.schema_version === 2 && (
           <KeyValue label="Active target policy">
             {data.active.target_policy?.length ? (
               <div className="flex flex-wrap gap-2">
@@ -136,16 +137,6 @@ function AuthDetails({
               "--"
             )}
           </KeyValue>
-        ) : (
-          <KeyValue label="Allowed targets">
-            <div className="flex flex-wrap gap-2">
-              {(data.active?.target_allowlist || data.target_allowlist || []).map((target) => (
-                <span className="label-chip" key={target}>
-                  {target}
-                </span>
-              ))}
-            </div>
-          </KeyValue>
         )}
         {data.desired && (
           <KeyValue label={`Candidate r${data.desired.revision}: ${data.desired.state}`}>
@@ -158,20 +149,18 @@ function AuthDetails({
                   </span>
                 ))}
               </div>
-            ) : data.desired.target_allowlist?.length ? (
-              <div className="flex flex-wrap gap-2">
-                {data.desired.target_allowlist.map((target) => (
-                  <span className="label-chip" key={target}>
-                    {target}
-                  </span>
-                ))}
-              </div>
             ) : (
               "--"
             )}
           </KeyValue>
         )}
       </dl>
+      {data.status === "Unsupported" && (
+        <p className="text-sm text-muted-foreground">
+          This authentication format is no longer supported. Create a GitHub App profile to use it
+          with Fleets.
+        </p>
+      )}
       {data.active?.schema_version === 2 && <AuthBindings revision={data.active} />}
       {retire && (
         <RetireDialog

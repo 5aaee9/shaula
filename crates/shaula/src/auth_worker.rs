@@ -1,7 +1,5 @@
 //! Asynchronous Auth Candidate validation (spec 0005 §6, spec 0011 §4.1).
-//! The dispatch splits by stored schema version: legacy single-
-//! installation revisions keep the exact prior flow; v2 policy revisions
-//! run the multi-account flow in `auth_worker_v2`.
+//! Only schema-v2 GitHub App revisions may enter validation.
 
 use shaula_core::{
     error::{CoreError, CoreResult, ReasonCode},
@@ -41,77 +39,22 @@ pub(super) async fn validate(
     let Some(row) = store.auth_revision_get(&key, head.desired_revision).await? else {
         return Ok(WorkerFlow::Done);
     };
-    if row.schema_version >= 2 {
-        return match crate::auth_worker_v2::validate_v2(&store, &clock, &key, &row, endpoints)
-            .await?
-        {
-            crate::auth_worker_v2::Verdict::Accepted | crate::auth_worker_v2::Verdict::Rejected => {
-                Ok(WorkerFlow::Done)
-            }
-            crate::auth_worker_v2::Verdict::RetryNeeded { retry_after_ms } => {
-                // Honor GitHub's Retry-After deadline in scheduling (F8):
-                // the wiring defers the next worker attempt until then.
-                Ok(WorkerFlow::Deferred {
-                    retry_at_unix_ms: retry_after_ms
-                        .map(|ms| clock.now_unix_ms().saturating_add(ms)),
-                })
-            }
-        };
+    if row.schema_version != 2 || row.kind != "github_app" {
+        return Err(CoreError::new(
+            ReasonCode::CredentialMalformed,
+            "unsupported authentication revision",
+        ));
     }
-    let allowlist: shaula_core::auth::TargetAllowlist =
-        serde_json::from_str(&row.allowlist_json)
-            .map_err(|_| CoreError::new(ReasonCode::Internal, "stored auth allowlist invalid"))?;
-    let Some(credential) =
-        crate::wiring_credential::build_credential(&store, &key, row.revision, None).await?
-    else {
-        return Ok(WorkerFlow::Done);
-    };
-    let mut accepted = !allowlist.targets.is_empty();
-    for target in allowlist.targets {
-        let client = endpoints.probe_client(target, credential.clone(), clock.clone())?;
-        if let Err(error) = client.validate_auth(&row).await {
-            match error {
-                shaula_scaleset::ScalesetError::RateLimited {
-                    retry_after_secs, ..
-                } => {
-                    return Ok(WorkerFlow::Deferred {
-                        retry_at_unix_ms: retry_after_secs.map(|s| {
-                            clock
-                                .now_unix_ms()
-                                .saturating_add(s.max(0).saturating_mul(1000))
-                        }),
-                    });
-                }
-                shaula_scaleset::ScalesetError::Configuration { .. }
-                | shaula_scaleset::ScalesetError::Status {
-                    status: 401 | 403 | 404,
-                    ..
-                } => {
-                    accepted = false;
-                    break;
-                }
-                _ => {
-                    return Err(CoreError::new(
-                        ReasonCode::AccessVerificationFailed,
-                        "auth validation temporarily unavailable",
-                    ))
-                }
-            }
+    match crate::auth_worker_v2::validate_v2(&store, &clock, &key, &row, endpoints).await? {
+        crate::auth_worker_v2::Verdict::Accepted | crate::auth_worker_v2::Verdict::Rejected => {
+            Ok(WorkerFlow::Done)
+        }
+        crate::auth_worker_v2::Verdict::RetryNeeded { retry_after_ms } => {
+            // Honor GitHub's Retry-After deadline in scheduling (F8):
+            // the wiring defers the next worker attempt until then.
+            Ok(WorkerFlow::Deferred {
+                retry_at_unix_ms: retry_after_ms.map(|ms| clock.now_unix_ms().saturating_add(ms)),
+            })
         }
     }
-    store
-        .auth_apply_validation_v2(
-            &key,
-            row.revision,
-            accepted,
-            if accepted {
-                None
-            } else {
-                Some("IdentityOrAccessVerificationFailed")
-            },
-            clock.now_unix_ms(),
-            None,
-        )
-        .await
-        .map(|_| WorkerFlow::Done)
 }

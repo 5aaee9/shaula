@@ -18,27 +18,19 @@ export function AuthTargetPolicy({
   rows,
   onChange,
   existing,
-  enabled,
-  upgrade,
 }: {
   rows: SelectorRow[];
   onChange: (rows: SelectorRow[]) => void;
   existing: boolean;
-  enabled: boolean;
-  upgrade?: { requested: boolean; onChange: (requested: boolean) => void };
 }) {
   const [advanced, setAdvanced] = useState(false);
   const additional = rows.slice(1);
   const summary =
     !existing && additional.length
       ? `${additional.length} additional target${additional.length === 1 ? "" : "s"}: ${additional.map((row) => (row.owner.trim() ? selectorLabel(selectorFromRow(row)) : "Unnamed target")).join(", ")}`
-      : upgrade
-        ? upgrade.requested
-          ? "Multi-account upgrade selected"
-          : "Multi-account upgrade"
-        : existing
-          ? "GitHub access details"
-          : "Additional targets and GitHub access details";
+      : existing
+        ? "GitHub access details"
+        : "Additional targets and GitHub access details";
   function targetFields(row: SelectorRow, index: number, removable: boolean) {
     return (
       <AuthTargetFields
@@ -68,48 +60,32 @@ export function AuthTargetPolicy({
   );
   return (
     <>
-      {enabled && (
-        <Field label={existing ? "Target policy" : "Target"}>
-          <div className="form-stack">
-            {(existing ? rows : rows.slice(0, 1)).map((row, index) =>
-              targetFields(row, index, existing && rows.length > 1),
-            )}
-            {existing && addTarget}
-          </div>
-        </Field>
-      )}
+      <Field label={existing ? "Target policy" : "Target"}>
+        <div className="form-stack">
+          {(existing ? rows : rows.slice(0, 1)).map((row, index) =>
+            targetFields(row, index, existing && rows.length > 1),
+          )}
+          {existing && addTarget}
+        </div>
+      </Field>
       <AdvancedSettings open={advanced} onOpenChange={setAdvanced} summary={summary}>
-        {upgrade && (
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={upgrade.requested}
-              onChange={(event) => upgrade.onChange(event.target.checked)}
-            />
-            Upgrade to multi-account policy
-          </label>
-        )}
-        {enabled && (
+        {!existing && (
           <>
-            {!existing && (
-              <>
-                {additional.length > 0 && (
-                  <Field label="Additional targets">
-                    <div className="form-stack">
-                      {additional.map((row, index) => targetFields(row, index + 1, true))}
-                    </div>
-                  </Field>
-                )}
-                {addTarget}
-              </>
+            {additional.length > 0 && (
+              <Field label="Additional targets">
+                <div className="form-stack">
+                  {additional.map((row, index) => targetFields(row, index + 1, true))}
+                </div>
+              </Field>
             )}
-            <p className="text-sm text-muted-foreground">
-              Account repositories include future repositories only when the GitHub installation
-              uses “All repositories”. Organization targets allow organization runners; repository
-              access follows the runner group.
-            </p>
+            {addTarget}
           </>
         )}
+        <p className="text-sm text-muted-foreground">
+          Account repositories include future repositories only when the GitHub installation uses
+          “All repositories”. Organization targets allow organization runners; repository access
+          follows the runner group.
+        </p>
       </AdvancedSettings>
     </>
   );

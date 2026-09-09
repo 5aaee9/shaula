@@ -21,7 +21,7 @@ pub struct GitHub {
 impl GitHubAccessPort for GitHub {
     async fn auth_context(&self) -> AuthContext {
         AuthContext {
-            kind: shaula_core::auth::AuthKind::Pat,
+            kind: shaula_core::auth::AuthKind::GithubApp,
         }
     }
     async fn resolve_runner_group(&self, _: &ScaleSetIdentity) -> Result<i64, AccessFailure> {
@@ -136,7 +136,7 @@ impl GitHubAccessPort for GitHub {
         _: &GitHubTarget,
     ) -> Result<TargetIdentity, AccessFailure> {
         Ok(TargetIdentity {
-            organization_id: Some(1),
+            organization_id: Some(100),
             repository_id: None,
             repository_owner_id: None,
         })
@@ -148,9 +148,9 @@ impl GitHubAccessPort for GitHub {
             Ok(RouteProof {
                 checked_at_unix_ms: 1_800_000_000_000,
                 valid_until_unix_ms: 1_800_000_060_000,
-                installation_id: 1,
-                account_id: 1,
-                organization_id: Some(1),
+                installation_id: 11,
+                account_id: 100,
+                organization_id: Some(100),
                 repository_id: None,
                 repository_owner_id: None,
             })

@@ -1,17 +1,18 @@
-/**
- * The REAL legacy wire shape (F1): identity is the composed string, the
- * allowlist carries config URLs, and there is no app_id member.
- */
-export const LEGACY_APP_PROFILE = {
-  key: "legacy-app",
+export const UNSUPPORTED_PROFILE = {
+  key: "old-auth",
   incarnation: "auth-inc",
   desiredRevision: 1,
   activeRevision: 1,
-  status: "Active",
+  status: "Unsupported",
   kind: "github_app",
-  identity: "app/Iv23legacy/installation/34",
   credential_present: true,
-  target_allowlist: ["https://github.com/acme", "https://github.com/acme/build-tools"],
+  schema_version: 1,
+  active: {
+    revision: 1,
+    state: "Unsupported",
+    reason: "AuthSchemaUnsupported",
+    schema_version: 1,
+  },
 };
 
 export const V2_PROFILE = {

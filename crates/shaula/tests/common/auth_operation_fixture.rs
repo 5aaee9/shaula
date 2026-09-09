@@ -200,7 +200,7 @@ impl Harness {
         let mut put = authorized(
             "PUT",
             path,
-            Some(AUTH_PUT_BODY.replace("test_token_bytes", "rotated_token_bytes")),
+            Some(AUTH_PUT_BODY.replace("test_key_bytes", "rotated_token_bytes")),
         );
         put.headers_mut().remove("if-none-match");
         put.headers_mut().insert("if-match", etag);
@@ -208,8 +208,7 @@ impl Harness {
             self.app.clone().oneshot(put).await.unwrap().status(),
             axum::http::StatusCode::ACCEPTED
         );
-        self.store
-            .auth_apply_validation("prod-app", 2, true, None, 25)
+        crate::common::auth_fixture::promote(self.store.as_ref(), "prod-app", 2, 25)
             .await
             .unwrap();
         let supervisor = self.supervisor(2);

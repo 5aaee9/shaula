@@ -74,22 +74,17 @@ impl Store {
             return Ok(FleetContextAck::Stale);
         }
 
-        // The revision's STORED SCHEMA decides ref-only vs exact (F7):
-        // a v2 desired revision can never settle through ref equality
-        // alone, with or without a context payload.
+        // Only a supported revision with an exact context can settle.
         let Some(revision_row) = self.auth_revision_get_tx(tx, profile_key, revision).await? else {
             return Ok(FleetContextAck::Stale);
         };
-        let is_v2 = revision_row.schema_version >= 2;
+        if revision_row.schema_version != 2 || revision_row.kind != "github_app" {
+            return Err(StoreError::PolicyDenied {
+                reason: "UnsupportedAuthFormat",
+            });
+        }
         let Some(context_json) = context_json else {
-            if is_v2 || expectation.desired_context_json.is_some() {
-                return Ok(FleetContextAck::Stale);
-            }
-            // Legacy revision: resolution is ref-only — the ref CAS above
-            // is the whole contract.
-            self.handoff_write_observed(tx, fleet_key, profile_key, revision)
-                .await?;
-            return Ok(FleetContextAck::NotApplicable);
+            return Ok(FleetContextAck::Stale);
         };
 
         let Some(context_row) =
@@ -166,11 +161,12 @@ impl Store {
                     .auth_revision_get_tx(tx, key, revision)
                     .await?
                     .ok_or_else(|| StoreError::Corrupt("observed auth revision missing".into()))?;
-                // A legacy handoff retains the last v2 context for cleanup;
-                // an executing v2 ref must match its exact observed evidence.
-                if auth.schema_version >= 2
-                    && (key != observed.profile_key || revision != observed.revision)
-                {
+                if auth.schema_version != 2 || auth.kind != "github_app" {
+                    return Err(StoreError::PolicyDenied {
+                        reason: "UnsupportedAuthFormat",
+                    });
+                }
+                if key != observed.profile_key || revision != observed.revision {
                     return Err(StoreError::Corrupt(
                         "handoff observed reference disagrees with context".into(),
                     ));

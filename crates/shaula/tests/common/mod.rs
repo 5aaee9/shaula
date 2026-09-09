@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 
 pub mod attestation_harness;
+pub mod auth_fixture;
 #[path = "../../../shaula-http/tests/support/mod.rs"]
 pub mod oidc;
 
@@ -200,10 +201,11 @@ pub fn authorized(method: &str, uri: &str, body: Option<String>) -> Request<Body
 }
 
 pub const AUTH_PUT_BODY: &str = r#"{
-    "kind": "pat",
-    "token": "github_pat_test_token_bytes",
-    "pat_principal": "octocat",
-    "target_allowlist": [{"kind":"organization","owner":"example-org"}]
+    "kind": "github_app",
+    "schema_version": 2,
+    "app_id": "4863460",
+    "private_key": "github_app_test_key_bytes",
+    "target_policy": [{"kind":"organization","owner":"example-org"}]
 }"#;
 
 pub const TEMPLATE_PUT_BODY: &str = r#"{

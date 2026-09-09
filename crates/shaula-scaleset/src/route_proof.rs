@@ -156,69 +156,64 @@ impl ScalesetClient {
         pinned: Option<PinnedIdentity>,
         evidence_started_at: i64,
     ) -> Result<RouteProof, AccessFailure> {
-        let mut installation = None;
-        if let Credential::GitHubApp {
+        let Credential::GitHubApp {
             client_id,
             installation_id: bound_installation,
             private_key,
-        } = self.admin.credential()
-        {
-            // App-level re-check: the BOUND installation must still exist,
-            // still answer for THIS App and not be suspended. An
-            // uninstall+reinstall (new id) never silently passes here.
-            let resolver = crate::installation::AppInstallationResolver::new(
-                self.config.github_api_base.clone(),
-                self.http.clone(),
-                self.clock.clone(),
-            );
-            let lookup = resolver
-                .installation_by_id(
-                    client_id,
-                    private_key,
-                    *bound_installation,
-                    &self.config.target,
-                )
-                .await;
-            match lookup {
-                InstallationLookup::Proven(proof) => {
-                    // The scope permission was re-checked against the
-                    // FRESH response (F4): a revoked runner permission
-                    // fails the proof.
-                    if !proof.has_required_permission {
-                        return Err(AccessFailure::PermissionDenied);
-                    }
-                    installation = Some(proof);
-                }
-                InstallationLookup::NotFound | InstallationLookup::IdentityMismatch => {
-                    return Err(AccessFailure::Unauthenticated);
-                }
-                InstallationLookup::Suspended => {
+        } = self.admin.credential();
+        // App-level re-check: the BOUND installation must still exist,
+        // still answer for THIS App and not be suspended. An
+        // uninstall+reinstall (new id) never silently passes here.
+        let resolver = crate::installation::AppInstallationResolver::new(
+            self.config.github_api_base.clone(),
+            self.http.clone(),
+            self.clock.clone(),
+        );
+        let lookup = resolver
+            .installation_by_id(
+                client_id,
+                private_key,
+                *bound_installation,
+                &self.config.target,
+            )
+            .await;
+        let installation = match lookup {
+            InstallationLookup::Proven(proof) => {
+                // The scope permission was re-checked against the
+                // FRESH response (F4): a revoked runner permission
+                // fails the proof.
+                if !proof.has_required_permission {
                     return Err(AccessFailure::PermissionDenied);
                 }
-                InstallationLookup::PermissionDenied => {
-                    return Err(AccessFailure::PermissionDenied)
-                }
-                InstallationLookup::Transient {
-                    retry_after_ms: Some(ms),
-                } => {
-                    return Err(AccessFailure::RateLimited {
-                        retry_after: Some(std::time::Duration::from_millis(ms.max(0) as u64)),
-                    });
-                }
-                InstallationLookup::Transient { .. } => {
-                    return Err(AccessFailure::Unavailable {
-                        summary: "installation re-proof unavailable".into(),
-                    });
-                }
+                proof
             }
-        }
+            InstallationLookup::NotFound | InstallationLookup::IdentityMismatch => {
+                return Err(AccessFailure::Unauthenticated);
+            }
+            InstallationLookup::Suspended => {
+                return Err(AccessFailure::PermissionDenied);
+            }
+            InstallationLookup::PermissionDenied => return Err(AccessFailure::PermissionDenied),
+            InstallationLookup::Transient {
+                retry_after_ms: Some(ms),
+            } => {
+                return Err(AccessFailure::RateLimited {
+                    retry_after: Some(std::time::Duration::from_millis(ms.max(0) as u64)),
+                });
+            }
+            InstallationLookup::Transient { .. } => {
+                return Err(AccessFailure::Unavailable {
+                    summary: "installation re-proof unavailable".into(),
+                });
+            }
+        };
         // Target numeric identity: repository/organization ids re-proven.
         let identity = self
             .resolve_target_identity_impl(&self.config.target)
             .await?;
-        self.verify_route_identity(installation.as_ref(), &identity)?;
-        let installation_id = installation.as_ref().map_or(0, |p| p.installation_id);
-        let account_id = installation.as_ref().map_or(0, |p| p.account_id);
+        self.verify_route_identity(&installation, &identity)?;
+        let installation_id = installation.installation_id;
+        let account_id = installation.account_id;
         // F4: the refreshed metadata must agree with the pinned identity
         // AND the persisted expected context — it is evidence to compare,
         // not permission to replace a pin.

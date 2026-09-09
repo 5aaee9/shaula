@@ -20,7 +20,7 @@ pub struct HealthyGitHub {
 impl GitHubAccessPort for HealthyGitHub {
     async fn auth_context(&self) -> shaula_core::ports::AuthContext {
         shaula_core::ports::AuthContext {
-            kind: shaula_core::auth::AuthKind::Pat,
+            kind: shaula_core::auth::AuthKind::GithubApp,
         }
     }
     async fn resolve_runner_group(
@@ -151,6 +151,29 @@ async fn handoff_advances_observed_tuple_without_remote_effects() {
         runner_group: "Default".into(),
         scale_set_name: "shaula-x64".into(),
     };
+    let context = shaula_core::auth_context::ResolvedAuthContext {
+        profile_key: "prod-app".into(),
+        revision: 3,
+        github_host: "github.com".into(),
+        app_id: "1".into(),
+        account_id: 1,
+        account_kind: shaula_core::auth_policy::AccountKind::Organization,
+        login: "example-org".into(),
+        installation_id: 1,
+        target: identity.target.clone(),
+        organization_id: Some(1),
+        repository_id: None,
+        repository_owner_id: None,
+    };
+    *store.context.lock().await = Some(shaula_core::registry::FleetAuthContextRow {
+        fleet_key: "f1".into(),
+        desired: Some(("prod-app".into(), 3)),
+        desired_context_json: Some(serde_json::to_string(&context).unwrap()),
+        observed: None,
+        observed_context_json: None,
+        state: "Pending".into(),
+        reason: None,
+    });
     let store_dyn: Arc<dyn ControlPlaneStore> = store.clone();
     let github: Arc<dyn GitHubAccessPort> = Arc::new(HealthyGitHub::default());
     let progress = run_handoff(
@@ -178,7 +201,7 @@ async fn handoff_blocks_without_fallback() {
     impl GitHubAccessPort for DeniedGitHub {
         async fn auth_context(&self) -> shaula_core::ports::AuthContext {
             shaula_core::ports::AuthContext {
-                kind: shaula_core::auth::AuthKind::Pat,
+                kind: shaula_core::auth::AuthKind::GithubApp,
             }
         }
         async fn resolve_runner_group(

@@ -5,6 +5,10 @@ date: 2026-09-08
 
 # List authentication connections from the Profile registry
 
+旧格式的支持范围已由 [ADR-0022](0022-retire-legacy-github-authentication.md)
+替代：collection/detail 仍保留历史 Revision 归属，但旧格式只显示为 Unsupported，
+不再解析其 identity/allowlist，也不提供发布或执行兼容。
+
 `/auth` 当前只接受已知 Profile key。Operator 无法从入口发现已保存的认证，
 即使其详情可以读取。spec 0005 已列出 collection endpoint，但 HTTP 路由和 UI 未接入。
 本决定以 [spec 0012](../specs/0012-github-authentication-inventory.md) 为详细契约，

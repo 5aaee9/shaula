@@ -158,8 +158,13 @@ impl ProfileRegistryPort for ControlPlane {
         };
         // Non-secret v2 metadata: the Target policy selectors and the
         // frozen Account Bindings of this exact revision.
-        let target_policy = row.target_policy()?;
-        let bindings = if row.schema_version >= 2 {
+        let supported = row.schema_version == 2 && row.kind == "github_app";
+        let target_policy = if supported {
+            row.target_policy()?
+        } else {
+            None
+        };
+        let bindings = if supported {
             self.store.auth_bindings_get(key, row.revision).await?
         } else {
             Vec::new()
@@ -167,12 +172,18 @@ impl ProfileRegistryPort for ControlPlane {
         Ok(Ok(AuthRevisionView {
             profile_key: row.profile_key,
             revision: row.revision,
-            state: row.state,
-            reason: row.reason,
+            state: if supported {
+                row.state
+            } else {
+                "Unsupported".into()
+            },
+            reason: if supported {
+                row.reason
+            } else {
+                Some("UnsupportedAuthenticationFormat".into())
+            },
             kind: row.kind,
             app_id: row.app_id,
-            installation_id: row.installation_id,
-            pat_principal: row.pat_principal,
             schema_version: row.schema_version,
             target_policy: target_policy.map(|p| p.selectors().to_vec()),
             bindings,

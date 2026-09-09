@@ -20,8 +20,8 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 #[tokio::test]
 async fn auth_collection_enumerates_redacted_legacy_and_v2_detail_views() -> TestResult {
-    let (app, store, _) = build_app_with_scan().await;
-    for (key, body) in [("shared-github", V2), ("legacy-pat", common::AUTH_PUT_BODY)] {
+    let (app, store, engine) = build_app_with_scan().await;
+    for (key, body) in [("shared-github", V2)] {
         let response = app
             .clone()
             .oneshot(authorized(
@@ -32,9 +32,7 @@ async fn auth_collection_enumerates_redacted_legacy_and_v2_detail_views() -> Tes
             .await?;
         assert_eq!(response.status(), StatusCode::ACCEPTED);
     }
-    store
-        .auth_apply_validation("legacy-pat", 1, true, None, NOW)
-        .await?;
+    super::history::seed(&engine, "legacy-pat", "pat").await?;
     let snapshot = AuthValidationSnapshot {
         candidate: ("shared-github".into(), 1),
         dependent_set: auth_dependent_set_fingerprint(&[]),
@@ -91,7 +89,7 @@ async fn auth_collection_enumerates_redacted_legacy_and_v2_detail_views() -> Tes
     }
     let text = std::str::from_utf8(&bytes)?;
     assert!(!text.contains("collection-private-key-fixture"));
-    assert!(!text.contains("github_pat_test_token_bytes"));
+    assert!(!text.contains("github_app_test_key_bytes"));
     assert!(!text.contains("private_key"));
     assert!(!text.contains("\"token\""));
     Ok(())

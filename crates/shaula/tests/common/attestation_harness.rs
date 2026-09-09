@@ -77,10 +77,14 @@ pub async fn seed_profile(
         .await
         .unwrap();
     if activate_auth {
-        control_plane
-            .auth_apply_validation("prod-app", 1, true, None, 1_800_000_001_500)
-            .await
-            .unwrap();
+        crate::common::auth_fixture::promote(
+            control_plane.as_ref(),
+            "prod-app",
+            1,
+            1_800_000_001_500,
+        )
+        .await
+        .unwrap();
     }
     digest
 }

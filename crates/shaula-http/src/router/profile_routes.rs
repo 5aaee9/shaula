@@ -243,70 +243,34 @@ pub(crate) async fn auth_profile_put(
 }
 
 pub(crate) fn build_auth_payload(dto: AuthProfilePutDto) -> Result<AuthProfilePut, Response> {
-    use shaula_core::auth::AuthKind;
-    let kind = match dto.kind.as_str() {
-        "github_app" | "github-app" => AuthKind::GithubApp,
-        "pat" => AuthKind::Pat,
-        other => {
-            return Err(problem(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "SpecInvalid",
-                format!("unknown auth kind {other}"),
-            )
-            .into_response())
-        }
-    };
-    let secret = match (&dto.private_key.flatten(), &dto.token.flatten()) {
-        (Some(_), Some(_)) => {
-            return Err(problem(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "SpecInvalid",
-                "exactly one credential field required",
-            )
-            .into_response())
-        }
-        (Some(key), None) if kind == AuthKind::GithubApp => {
-            shaula_core::secret::SecretString::new(key.clone())
-        }
-        (None, Some(token)) if kind == AuthKind::Pat => {
-            shaula_core::secret::SecretString::new(token.clone())
-        }
-        _ => {
-            return Err(problem(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "SpecInvalid",
-                "credential bytes required for the declared kind",
-            )
-            .into_response())
-        }
-    };
-    // F10: a v2 payload carrying ANY legacy member — value, empty, or
-    // null — is a forbidden-member violation detected at this boundary.
-    if dto.schema_version.flatten() == Some(2)
-        && (dto.target_allowlist.is_present()
-            || dto.installation_id.is_present()
-            || dto.pat_principal.is_present())
-    {
+    if dto.kind != "github_app" || dto.schema_version != Some(2) {
         return Err(problem(
             StatusCode::UNPROCESSABLE_ENTITY,
             "SpecInvalid",
-            "schema_version 2 forbids installation_id, pat and target_allowlist fields",
+            "only github_app authentication with schema_version: 2 is supported",
         )
         .into_response());
     }
-    // F10: legacy members flatten (null == absent, baseline behavior);
-    // the v2 format validates presence itself inside service_auth_format.
+    let Some(private_key) = dto.private_key else {
+        return Err(problem(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "SpecInvalid",
+            "private_key is required",
+        )
+        .into_response());
+    };
     Ok(AuthProfilePut {
-        kind,
-        app_id: dto.app_id.flatten(),
-        installation_id: dto.installation_id.flatten(),
-        pat_identity: dto.pat_principal.flatten(),
-        secret,
-        allowlist: dto.target_allowlist.flatten(),
-        schema_version: dto.schema_version.flatten(),
-        target_policy: dto.target_policy.0.flatten(),
+        kind: shaula_core::auth::AuthKind::GithubApp,
+        app_id: dto.app_id,
+        secret: shaula_core::secret::SecretString::new(private_key),
+        schema_version: Some(2),
+        target_policy: dto.target_policy,
     })
 }
+
+#[cfg(test)]
+#[path = "profile_auth_payload_tests.rs"]
+mod auth_payload_tests;
 
 pub(crate) async fn template_profile_get(
     State(state): State<AppState>,

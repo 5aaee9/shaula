@@ -1,5 +1,5 @@
-//! Continuity and deferral tests for the REAL v2 worker (F2/F8): legacy
-//! client-ID → numeric-App continuity, different-App rejection, and
+//! Continuity and deferral tests for the REAL v2 worker (F2/F8): numeric
+//! App identity continuity, different-App rejection, and
 //! Retry-After deferral deadlines surfaced from token-mint rate limits.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -55,12 +55,11 @@ async fn exact_repository_requires_the_installation_account_as_owner() {
     assert!(store.auth_bindings_get(KEY, 1).await.unwrap().is_empty());
 }
 
-/// Seeds a LEGACY (schema 1) active predecessor whose stored App identity
-/// is a CLIENT-ID string — the historical encoding (spec 0011 §7.5).
-async fn seed_legacy_predecessor(control_plane: &Arc<SqliteControlPlane>, app_id: &str) {
+/// Seeds an active v2 predecessor with its proven numeric App identity.
+async fn seed_predecessor(control_plane: &Arc<SqliteControlPlane>, app_id: &str) {
     use shaula_core::registry::{AuthRevisionRow, MutationFacts};
     let change = shaula_core::registry::ChangeView {
-        id: "change-legacy".into(),
+        id: "change-predecessor".into(),
         resource_kind: "github_auth_profile".into(),
         resource_key: KEY.into(),
         revision: 1,
@@ -89,11 +88,8 @@ async fn seed_legacy_predecessor(control_plane: &Arc<SqliteControlPlane>, app_id
         revision: 1,
         kind: "github_app".into(),
         app_id: Some(app_id.into()),
-        installation_id: Some(34),
-        pat_principal: None,
-        allowlist_json: r#"{"targets":[{"kind":"organization","owner":"Indexyz"}]}"#.into(),
-        schema_version: 1,
-        policy_json: None,
+        schema_version: 2,
+        policy_json: Some(policy(true)),
         validation_snapshot_json: None,
         state: "Validating".into(),
         reason: None,
@@ -103,7 +99,28 @@ async fn seed_legacy_predecessor(control_plane: &Arc<SqliteControlPlane>, app_id
         .await
         .unwrap()
         .unwrap();
-    // Legacy staged activation (no bindings/snapshot on this path).
+    let mut promotion = crate::auth_worker_mock::promotion_from(KEY, 1, &[]);
+    promotion
+        .bindings
+        .push(shaula_core::auth_context::AccountBinding {
+            account_id: 110,
+            account_kind: shaula_core::auth_policy::AccountKind::Organization,
+            login: "Indexyz".into(),
+            installation_id: 11,
+            repository_selection: shaula_core::auth_context::RepositorySelection::All,
+            validated_at_ms: 2,
+        });
+    let mut snapshot: shaula_core::registry::AuthValidationSnapshot =
+        serde_json::from_str(&promotion.snapshot_json).unwrap();
+    snapshot
+        .identities
+        .push(shaula_core::registry::AuthIdentityProof {
+            login: "Indexyz".into(),
+            account_id: 110,
+            installation_id: 11,
+            repositories: Vec::new(),
+        });
+    promotion.snapshot_json = serde_json::to_string(&snapshot).unwrap();
     ControlPlaneStore::auth_apply_validation_v2(
         control_plane.as_ref(),
         KEY,
@@ -111,23 +128,18 @@ async fn seed_legacy_predecessor(control_plane: &Arc<SqliteControlPlane>, app_id
         true,
         None,
         2,
-        None,
+        Some(promotion),
     )
     .await
     .unwrap();
 }
 
-/// F2: legacy client-ID predecessor + `/app` client_id MATCH → the same
-/// App upgrades; continuity holds.
+/// The same verified numeric App may add a new account selector.
 #[tokio::test]
-async fn legacy_client_id_same_app_upgrades() {
-    let mock = crate::auth_worker_mock::mock_server_cfg(crate::auth_worker_mock::MockConfig {
-        client_id: "Iv23legacy",
-        ..Default::default()
-    })
-    .await;
+async fn numeric_app_identity_preserved_across_publications() {
+    let mock = crate::auth_worker_mock::mock_server(false).await;
     let control_plane = control_plane().await;
-    seed_legacy_predecessor(&control_plane, "Iv23legacy").await;
+    seed_predecessor(&control_plane, crate::auth_worker_v2::tests::APP_ID).await;
 
     // The v2 Candidate declares the NUMERIC id of the same App.
     crate::auth_worker_v2::tests::seed_candidate(&control_plane, 2, &policy(false)).await;
@@ -148,7 +160,7 @@ async fn legacy_client_id_same_app_upgrades() {
     assert_eq!(
         verdict,
         crate::auth_worker_v2::Verdict::Accepted,
-        "same-App continuity through /app client_id must succeed"
+        "same numeric App identity must permit a new selector"
     );
     let head = ControlPlaneStore::auth_profile_get(control_plane.as_ref(), KEY)
         .await
@@ -157,18 +169,12 @@ async fn legacy_client_id_same_app_upgrades() {
     assert_eq!(head.active_revision, Some(2));
 }
 
-/// F2: a DIFFERENT App (client_id mismatch on `/app`) can never replace
-/// the profile under the same key — the predecessor identity is enforced
-/// even though the legacy row has no v2 snapshot.
+/// A different verified numeric App cannot replace a profile's identity.
 #[tokio::test]
-async fn legacy_client_id_different_app_rejects() {
-    let mock = crate::auth_worker_mock::mock_server_cfg(crate::auth_worker_mock::MockConfig {
-        client_id: "Iv23other",
-        ..Default::default()
-    })
-    .await;
+async fn different_numeric_app_identity_rejects() {
+    let mock = crate::auth_worker_mock::mock_server(false).await;
     let control_plane = control_plane().await;
-    seed_legacy_predecessor(&control_plane, "Iv23legacy").await;
+    seed_predecessor(&control_plane, "1234").await;
     crate::auth_worker_v2::tests::seed_candidate(&control_plane, 2, &policy(false)).await;
     let row = ControlPlaneStore::auth_revision_get(control_plane.as_ref(), KEY, 2)
         .await
@@ -185,7 +191,7 @@ async fn legacy_client_id_different_app_rejects() {
     .await
     .unwrap();
     assert_eq!(verdict, crate::auth_worker_v2::Verdict::Rejected);
-    // The LEGACY predecessor stays active — no silent rebind.
+    // The predecessor stays active — no silent rebind.
     let head = ControlPlaneStore::auth_profile_get(control_plane.as_ref(), KEY)
         .await
         .unwrap()

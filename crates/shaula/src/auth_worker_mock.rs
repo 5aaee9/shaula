@@ -32,24 +32,12 @@ pub(crate) struct Mock {
 }
 
 /// Scenario knobs for the scripted server.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) struct MockConfig {
-    /// The client_id the /app identity response reports.
-    pub client_id: &'static str,
     /// Ordinary 403 on the Actions runner-group read.
     pub deny_runner_groups: bool,
     /// Rate-limit 403 (+Retry-After) on the installation token mint.
     pub throttle_token_mint: bool,
-}
-
-impl Default for MockConfig {
-    fn default() -> Self {
-        Self {
-            client_id: "Iv23tester",
-            deny_runner_groups: false,
-            throttle_token_mint: false,
-        }
-    }
 }
 
 /// Scripted GitHub + Actions Service. `deny_runner_groups` makes the
@@ -72,7 +60,6 @@ pub(crate) async fn mock_server_cfg(cfg: MockConfig) -> Mock {
     let discovery_reads: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
     let flaky_reads = discovery_reads.clone();
     let slowlimit_reads = discovery_reads.clone();
-    let client_id_for_app = cfg.client_id;
     let throttle_mint = cfg.throttle_token_mint;
     let deny_runner_groups = cfg.deny_runner_groups;
     let exp = 1_800_003_600i64;
@@ -94,7 +81,7 @@ pub(crate) async fn mock_server_cfg(cfg: MockConfig) -> Mock {
                             .unwrap_or("")
                             .to_string(),
                     );
-                    Json(serde_json::json!({"id": 4863460, "client_id": client_id_for_app}))
+                    Json(serde_json::json!({"id": 4863460}))
                 }
             }),
         )

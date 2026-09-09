@@ -58,11 +58,12 @@ test("auth creation keeps credentials out of storage and the read model", async 
   const profile = {
     key: "new-auth",
     incarnation: "auth-inc",
-    kind: "pat",
+    kind: "github_app",
+    schema_version: 2,
+    app_id: "4863460",
     desiredRevision: 1,
     activeRevision: null,
     status: "Validating",
-    target_allowlist: ["acme"],
     credential_present: true,
   };
   await page.route("**/api/v1/github-auth-profiles", (route) =>
@@ -72,21 +73,18 @@ test("auth creation keeps credentials out of storage and the read model", async 
   await page.goto("/auth");
   await page.getByRole("button", { name: "Create profile" }).click();
   await page.getByLabel("Profile key", { exact: true }).fill("new-auth");
-  await page.getByLabel("Credential type", { exact: true }).selectOption("pat");
-  await page.getByLabel("PAT principal", { exact: true }).fill("build-bot");
-  await page.getByLabel("Personal access token", { exact: true }).fill("test-only-secret");
-  await page.getByLabel("Allowed targets", { exact: true }).fill("acme\nacme/build-tools");
+  await page.getByLabel("App ID", { exact: true }).fill("4863460");
+  await page.getByLabel("Private key (PEM)", { exact: true }).fill("test-only-secret");
+  await page.getByLabel("Owner", { exact: true }).fill("acme");
   await page.route("**/api/v1/github-auth-profiles/new-auth", (route) => {
     if (route.request().method() === "GET") return route.fulfill({ json: profile });
     expect(route.request().headers()["if-none-match"]).toBe("*");
     expect(route.request().postDataJSON()).toEqual({
-      kind: "pat",
-      pat_principal: "build-bot",
-      token: "test-only-secret",
-      target_allowlist: [
-        { kind: "organization", owner: "acme" },
-        { kind: "repository", owner: "acme", repository: "build-tools" },
-      ],
+      kind: "github_app",
+      schema_version: 2,
+      app_id: "4863460",
+      private_key: "test-only-secret",
+      target_policy: [{ kind: "organization", owner: "acme" }],
     });
     created = true;
     return route.fulfill({

@@ -16,16 +16,15 @@ async fn drifted_repository_identity_fails_the_refresh() {
 }
 
 #[tokio::test]
-async fn legacy_client_id_credential_keeps_reconciling() {
+async fn client_id_credential_cannot_bypass_numeric_app_identity() {
     let f = Fixture::start().await;
-    let proof = f
-        .client_with_issuer(false, false, "Iv23legacy")
-        .ensure_route_proof()
-        .await
-        .unwrap();
-    assert_eq!(proof.installation_id, 34);
-    assert_eq!(proof.account_id, 100);
-    assert_eq!(proof.organization_id, Some(100));
+    let client = f.client_with_issuer(false, false, "Iv23legacy");
+    assert!(matches!(
+        client.ensure_route_proof().await,
+        Err(AccessFailure::Unauthenticated)
+    ));
+    super::assert_new_effects_blocked(&f, &client).await;
+    assert_eq!(f.script.effects.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]

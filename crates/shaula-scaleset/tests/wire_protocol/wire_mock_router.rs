@@ -15,7 +15,8 @@ pub(crate) async fn spawn_mock_github() -> String {
     let app: Router = Router::new()
         .route(
             "/app/installations/34",
-            get(|| async {
+            get(|headers: axum::http::HeaderMap| async move {
+                assert_app_jwt(&headers);
                 Json(serde_json::json!({
                     "id": 34,
                     "app_id": 123,
@@ -32,7 +33,8 @@ pub(crate) async fn spawn_mock_github() -> String {
         )
         .route(
             "/app/installations/34/access_tokens",
-            post(|| async {
+            post(|headers: axum::http::HeaderMap| async move {
+                assert_app_jwt(&headers);
                 (
                     axum::http::StatusCode::CREATED,
                     Json(
@@ -47,7 +49,8 @@ pub(crate) async fn spawn_mock_github() -> String {
         )
         .route(
             "/orgs/example-org/actions/runners/registration-token",
-            post(|| async {
+            post(|headers: axum::http::HeaderMap| async move {
+                assert_eq!(headers.get("authorization").unwrap(), "Bearer t-34");
                 (
                     axum::http::StatusCode::CREATED,
                     Json(serde_json::json!({"token": "reg-token-1"})),
@@ -159,6 +162,24 @@ pub(crate) async fn spawn_mock_github() -> String {
         axum::serve(listener, app).await.unwrap();
     });
     format!("http://{addr}")
+}
+
+fn assert_app_jwt(headers: &axum::http::HeaderMap) {
+    let bearer = headers.get("authorization").unwrap().to_str().unwrap();
+    let jwt = bearer.strip_prefix("Bearer ").expect("App JWT bearer");
+    let parts: Vec<_> = jwt.split('.').collect();
+    assert_eq!(parts.len(), 3);
+    let decode_part = |part: &str| -> serde_json::Value {
+        serde_json::from_slice(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(part)
+                .unwrap(),
+        )
+        .unwrap()
+    };
+    assert_eq!(decode_part(parts[0])["alg"], "RS256");
+    assert_eq!(decode_part(parts[1])["iss"], "123");
+    assert!(!parts[2].is_empty(), "App JWT carries a signature");
 }
 
 /// Builds a syntactically valid unsigned JWT with the given `exp`.

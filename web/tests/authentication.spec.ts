@@ -5,7 +5,7 @@ test("session expiry unmounts credential forms and clears browser state", async 
   await mockApi(page);
   await page.goto("/auth?key=github-build");
   await page.getByRole("button", { name: "Rotate credential" }).click();
-  await page.getByLabel("Personal access token", { exact: true }).fill("draft-secret");
+  await page.getByLabel("Private key (PEM)", { exact: true }).fill("draft-secret");
   await page.route("**/readyz", (route) =>
     route.fulfill({
       status: 401,
@@ -16,7 +16,7 @@ test("session expiry unmounts credential forms and clears browser state", async 
   await expect(page.getByRole("heading", { name: "Sign in to Shaula" })).toBeVisible({
     timeout: 15000,
   });
-  await expect(page.getByLabel("Personal access token", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Private key (PEM)", { exact: true })).toHaveCount(0);
   expect(
     await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]),
   ).toEqual([[], []]);

@@ -136,13 +136,33 @@ async fn incarnation_conflict_rejected() {
 
 #[tokio::test]
 async fn session_epoch_monotonic_across_reinstalls() {
-    let store = store().await;
-    assert_eq!(store.session_install("f1", "s1", 42, 1).await.unwrap(), 1);
-    assert_eq!(store.session_install("f1", "s2", 42, 2).await.unwrap(), 2);
+    let (store, captured, context) = super::auth_execution::ready().await;
+    super::auth_v2::seed_fleet(
+        &store,
+        "f2",
+        1,
+        r#"{"kind":"organization","owner":"example-org"}"#,
+    )
+    .await;
+    let json = serde_json::to_string(&context).unwrap();
+    for fleet in ["fleet", "f2"] {
+        store
+            .handoff_acknowledge(fleet, super::auth_v2::PROFILE, 1, Some(&json), &captured)
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        store.session_install("fleet", "s1", 42, 1).await.unwrap(),
+        1
+    );
+    assert_eq!(
+        store.session_install("fleet", "s2", 42, 2).await.unwrap(),
+        2
+    );
     // Different fleet namespaces independently (no cross-fleet coupling).
     assert_eq!(store.session_install("f2", "s1", 43, 2).await.unwrap(), 1);
 
-    let session = store.session_get("f1").await.unwrap().unwrap();
+    let session = store.session_get("fleet").await.unwrap().unwrap();
     assert_eq!(session.epoch, 2);
     assert_eq!(session.session_id, "s2");
     assert_eq!(

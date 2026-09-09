@@ -1,12 +1,10 @@
 //! GitHub Auth Profile identities: kind, immutable revision refs and target
-//! allowlists.
+//! policies.
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::{CoreError, CoreResult, ReasonCode};
-use crate::github::GitHubTarget;
-use crate::secret::SecretString;
 
 /// Stable logical key of a GitHub Auth Profile.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -72,73 +70,6 @@ impl AuthRevisionRef {
 impl std::fmt::Display for AuthRevisionRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}/rev{}", self.profile_key.as_str(), self.revision)
-    }
-}
-
-/// Normalized target allowlist fixed within one Auth Profile incarnation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TargetAllowlist {
-    pub targets: Vec<GitHubTarget>,
-}
-
-impl TargetAllowlist {
-    pub fn new(targets: Vec<GitHubTarget>) -> CoreResult<Self> {
-        if targets.is_empty() {
-            return Err(CoreError::new(
-                ReasonCode::SpecInvalid,
-                "target allowlist must not be empty",
-            ));
-        }
-        Ok(Self { targets })
-    }
-
-    /// Whether the allowlist covers the target. Exact match semantics:
-    /// a repository target is not implied by its organization entry.
-    pub fn allows(&self, target: &GitHubTarget) -> bool {
-        self.targets.iter().any(|t| t == target)
-    }
-}
-
-/// Non-secret App identity fixed per incarnation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AppIdentity {
-    pub app_id: String,
-    pub installation_id: i64,
-}
-
-/// Non-secret PAT principal identity; the PAT itself never lives here.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PatIdentity {
-    pub principal: String,
-}
-
-/// The immutable credential revision body stored in SQLite. Secret bytes are
-/// write-only: never serialized into responses, audit or telemetry.
-#[derive(Clone)]
-pub struct AuthCredentialRevision {
-    pub profile_key: AuthProfileKey,
-    pub revision: u64,
-    pub kind: AuthKind,
-    pub app_identity: Option<AppIdentity>,
-    pub pat_identity: Option<PatIdentity>,
-    pub allowlist: TargetAllowlist,
-    pub secret: SecretString,
-}
-
-impl std::fmt::Debug for AuthCredentialRevision {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AuthCredentialRevision")
-            .field("profile_key", &self.profile_key)
-            .field("revision", &self.revision)
-            .field("kind", &self.kind)
-            .field("credential_present", &true)
-            .finish_non_exhaustive()
-    }
-}
-
-impl AuthCredentialRevision {
-    pub fn revision_ref(&self) -> AuthRevisionRef {
-        AuthRevisionRef::new(self.profile_key.clone(), self.revision)
     }
 }
 
@@ -300,38 +231,6 @@ mod tests {
     }
 
     #[test]
-    fn allowlist_exact_target_matching() {
-        let allowlist = TargetAllowlist::new(vec![
-            GitHubTarget::organization("example-org").unwrap(),
-            GitHubTarget::new_repository("other-org", "repo").unwrap(),
-        ])
-        .unwrap();
-        assert!(allowlist.allows(&GitHubTarget::organization("example-org").unwrap()));
-        assert!(allowlist.allows(&GitHubTarget::new_repository("other-org", "repo").unwrap()));
-        // A repository is not implied by its organization entry.
-        assert!(!allowlist.allows(&GitHubTarget::new_repository("example-org", "child").unwrap()));
-        assert!(!allowlist.allows(&GitHubTarget::organization("other-org").unwrap()));
-    }
-
-    #[test]
-    fn secret_never_leaks_in_revision_debug() {
-        let revision = AuthCredentialRevision {
-            profile_key: AuthProfileKey::new("k").unwrap(),
-            revision: 1,
-            kind: AuthKind::Pat,
-            app_identity: None,
-            pat_identity: Some(PatIdentity {
-                principal: "octocat".into(),
-            }),
-            allowlist: TargetAllowlist::new(vec![GitHubTarget::organization("o").unwrap()])
-                .unwrap(),
-            secret: SecretString::new("ghp_supersecret"),
-        };
-        let rendered = format!("{revision:?}");
-        assert!(!rendered.contains("ghp_supersecret"));
-    }
-
-    #[test]
     fn invalid_profile_keys_rejected() {
         assert!(AuthProfileKey::new("").is_err());
         assert!(AuthProfileKey::new("has space").is_err());
@@ -355,11 +254,7 @@ pub struct AuthRevisionInsert {
     pub revision: i64,
     pub kind: String,
     pub app_id: Option<String>,
-    pub installation_id: Option<i64>,
-    pub pat_principal: Option<String>,
-    pub allowlist_json: String,
-    /// 1 for the legacy single-installation format; 2 for the
-    /// multi-account policy format (spec 0011).
+    /// Publications require 2, the multi-account GitHub App policy format.
     pub schema_version: i64,
     /// Canonical `TargetPolicy` JSON when `schema_version == 2`.
     pub policy_json: Option<String>,

@@ -11,6 +11,7 @@ export interface ProfileChoices {
 }
 
 export function profileUnavailableReason(profile: TemplateSummary): string | undefined {
+  if (profile.status === "Unsupported") return "Unsupported authentication schema";
   if (profile.status === "Retiring" || profile.status === "Retired")
     return "Retirement prevents new references";
   if (!profile.activeRevision) return "No Active revision";

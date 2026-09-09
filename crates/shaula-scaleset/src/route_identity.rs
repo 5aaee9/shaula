@@ -16,31 +16,26 @@ pub(crate) fn valid_id(id: i64) -> bool {
 impl ScalesetClient {
     pub(crate) fn verify_route_identity(
         &self,
-        installation: Option<&InstallationProof>,
+        installation: &InstallationProof,
         identity: &TargetIdentity,
     ) -> Result<(), AccessFailure> {
-        if let Some(installation) = installation {
-            let owner_matches = match &self.config.target {
-                GitHubTarget::Organization { .. } => {
-                    installation.account_kind == AccountKind::Organization
-                        && identity.organization_id == Some(installation.account_id)
-                }
-                GitHubTarget::Repository { .. } => {
-                    identity.repository_owner_id == Some(installation.account_id)
-                }
-            };
-            if !owner_matches
-                || !installation
-                    .login
-                    .eq_ignore_ascii_case(self.config.target.owner())
-            {
-                return Err(AccessFailure::PermissionDenied);
+        let owner_matches = match &self.config.target {
+            GitHubTarget::Organization { .. } => {
+                installation.account_kind == AccountKind::Organization
+                    && identity.organization_id == Some(installation.account_id)
             }
+            GitHubTarget::Repository { .. } => {
+                identity.repository_owner_id == Some(installation.account_id)
+            }
+        };
+        if !owner_matches
+            || !installation
+                .login
+                .eq_ignore_ascii_case(self.config.target.owner())
+        {
+            return Err(AccessFailure::PermissionDenied);
         }
         if let Some(expected) = &self.expected_context {
-            let Some(installation) = installation else {
-                return Err(AccessFailure::PermissionDenied);
-            };
             if expected.profile_key.is_empty()
                 || expected.revision <= 0
                 || expected.github_host != "github.com"

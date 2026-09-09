@@ -7,29 +7,6 @@ export type SelectorRow = {
   account_kind: "user" | "organization";
 };
 
-export function parseLegacyTargets(value: string): GitHubTarget[] {
-  return value
-    .split(/[\n,]+/)
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry) => {
-      const parts = entry
-        .replace(/^https:\/\/github\.com\//, "")
-        .replace(/\/$/, "")
-        .split("/");
-      if (parts.length > 2 || parts.some((part) => !part))
-        throw new Error("Targets must be an organization or owner/repository.");
-      return parts.length === 2
-        ? { kind: "repository", owner: parts[0], repository: parts[1] }
-        : { kind: "organization", owner: parts[0] };
-    });
-}
-
-export function parseLegacyIdentity(identity?: string | null) {
-  const match = identity?.match(/^app\/([^/]+)\/installation\/([1-9][0-9]*)$/);
-  return { appId: match?.[1] || "", installationId: match?.[2] || "" };
-}
-
 export function selectorFromRow(row: SelectorRow): TargetSelector {
   if (row.kind === "repository")
     return { kind: row.kind, owner: row.owner, repository: row.repository };

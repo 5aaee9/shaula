@@ -24,6 +24,7 @@ test("server choices are sorted, never preselected, and retain an older Active c
             health: "Unknown",
           },
           { ...authProfile, key: "m-inactive", activeRevision: null },
+          { ...authProfile, key: "old-auth", schema_version: 1, status: "Unsupported" },
         ],
       },
     });
@@ -42,10 +43,14 @@ test("server choices are sorted, never preselected, and retain an older Active c
     await auth
       .locator("option")
       .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value)),
-  ).toEqual(["", "a-validating", "m-inactive", "z-retiring"]);
+  ).toEqual(["", "a-validating", "m-inactive", "old-auth", "z-retiring"]);
   await expect(auth.locator('option[value="a-validating"]')).toBeEnabled();
   await expect(auth.locator('option[value="a-validating"]')).toContainText("r1 · Validating");
   await expect(auth.locator('option[value="m-inactive"]')).toBeDisabled();
+  await expect(auth.locator('option[value="old-auth"]')).toBeDisabled();
+  await expect(auth.locator('option[value="old-auth"]')).toContainText(
+    "Unsupported authentication schema",
+  );
   await expect(auth.locator('option[value="z-retiring"]')).toBeDisabled();
   await auth.focus();
   await auth.press("ArrowDown");

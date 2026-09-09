@@ -9,6 +9,8 @@ date: 2026-09-07
 
 已接受。本地实现与现有运行时集成边界见 [implementation status](../IMPLEMENTATION_STATUS.md)；真实 GitHub 路由验收由 spec 0011 §9 定义，尚未执行。本决定部分替代 [ADR-0007](0007-use-target-bound-github-auth-profiles.md) 与 [ADR-0009](0009-manage-profile-resources-through-http-and-sqlite.md) 中“单 installation / policy 在 Profile incarnation 内固定”的选择。详细协议唯一维护于 [spec 0011](../specs/0011-multi-account-github-authentication.md)。
 
+本记录的 v1/PAT 兼容、client-ID/同 key 升级与旧版执行承诺已由 [ADR-0022](0022-retire-legacy-github-authentication.md) 替代。当前仅支持 v2 GitHub App；历史数据保留但不转换或授权，部署条件见 [spec 0018](../specs/0018-github-app-only-authentication.md)。多账户 policy、binding、context 决策继续有效。
+
 ## Decision
 
 - Target policy 使用 exact organization、exact repository 和 typed account-repositories selector。个人账户的 selector 覆盖其当前及未来拥有且 installation 获准访问的仓库；Fleet 本身继续绑定具体 organization/repository。
@@ -37,7 +39,7 @@ date: 2026-09-07
 - 相同 App credential 的 rotation 需要验证全部声明 bindings 和 live Targets。一个账户故障可推迟新 Revision 的整体发布；已 active 的健康账户继续工作。接受这个代价以保留单一 immutable Revision 与现有 staged activation。
 - 短期 route proof 与按需刷新会增加 GitHub 请求；有界 cache、per-key singleflight 和限流退避控制成本，不使用无限期旧授权兜底。
 - GitHub rename/transfer、同名重建和 installation replacement 不能静默改写 existing Fleet identity。撤权检测也不承诺立即停止已在 GitHub 执行的 Busy job。
-- 旧数据保留 exact policy、历史身份编码与 execution references；升级不能自动转换成 wildcard。旧 binary 必须拒绝新 durable format，回退必须处理完整 consistency set。
-- GitHub private key / derived token 继续只存在于 daemon credential boundary；不会进入 Lifecycle Worker、Terraform、Runner 或 workflow。PAT 原有支持范围及 OIDC 登录不受该提案扩展。
+- 历史身份编码与 execution references 保留；v1/PAT runtime 和升级支持已被 ADR-0022 撤销。旧记录不自动转换为 policy，退出支持部署须确认无旧授权的 live/retained 引用。
+- GitHub private key / derived token 继续只存在于 daemon credential boundary；不会进入 Lifecycle Worker、Terraform、Runner 或 workflow。原提案保留 PAT 的决定已由 ADR-0022 撤销；OIDC 登录仍不受影响。
 
-验收由 spec 0011 定义，尤其覆盖个人新仓库、多组织并行、一个 installation 故障、权限收缩、reinstall、Handoff/restart 与 legacy migration；文档存在不构成实现或生产验收证据。
+验收由 spec 0011 定义，尤其覆盖个人新仓库、多组织并行、一个 installation 故障、权限收缩、reinstall、Handoff/restart 与 spec 0018 的旧格式拒绝/历史保留；文档存在不构成实现或生产验收证据。

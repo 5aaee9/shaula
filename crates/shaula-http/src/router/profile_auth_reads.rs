@@ -26,8 +26,7 @@ pub(crate) async fn auth_profile_list(
     }
 }
 
-/// Current dependency inventory for an explicit policy preview. Kept separate
-/// from the legacy resource so legacy GET/replay representations stay stable.
+/// Current dependency inventory for an explicit policy preview.
 pub(crate) async fn auth_profile_impact(
     State(state): State<AppState>,
     Path(profile_key): Path<String>,
@@ -97,18 +96,15 @@ fn render_binding(
 
 fn auth_profile_body(view: &shaula_core::registry::AuthProfileView) -> serde_json::Value {
     use shaula_core::registry::AuthRevisionState;
-    // Revision-attributed shape (spec 0011 §6, R10): ACTIVE is
-    // separate from DESIRED; pure legacy keeps the baseline.
     let render_state = |state: &AuthRevisionState| {
-        if state.schema_version >= 2 {
+        if state.schema_version == 2 && state.state != "Unsupported" {
             serde_json::json!({
                 "revision": state.revision,
                 "schema_version": state.schema_version,
                 "state": state.state,
                 "reason": state.reason,
                 "app_id": state.app_id,
-                "target_policy": state.target_policy.as_ref()
-                    .map(|p| p.selectors()),
+                "target_policy": state.target_policy.as_ref().map(|p| p.selectors()),
                 "bindings": state.bindings.iter().map(|binding| render_binding(binding, state))
                     .collect::<Vec<_>>(),
             })
@@ -116,65 +112,41 @@ fn auth_profile_body(view: &shaula_core::registry::AuthProfileView) -> serde_jso
             serde_json::json!({
                 "revision": state.revision,
                 "schema_version": state.schema_version,
-                "state": state.state,
-                "reason": state.reason,
-                "identity": state.identity,
-                "target_allowlist": state.target_allowlist,
+                "state": "Unsupported",
+                "reason": "UnsupportedAuthenticationFormat",
             })
         }
     };
+    let supported = view.schema_version == 2
+        && view.kind == Some(shaula_core::auth::AuthKind::GithubApp)
+        && view
+            .active
+            .as_ref()
+            .is_none_or(|active| active.schema_version == 2 && active.state != "Unsupported");
     let mut body = serde_json::json!({
         "key": view.key,
         "incarnation": view.incarnation,
         "desiredRevision": view.desired_revision,
         "activeRevision": view.active_revision,
-        "status": view.status,
+        "status": if supported { view.status.as_str() } else { "Unsupported" },
         "kind": view.kind.map(shaula_core::auth::AuthKind::as_str),
         "credential_present": view.credential_present,
+        "schema_version": view.schema_version,
+        "liveFleets": view.live_fleets.iter().map(|fleet| serde_json::json!({
+            "fleetKey": fleet.fleet_key, "phase": fleet.phase, "target": fleet.target,
+        })).collect::<Vec<_>>(),
     });
-    // Pure-legacy profile (active and desired head both legacy):
-    // the exact baseline top-level shape, no new fields.
-    let pure_legacy = view.schema_version < 2
-        && view.active.as_ref().is_none_or(|a| a.schema_version < 2)
-        && view.desired.as_ref().is_none_or(|d| d.schema_version < 2);
-    if pure_legacy {
-        if let Some(active) = &view.active {
-            body["identity"] = serde_json::json!(active.identity);
-            body["target_allowlist"] = serde_json::json!(active.target_allowlist);
-        }
-    } else {
-        // A staged legacy→v2 upgrade (or a v2 head) uses the
-        // revision-attributed shape; the still-effective legacy
-        // authorization stays visible at the top level.
-        if let Some(active) = &view.active {
-            body["active"] = render_state(active);
-            if active.schema_version < 2 {
-                body["identity"] = serde_json::json!(active.identity);
-                body["target_allowlist"] = serde_json::json!(active.target_allowlist);
-            }
-        }
-        if let Some(desired) = &view.desired {
-            body["desired"] = render_state(desired);
-        }
-        body["schema_version"] = serde_json::json!(view.schema_version);
-        if let Some(app_id) = &view.app_id {
-            body["app_id"] = serde_json::json!(app_id);
-        }
-        // Live fleet impact (spec 0011 §6): live fleet targets
-        // desiring this profile, before any publication.
-        body["liveFleets"] = serde_json::json!(view
-            .live_fleets
-            .iter()
-            .map(|fleet| serde_json::json!({
-                "fleetKey": fleet.fleet_key,
-                "phase": fleet.phase,
-                "target": fleet.target,
-            }))
-            .collect::<Vec<_>>());
+    if supported {
+        body["app_id"] = serde_json::json!(view.app_id);
+    }
+    if let Some(active) = &view.active {
+        body["active"] = render_state(active);
+    }
+    if let Some(desired) = &view.desired {
+        body["desired"] = render_state(desired);
     }
     body
 }
-
 #[cfg(test)]
 #[path = "profile_auth_reads_tests.rs"]
 mod tests;

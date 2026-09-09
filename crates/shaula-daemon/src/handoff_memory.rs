@@ -5,6 +5,7 @@ use shaula_core::registry::{Actor, ControlPlaneStore, MutationError};
 
 #[derive(Default)]
 pub struct MemoryStore {
+    pub revision_kind: tokio::sync::Mutex<Option<(i64, String)>>,
     pub context: tokio::sync::Mutex<Option<shaula_core::registry::FleetAuthContextRow>>,
     pub stale_ack: std::sync::atomic::AtomicBool,
     pub handoffs: tokio::sync::Mutex<
@@ -86,21 +87,20 @@ impl ControlPlaneStore for MemoryStore {
         key: &str,
         revision: i64,
     ) -> CoreResult<Option<shaula_core::registry::AuthRevisionRow>> {
+        let (schema_version, kind) = self
+            .revision_kind
+            .lock()
+            .await
+            .clone()
+            .unwrap_or((2, "github_app".into()));
         Ok(Some(shaula_core::registry::AuthRevisionRow {
             profile_key: key.into(),
             revision,
             state: "Active".into(),
             reason: None,
-            kind: "github_app".into(),
+            kind,
             app_id: Some("1".into()),
-            installation_id: Some(1),
-            pat_principal: None,
-            allowlist_json: "[]".into(),
-            schema_version: if self.context.lock().await.is_some() {
-                2
-            } else {
-                1
-            },
+            schema_version,
             policy_json: None,
             validation_snapshot_json: None,
         }))

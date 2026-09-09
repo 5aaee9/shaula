@@ -54,9 +54,9 @@ impl SqliteControlPlane {
             // never an offline heuristic. Fail closed. A v2 Candidate's
             // authority is its Target policy, not the (empty) legacy
             // allowlist; an unknown schema version never passes.
-            let structurally_valid = !candidate.credential_bytes.is_empty()
+            let structurally_valid = candidate.kind == "github_app"
+                && !candidate.credential_bytes.is_empty()
                 && match candidate.schema_version {
-                    1 => !candidate.allowlist_json.is_empty(),
                     2 => candidate
                         .policy_json
                         .as_deref()
