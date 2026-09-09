@@ -48,11 +48,8 @@ pub(super) async fn launch(
         .and_then(|text| crate::manifest::parse_manifest(&text).ok())
         .ok_or_else(failed)?;
     let image = selected_image(&manifest, request)?;
-    let temporary = tempfile::Builder::new()
-        .prefix("shaula-bootstrap-")
-        // Crash residue must not alter the immutable workspace material digest.
-        .tempdir()
-        .ok();
+    // Crash residue must not alter the immutable workspace material digest.
+    let temporary = private_directory().ok();
     let projection = match &runtime.operation_log_reader {
         Some(reader) => tokio::time::timeout(
             Duration::from_secs(5),
@@ -200,6 +197,18 @@ fn truncated_detail(detail: &str) -> String {
     let tail: String = tail.chars().rev().take(32_768).collect();
     let tail: String = tail.chars().rev().collect();
     format!("{head}\n[Shaula: setup info truncated; full approved log in Web UI]\n{tail}")
+}
+
+fn private_directory() -> std::io::Result<tempfile::TempDir> {
+    let mut builder = tempfile::Builder::new();
+    builder.prefix("shaula-bootstrap-");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // Apply permissions in mkdir, before any payload can be created.
+        builder.permissions(std::fs::Permissions::from_mode(0o700));
+    }
+    builder.tempdir()
 }
 
 fn protected_file(

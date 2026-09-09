@@ -307,7 +307,16 @@ fn secret_patch_is_identity_conditional_atomic_and_one_shot(
 
 #[test]
 fn transient_payload_files_are_private_and_removed() -> Result<(), Box<dyn std::error::Error>> {
-    let directory = tempfile::tempdir()?;
+    let directory = private_directory()?;
+    let directory_path = directory.path().to_path_buf();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&directory_path)?.permissions().mode() & 0o777,
+            0o700
+        );
+    }
     let file = protected_file(directory.path(), b"payload", false).map_err(|_| "write failed")?;
     let path = file.path().to_path_buf();
     assert_eq!(std::fs::read(&path)?, b"payload");
@@ -324,13 +333,11 @@ fn transient_payload_files_are_private_and_removed() -> Result<(), Box<dyn std::
             readable.as_file().metadata()?.permissions().mode() & 0o777,
             0o444
         );
-        assert_eq!(
-            std::fs::metadata(directory.path())?.permissions().mode() & 0o777,
-            0o700
-        );
     }
     drop(file);
     assert!(!path.exists());
+    drop(directory);
+    assert!(!directory_path.exists());
     Ok(())
 }
 
