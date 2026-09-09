@@ -146,6 +146,8 @@ pub struct ChangeDto {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TemplateProfilePutDto {
+    #[serde(default)]
+    pub source_key: Option<String>,
     pub artifact_digest: String,
     pub engine_ref: String,
     #[serde(default)]

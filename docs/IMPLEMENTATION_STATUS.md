@@ -20,7 +20,8 @@ integration boundaries are recorded below.
 
 [Spec 0021](specs/0021-default-template-updates.md) and
 [ARD-0025](ard/0025-sync-default-templates-and-explicitly-update-published-revisions.md)
-are implemented. Startup validates the complete configured source set before replacing
+have their original catalog synchronization and explicit Update flow implemented.
+Startup validates the complete configured source set before replacing
 the catalog in one transaction; obsolete entries disappear and old archives/revisions
 remain immutable. Missing configured roots, duplicate keys and invalid templates fail
 without publishing a partial catalog. The NixOS module uses the current package's
@@ -30,8 +31,39 @@ Published templates expose **Update** and an explicit **Update from default** re
 The server inherits protected bindings and omitted policy from the exact If-Match base;
 explicit policy replacement preserves JSON numeric precision. Conditional publication,
 validation and activation share the existing path, including authoritative replay after
-concurrent idempotency races. Fleet and Generation pins are not changed. Source choices
-are explicit; matching a platform does not infer provenance for customized templates.
+concurrent idempotency races. Fleet and Generation pins are not changed.
+
+The persisted-source amendment is implemented locally (2026-09-09). Migration m0015
+adds nullable per-Revision `source_key` without a catalog foreign key and recovers only
+unique digest/engine/known-platform associations from the old catalog. PUT/Update
+validate the reviewed source and persist it in the revision transaction; revision reads
+return `sourceKey`. Source identity participates in NoOp and idempotency, while accepted
+replays and absent-source legacy request identities survive catalog changes. Historical
+configuration and Fleet/Generation pins remain unchanged.
+
+Update uses the saved key without asking again; missing or incompatible saved sources
+remain unavailable instead of selecting a replacement. Legacy drafts may preselect an
+exact match or sole platform candidate, but only explicit publication establishes the
+association. Default publication fixes the source engine; archive/existing publication
+does not inherit a source. Source-only and policy-only updates are supported, and a
+200 NoOp returns to the template with a no-change result rather than polling an empty
+Change ID. The authenticated Update deep link supports direct navigation and refresh.
+
+Amendment verification passed: 643 unfiltered workspace tests (2 platform-specific
+tests skipped), the final literal AGENTS filtered command (523 passed, 122 skipped),
+strict all-target Clippy, rustfmt, frontend build/lint and formatting of 14 changed Web
+files, and the complete 116-case browser suite. Independent Store/API and frontend
+reviews passed after fixing NoOp handling. Migration tests exercise atomic rollback,
+retry, SQLite backup/restore and retained historical pins. All 5 real HTTPS/OIDC browser
+tests passed: the new flow publishes from Docker, reads the stored source, clears and
+explicitly restores the association across three real daemon-activated revisions,
+reloads Update from database state, then verifies a real unchanged-policy NoOp. Desktop
+and mobile renders were inspected. The fixture isolates bundled modules from ignored
+retired directories in an existing checkout. Release delivery uses PowerArmor's locked
+`shaula` input; these tests do not create a real GitHub job or provision Docker/Kubernetes
+resources.
+
+The verification below describes the original synchronization and Update implementation.
 
 Local verification: 632 workspace Nextest tests passed (2 platform-specific tests skipped),
 strict all-target Clippy and rustfmt passed; the 95-case browser suite and one additional

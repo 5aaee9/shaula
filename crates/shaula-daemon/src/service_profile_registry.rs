@@ -44,6 +44,7 @@ impl ProfileRegistryPort for ControlPlane {
                 if_match,
                 idempotency_key,
                 update_identity: None,
+                update_base_source: None,
             },
         )
         .await
@@ -226,6 +227,7 @@ impl ProfileRegistryPort for ControlPlane {
             revision: row.revision,
             artifact_digest: row.artifact_digest,
             engine_ref: row.engine_ref,
+            source_key: row.source_key,
             platform: row.platform,
             bindings_contract: row.bindings_contract,
             state: row.state,

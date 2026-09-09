@@ -1,8 +1,7 @@
 use crate::common;
 #[path = "template_update_concurrency.rs"]
 mod concurrency;
-#[path = "template_updates.rs"]
-mod support;
+use crate::template_updates as support;
 
 use axum::body::Body;
 use axum::http::{HeaderValue, StatusCode};

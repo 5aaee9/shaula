@@ -37,6 +37,7 @@ pub mod template_profile_revisions {
         pub revision: i64,
         pub artifact_digest: String,
         pub engine_ref: String,
+        pub source_key: Option<String>,
         pub platform: Option<String>,
         pub bindings_contract: Option<String>,
         pub manifest_json: Option<String>,

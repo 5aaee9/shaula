@@ -56,6 +56,8 @@ pub trait ControlPlaneStore: crate::registry::AuthExecutionStore + Send + Sync {
 
     async fn template_profile_get(&self, key: &str) -> CoreResult<Option<ProfileHead>>;
     async fn template_profile_keys(&self) -> CoreResult<Vec<String>>;
+    /// Current trusted default catalog entry; historical associations are independent.
+    async fn template_source_get(&self, key: &str) -> CoreResult<Option<super::TemplateSource>>;
     async fn template_revision_get(
         &self,
         key: &str,
@@ -211,6 +213,7 @@ pub trait ControlPlaneStore: crate::registry::AuthExecutionStore + Send + Sync {
         &self,
         facts: MutationFacts,
         extra: (String, String, String, String),
+        source_key: Option<String>,
     ) -> CoreResult<Result<(), MutationError>>;
     /// Durable template-publish NO-OP (R9-02; see commits_noop impl).
     async fn commit_template_noop(
@@ -303,6 +306,7 @@ pub struct TemplateRevisionRow {
     pub revision: i64,
     pub artifact_digest: String,
     pub engine_ref: String,
+    pub source_key: Option<String>,
     pub platform: Option<String>,
     pub bindings_contract: Option<String>,
     pub state: String,

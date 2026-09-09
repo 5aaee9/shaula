@@ -4,7 +4,6 @@ import { ArrowUpFromLine, LoaderCircle } from "lucide-react";
 import { api, ApiError, MutationAttempt, resourcePath, type Resource } from "@/lib/api";
 import { useTemplateVariables, type TemplateSource } from "@/lib/template-variables";
 import type { Accepted, ChangeRef, TemplateResource, TemplateRevision } from "@/lib/types";
-import { useTemplateSources } from "./template-library";
 import { TemplateUpdatePolicy } from "./template-update-policy";
 import { ErrorNotice, Field, KeyValue, Loading } from "./status";
 import { Button } from "./ui/button";
@@ -13,18 +12,39 @@ import { NativeSelect, NativeSelectOption } from "./ui/native-select";
 export function TemplateUpdateForm({
   resource,
   revision,
+  sources,
   onClose,
   onAccepted,
 }: {
   resource: Resource<TemplateResource>;
   revision: TemplateRevision;
+  sources: TemplateSource[];
   onClose: () => void;
-  onAccepted: (change: ChangeRef) => void;
+  onAccepted: (change: ChangeRef | null) => void;
 }) {
-  const [snapshot] = useState({ resource, revision });
+  const [snapshot] = useState(() => ({
+    resource,
+    revision,
+    candidates: sources.filter(
+      (source) => source.platform === (revision.platform || resource.data.platform),
+    ),
+  }));
   const client = useQueryClient();
-  const sources = useTemplateSources(true);
-  const [target, setTarget] = useState<TemplateSource>();
+  const { candidates } = snapshot;
+  const sourceKey = snapshot.revision.sourceKey;
+  const [target, setTarget] = useState<TemplateSource | undefined>(() => {
+    if (sourceKey) return candidates.find((source) => source.key === sourceKey);
+    const matching = candidates.filter(
+      (source) =>
+        source.artifactDigest === snapshot.revision.artifactDigest &&
+        source.engineRef === snapshot.revision.engineRef,
+    );
+    return matching.length === 1
+      ? matching[0]
+      : candidates.length === 1
+        ? candidates[0]
+        : undefined;
+  });
   const [policy, setPolicy] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(false);
@@ -41,12 +61,12 @@ export function TemplateUpdateForm({
   const variables =
     discovery.variables?.artifactDigest === target?.artifactDigest ? discovery.variables : null;
   const platform = snapshot.revision.platform || snapshot.resource.data.platform;
-  const candidates =
-    sources.data?.data.sources.filter((source) => source.platform === platform) || [];
   const upToDate =
     !!target &&
     target.artifactDigest === snapshot.revision.artifactDigest &&
-    target.engineRef === snapshot.revision.engineRef;
+    target.engineRef === snapshot.revision.engineRef &&
+    target.key === sourceKey &&
+    policy === undefined;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -58,6 +78,7 @@ export function TemplateUpdateForm({
       const metadata = JSON.stringify({
         artifact_digest: target.artifactDigest,
         engine_ref: target.engineRef,
+        source_key: target.key,
       });
       const body =
         policy === undefined
@@ -70,10 +91,14 @@ export function TemplateUpdateForm({
       });
       void client.invalidateQueries();
       if (mounted.current)
-        onAccepted({ id: data.changeId, resource: snapshot.resource.data.key, type: "profile" });
+        onAccepted(
+          data.noOp
+            ? null
+            : { id: data.changeId, resource: snapshot.resource.data.key, type: "profile" },
+        );
     } catch (error) {
       if (mounted.current) {
-        setConflict(error instanceof ApiError && [409, 412].includes(error.status));
+        setConflict(error instanceof ApiError && [409, 412, 422].includes(error.status));
         setError(error);
       }
     } finally {
@@ -91,14 +116,25 @@ export function TemplateUpdateForm({
           <div>
             <h2>Update from default</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Choose a default for the {platform || "current"} platform. This replaces the template
-              code; review it before updating a customized template.
+              {target
+                ? "Review the selected default template."
+                : sourceKey
+                  ? "The saved default template must be available to update."
+                  : `Choose a default for the ${platform || "current"} platform.`}{" "}
+              This replaces the template code; review it before updating a customized template.
             </p>
           </div>
-          {sources.isPending ? (
-            <Loading />
-          ) : sources.error ? (
-            <ErrorNotice error={sources.error} retry={() => void sources.refetch()} />
+          {sourceKey ? (
+            target ? (
+              <dl className="text-sm">
+                <KeyValue label="Default template">{sourceKey}</KeyValue>
+              </dl>
+            ) : (
+              <p role="status" className="text-sm text-muted-foreground">
+                Saved default template {sourceKey} is unavailable for this platform. Use New
+                revision to choose another source.
+              </p>
+            )
           ) : !candidates.length ? (
             <p role="status" className="text-sm text-muted-foreground">
               No defaults are available for this platform. Use New revision to publish your own
@@ -155,12 +191,14 @@ export function TemplateUpdateForm({
               </dl>
             ) : (
               <p className="mt-4 text-sm text-muted-foreground">
-                Choose a default to review its contents.
+                {sourceKey
+                  ? "The saved default template is unavailable."
+                  : "Choose a default to review its contents."}
               </p>
             )}
             {upToDate && (
               <p role="status" className="mt-4 text-sm font-medium">
-                Up to date. This revision already uses the selected artifact and engine.
+                Up to date. This revision already uses the selected default, artifact and engine.
               </p>
             )}
           </section>

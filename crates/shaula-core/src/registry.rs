@@ -172,6 +172,7 @@ pub struct TemplateProfileView {
 /// Submission payload for a Template Profile Candidate revision.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TemplateProfilePut {
+    pub source_key: Option<String>,
     pub artifact_digest: String,
     pub engine_ref: String,
     pub bindings: serde_json::Value,
@@ -181,6 +182,7 @@ pub struct TemplateProfilePut {
 /// An explicit artifact update that inherits protected bindings from its base.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TemplateProfileUpdate {
+    pub source_key: Option<String>,
     pub artifact_digest: String,
     pub engine_ref: String,
     /// None preserves the base revision's policy; Some replaces it in full.

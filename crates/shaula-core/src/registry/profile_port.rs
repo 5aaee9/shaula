@@ -15,6 +15,7 @@ pub struct TemplateRevisionView {
     pub revision: i64,
     pub artifact_digest: String,
     pub engine_ref: String,
+    pub source_key: Option<String>,
     pub platform: Option<String>,
     pub bindings_contract: Option<String>,
     pub state: String,

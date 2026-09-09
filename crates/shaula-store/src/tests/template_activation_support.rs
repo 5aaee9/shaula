@@ -30,6 +30,7 @@ impl Fixture {
                     revision,
                     artifact_digest: format!("sha256:{}", "a".repeat(64)),
                     engine_ref: "terraform".into(),
+                    source_key: None,
                     bindings_json: Some("{\"secret\":\"protected-value\"}".into()),
                     bindings_digest: Some("bd1_protected".into()),
                     fleet_input_policy_json: Some("{}".into()),

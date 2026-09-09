@@ -40,6 +40,7 @@ impl SqliteControlPlane {
         &self,
         facts: MutationFacts,
         extra: (String, String, String, String),
+        source_key: Option<String>,
     ) -> CoreResult<Result<(), MutationError>> {
         let (engine_ref, bindings_json, bindings_digest, fleet_input_policy_json) = extra;
         let tx = self.store.begin().await.map_err(core_err)?;
@@ -53,6 +54,7 @@ impl SqliteControlPlane {
                     revision: facts.revision,
                     artifact_digest: facts.inputs_digest.clone(),
                     engine_ref,
+                    source_key,
                     bindings_json: Some(bindings_json),
                     bindings_digest: Some(bindings_digest),
                     fleet_input_policy_json: Some(fleet_input_policy_json),

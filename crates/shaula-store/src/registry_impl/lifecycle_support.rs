@@ -4,6 +4,46 @@
 
 use shaula_core::registry::{MutationError, MutationFacts};
 
+impl super::SqliteControlPlane {
+    pub(super) async fn generations_occupancy_impl(
+        &self,
+        fleet_key: &str,
+    ) -> shaula_core::error::CoreResult<i64> {
+        use shaula_core::lifecycle::GenerationState;
+        Ok(self
+            .store
+            .generations_for_fleet(fleet_key)
+            .await
+            .map_err(super::core_err)?
+            .iter()
+            .filter(|g| {
+                GenerationState::from_str_repr(&g.state).is_ok_and(|s| s.counts_occupancy())
+            })
+            .count() as i64)
+    }
+
+    pub(super) async fn capacity_counters_impl(
+        &self,
+        fleet_key: &str,
+    ) -> shaula_core::error::CoreResult<(i64, i64)> {
+        use shaula_core::lifecycle::GenerationState;
+        let mut effective = 0i64;
+        let mut occupancy = 0i64;
+        for generation in self
+            .store
+            .generations_for_fleet(fleet_key)
+            .await
+            .map_err(super::core_err)?
+        {
+            if let Ok(state) = GenerationState::from_str_repr(&generation.state) {
+                effective += i64::from(state.counts_effective());
+                occupancy += i64::from(state.counts_occupancy());
+            }
+        }
+        Ok((effective, occupancy))
+    }
+}
+
 pub(crate) fn map_generation(
     g: crate::entities::lifecycle::runner_generations::Model,
 ) -> shaula_core::registry::GenerationRecord {

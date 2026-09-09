@@ -27,10 +27,10 @@ export function TemplatePublishPage({ scopes }: { scopes: string[] }) {
     ? `/templates?${new URLSearchParams({ key: profileKey })}`
     : "/templates";
 
-  function accepted(change: ChangeRef) {
-    navigate(`/templates?${new URLSearchParams({ key: change.resource })}`, {
+  function accepted(change: ChangeRef | null) {
+    navigate(change ? `/templates?${new URLSearchParams({ key: change.resource })}` : backTo, {
       replace: true,
-      state: { change },
+      state: { change, noOp: change === null },
     });
   }
 

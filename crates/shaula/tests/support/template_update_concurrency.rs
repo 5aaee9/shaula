@@ -64,6 +64,7 @@ async fn race(
 
 fn payload(fixture: &Fixture) -> TemplateProfileUpdate {
     TemplateProfileUpdate {
+        source_key: None,
         artifact_digest: fixture.target_digest.clone(),
         engine_ref: "terraform".into(),
         fleet_input_policy: None,

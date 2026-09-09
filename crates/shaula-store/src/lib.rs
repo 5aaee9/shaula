@@ -59,5 +59,7 @@ mod tests {
     mod template_activation;
     mod template_activation_support;
     mod template_scan;
+    mod template_source_migration;
+    mod template_source_migration_support;
     mod write_contention;
 }

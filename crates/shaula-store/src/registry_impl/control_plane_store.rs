@@ -61,34 +61,10 @@ impl ControlPlaneStore for SqliteControlPlane {
             .map(fleet_revision_row))
     }
     async fn generations_occupancy(&self, fleet_key: &str) -> CoreResult<i64> {
-        use shaula_core::lifecycle::GenerationState;
-        Ok(self
-            .store
-            .generations_for_fleet(fleet_key)
-            .await
-            .map_err(core_err)?
-            .iter()
-            .filter(|g| {
-                GenerationState::from_str_repr(&g.state).is_ok_and(|s| s.counts_occupancy())
-            })
-            .count() as i64)
+        self.generations_occupancy_impl(fleet_key).await
     }
     async fn capacity_counters(&self, fleet_key: &str) -> CoreResult<(i64, i64)> {
-        use shaula_core::lifecycle::GenerationState;
-        let mut effective = 0i64;
-        let mut occupancy = 0i64;
-        for generation in self
-            .store
-            .generations_for_fleet(fleet_key)
-            .await
-            .map_err(core_err)?
-        {
-            if let Ok(state) = GenerationState::from_str_repr(&generation.state) {
-                effective += i64::from(state.counts_effective());
-                occupancy += i64::from(state.counts_occupancy());
-            }
-        }
-        Ok((effective, occupancy))
+        self.capacity_counters_impl(fleet_key).await
     }
     async fn handoff_get(&self, fleet_key: &str) -> CoreResult<Option<AuthHandoffRow>> {
         Ok(self
@@ -115,6 +91,12 @@ impl ControlPlaneStore for SqliteControlPlane {
             .into_iter()
             .map(|p| p.key)
             .collect())
+    }
+    async fn template_source_get(
+        &self,
+        key: &str,
+    ) -> CoreResult<Option<shaula_core::registry::TemplateSource>> {
+        self.store.template_source_get(key).await.map_err(core_err)
     }
     async fn template_revision_get(
         &self,
@@ -355,8 +337,10 @@ impl ControlPlaneStore for SqliteControlPlane {
         &self,
         facts: MutationFacts,
         extra: (String, String, String, String),
+        source_key: Option<String>,
     ) -> CoreResult<Result<(), MutationError>> {
-        self.commit_template_revision_impl(facts, extra).await
+        self.commit_template_revision_impl(facts, extra, source_key)
+            .await
     }
     async fn commit_template_noop(
         &self,

@@ -23,6 +23,7 @@ impl ControlPlane {
             if_match,
             idempotency_key,
             update_identity: _,
+            update_base_source,
         } = publication;
         // Authorization BEFORE any replay/conflict classification: a caller
         // without the publish scope must never learn stored state through
@@ -83,6 +84,12 @@ impl ControlPlane {
             )));
         };
         let manifest = shaula_template_manifest(&manifest_yaml)?;
+        if let Err(error) = self
+            .validate_template_source(&payload, &manifest, update_base_source.as_deref())
+            .await?
+        {
+            return Ok(Err(error));
+        }
         let shape_ok = self
             .store
             .artifact_shape_ok(&payload.artifact_digest)
@@ -152,6 +159,7 @@ impl ControlPlane {
                     .map(|(json, _)| json)
                     .unwrap_or_default();
                 if current.artifact_digest == payload.artifact_digest
+                    && current.source_key == payload.source_key
                     && current.engine_ref == payload.engine_ref
                     && current.fleet_input_policy_json.as_deref() == Some(policy_json.as_str())
                     && stored_bindings == bindings_json
@@ -276,7 +284,11 @@ impl ControlPlane {
         // A lost fence race surfaces as a precondition failure so the
         // client re-reads the current desired head; never overwrite
         // (R9-02).
-        match self.store.commit_template_revision(facts, extra).await? {
+        match self
+            .store
+            .commit_template_revision(facts, extra, payload.source_key)
+            .await?
+        {
             Ok(()) => Ok(Ok(accepted)),
             Err(mutation) => Ok(Err(mutation)),
         }

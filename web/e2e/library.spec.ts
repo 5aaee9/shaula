@@ -38,8 +38,10 @@ test("real database imports default templates and supplies Terraform variables t
   expect((await page.request.get("/api/v1/template-profiles/docker")).status()).toBe(404);
 
   await page.getByRole("button", { name: "Use template docker", exact: true }).click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog.getByLabel("Default template", { exact: true })).toHaveValue("docker");
+  const dialog = page.getByRole("form", { name: "Template configuration" });
+  await expect(dialog.getByRole("combobox", { name: "Default template", exact: true })).toHaveValue(
+    "docker",
+  );
   const host = dialog.getByLabel("Docker host", { exact: true });
   await expect(host).toBeVisible();
   await expect(host).toHaveValue("");
@@ -59,7 +61,7 @@ test("real database imports default templates and supplies Terraform variables t
   const policy = JSON.parse(
     await dialog.getByLabel("Fleet input policy (JSON)", { exact: true }).inputValue(),
   );
-  expect(policy.runner_image).toEqual(["localhost:5001/shaula-runner:2.337.0-bootstrap-v1"]);
+  expect(policy.runner_image).toEqual(["ghcr.io/actions/actions-runner:2.337.0"]);
   await expect(dialog.getByLabel("Bindings (JSON)", { exact: true })).toHaveValue(
     '{"docker_host":"unix:///run/custom-docker.sock"}',
   );

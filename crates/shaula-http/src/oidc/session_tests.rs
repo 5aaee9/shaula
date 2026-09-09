@@ -127,6 +127,8 @@ fn oidc_tests_template_publish_return_targets_require_valid_routes() {
         "/templates/new",
         "/templates/linux-build/revisions/new",
         "/templates/linux-x64.1_a/revisions/new",
+        "/templates/linux-build/update",
+        "/templates/linux-x64.1_a/update",
         "/templates?key=linux-build",
     ] {
         assert_eq!(crate::oidc::login::return_target(Some(target)), target);
@@ -142,6 +144,12 @@ fn oidc_tests_template_publish_return_targets_require_valid_routes() {
         "/templates/a/b/revisions/new",
         "/templates/linux-build/revisions/latest",
         "/templates/linux-build/revisions/new/",
+        "/templates//update",
+        "/templates/../update",
+        "/templates/%2e%2e/update",
+        "/templates/a/b/update",
+        "/templates/linux-build/update/",
+        "/templates/linux-build/update?return_to=https://evil.example",
         "/templates/new?return_to=https://evil.example",
         "/templates/new#https://evil.example",
     ] {

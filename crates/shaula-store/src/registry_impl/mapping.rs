@@ -59,6 +59,7 @@ pub(crate) fn template_row(
         revision: r.revision,
         artifact_digest: r.artifact_digest,
         engine_ref: r.engine_ref,
+        source_key: r.source_key,
         platform: r.platform,
         bindings_contract: r.bindings_contract,
         state: r.state,

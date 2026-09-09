@@ -57,6 +57,7 @@ impl Store {
             revision: Set(insert.revision),
             artifact_digest: Set(insert.artifact_digest.clone()),
             engine_ref: Set(insert.engine_ref.clone()),
+            source_key: Set(insert.source_key),
             platform: Set(None),
             bindings_contract: Set(None),
             manifest_json: Set(None),

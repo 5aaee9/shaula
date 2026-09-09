@@ -240,6 +240,12 @@ impl ControlPlaneStore for MemoryStore {
     async fn artifact_manifest(&self, _digest: &str) -> CoreResult<Option<String>> {
         Ok(None)
     }
+    async fn template_source_get(
+        &self,
+        _key: &str,
+    ) -> CoreResult<Option<shaula_core::registry::TemplateSource>> {
+        Ok(None)
+    }
     async fn artifact_parameter_schema(&self, _digest: &str) -> CoreResult<String> {
         // Empty document = no declared parameters (the validator treats
         // it as an absent schema layer).
@@ -281,6 +287,7 @@ impl ControlPlaneStore for MemoryStore {
         &self,
         _facts: shaula_core::registry::MutationFacts,
         _extra: (String, String, String, String),
+        _source_key: Option<String>,
     ) -> CoreResult<Result<(), MutationError>> {
         Ok(Ok(()))
     }

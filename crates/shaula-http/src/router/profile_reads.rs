@@ -153,6 +153,7 @@ pub(crate) async fn template_revision_get(
                 "revision": view.revision,
                 "artifactDigest": view.artifact_digest,
                 "engineRef": view.engine_ref,
+                "sourceKey": view.source_key,
                 "platform": view.platform,
                 "bindingsContract": view.bindings_contract,
                 "state": view.state,

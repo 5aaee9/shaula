@@ -87,6 +87,7 @@ export interface TemplateRevision {
   revision: number;
   artifactDigest: string;
   engineRef: string;
+  sourceKey?: string | null;
   platform: string;
   state: string;
   reason: string | null;

@@ -10,6 +10,7 @@ pub struct TemplateRevisionInsert {
     pub revision: i64,
     pub artifact_digest: String,
     pub engine_ref: String,
+    pub source_key: Option<String>,
     pub bindings_json: Option<String>,
     pub bindings_digest: Option<String>,
     pub fleet_input_policy_json: Option<String>,

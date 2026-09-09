@@ -64,6 +64,7 @@ test("library discovery displays variables but only explicit actions adopt defau
   expect(written).toContain('"quota":9007199254740993');
   expect(written).toContain('"__proto__":false');
   expect(JSON.parse(written).artifact_digest).toBe(dockerDigest);
+  expect(JSON.parse(written).source_key).toBe("docker");
 });
 
 test("declared options approval preserves exact values and variables stay outside advanced", async ({
@@ -167,6 +168,7 @@ test("a successfully inspected archive uploads only once when published", async 
   await page.route("**/api/v1/template-profiles/upload-inspected", (route) => {
     if (route.request().method() === "GET") return route.fallback();
     expect(route.request().postDataJSON().artifact_digest).toBe(digest);
+    expect(route.request().postDataJSON()).not.toHaveProperty("source_key");
     return route.fulfill({
       status: 202,
       json: { changeId: "uploaded", state: "Accepted", revision: 1 },

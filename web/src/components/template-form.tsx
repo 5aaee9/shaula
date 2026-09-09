@@ -24,7 +24,7 @@ export function TemplateForm({
   initialSource?: TemplateSource;
   scopes: string[];
   onClose: () => void;
-  onAccepted: (change: ChangeRef) => void;
+  onAccepted: (change: ChangeRef | null) => void;
 }) {
   const id = useId();
   const [snapshot] = useState(resource);
@@ -36,7 +36,6 @@ export function TemplateForm({
   const [selectedSource, setSelectedSource] = useState(initialSource);
   const [advanced, setAdvanced] = useState(false);
   const [engine, setEngine] = useState(initialSource?.engineRef || "terraform");
-  const engineEdited = useRef(false);
   const [bindings, setBindings] = useState("{}");
   const [policy, setPolicy] = useState("{}");
   const [busy, setBusy] = useState(false);
@@ -51,6 +50,7 @@ export function TemplateForm({
   }, []);
   const canRead = scopes.includes("template.read");
   const artifactDigest = source === "default" ? selectedSource?.artifactDigest || "" : digest;
+  const engineRef = source === "default" ? selectedSource?.engineRef || "" : engine;
   const sourceReady = source === "archive" ? !!file : /^sha256:[a-f0-9]{64}$/.test(artifactDigest);
   const discovery = useTemplateVariables(artifactDigest, file, source, canRead);
 
@@ -73,7 +73,11 @@ export function TemplateForm({
       const parsedPolicy = parseSettings(policy, "Fleet input policy");
       const artifactDigest = await discovery.artifact();
       const path = resourcePath("template-profiles", key);
-      const metadata = JSON.stringify({ artifact_digest: artifactDigest, engine_ref: engine });
+      const metadata = JSON.stringify({
+        artifact_digest: artifactDigest,
+        engine_ref: engineRef,
+        ...(source === "default" ? { source_key: selectedSource?.key } : {}),
+      });
       const body = `${metadata.slice(0, -1)},"bindings":${parsedBindings},"fleet_input_policy":${parsedPolicy}}`;
       const { data } = await api<Accepted>(path, {
         method: "PUT",
@@ -81,7 +85,8 @@ export function TemplateForm({
         headers: attempt.current.headers("PUT", path, body, snapshot?.etag || null, !snapshot),
       });
       void client.invalidateQueries();
-      if (mounted.current) onAccepted({ id: data.changeId, resource: key, type: "profile" });
+      if (mounted.current)
+        onAccepted(data.noOp ? null : { id: data.changeId, resource: key, type: "profile" });
     } catch (error) {
       if (mounted.current) setError(error);
     } finally {
@@ -127,10 +132,7 @@ export function TemplateForm({
                 source={source}
                 setSource={setSource}
                 selectedSource={selectedSource}
-                onSelect={(next) => {
-                  setSelectedSource(next);
-                  if (next && !engineEdited.current) setEngine(next.engineRef);
-                }}
+                onSelect={setSelectedSource}
                 digest={digest}
                 setDigest={setDigest}
                 file={file}
@@ -229,12 +231,16 @@ export function TemplateForm({
               <Field label="Engine reference">
                 <Input
                   required
-                  value={engine}
-                  onChange={(event) => {
-                    engineEdited.current = true;
-                    setEngine(event.target.value);
-                  }}
+                  readOnly={source === "default"}
+                  value={engineRef}
+                  onChange={(event) => setEngine(event.target.value)}
                 />
+                {source === "default" && (
+                  <p className="text-xs text-muted-foreground">
+                    The default template fixes its engine. Choose Existing artifact to use a custom
+                    engine.
+                  </p>
+                )}
               </Field>
               <Field label="Bindings (JSON)">
                 <Textarea
@@ -282,7 +288,7 @@ export function TemplateForm({
             </div>
             <div>
               <dt className="text-xs text-muted-foreground">Engine</dt>
-              <dd className="mt-1 break-all font-medium">{engine || "Not set"}</dd>
+              <dd className="mt-1 break-all font-medium">{engineRef || "Not set"}</dd>
             </div>
           </dl>
           <div className="mt-5 space-y-3 border-t pt-5 text-sm">

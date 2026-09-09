@@ -25,6 +25,12 @@ impl Fixture {
     pub async fn new() -> TestResult<Self> {
         let (app, store, engine_binary) = common::build_app_with_scan().await;
         let base_digest = seed_profile(&app, &store, "k8s-linux", true).await;
+        let (archive_digest, archive_bytes) = common::fixture_artifact();
+        assert_eq!(archive_digest, base_digest);
+        store
+            .store()
+            .artifact_archive_put(&base_digest, &archive_bytes, 1_800_000_001_000)
+            .await?;
         let fleet = app
             .clone()
             .oneshot(common::authorized(
@@ -37,6 +43,10 @@ impl Fixture {
         let (target_digest, bytes) = common::artifact_variants::with_manifest(|manifest| {
             manifest.runtime_policy_digest = "sha256:policy-v2".to_string();
         })?;
+        store
+            .store()
+            .artifact_archive_put(&target_digest, &bytes, 1_800_000_001_000)
+            .await?;
         let mut upload = common::authorized(
             "PUT",
             &format!("/api/v1/template-artifacts/{target_digest}"),

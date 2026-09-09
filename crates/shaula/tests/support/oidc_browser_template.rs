@@ -61,10 +61,27 @@ pub async fn seed(directory: &Path) -> Result<(), Box<dyn std::error::Error>> {
     store.artifact_archive_put(&digest, &bytes, 1).await?;
     drop(store);
 
-    // Exercise real startup import from the bundled filesystem sources.
+    // Import the bundled modules from an isolated catalog, as the Nix package
+    // does. An existing checkout may retain ignored directories from retired
+    // templates; they must not become configured sources for this fixture.
+    let defaults = directory.join("default-templates");
+    for platform in ["docker", "kubernetes"] {
+        let destination = defaults.join(platform);
+        std::fs::create_dir_all(destination.join("schemas"))?;
+        for file in [
+            "profile.yaml",
+            "main.tf",
+            ".terraform.lock.hcl",
+            "runtime-policy.md",
+            "schemas/bindings.schema.json",
+            "schemas/parameters.schema.json",
+        ] {
+            std::fs::copy(sources.join(platform).join(file), destination.join(file))?;
+        }
+    }
     let config_path = directory.join("bootstrap.json");
     let mut config: serde_json::Value = serde_json::from_slice(&std::fs::read(&config_path)?)?;
-    config["template_source_dirs"] = json!([sources]);
+    config["template_source_dirs"] = json!([defaults]);
     std::fs::write(config_path, serde_json::to_vec(&config)?)?;
 
     // No Fleet, validation outbox or infrastructure state is seeded. The Ready

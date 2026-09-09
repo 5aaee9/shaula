@@ -13,17 +13,29 @@ pub(super) struct TemplatePublication {
     pub if_match: Option<(String, i64)>,
     pub idempotency_key: Option<String>,
     pub update_identity: Option<String>,
+    pub update_base_source: Option<String>,
 }
 
 impl TemplatePublication {
     pub(super) fn canonical(&self) -> String {
         self.update_identity.clone().unwrap_or_else(|| {
-            format!(
-                "{}|{}|{}",
-                self.payload.artifact_digest,
-                self.payload.engine_ref,
-                serde_json::to_string(&self.payload.fleet_input_policy).unwrap_or_default(),
-            )
+            match &self.payload.source_key {
+                Some(source_key) => serde_json::json!({
+                    "operation": "template_profile_put",
+                    "source_key": source_key,
+                    "artifact_digest": self.payload.artifact_digest,
+                    "engine_ref": self.payload.engine_ref,
+                    "fleet_input_policy": self.payload.fleet_input_policy,
+                })
+                .to_string(),
+                // Existing absent-source requests keep their durable identity.
+                None => format!(
+                    "{}|{}|{}",
+                    self.payload.artifact_digest,
+                    self.payload.engine_ref,
+                    serde_json::to_string(&self.payload.fleet_input_policy).unwrap_or_default(),
+                ),
+            }
         })
     }
 }
@@ -136,14 +148,17 @@ impl ControlPlane {
         };
         // The request identity retains whether policy was supplied, as well as
         // the base. Ordinary PUTs cannot replay an Update's idempotency key.
-        let update_identity = serde_json::json!({
+        let mut update_identity = serde_json::json!({
             "operation": "template_profile_update",
             "base": expected,
             "artifact_digest": payload.artifact_digest,
             "engine_ref": payload.engine_ref,
             "fleet_input_policy": payload.fleet_input_policy,
-        })
-        .to_string();
+        });
+        // Omit the member entirely for compatibility with pre-source replays.
+        if let Some(source_key) = &payload.source_key {
+            update_identity["source_key"] = source_key.clone().into();
+        }
         let Some((bindings_json, _)) = self
             .store
             .template_protected_bindings(key, expected.1)
@@ -165,6 +180,7 @@ impl ControlPlane {
             key,
             TemplatePublication {
                 payload: TemplateProfilePut {
+                    source_key: payload.source_key,
                     artifact_digest: payload.artifact_digest,
                     engine_ref: payload.engine_ref,
                     bindings,
@@ -173,7 +189,8 @@ impl ControlPlane {
                 if_none_match: false,
                 if_match: Some(expected),
                 idempotency_key,
-                update_identity: Some(update_identity),
+                update_identity: Some(update_identity.to_string()),
+                update_base_source: base.source_key,
             },
         )
         .await

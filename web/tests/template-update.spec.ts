@@ -28,6 +28,7 @@ test("published update reviews an explicit source and retains bindings and polic
     expect(route.request().postDataJSON()).toEqual({
       artifact_digest: dockerDigest,
       engine_ref: "terraform",
+      source_key: "docker",
     });
     return route.fulfill({
       status: 202,
@@ -85,7 +86,7 @@ test("explicit declared options replace policy while preserving exact numbers an
   await page.getByRole("button", { name: "Update", exact: true }).click();
   await expect(page).toHaveURL(/\/templates\?key=custom-docker$/);
   expect(written).toBe(
-    `{"artifact_digest":"${dockerDigest}","engine_ref":"terraform","fleet_input_policy":{"runner_image":["runner:stable","runner:canary"],"quota":[9007199254740993]}}`,
+    `{"artifact_digest":"${dockerDigest}","engine_ref":"terraform","source_key":"docker","fleet_input_policy":{"runner_image":["runner:stable","runner:canary"],"quota":[9007199254740993]}}`,
   );
 });
 
@@ -95,6 +96,7 @@ test("source changes require another explicit policy adoption", async ({ page })
     expect(route.request().postDataJSON()).toEqual({
       artifact_digest: dockerDigest,
       engine_ref: "opentofu",
+      source_key: "docker-alternative",
     });
     return route.fulfill({
       status: 202,
@@ -113,15 +115,15 @@ test("source changes require another explicit policy adoption", async ({ page })
   await expect(page).toHaveURL(/\/templates\?key=custom-docker$/);
 });
 
-test("an identical artifact and engine is up to date but another engine can be reviewed", async ({
+test("an unlinked identical artifact can establish its source or review another engine", async ({
   page,
 }) => {
   await mockTemplateUpdate(page, { digest: dockerDigest });
   await page.goto(updatePath);
   const source = page.getByLabel("Default template", { exact: true });
-  await source.selectOption("docker");
-  await expect(page.getByRole("status").filter({ hasText: "Up to date" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Update", exact: true })).toBeDisabled();
+  await expect(source).toHaveValue("docker");
+  await expect(page.getByRole("status").filter({ hasText: "Up to date" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Update", exact: true })).toBeEnabled();
   await source.selectOption("docker-alternative");
   await expect(page.getByRole("status").filter({ hasText: "Up to date" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Update", exact: true })).toBeEnabled();
@@ -183,21 +185,14 @@ test("retrying an uncertain write retains its exact idempotency key and reviewed
   await page.getByLabel("Default template", { exact: true }).selectOption("docker");
   await page.getByRole("button", { name: "Update", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Temporarily unavailable");
-  let refreshed = false;
   await page.route("**/api/v1/template-sources", (route) => {
-    refreshed = true;
     return route.fulfill({
       json: {
         sources: updateSources.map((source) => ({ ...source, artifactDigest: currentDigest })),
       },
     });
   });
-  await expect
-    .poll(async () => {
-      await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
-      return refreshed;
-    })
-    .toBe(true);
+  await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
   await expect(page.getByRole("region", { name: "Target revision", exact: true })).toContainText(
     dockerDigest,
   );

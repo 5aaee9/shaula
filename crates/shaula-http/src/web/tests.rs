@@ -27,6 +27,8 @@ async fn web_tests_embedded_document_and_deep_link() -> TestResult {
         "/templates/new",
         "/templates/linux-build/revisions/new",
         "/templates/linux-x64.1_a/revisions/new",
+        "/templates/linux-build/update",
+        "/templates/linux-x64.1_a/update",
         "/auth",
         "/changes",
         "/jobs",
@@ -71,6 +73,11 @@ async fn web_tests_missing_assets_api_and_methods_are_not_html() -> TestResult {
         "/templates/a/b/revisions/new",
         "/templates/linux-build/revisions/latest",
         "/templates/linux-build/revisions/new/",
+        "/templates//update",
+        "/templates/../update",
+        "/templates/%2e%2e/update",
+        "/templates/a/b/update",
+        "/templates/linux-build/update/",
     ] {
         assert_eq!(
             request(path, Method::GET).await?.status(),
@@ -85,7 +92,11 @@ async fn web_tests_missing_assets_api_and_methods_are_not_html() -> TestResult {
 
 #[tokio::test]
 async fn web_tests_template_publication_head_and_post() -> TestResult {
-    for path in ["/templates/new", "/templates/linux-build/revisions/new"] {
+    for path in [
+        "/templates/new",
+        "/templates/linux-build/revisions/new",
+        "/templates/linux-build/update",
+    ] {
         let response = request(path, Method::HEAD).await?;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()[header::CONTENT_TYPE], "text/html");

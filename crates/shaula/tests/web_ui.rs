@@ -16,6 +16,7 @@ async fn web_tests_shell_and_management_require_authentication() {
         "/fleets/example",
         "/fleets/linux-x64.1_a",
         "/templates",
+        "/templates/linux-build/update",
         "/auth",
     ] {
         let response = app

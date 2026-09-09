@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { mockApi, profile, scopes } from "./fixtures";
-import { dockerDigest, sources, variables } from "./template-library-fixtures";
+import { sources, variables } from "./template-library-fixtures";
 
 export const currentDigest = `sha256:${"a".repeat(64)}`;
 export const updatePath = "/templates/custom-docker/update";
@@ -12,12 +12,20 @@ export const updateSources = [
 
 export async function mockTemplateUpdate(
   page: Page,
-  options: { permissions?: string[]; status?: string; digest?: string; version?: string } = {},
+  options: {
+    permissions?: string[];
+    status?: string;
+    digest?: string;
+    version?: string;
+    platform?: string;
+    sourceKey?: string | null;
+    sources?: typeof updateSources;
+  } = {},
 ) {
   await mockApi(page, options.permissions || scopes);
   const resource = {
     ...profile("custom-docker", 3, options.status || "Active"),
-    platform: "docker",
+    platform: options.platform || "docker",
     bindingsContract: "shaula.bindings.docker/v1",
     bindings_present: true,
   };
@@ -33,20 +41,21 @@ export async function mockTemplateUpdate(
         revision: 3,
         artifactDigest: options.digest || currentDigest,
         engineRef: "terraform",
-        platform: "docker",
+        platform: options.platform || "docker",
+        sourceKey: options.sourceKey ?? null,
         state: "Active",
         reason: null,
       },
     }),
   );
   await page.route("**/api/v1/template-sources", (route) =>
-    route.fulfill({ json: { sources: updateSources } }),
+    route.fulfill({ json: { sources: options.sources ?? updateSources } }),
   );
   await page.route("**/api/v1/template-artifacts/*/variables", (route) =>
     route.fulfill({
       json: {
         ...variables,
-        artifactDigest: dockerDigest,
+        artifactDigest: decodeURIComponent(new URL(route.request().url()).pathname.split("/")[4]),
         parameters: [
           ...variables.parameters,
           {

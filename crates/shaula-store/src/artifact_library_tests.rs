@@ -100,6 +100,7 @@ async fn empty_source_catalog_preserves_archives_and_published_revisions() -> Te
                 revision: 1,
                 artifact_digest: first.artifact_digest.clone(),
                 engine_ref: first.engine_ref.clone(),
+                source_key: Some(first.key.clone()),
                 bindings_json: Some(r#"{"docker_host":"unix:///var/run/docker.sock"}"#.into()),
                 bindings_digest: Some("original-bindings-digest".into()),
                 fleet_input_policy_json: Some("{}".into()),

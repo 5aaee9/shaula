@@ -108,6 +108,10 @@ _Avoid_: Local template path, mutable directory, Runner Workspace
 供 Template publisher 选择并配置的模板来源，指向一个不可变 Template Artifact；它本身不代表已发布、已激活或已获准运行的 Template Profile。
 _Avoid_: Active template, bootstrap profile
 
+**Template Source Association**:
+一个 Template Profile Revision 与其更新入口来源的固定关联；来源的内容可以升级或被撤下，已有 Revision 的材料和配置仍保持不变。没有该关联的版本不能仅凭平台相同被认定为来自某个默认模板。
+_Avoid_: Active template, latest artifact, automatic upgrade
+
 **Profile Change**:
 一次已接受 Template Profile 或 GitHub Auth Profile mutation 的异步进度记录。
 _Avoid_: Fleet Change, Runner Operation, request

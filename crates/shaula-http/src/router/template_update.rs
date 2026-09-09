@@ -13,6 +13,8 @@ use crate::problem::{mutation_problem, problem};
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct UpdateDto {
+    #[serde(default)]
+    source_key: Option<String>,
     artifact_digest: String,
     engine_ref: String,
     #[serde(default, deserialize_with = "explicit_policy")]
@@ -78,6 +80,7 @@ pub(super) async fn update(
             &actor,
             &profile_key,
             TemplateProfileUpdate {
+                source_key: dto.source_key,
                 artifact_digest: dto.artifact_digest,
                 engine_ref: dto.engine_ref,
                 fleet_input_policy: dto.fleet_input_policy,

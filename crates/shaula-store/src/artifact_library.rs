@@ -147,6 +147,18 @@ impl Store {
             })
             .collect())
     }
+
+    pub async fn template_source_get(&self, key: &str) -> StoreResult<Option<TemplateSource>> {
+        Ok(sources::Entity::find_by_id(key.to_owned())
+            .one(self.connection())
+            .await?
+            .map(|row| TemplateSource {
+                key: row.key,
+                artifact_digest: row.artifact_digest,
+                platform: row.platform,
+                engine_ref: row.engine_ref,
+            }))
+    }
 }
 
 #[cfg(test)]

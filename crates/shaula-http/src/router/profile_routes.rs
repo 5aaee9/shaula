@@ -109,6 +109,7 @@ pub(crate) async fn template_profile_put(
         .into_response();
     }
     let payload = TemplateProfilePut {
+        source_key: dto.source_key,
         artifact_digest: dto.artifact_digest,
         engine_ref: dto.engine_ref,
         bindings: dto.bindings,

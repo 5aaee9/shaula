@@ -208,7 +208,10 @@ pub(crate) fn document(path: &str) -> bool {
         })
         || path
             .strip_prefix("/templates/")
-            .and_then(|path| path.strip_suffix("/revisions/new"))
+            .and_then(|path| {
+                path.strip_suffix("/revisions/new")
+                    .or_else(|| path.strip_suffix("/update"))
+            })
             .is_some_and(|key| {
                 !matches!(key, "." | "..")
                     && shaula_core::template::TemplateProfileKey::new(key).is_ok()
