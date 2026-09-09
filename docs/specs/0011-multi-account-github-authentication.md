@@ -23,7 +23,7 @@ Operator 可以创建一个 `shared-github` authentication，保存一份 App cr
 
 ## 2. Domain and identity
 
-术语由 [CONTEXT.md](../../CONTEXT.md) 定义。本规范区分以下身份：
+术语由 [CONTEXT.md](../CONTEXT.md) 定义。本规范区分以下身份：
 
 | 层次 | 内容 | 演进规则 |
 | --- | --- | --- |

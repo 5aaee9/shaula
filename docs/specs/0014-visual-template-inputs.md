@@ -14,7 +14,7 @@ preset）在模板选择下方直接显示；Advanced settings 只容纳其他�
 
 本规范只替换 Fleet 表单中的 `template_inputs` 编辑区。Template publication 的
 `bindings` 和 `fleet_input_policy` 编辑器、模板源码、Terraform variables、GitHub
-credentials 均不属于这份编辑器。领域含义见 [CONTEXT.md](../../CONTEXT.md)。
+credentials 均不属于这份编辑器。领域含义见 [CONTEXT.md](../CONTEXT.md)。
 
 当前实现不是完整 JSON Schema 表单系统：每个输入必须同时满足 artifact parameter schema
 和所选 Revision 的 finite alias policy。Docker 的 `runner_image`、Kubernetes 的

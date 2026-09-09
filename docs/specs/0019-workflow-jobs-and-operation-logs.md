@@ -1,6 +1,6 @@
 # Workflow Jobs and retained operation logs
 
-Status: accepted, 2026-09-09. 本文定义目标契约；Jobs、持久 Operation Log 和 runner 日志交付尚未实现，不能以本次文档交付宣称可用。选择理由见 [ARD-0023](../ard/0023-retain-operation-logs-and-present-workflow-jobs.md)，术语见 [CONTEXT.md](../../CONTEXT.md)。
+Status: accepted, 2026-09-09. 本文定义目标契约；Jobs、持久 Operation Log 和 runner 日志交付的实现与验收进度见 [实现状态](../IMPLEMENTATION_STATUS.md)。选择理由见 [ARD-0023](../ard/0023-retain-operation-logs-and-present-workflow-jobs.md)，术语见 [CONTEXT.md](../CONTEXT.md)。
 
 ## 1. Scope and ownership
 

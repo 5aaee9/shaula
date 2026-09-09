@@ -16,25 +16,52 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
-## Jobs and retained operation logs: specification only (2026-09-09)
+## Jobs and retained operation logs: local implementation (2026-09-09)
 
 [Spec 0019](specs/0019-workflow-jobs-and-operation-logs.md) and
-[ARD-0023](ard/0023-retain-operation-logs-and-present-workflow-jobs.md) now define
+[ARD-0023](ard/0023-retain-operation-logs-and-present-workflow-jobs.md) define
 workflow-job-oriented Jobs, retained Apply/Destroy attempt logs, and optional
 bootstrap delivery of the Create apply projection through `.setup_info`.
-No implementation or real Runner acceptance is claimed by this documentation change.
 
-The current engine retains only bounded stdout/stderr prefixes in memory
-(`shaula-template/src/engine.rs`); `runtime.rs` discards the successful apply output.
-The wire mapping in `shaula-scaleset/src/port_jobs.rs` omits workflow metadata/result,
-and `shaula-store/src/listener_observations.rs` omits numeric Runner identity.
-There is no Jobs API/page, durable Operation Log archive, `logs.read` permission,
-or Setup Info delivery listener/shim contract yet. Production still uses the
-daemon-owned local-state Runtime; the future worker/state integration remains staged.
+The implementation now includes:
 
-Implementation must separately verify observation/reassignment identity, safe
-streaming capture, retention/recovery, OIDC log reads, and both real platform
-bootstrap paths. Older generations have no retroactively generated logs or metadata.
+- `shaula-core/src/jobs` and `shaula-store/src/jobs`: durable observations before
+  ACK, opaque job identity, assignment reduction, exact numeric Runner association,
+  frozen Generation scope, filtered pagination and bounded history expiry.
+- `shaula-template/src/operation_capture.rs`, `operation_sanitize.rs` and
+  `runtime_logging.rs`: bounded capture before output/error classification,
+  record sanitization before the lossy queue, and separate runtime/capture results.
+  `shaula-store/src/operation_logs` archives approved text separately from Workspace,
+  checks content digests, preserves retries and implements quotas, recovery and GC.
+- `shaula-http/src/router/jobs.rs` plus the embedded Jobs pages: read-only job,
+  Generation and invocation history, independent `logs.read`, cursor-based log and
+  invocation pages, explicit ambiguous/unavailable states and session-only browser
+  retention. Embedded document routes and OIDC return targets include Jobs.
+- `shaula-core/src/setup_info.rs`, `shaula-store/src/setup_info.rs` and the dedicated
+  `shaula-http/src/setup_info` listener: expiring verifier-only capabilities issued
+  before immutable v2 inputs, with current clock time, bounded requests and no
+  management/state/control routes. `shaula/src/diagnostics.rs` wires these into the
+  actual daemon and drains capture before releasing ownership.
+- `templates/docker/image/setup_info.py` and `templates/setup-info/prepare.py`:
+  bounded main-container bootstrap delivery and separate Docker/Kubernetes v2
+  sources without changing existing image pins or resource cardinality.
+
+Local validation on 2026-09-09: the full workspace nextest gate passed 579 tests
+with 2 existing external-environment tests skipped; workspace Clippy and rustfmt
+passed. The browser suite passed 82 tests, and Linux bootstrap/helper and v2 source
+generation passed 21 and 2 tests respectively. Coverage includes Jobs
+identity/reassignment and migration replay, archive retention/recovery/capture,
+HTTP permissions, embedded routes and browser behavior. These checks are not real
+Runner acceptance.
+
+The current production composition still uses the daemon-owned local-state
+Runtime; future Lifecycle Worker/HTTP-state integration remains staged. Existing
+v1 image digests have not been rebuilt or relabeled. Enabling Setup Info requires
+a newly built/distributed shim image with its actual repository digest, an
+admitted v2 Template and the separate HTTPS delivery origin described in
+[the operator guide](jobs-and-operation-logs.md). Docker and Kubernetes first-job
+`Set up job` smoke acceptance for this increment has not been run. Older
+generations have no retroactively generated logs or metadata.
 
 ## Fleet listener and Pending diagnosis repair (2026-09-08)
 
@@ -412,7 +439,7 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
   completed an actual job, confirmed safe GitHub removal, and verified Terraform
   Destroy/empty state/container absence. This does not implement the independent
   exec Driver or worker/HTTP-backend recovery. Full exact-tuple conformance is
-  still required to claim that tested runtime guarantee. See the [harness instructions](../scripts/docker-conformance/README.md).
+  still required to claim that tested runtime guarantee. See the [harness instructions](docker-conformance.md).
 - OTLP export pipeline and OTel SDK instrumentation (bounded in-process
   counters and their call sites exist; no span/export pipeline yet);
   remaining endpoint surface (notably pagination and artifact metadata GET),
@@ -623,7 +650,7 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
   Browser code has no backend token, identity assertion, durable credential
   storage or independent desired state.
 - Node/npm dependencies are build prerequisites only; runtime serving needs
-  no frontend directory. Setup and verification commands are in `web/README.md`.
+  no frontend directory. Setup and verification commands are in [the development guide](development.md).
 - UI availability does not resolve any of the daemon/runtime gaps listed above.
 
 ## Implementation verification (2026-09-07)

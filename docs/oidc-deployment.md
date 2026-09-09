@@ -44,7 +44,7 @@ http:
   authorization:
     - issuer: https://identity.example.com/realms/operations
       subject: <exact user sub claim>
-      scopes: [fleet.read, fleet.write, fleet.retire, template.read, template.publish, template.attest, template.retire, auth.read, auth.write, auth.retire]
+      scopes: [fleet.read, logs.read, fleet.write, fleet.retire, template.read, template.publish, template.attest, template.retire, auth.read, auth.write, auth.retire]
     - issuer: https://identity.example.com/realms/operations
       subject: <exact automation sub claim>
       scopes: [fleet.read, template.read]

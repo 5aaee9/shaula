@@ -81,7 +81,7 @@ Revision 的静态校验失败原因，不提供额外 Activate 操作。
   Read/write/retire controls respect the session's scopes; backend authorization
   remains authoritative.
 
-See [web development and deployment](../../web/README.md) for commands and scope.
+See [web development and deployment](../development.md) for commands and scope.
 The README describes development/deployment commands, not a second authentication
 contract. Current implementation coverage and outstanding real-Provider acceptance
 are recorded only in [implementation status](../IMPLEMENTATION_STATUS.md).

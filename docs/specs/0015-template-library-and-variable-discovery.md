@@ -13,7 +13,7 @@ Templates 页面提供已经存入数据库的默认模板来源。Operator 可�
 
 数据库保存原始模板 archive；默认文件目录是导入来源，不是持续覆盖 Profile 的期望配置。
 Template Source、Template Artifact 和已发布 Template Profile 的区别见
-[CONTEXT.md](../../CONTEXT.md)。导入和发现变量不代表模板已通过 conformance 或可以运行 Runner。
+[CONTEXT.md](../CONTEXT.md)。导入和发现变量不代表模板已通过 conformance 或可以运行 Runner。
 
 ## 2. Persistence and filesystem import
 
