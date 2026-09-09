@@ -66,6 +66,17 @@ capacity convergence reporting. Missing/null/negative statistics are rejected.
 These local checks do not establish real GitHub session acceptance or Runner
 provisioning; deployment evidence is recorded separately after live verification.
 
+Live acceptance (2026-09-09): PowerArmor `310e044` pins Shaula `c424f8e` and was
+built and activated on `molecule` through Colmena. The Linux package gate passed
+517 tests (two skipped), plus both HTTP-state tests including the pinned real
+Terraform protocol probe. Migration `m0011_listener_messages` applied successfully.
+The existing `shaula-docker-local` Fleet recovered without recreation: ownership
+is Adopted on Scale Set 1, session epoch 1 has its full queue handle, observed and
+desired revisions are both 1, Create Change is Succeeded, and the error is clear.
+The authenticated browser also shows Ready / Observed r1 / Desired r1. Demand,
+minimum and capacity are zero; this acceptance covers the live idle listener,
+not a newly dispatched Actions workload or provider provisioning.
+
 ## Multi-account GitHub authentication (spec 0011 / ADR-0015): local implementation (2026-09-07)
 
 The v1/PAT and legacy-upgrade contracts below have been retired by
