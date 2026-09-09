@@ -59,6 +59,26 @@ A Template Profile Revision is an immutable tuple of：
 - a protected opaque binding commitment, carried under the wire name `bindings_digest`, that identifies the exact immutable binding Revision without exposing an offline credential verifier；
 - the normalized digest of all non-credential material.
 
+Before freezing a new artifact, its dependency lock must cover the OS/architecture
+of the actual Terraform execution host, not only the publisher's workstation.
+Generate the required provider checksums from verified upstream packages using
+`terraform providers lock -platform=OS_ARCH` for each supported execution target;
+the presence of some `zh:` entries or an `h1:` for another platform alone is not
+runtime verification. Terraform's [platform lock options](https://developer.hashicorp.com/terraform/cli/commands/providers/lock)
+prepare these hashes; its [dependency lock verification](https://developer.hashicorp.com/terraform/language/files/dependency-lock)
+must remain enabled for provider installation.
+
+Verify the candidate in an isolated directory on each claimed execution target:
+locked `init -lockfile=readonly`, then actual `validate` and a plan without apply
+under the approved runtime inputs and provider access. Confirm the lock remains
+unchanged and that the installed provider can load; init exit zero alone does not
+prove validate/plan can use it. Record any unavailable platform or live-plan check
+as unverified. This is artifact authoring/release evidence, not a new synchronous
+HTTP publication step or a claim that static activation proves runtime compatibility.
+Correcting a lock creates a new artifact and Template Revision; an existing Fleet
+adopts it explicitly under spec 0021. Historical artifacts, admitted Generation
+materials and their lock/checksum protections remain unchanged.
+
 `bindings_digest` MUST NOT be an unkeyed digest of sensitive binding plaintext or permit a reader to validate secret guesses. It is a server-issued equality token for an immutable Revision；its representation, exact-Revision/incarnation binding and compatibility freeze remain decision D4 in the [central register](../README.md#仍需决定或冻结). This revision does not introduce a new bd2/HMAC encoding or rewrite existing records. If that non-verifier property cannot be met, the field and every containing subject/output are secret and cannot appear on read surfaces.
 
 The trusted conformance attestation is a separate immutable record that references the Revision and its canonical compatibility subject. Attestation submission never mutates the Revision, Profile head or activation ID. The automatic activation transaction freezes opaque activation provenance, and each admitted Fleet/Generation pins both the Revision and that identity. Legacy `active_attestation_id` and related wire/storage field names retain historical values and carry new activation IDs according to spec 0017; they do not imply a passing conformance record.
@@ -204,7 +224,7 @@ The full sequence, process/side-effect gates, database locks and crash behavior 
 
 - CoW/reflink materialization with ordinary-copy fallback; no writable hardlinks or shared working tree. Verify artifact content and containment before use; retain existing recovery evidence rather than deleting a previous directory.
 - A reserved worker-owned backend configuration selects only the internal HTTP backend. Reject Profile-defined backends/overrides and reserved-file collisions. This fixed non-secret configuration is distinct from the immutable published artifact; it does not permit arbitrary generated Terraform code.
-- Locked `terraform init` precedes JIT; provider versions/checksums cannot implicitly upgrade. Backend credentials use only the prescribed per-child `TF_HTTP_*` env, never HCL or `-backend-config` secrets.
+- Locked `terraform init -lockfile=readonly` precedes JIT; provider versions/checksums cannot implicitly upgrade. A missing execution-platform checksum is a candidate-artifact defect, not permission to rewrite the frozen lock or bypass checksum verification during Create/Destroy. Backend credentials use only the prescribed per-child `TF_HTTP_*` env, never HCL or `-backend-config` secrets.
 - Saved-plan admission/provenance follows §5. The worker requests daemon JIT/Create-start/removal authority; no raw GitHub credential is passed into the Runtime.
 - Output validation is the fixed envelope in §3; readiness/Busy classification comes from daemon GitHub observations, not provider object parsing.
 - Original inputs and any emergency local state remain protected until the daemon acknowledges exact empty-state terminal completion and seals backend writes. Worker exit, backend failure or missing state never triggers unconditional cleanup.

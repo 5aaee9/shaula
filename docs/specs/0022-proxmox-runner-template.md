@@ -15,6 +15,11 @@ Terraform `exec` 生命周期和变量发现；无需新增 Executor Driver、Ru
 一个 Generation 管理一个 `proxmox_qemu_vm`（`runner`）和一个 `proxmox_nocloud_iso`
 （`bootstrap`）。固定 provider `indexyz/proxmox` `0.4.0`，提交真实 dependency lock。
 
+该 lock 必须覆盖实际 Terraform 执行端；当前 Linux 部署需要冻结经来源验证的
+`linux_amd64` provider checksum，包括其安装路径所需的 `h1:`，不能只在 Windows
+生成 lock 后凭 `zh:` 列表假定 Linux validate/plan 可用。其他执行平台逐项生成并验证，
+不由基础 VM 的 guest OS 推断宿主 provider 平台。验证与不可变发布规则归 spec 0004 §3。
+
 Terraform 是 VM 和 ISO 的唯一创建/销毁者。Shaula 仍负责 JIT、GitHub occupancy、安全移除、
 worker fencing、state 和恢复；平台启动成功不等于 Runner 在线或 workflow 成功。
 静态校验后的自动激活沿用 spec 0017，真实平台 conformance 独立记录。
@@ -102,6 +107,10 @@ Destroy 使用现有 refresh-enabled saved plan，不能依赖源模板仍存在
 Nix 包提供 `share/shaula/templates/proxmox` 及其 `.tf`、`.tftpl`、manifest、schemas、lock、
 runtime policy；启动同步进入数据库 source catalog，旧 archive/Revision 不受更新影响。
 
+修复 provider lock 时发布新 artifact/Template Revision，并显式更新 Fleet 的 exact pin；
+不原地修改已发布 artifact、历史 Revision 或已有 Generation 的冻结材料。不能用关闭
+checksum 校验、运行时改写 lock 或重新 apply 原 Generation 绕过该错误。
+
 第一版使用直接到目标节点的 API origin 和该节点 ISO storage；多节点上传代理/共享存储
 必须独立验收。provider 0.4.0 的单项 PVE task 等待有 10 分钟上限；较大的 full clone、启动
 延迟和 JIT 有效性须实测，不能用增大单个 HTTP timeout 宣称解决。
@@ -110,7 +119,9 @@ runtime policy；启动同步进入数据库 source catalog，旧 archive/Revisi
 
 - Rust tests：显式 VM image contract 与不合法混用、旧 manifest 兼容、变量默认值/敏感性/
   空 Fleet inputs、真实 archive 导入保留 `.tftpl` 和拒绝不安全目录项。
-- Terraform：真实锁定 provider 的 init/validate；测试唯一/缺失/歧义 template、token 分割、
+- Terraform：在真实执行平台以冻结 lock 运行 `init -lockfile=readonly`，随后实际执行
+  validate 和无 apply 的 plan，确认 provider 可加载且 lock 未变；init 成功本身不够。
+  测试唯一/缺失/歧义 template、token 分割、
   DHCP、generation identity、两资源依赖、启动/销毁开关和 JIT 编码后的 cloud-init 内容。
   synthetic/mock 测试结果必须标明，不冒充真实 PVE。
 - 真实平台：从未注册基础 VM full clone，经 DHCP/cloud-init 在目标 repository 注册 JIT runner，

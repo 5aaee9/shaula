@@ -6,6 +6,9 @@ use zeroize::Zeroizing;
 const RECORD_LIMIT: usize = 64 * 1024;
 pub(crate) const WITHHELD: &str = "[Shaula: diagnostic withheld by publication policy]\n";
 
+#[path = "operation_sanitize_diagnostics.rs"]
+mod diagnostics;
+
 #[derive(Default)]
 pub(crate) struct SensitiveValues {
     values: Vec<Zeroizing<String>>,
@@ -119,6 +122,7 @@ pub(crate) struct Sanitizer {
     pending: Zeroizing<Vec<u8>>,
     dropping: bool,
     values: std::sync::Arc<SensitiveValues>,
+    diagnostics: diagnostics::Diagnostics,
 }
 
 impl Sanitizer {
@@ -127,6 +131,7 @@ impl Sanitizer {
             pending: Zeroizing::new(Vec::new()),
             dropping: false,
             values,
+            diagnostics: diagnostics::Diagnostics::default(),
         }
     }
 
@@ -187,14 +192,14 @@ impl Sanitizer {
         {
             return (WITHHELD.into(), true);
         }
-        match approved_line(text) {
+        match self.diagnostics.line(text) {
             Some(line) => (format!("{line}\n"), false),
             None => (WITHHELD.into(), true),
         }
     }
 }
 
-fn approved_line(text: &str) -> Option<String> {
+fn progress_line(text: &str) -> Option<String> {
     let text = text.trim();
     let static_lines = [
         "Initializing the backend...",
@@ -256,27 +261,12 @@ fn approved_line(text: &str) -> Option<String> {
             }
         }
     }
-    for safe in [
-        "Error: Unsupported argument",
-        "Error: Missing required argument",
-        "Error: Invalid value for variable",
-        "Error: Error acquiring the state lock",
-        "Error: Failed to query available provider packages",
-        "Error: Failed to install provider",
-        "Warning: Deprecated attribute",
-    ] {
-        if text == safe {
-            return Some(text.into());
-        }
-    }
-    if text.starts_with("Error:") {
-        return Some("Error: provider diagnostic withheld by publication policy".into());
-    }
-    if text.starts_with("Warning:") {
-        return Some("Warning: provider diagnostic withheld by publication policy".into());
-    }
     None
 }
+
+#[cfg(test)]
+#[path = "operation_sanitize_diagnostic_tests.rs"]
+mod diagnostic_tests;
 
 #[cfg(test)]
 mod tests {

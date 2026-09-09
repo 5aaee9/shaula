@@ -83,7 +83,7 @@ impl OperationLogReadPort for OperationLogArchive {
             has_gap: record.lost_bytes > 0,
             lost_bytes: record.lost_bytes,
         };
-        if record.policy_version != SANITIZATION_POLICY {
+        if !supported_sanitization_policy(&record.policy_version) {
             page.capture_status = "withheld".into();
             return Ok(page);
         }
@@ -201,7 +201,7 @@ impl OperationLogReadPort for OperationLogArchive {
         }
         let _reader = self.writer.lock().await;
         let record = self.load(&record.id).await?;
-        if record.policy_version != SANITIZATION_POLICY {
+        if !supported_sanitization_policy(&record.policy_version) {
             projection.status = "withheld".into();
             return Ok(projection);
         }
@@ -271,20 +271,55 @@ impl OperationLogReadPort for OperationLogArchive {
 
 /// Workflow readers receive progress without provider IDs or arbitrary diagnostics.
 fn runner_line(line: &str) -> String {
-    let progress = [
-        ": Creating...",
-        ": Still creating...",
-        ": Creation complete",
-        "Apply complete!",
-        "[Shaula:",
-        "[REDACTED]",
-    ];
-    if progress.iter().any(|marker| line.contains(marker))
-        && !line.contains("::")
-        && !line.contains("##[")
-    {
-        line.split(" [id=").next().unwrap_or_default().to_string()
-    } else {
-        "[Shaula: diagnostic withheld from workflow audience]".into()
+    if matches!(
+        line,
+        "[Shaula: diagnostic withheld by publication policy]" | "[REDACTED]" | ""
+    ) {
+        return line.into();
     }
+    if let Some(counts) = line.strip_prefix("Apply complete! Resources: ") {
+        let counts = counts.strip_suffix('.').unwrap_or_default();
+        let labels = ["added", "changed", "destroyed"];
+        let valid = counts.split(", ").enumerate().all(|(index, item)| {
+            let Some(label) = labels.get(index) else {
+                return false;
+            };
+            let Some(number) = item.strip_suffix(&format!(" {label}")) else {
+                return false;
+            };
+            !number.is_empty() && number.chars().all(|c| c.is_ascii_digit())
+        });
+        if valid && counts.matches(", ").count() == 2 {
+            return line.into();
+        }
+    }
+    if let Some((address, action)) = line.split_once(": ") {
+        if address.len() <= 256
+            && address.contains('.')
+            && address
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "_.-".contains(c))
+        {
+            for verb in ["Creating...", "Still creating...", "Creation complete"] {
+                if let Some(tail) = action.strip_prefix(verb) {
+                    let tail = tail.trim();
+                    let duration = tail.strip_prefix("after ").unwrap_or_default();
+                    let valid_duration = !duration.is_empty()
+                        && duration.split(' ').all(|part| {
+                            let unit = part.chars().last();
+                            matches!(unit, Some('h' | 'm' | 's'))
+                                && part[..part.len() - 1].chars().all(|c| c.is_ascii_digit())
+                        });
+                    if tail.is_empty() || valid_duration {
+                        return line.into();
+                    }
+                }
+            }
+        }
+    }
+    "[Shaula: diagnostic withheld from workflow audience]".into()
 }
+
+#[cfg(test)]
+#[path = "audience_tests.rs"]
+mod audience_tests;

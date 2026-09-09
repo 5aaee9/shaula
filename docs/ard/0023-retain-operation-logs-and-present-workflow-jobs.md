@@ -67,11 +67,17 @@ Template Runtime 在进程输出 drain 处捕获并过滤 stdout/stderr，通过
 持久日志不随 Workspace 或 Runner 删除而消失，按独立 retention/quota 管理。
 
 v1 持久化经过过滤、脱敏的完整输出文本，保留非 secret 诊断，不只保存成功摘要。
+Operator 需要错误标题后的解释段落、文件/行位置和脱敏上下文才能排障，因此普通
+Terraform/provider 诊断不受极窄标题白名单限制。已知敏感值仍跨片段过滤；明显
+secret-bearing dumps、认证材料、控制/无效编码和超长记录继续屏蔽或安全截断。
 不新增可回放原始 secret 字节的档案或 raw API；持久化前就执行凭据边界。
 面向 operator 与 Runner 的投影按各自受众分别生成，不能因为 operator 可读就
-自动公开到 workflow。未知或无法安全公开的片段用明确占位保留省略事实。
+自动公开到 workflow；Runner Setup Info 保留更严格的发布策略。无法安全公开的
+高风险片段用明确占位保留省略事实，普通诊断不因标题未知便被整体屏蔽。
 Terraform `sensitive`、`-no-color` 或一次字符串替换都不构成完整脱敏保证。
 过滤或投影失败时标记 withheld，输出超限时明确标记截断，均不回退为原始字节。
+该策略不承诺识别所有未知 secret，也不新增读取权限。旧 withheld 若没有保留安全
+正文便无法恢复；不重新 apply、不从 state 提取秘密或伪造日志填补历史。
 
 日志系统不改变执行结果，也不能用日志内容推断进程已被 fence 或资源已不存在。
 日志存储的准入、配额、降级及恢复规则由 spec 定义，不允许静默假报日志完整。

@@ -10,6 +10,12 @@ amends: [0004, 0019]
 开关，将 Proxmox 纳入现有 Terraform Template seam。详细协议由
 [spec 0022](../specs/0022-proxmox-runner-template.md) 维护。
 
+Provider lock 随 artifact 冻结前必须覆盖真实 Terraform 宿主平台。开发机生成的 lock
+或只通过 init 不能证明 Linux provider 可加载；按 spec 0004 §3 从受信来源准备目标
+平台校验和，并在目标平台 readonly init 后运行 validate 和不执行 apply 的 plan。
+缺少 Linux `h1:` 等校验材料的修复通过新 artifact/Revision 与显式 Fleet 采用交付，
+不改历史材料、不关闭 checksum 校验，也不把静态 Active 冒充运行兼容证明。
+
 一个 Generation 拥有一个 VM 和一个 ISO，Terraform 的依赖图保证 seed 在启动前可用、
 在 VM 删除后清理。沿用 worker、GitHub JIT、安全移除和 HTTP state backend，避免在 Rust
 内新增另一个 Proxmox API 客户端和第二套资源恢复逻辑。provider 的 NoCloud 资源通过 API

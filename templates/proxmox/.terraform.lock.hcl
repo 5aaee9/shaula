@@ -5,6 +5,7 @@ provider "registry.terraform.io/indexyz/proxmox" {
   version     = "0.4.0"
   constraints = "0.4.0"
   hashes = [
+    "h1:R8O4/hf1S7hTQ50XWGIa57hVYReJNjTTm9vIHEZZBdw=",
     "h1:j+6KNsXzRPG66rlZe0nxiZEnjY74WrEa6b4II2L0Zxo=",
     "zh:2c25f1619c0053bfc8f69f1719c4df3cf542c24430075068c624641905e9105f",
     "zh:2f76707bc831e1847b31d9e7c4ed6f798edc0e58b828dd7db3fef8356207d85d",

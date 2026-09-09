@@ -106,15 +106,19 @@ init/plan/apply 的 stdout 与 stderr 都捕获；Destroy 是 delete-only saved 
 
 v1 持久保存**经过脱敏的 stdout/stderr 文本**，保留非 secret 的资源过程、警告、错误和结束输出，不能只存成功摘要。Operator Log 与 Runner Setup Info 是两个发布受众；向 workflow 公开的内容必须经过其独立发布策略，不能因为 operator 能读就自动给 Runner。
 
+Operator Log 必须保留可诊断的普通 Terraform/provider 正文，包括错误标题、连续解释段落、文件名与行号、已脱敏的配置上下文和建议。不能用极窄的已知标题白名单，让错误标题后的正文、换行后的续文或不认识的普通错误全部变成 withheld；例如 provider checksum 不匹配、缺少 lock 条目及配置行错误应保留说明原因的上下文。已知敏感值先替换，再按内容风险决定是否屏蔽记录。Runner Setup Info 继续采用独立、更严格的 workflow 公开投影，Operator 正文保留下来不扩大 Runner 的可见范围或现有读取权限。
+
 原始 pipe bytes 只在受控、有界处理内存中存在；不新增可从 Web/Runner 取回的 raw 档案，不以“管理员可看”为理由写入已知 credentials。现有 state/input/emergency evidence 仍按原契约保护，此功能不改变其存储与恢复用途。
 
 脱敏覆盖本次 execution 已知的 JIT、其解码凭据、provider credential、schema-sensitive bindings/parameters、setup capability 和已知编码形式；不可记录 argv/env/state body，不通过字符串 Debug 绕过规则。匹配必须跨 pipe-read/chunk 和多行边界，不能逐个网络 chunk 独立替换后便声称完整。超长/无法安全处理记录以可见省略项替代。
 
-已知值替换不是识别任意未知 secret 的保证。受信 Template/runtime policy 必须约束 provider/provisioner 的可发布输出，默认拒绝任意 secret-bearing diagnostic dump；无法判定安全的片段使用固定占位并标记 withheld，发布失败不能回退 raw。可以用 Terraform `-json` 的批准字段构造相同文本投影，但不能直接转发全部 JSON、未知事件或 `@message` 并把 JSON 视为天然脱敏。
+已知值替换不是识别任意未知 secret 的保证。受信 Template/runtime policy 必须约束 provider/provisioner 的可发布输出；明显 secret-bearing 的 payload、state/env/credential dump、私钥或认证材料等高风险记录仍使用固定占位并标记 withheld。控制字符、无效编码、超长记录及跨片段安全边界无法证明的内容继续保护，发布失败不能回退 raw。普通诊断仅因未匹配某个标题白名单，不构成无法安全发布的理由。可以用 Terraform `-json` 的批准字段构造相同文本投影，但不能直接转发全部 JSON、未知事件或 `@message` 并把 JSON 视为天然脱敏。
 
 记录策略版本、过滤/缺失状态；不暴露被替换 secret 的长度、hash 或命中值。过滤前后与 malformed UTF-8、ANSI、换行、极长行都应有明确测试。UI 纯文本转义，不执行 HTML、ANSI 或 workflow commands；Setup Info 使用固定单行 Group，并规范化会干扰 Runner 日志显示的控制标记。
 
 若发布策略后来被撤销，先停止读取受影响制品并显示 withheld，再按受控流程重生成/清理；禁止静默在同一内容版本上改字节使已有 cursor 串读。
+
+策略改进只增加后续捕获中可保留的诊断。旧记录若已被替换为 withheld 而没有安全正文，无法从未归档的 raw 输出恢复；继续如实显示省略状态，不通过重新 apply、读取敏感 state 或伪造历史正文补回。
 
 ## 5. Durable storage, recovery and retention
 
@@ -211,7 +215,7 @@ Setup Info 的批准内容策略、归档和访问记录仍由本文维护，传
 4. Jobs 以 workflow job 展示；完成 job + Destroy 失败、运行结束但 conclusion unknown、unassigned failed Create 均可独立发现并查看正确日志。
 5. Create 与至少两次 Destroy attempt 保存独立 stdout/stderr、非零结果和 phase；init/plan 失败及 already-empty 可见；Destroy 后和重启后仍可读。
 6. 超 1 MiB、长行、UTF-8 分片、交错流、超时/cancel、child crash、pipe reader error、满队列/满磁盘不阻塞 Terraform或改变安全清理；缺口与真实 execution outcome 分开。
-7. 在 chunk/多行、被丢块及重启边界注入假 JIT、解码 credential、binding、token 及编码值，验证持久文本、API、浏览器、Setup Info 和 telemetry 不含秘密或残片；withheld 不回退 raw，HTML/ANSI/UI 标记不被执行。
+7. 在 chunk/多行、被丢块及重启边界注入假 JIT、解码 credential、binding、token 及编码值，验证持久文本、API、浏览器、Setup Info 和 telemetry 不含这些已知秘密或残片；withheld 不回退 raw，HTML/ANSI/UI 标记不被执行。以含假凭据的真实形状多行 Terraform/provider 错误验证 Operator 保留脱敏标题、段落、文件/行和续文；secret-bearing dumps、无效/超长记录仍受保护，Runner 更严格投影不因 Operator 正文放宽，旧 withheld 不被虚构恢复。
 8. 文件发布/索引提交每个 crash 窗口、重传 changed chunk、备份缺文件、seal 中断、GC 与 reader lease 竞争，均产生可解释 availability，不丢 lifecycle/state 证据。
 9. OIDC/scopes、不同 invocation cursor、正文上限经验证；新容器不获得日志/管理/state capability。旧 v2 兼容路径仍验证过期/跨 Generation capability 与 HTTPS 路由隔离。
 10. Docker 与 Kubernetes 真实官方 pinned Runner 均在首 job 的 **Set up job** 显示正确 apply 组；慢 apply、外部启动门槛与身份校验按 spec 0020 验证。
