@@ -36,7 +36,19 @@ Spec 0001, spec 0002 and ARD-0027 record the corrected contract.
 Composition regressions first reproduced `AccessVerificationFailed` for the
 invalid type and `ScaleSetLabelsPending` for PATCH's unchanged response, then
 passed with PUT/System. All 708 local workspace tests pass with 2 platform skips.
-Deployment readiness must additionally be verified against the running service.
+The Linux Nix package also passed 701 workspace tests (2 skips), strict Clippy,
+and both real Terraform HTTP-backend integration tests.
+
+Production source `35cf06f` was deployed through PowerArmor `232f1b0` on
+2026-09-09. The running binary was verified against the built Nix package;
+`pve-builder-tyo` recovered to Ready at desired/observed r2, its Replace Change
+succeeded, and listener epoch 5 used the original owned Scale Set 9. Independent
+GitHub reads confirmed `self-hosted` and `wanix-runners` and accepted the mixed
+organization inventory. The Docker Fleet remained Ready. Schema 16, Fleet and
+Template revisions, credentials and account bindings were preserved. This proves
+access/labels recovery, not a newly executed workflow job. A separate intermittent
+SQLite busy error had occurred before deployment; its historical lock holder was
+not established by this protocol fix.
 
 ## Mixed organization Runner inventory (2026-09-09)
 
