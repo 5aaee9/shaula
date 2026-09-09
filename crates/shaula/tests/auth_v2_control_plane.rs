@@ -5,6 +5,8 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod common;
+#[path = "auth_v2_control_plane/fleet_admission.rs"]
+mod fleet_admission;
 use std::sync::Arc;
 
 use axum::http::StatusCode;

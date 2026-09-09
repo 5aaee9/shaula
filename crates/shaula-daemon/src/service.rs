@@ -178,11 +178,19 @@ impl ControlPlane {
                 "auth credential missing",
             ));
         };
-        let allowlist: shaula_core::auth::TargetAllowlist =
-            serde_json::from_str(&revision.allowlist_json).map_err(|e| {
-                CoreError::new(ReasonCode::Internal, format!("allowlist invalid: {e}"))
+        let allowed = if revision.schema_version >= 2 {
+            let policy = revision.target_policy()?.ok_or_else(|| {
+                CoreError::new(ReasonCode::Internal, "active v2 auth policy missing")
             })?;
-        if !allowlist.allows(&spec.github.target) {
+            policy.allows(&spec.github.target)
+        } else {
+            let allowlist: shaula_core::auth::TargetAllowlist =
+                serde_json::from_str(&revision.allowlist_json).map_err(|e| {
+                    CoreError::new(ReasonCode::Internal, format!("allowlist invalid: {e}"))
+                })?;
+            allowlist.allows(&spec.github.target)
+        };
+        if !allowed {
             return Err(CoreError::new(
                 ReasonCode::AuthTargetDenied,
                 "auth profile target allowlist does not cover the fleet target",
