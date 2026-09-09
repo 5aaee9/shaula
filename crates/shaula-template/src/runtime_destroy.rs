@@ -13,12 +13,11 @@ use super::{digest_of, exec_err, plan_err, state_err, TemplateRuntime};
 impl TemplateRuntime {
     pub(super) async fn destroy_flow(
         &self,
-        mut request: TemplateDestroyRequest,
+        request: TemplateDestroyRequest,
     ) -> Result<DestroyClassification, TemplateOutcomeError> {
         if self.http_backend.is_some() && request.apply_intent_sink.is_none() {
             return Err(state_err("destroy.authorization"));
         }
-        self.configure_environment(&request.generation_id, &mut request.environment)?;
         let workspace = &request.workspace_path;
         self.verify_http_workspace(workspace, true)?;
         let flow = self.open_flow(request.timeout).await?;
@@ -34,6 +33,11 @@ impl TemplateRuntime {
         if digest_of(&input_now) != original.protected_input_digest {
             return Err(state_err("destroy.plan"));
         }
+        let input: serde_json::Value =
+            serde_json::from_slice(&input_now).map_err(|_| state_err("destroy.input_contract"))?;
+        let input = serde_json::from_value(input.get("shaula").cloned().unwrap_or_default())
+            .map_err(|_| state_err("destroy.input_contract"))?;
+        self.validate_input_contract(&request.artifact_dir, &input)?;
         let workspace_now = self
             .workspace_digest(workspace)
             .map_err(|_| state_err("destroy.plan"))?;
@@ -125,6 +129,7 @@ impl TemplateRuntime {
             ),
             None => None,
         };
+        crate::operation_capture::bind_effect(&provenance.attempt_id);
 
         // Immediately before spawn: re-verify EVERY member of the
         // provenance — plan, engine binary, protected input, workspace

@@ -53,6 +53,14 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
           </p>
         </div>
         <div className="flex gap-2">
+          <Button asChild variant="outline">
+            <Link to={`/jobs?fleet_key=${encodeURIComponent(fleetKey)}`}>Jobs</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to={`/jobs/runners?fleet_key=${encodeURIComponent(fleetKey)}`}>
+              Unassigned runners
+            </Link>
+          </Button>
           <Tip label="Refresh fleet">
             <Button
               size="icon"

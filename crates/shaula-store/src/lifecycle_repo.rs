@@ -16,7 +16,10 @@ impl Store {
         &self,
         record: shaula_core::registry::GenerationRecord,
     ) -> StoreResult<()> {
-        Self::generation_insert_on(self.connection(), record).await
+        let tx = self.begin().await?;
+        Self::generation_insert_on(&tx, record).await?;
+        tx.commit().await?;
+        Ok(())
     }
 
     pub(crate) async fn generation_insert_on<C: sea_orm::ConnectionTrait>(
@@ -72,6 +75,7 @@ impl Store {
         runner_generations::Entity::insert(row)
             .exec(connection)
             .await?;
+        Self::jobs_snapshot_generation(connection, id, fleet_key, fleet_revision).await?;
         Ok(())
     }
 
@@ -127,17 +131,33 @@ impl Store {
         github_runner_id: Option<i64>,
         now: i64,
     ) -> StoreResult<()> {
-        let row = self
-            .generation_get(id)
+        let tx = self.begin().await?;
+        let row = runner_generations::Entity::find_by_id(id.to_string())
+            .one(&tx)
             .await?
             .ok_or_else(|| StoreError::Corrupt(format!("generation {id} missing")))?;
+        if row
+            .github_runner_id
+            .zip(github_runner_id)
+            .is_some_and(|(saved, incoming)| saved != incoming)
+        {
+            return Err(StoreError::Conflict {
+                resource: "generation runner identity changed".into(),
+            });
+        }
         let mut updated: runner_generations::ActiveModel = row.into();
         updated.jit_phase = Set(Some(jit_phase.to_string()));
-        updated.github_runner_id = Set(github_runner_id);
+        if let Some(runner_id) = github_runner_id {
+            updated.github_runner_id = Set(Some(runner_id));
+        }
         updated.updated_at = Set(now);
         runner_generations::Entity::update(updated)
-            .exec(self.connection())
+            .exec(&tx)
             .await?;
+        if let Some(runner_id) = github_runner_id {
+            Self::jobs_register_runner_on(&tx, id, runner_id).await?;
+        }
+        tx.commit().await?;
         Ok(())
     }
 

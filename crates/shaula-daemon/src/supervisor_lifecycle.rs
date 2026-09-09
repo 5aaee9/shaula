@@ -10,6 +10,8 @@ use super::{fingerprint, FleetSupervisor};
 
 #[path = "supervisor_operations.rs"]
 mod operations;
+#[path = "supervisor_setup_info.rs"]
+mod setup_info;
 
 impl FleetSupervisor {
     pub(crate) async fn upsert_ownership(
@@ -295,6 +297,16 @@ impl FleetSupervisor {
         );
         input.bindings = bindings;
         input.parameters = parameters;
+        if manifest.input_contract_version == 2 {
+            let descriptor = setup_info::issue(
+                self.setup_info_issuer.as_deref(),
+                self.clock.as_deref(),
+                &generation_id,
+            )
+            .await;
+            input = input.with_setup_info(descriptor)?;
+        }
+        input.validate_for_manifest(&manifest)?;
         let apply_intent =
             crate::apply_intent::TrackedApplyIntentSink::new(self.config.apply_intent_sink.clone());
         let request = TemplateCreateRequest {

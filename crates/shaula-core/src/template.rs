@@ -84,6 +84,13 @@ pub struct ProfileManifest {
     pub runner_image_digests: Vec<String>,
     /// Publisher-declared digest of the pinned runtime policy document.
     pub runtime_policy_digest: String,
+    #[serde(
+        default = "default_input_contract_version",
+        skip_serializing_if = "is_v1_input"
+    )]
+    pub input_contract_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup_info_contract: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -115,6 +122,18 @@ impl ProfileManifest {
     /// Static structural validation; platform identity stays an opaque
     /// string mapped through [`TemplatePlatform::from_manifest_value`].
     pub fn validate(&self) -> CoreResult<()> {
+        match (
+            self.input_contract_version,
+            self.setup_info_contract.as_deref(),
+        ) {
+            (1, None) | (2, Some(SETUP_INFO_CONTRACT)) => {}
+            _ => {
+                return Err(CoreError::new(
+                    ReasonCode::TemplateInvalid,
+                    "unsupported input/setup-info contract combination",
+                ))
+            }
+        }
         if self.api_version != MANIFEST_API_VERSION {
             return Err(CoreError::new(
                 ReasonCode::TemplateInvalid,
@@ -272,6 +291,17 @@ pub use envelope::{
     AttestationInsert, GenerationIdentity, ResultResource, ShaulaInputEnvelope,
     ShaulaResultEnvelope, INPUT_CONTRACT_VERSION, MAX_RESULT_RESOURCES, RESULT_CONTRACT_VERSION,
 };
+
+#[path = "template_setup_info.rs"]
+mod setup_info;
+pub use setup_info::{SetupInfoDescriptor, SETUP_INFO_CONTRACT};
+
+fn default_input_contract_version() -> u32 {
+    1
+}
+fn is_v1_input(version: &u32) -> bool {
+    *version == 1
+}
 
 #[cfg(test)]
 #[path = "template_tests.rs"]

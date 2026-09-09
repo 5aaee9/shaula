@@ -10,6 +10,7 @@ description = "Artifact/workspace management and Terraform subprocess runtime"
 shaula-core = { workspace = true }
 shaula-observability = { workspace = true }
 async-trait = { workspace = true }
+base64 = { workspace = true }
 chrono = { workspace = true }
 flate2 = { workspace = true }
 futures = { workspace = true }

@@ -29,12 +29,22 @@ impl FleetSupervisor {
             identity,
             runtime_guard: None,
             listener: None,
+            setup_info_issuer: None,
         }
     }
 
     #[must_use]
     pub fn with_clock(mut self, clock: Arc<dyn shaula_core::ports::Clock>) -> Self {
         self.clock = Some(clock);
+        self
+    }
+
+    #[must_use]
+    pub fn with_setup_info_issuer(
+        mut self,
+        issuer: Option<Arc<dyn shaula_core::setup_info::SetupInfoIssuer>>,
+    ) -> Self {
+        self.setup_info_issuer = issuer;
         self
     }
 

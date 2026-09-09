@@ -9,7 +9,7 @@ use tokio::process::{Child, Command};
 
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 
-use super::{bounded_drain, ProcessOutput};
+use super::{logged_drain, ProcessOutput};
 
 fn err(code: ReasonCode, msg: impl Into<String>) -> CoreError {
     CoreError::new(code, msg)
@@ -126,6 +126,7 @@ pub struct EngineSpawn {
     /// process dies or the spawn is finished, never while the engine
     /// runs.
     _supervisor_stdin: Option<tokio::process::ChildStdin>,
+    capture: Option<crate::operation_capture::CommandCapture>,
 }
 
 impl EngineSpawn {
@@ -205,6 +206,26 @@ impl EngineSpawn {
         let drains =
             futures::future::join(join_drain(&mut self.stdout), join_drain(&mut self.stderr));
         let (stdout_res, stderr_res) = drains.await;
+        if let Some(capture) = &mut self.capture {
+            let code = staged
+                .as_ref()
+                .ok()
+                .and_then(std::process::ExitStatus::code);
+            let termination = if stdout_res.is_err() || stderr_res.is_err() {
+                "reader_error"
+            } else if staged
+                .as_ref()
+                .err()
+                .is_some_and(|error| error.summary.contains("timed out"))
+            {
+                "timed_out"
+            } else if staged.is_err() {
+                "interrupted"
+            } else {
+                "exited"
+            };
+            capture.finish(code, termination);
+        }
         let stdout_bytes = stdout_res?;
         let stderr_bytes = stderr_res?;
         let status = staged?;
@@ -219,7 +240,11 @@ impl EngineSpawn {
 /// Spawns the command under a fresh process-tree fence with bounded
 /// concurrent pipe readers (the child fills one pipe while the parent
 /// blocks on the other would deadlock, C12).
-pub(crate) fn spawn_fenced(command: &mut Command, timeout: Duration) -> CoreResult<EngineSpawn> {
+pub(crate) fn spawn_fenced_logged(
+    command: &mut Command,
+    timeout: Duration,
+    mut capture: Option<crate::operation_capture::CommandCapture>,
+) -> CoreResult<EngineSpawn> {
     // R7-01: on Unix the child joins its OWN process group inside the
     // child itself, BEFORE exec — spawn fails if that cannot be
     // established, so a `Group` guard can never refer to a group the
@@ -227,6 +252,9 @@ pub(crate) fn spawn_fenced(command: &mut Command, timeout: Duration) -> CoreResu
     #[cfg(unix)]
     command.process_group(0);
     let mut child = command.spawn().map_err(|e| {
+        if let Some(capture) = &mut capture {
+            capture.finish(None, "not_spawned");
+        }
         err(
             ReasonCode::TemplateExecutionFailed,
             format!("engine spawn failed: {e}"),
@@ -254,8 +282,14 @@ pub(crate) fn spawn_fenced(command: &mut Command, timeout: Duration) -> CoreResu
             "child stderr missing",
         ));
     };
-    let stdout = DrainGuard(tokio::spawn(bounded_drain(stdout_pipe)));
-    let stderr = DrainGuard(tokio::spawn(bounded_drain(stderr_pipe)));
+    let stdout = DrainGuard(tokio::spawn(logged_drain(
+        stdout_pipe,
+        capture.as_ref().map(|c| c.pipe("stdout")),
+    )));
+    let stderr = DrainGuard(tokio::spawn(logged_drain(
+        stderr_pipe,
+        capture.as_ref().map(|c| c.pipe("stderr")),
+    )));
     Ok(EngineSpawn {
         child,
         stdout,
@@ -263,5 +297,6 @@ pub(crate) fn spawn_fenced(command: &mut Command, timeout: Duration) -> CoreResu
         tree: Some(tree),
         timeout,
         _supervisor_stdin: supervisor_stdin,
+        capture,
     })
 }

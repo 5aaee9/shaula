@@ -26,6 +26,7 @@ pub struct SupervisorWiring {
     store: Arc<dyn ControlPlaneStore>,
     lifecycle: Arc<dyn LifecycleStore>,
     runtime: Arc<dyn TemplateRuntimePort>,
+    setup_info_issuer: Option<Arc<dyn shaula_core::setup_info::SetupInfoIssuer>>,
     clock: Arc<dyn Clock>,
     gates: Arc<FleetEffectGates>,
     work_root: PathBuf,
@@ -64,6 +65,7 @@ impl SupervisorWiring {
             store,
             lifecycle,
             runtime,
+            setup_info_issuer: None,
             clock,
             gates,
             work_root,
@@ -75,6 +77,14 @@ impl SupervisorWiring {
             auth_worker_deferred_until: Arc::default(),
             auth_worker_endpoints: crate::auth_worker_probe::WorkerEndpoints::production(),
         }
+    }
+
+    pub fn with_setup_info_issuer(
+        mut self,
+        issuer: Option<Arc<dyn shaula_core::setup_info::SetupInfoIssuer>>,
+    ) -> Self {
+        self.setup_info_issuer = issuer;
+        self
     }
 
     /// Injects auth-worker endpoints (composition/test seam; production

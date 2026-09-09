@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::{CoreError, CoreResult, ReasonCode};
-use crate::template::{BindingsDigest, ManagedResourceRole};
+use crate::template::{BindingsDigest, ManagedResourceRole, ProfileManifest, SetupInfoDescriptor};
 
 /// Generation identity written into the protected `shaula` input envelope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -24,6 +24,7 @@ pub struct GenerationIdentity {
 /// System-side protected input envelope; exactly one top-level variable
 /// `shaula` in the tfvars document.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "InputWire")]
 pub struct ShaulaInputEnvelope {
     pub contract_version: u32,
     pub generation: GenerationIdentity,
@@ -34,6 +35,46 @@ pub struct ShaulaInputEnvelope {
     pub bindings: serde_json::Map<String, serde_json::Value>,
     #[serde(default)]
     pub parameters: serde_json::Map<String, serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup_info: Option<SetupInfoDescriptor>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InputWire {
+    contract_version: u32,
+    generation: GenerationIdentity,
+    jit_config: String,
+    bindings_digest: BindingsDigest,
+    #[serde(default)]
+    bindings: serde_json::Map<String, serde_json::Value>,
+    #[serde(default)]
+    parameters: serde_json::Map<String, serde_json::Value>,
+    #[serde(default, deserialize_with = "present_setup_info")]
+    setup_info: Option<SetupInfoDescriptor>,
+}
+
+fn present_setup_info<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<SetupInfoDescriptor>, D::Error> {
+    SetupInfoDescriptor::deserialize(deserializer).map(Some)
+}
+
+impl TryFrom<InputWire> for ShaulaInputEnvelope {
+    type Error = CoreError;
+    fn try_from(wire: InputWire) -> CoreResult<Self> {
+        let input = Self {
+            contract_version: wire.contract_version,
+            generation: wire.generation,
+            jit_config: wire.jit_config,
+            bindings_digest: wire.bindings_digest,
+            bindings: wire.bindings,
+            parameters: wire.parameters,
+            setup_info: wire.setup_info,
+        };
+        input.validate()?;
+        Ok(input)
+    }
 }
 
 // Type-bound redaction (spec 0007 §3.2/§5): the JIT and the bindings carry
@@ -47,7 +88,8 @@ impl std::fmt::Debug for ShaulaInputEnvelope {
             .field("jit_config", &"[REDACTED]")
             .field("bindings_digest", &self.bindings_digest)
             .field("bindings", &"[REDACTED]")
-            .field("parameters", &self.parameters)
+            .field("parameters", &"[REDACTED]")
+            .field("setup_info", &self.setup_info)
             .finish()
     }
 }
@@ -67,14 +109,46 @@ impl ShaulaInputEnvelope {
             bindings_digest,
             bindings: serde_json::Map::new(),
             parameters: serde_json::Map::new(),
+            setup_info: None,
         }
     }
 
     /// Renders the protected tfvars JSON document whose sole top-level
     /// variable is `shaula`.
     pub fn to_tfvars(&self) -> CoreResult<String> {
+        self.validate()?;
         let doc = serde_json::json!({ "shaula": self });
         serde_json::to_string(&doc).map_err(|e| CoreError::new(ReasonCode::Internal, e.to_string()))
+    }
+
+    pub fn with_setup_info(mut self, descriptor: SetupInfoDescriptor) -> CoreResult<Self> {
+        descriptor.validate_for_generation(&self.generation.id)?;
+        self.contract_version = 2;
+        self.setup_info = Some(descriptor);
+        Ok(self)
+    }
+
+    pub fn validate(&self) -> CoreResult<()> {
+        match (self.contract_version, &self.setup_info) {
+            (1, None) => Ok(()),
+            (2, Some(descriptor)) => descriptor.validate_for_generation(&self.generation.id),
+            _ => Err(CoreError::new(
+                ReasonCode::TemplateInvalid,
+                "input contract version/setup-info mismatch",
+            )),
+        }
+    }
+
+    pub fn validate_for_manifest(&self, manifest: &ProfileManifest) -> CoreResult<()> {
+        manifest.validate()?;
+        self.validate()?;
+        if self.contract_version != manifest.input_contract_version {
+            return Err(CoreError::new(
+                ReasonCode::TemplateInvalid,
+                "input contract differs from manifest",
+            ));
+        }
+        Ok(())
     }
 }
 

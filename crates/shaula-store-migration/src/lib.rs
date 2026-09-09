@@ -13,6 +13,9 @@ pub mod m0008_auth_multi_account;
 pub mod m0009_auth_execution_contexts;
 pub mod m0010_template_library;
 pub mod m0011_listener_messages;
+pub mod m0012_workflow_jobs;
+pub mod m0013_operation_logs;
+pub mod m0014_setup_info_capabilities;
 
 use sea_orm_migration::prelude::*;
 
@@ -35,6 +38,9 @@ impl MigratorTrait for Migrator {
             Box::new(m0009_auth_execution_contexts::Migration),
             Box::new(m0010_template_library::Migration),
             Box::new(m0011_listener_messages::Migration),
+            Box::new(m0012_workflow_jobs::Migration),
+            Box::new(m0013_operation_logs::Migration),
+            Box::new(m0014_setup_info_capabilities::Migration),
         ]
     }
 }

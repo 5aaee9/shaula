@@ -29,6 +29,10 @@ async fn web_tests_embedded_document_and_deep_link() -> TestResult {
         "/templates/linux-x64.1_a/revisions/new",
         "/auth",
         "/changes",
+        "/jobs",
+        "/jobs/job-1",
+        "/jobs/runners",
+        "/jobs/runners/00000000-0000-0000-0000-000000000001",
     ] {
         let response = request(path, Method::GET).await?;
         assert_eq!(response.status(), StatusCode::OK);
@@ -54,6 +58,10 @@ async fn web_tests_missing_assets_api_and_methods_are_not_html() -> TestResult {
         "/assets/missing.js",
         "/missing.css",
         "/unknown",
+        "/jobs//runner",
+        "/jobs/job-1/extra",
+        "/jobs/runners/../fleet",
+        "/jobs/%2fexternal",
         "/templates/linux-build",
         "/templates/new/extra",
         "/templates//revisions/new",

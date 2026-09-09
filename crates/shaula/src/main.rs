@@ -19,6 +19,7 @@ mod auth_worker_probe;
 pub(crate) mod auth_worker_scheduling_tests;
 mod auth_worker_selectors;
 mod auth_worker_v2;
+mod diagnostics;
 mod fleet_tasks;
 mod oidc_args;
 mod wiring;
@@ -106,6 +107,7 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
     // still precede every migration or remote effect (spec 0001 §13).
     let bootstrap = ValidatedBootstrap::load(std::path::Path::new(config_path))?;
     let _telemetry = shaula_observability::init(&bootstrap.service_name);
+    oidc.validate_setup_origin(bootstrap.setup_info.as_ref())?;
     let oidc = oidc.initialize(bootstrap.authorization.clone()).await?;
 
     // Filesystem roots must exist before the store opens its database.
@@ -128,6 +130,9 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
         .await
         .map_err(|e| e.to_string())?;
     store.migrate().await.map_err(|e| e.to_string())?;
+    let diagnostics = diagnostics::Diagnostics::new(store.clone(), &bootstrap).await;
+    let jobs = std::sync::Arc::new(store.clone());
+    let logs = diagnostics.logs.clone();
 
     let clock: std::sync::Arc<dyn Clock> = std::sync::Arc::new(SystemClock);
     let artifact_library = std::sync::Arc::new(artifact_library::DbArtifactPublisher::new(
@@ -155,8 +160,12 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
 
     // Start the scheduler before serving HTTP. Remote Fleet work runs in
     // independent tasks; readiness cannot wait for a GitHub/IaC round trip.
-    let runtime: std::sync::Arc<dyn shaula_core::ports::TemplateRuntimePort> =
-        std::sync::Arc::new(TemplateRuntime::new(bootstrap.terraform_executable.clone()));
+    let mut runtime = TemplateRuntime::new(bootstrap.terraform_executable.clone());
+    if let Some(logs) = &logs {
+        runtime = runtime.with_operation_logs(logs.clone());
+    }
+    let runtime = std::sync::Arc::new(runtime);
+    let runtime_logs = runtime.clone();
     let lifecycle: std::sync::Arc<dyn shaula_core::registry::LifecycleStore> =
         control_plane_store.clone();
     let wiring = wiring::SupervisorWiring::new(
@@ -174,8 +183,10 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
                 bootstrap.destroy_concurrency,
             )),
         },
-    );
+    )
+    .with_setup_info_issuer(diagnostics.issuer.clone());
     let (shutdown_tx, wiring_shutdown) = tokio::sync::watch::channel(false);
+    let diagnostics_task = tokio::spawn(diagnostics.run(shutdown_tx.subscribe()));
     let mut wiring_task = tokio::spawn(wiring.run(wiring_shutdown));
     service.set_ready(true);
 
@@ -196,6 +207,10 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
         oidc,
         body_limit: bootstrap.artifact_body_limit,
         request_body_limit: bootstrap.request_body_limit,
+        jobs: Some(jobs),
+        logs: logs.map(|archive| {
+            archive as std::sync::Arc<dyn shaula_core::operation_log::OperationLogReadPort>
+        }),
         artifact_publisher: artifact_library,
     };
     let app = shaula_http::router::build_router(state);
@@ -313,6 +328,8 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
     } else {
         Some(wiring_task.await)
     };
+    runtime_logs.drain_operation_logs().await;
+    let _ = diagnostics_task.await;
     drop(_lock);
 
     // Fold the server outcome; the scan/wiring results are supervision

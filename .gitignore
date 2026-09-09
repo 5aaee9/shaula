@@ -9,3 +9,4 @@ web/.env.*.local
 .playwright-mcp/
 /result
 /result-*
+__pycache__/

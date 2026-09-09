@@ -77,6 +77,8 @@ async fn app(library: Arc<Library>) -> Router {
         oidc: common::oidc::oidc().await,
         body_limit: 64 << 20,
         request_body_limit: 1 << 20,
+        jobs: None,
+        logs: None,
         artifact_publisher: library,
     })
 }

@@ -19,6 +19,9 @@ import { TemplatesPage } from "@/pages/templates";
 import { TemplatePublishPage } from "@/pages/template-publish";
 import { AuthPage } from "@/pages/auth";
 import { ChangesPage } from "@/pages/changes";
+import { JobsPage } from "@/pages/jobs";
+import { JobDetail } from "@/pages/job-detail";
+import { UnassignedRunners, RunnerDetail } from "@/pages/job-runners";
 
 export function App() {
   const expired = useSyncExternalStore(subscribeAuthentication, authenticationExpired);
@@ -85,6 +88,10 @@ export function App() {
               <Routes>
                 <Route path="/" element={<Navigate to="/fleets" replace />} />
                 <Route path="/fleets" element={<FleetsPage scopes={scopes} />} />
+                <Route path="/jobs" element={<JobsPage scopes={scopes} />} />
+                <Route path="/jobs/runners" element={<UnassignedRunners scopes={scopes} />} />
+                <Route path="/jobs/runners/:id" element={<RunnerDetail scopes={scopes} />} />
+                <Route path="/jobs/:id" element={<JobDetail scopes={scopes} />} />
                 <Route path="/fleets/:key" element={<FleetDetail scopes={scopes} />} />
                 <Route path="/templates" element={<TemplatesPage scopes={scopes} />} />
                 <Route

@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { Boxes, GitPullRequest, KeyRound, Layers3 } from "lucide-react";
+import { Boxes, GitPullRequest, KeyRound, Layers3, ListChecks } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { Session } from "@/lib/types";
 import { NavMain } from "@/components/nav-main";
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/sidebar";
 
 export const navigation = [
+  { url: "/jobs", title: "Jobs", icon: ListChecks },
   { url: "/fleets", title: "Fleets", icon: Boxes },
   { url: "/templates", title: "Templates", icon: Layers3 },
   { url: "/auth", title: "GitHub authentication", icon: KeyRound },

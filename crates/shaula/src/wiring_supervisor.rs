@@ -289,6 +289,7 @@ impl SupervisorWiring {
                 identity,
             )
             .with_handoff_github(handoff_github)
+            .with_setup_info_issuer(self.setup_info_issuer.clone())
             .with_clock(self.clock.clone())
             .with_handoff_authority(desired)
             .with_execution_ready(execution_ready)

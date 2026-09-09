@@ -10,6 +10,7 @@ RUN test -x /usr/bin/python3 \
     && install -d -o runner -g "$(id -gn runner)" -m 0700 /shaula
 
 COPY --chown=root:root --chmod=0555 bootstrap-shim /usr/local/bin/bootstrap-shim
+COPY --chown=root:root --chmod=0444 setup_info.py /usr/local/lib/shaula/setup_info.py
 
 WORKDIR /home/runner
 USER runner

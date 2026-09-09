@@ -23,6 +23,10 @@ pub struct BootstrapConfig {
     pub execution: ExecutionConfig,
     #[serde(default)]
     pub observability: ObservabilityConfig,
+    #[serde(default)]
+    pub operation_logs: shaula_core::operation_log::LogConfig,
+    #[serde(default)]
+    pub setup_info: Option<shaula_core::setup_info::SetupInfoConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

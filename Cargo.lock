@@ -2560,6 +2560,7 @@ dependencies = [
  "sha2 0.10.9",
  "subtle",
  "thiserror 2.0.20",
+ "url",
  "uuid",
  "zeroize",
 ]
@@ -2677,6 +2678,7 @@ dependencies = [
  "shaula-daemon",
  "shaula-observability",
  "shaula-store-migration",
+ "subtle",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
@@ -2696,6 +2698,7 @@ name = "shaula-template"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64",
  "bigdecimal",
  "chrono",
  "flate2",

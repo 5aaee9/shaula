@@ -66,6 +66,7 @@ pub struct FleetSupervisor {
     identity: shaula_core::github::ScaleSetIdentity,
     runtime_guard: Option<shaula_core::registry::FleetRuntimeGuard>,
     listener: Option<Arc<crate::listener::FleetListener>>,
+    setup_info_issuer: Option<Arc<dyn shaula_core::setup_info::SetupInfoIssuer>>,
 }
 
 impl FleetSupervisor {

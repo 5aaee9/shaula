@@ -67,8 +67,11 @@ fn key(key: &ObjectKey) -> CoreResult<&str> {
     }
 }
 
-/// The six system members stay fixed. Only bindings and parameters are publisher-defined.
-pub(super) fn envelope(expr: &Expression) -> CoreResult<BTreeMap<String, Node>> {
+/// Only bindings and parameters are publisher-defined; v2 adds system-owned setup_info.
+pub(super) fn envelope(
+    expr: &Expression,
+    input_version: u32,
+) -> CoreResult<BTreeMap<String, Node>> {
     let fields = object(expr)?;
     let mut nodes = BTreeMap::new();
     let mut names = std::collections::BTreeSet::new();
@@ -80,6 +83,7 @@ pub(super) fn envelope(expr: &Expression) -> CoreResult<BTreeMap<String, Node>> 
         let expected = match field {
             "contract_version" => Some("number"),
             "generation" => Some("any"),
+            "setup_info" if input_version == 2 => Some("any"),
             "jit_config" | "bindings_digest" => Some("string"),
             "bindings" | "parameters" => None,
             _ => return Err(invalid("shaula variable declares an unknown system member")),
@@ -100,7 +104,7 @@ pub(super) fn envelope(expr: &Expression) -> CoreResult<BTreeMap<String, Node>> 
             nodes.insert(field.to_owned(), node);
         }
     }
-    if names.len() != 6 {
+    if names.len() != if input_version == 2 { 7 } else { 6 } {
         return Err(invalid(
             "shaula variable is missing a system envelope member",
         ));

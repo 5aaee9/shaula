@@ -40,6 +40,12 @@ fn read_text(path: &Path, budget: &mut usize) -> CoreResult<String> {
 /// Reads only root module `.tf` declarations and the two published schemas.
 /// Legacy `type = any` is reported explicitly without invalidating its artifact.
 pub fn discover_variables(dir: &Path, digest: &str) -> CoreResult<TemplateVariables> {
+    let manifest_path = dir.join("profile.yaml");
+    let input_version = if manifest_path.exists() {
+        crate::manifest::parse_manifest(&read_text(&manifest_path, &mut 0)?)?.input_contract_version
+    } else {
+        1
+    };
     let mut paths = Vec::new();
     for entry in std::fs::read_dir(dir)
         .map_err(|_| invalid("template variable source directory is unreadable"))?
@@ -128,10 +134,15 @@ pub fn discover_variables(dir: &Path, digest: &str) -> CoreResult<TemplateVariab
         parameters: Vec::new(),
     };
     if matches!(&expression, Expression::Variable(value) if value.as_str() == "any") {
+        if input_version != 1 {
+            return Err(invalid(
+                "v2 input requires an explicit system envelope type",
+            ));
+        }
         result.reason = Some("This template declares shaula as any; typed bindings and parameters are required to discover variables.".into());
         return Ok(result);
     }
-    let envelope = types::envelope(&expression)?;
+    let envelope = types::envelope(&expression, input_version)?;
     for (name, output) in [
         ("bindings", &mut result.bindings),
         ("parameters", &mut result.parameters),
@@ -171,3 +182,7 @@ mod integrity_tests;
 #[cfg(test)]
 #[path = "variables_guard_tests.rs"]
 mod guard_tests;
+
+#[cfg(test)]
+#[path = "variables_setup_info_tests.rs"]
+mod setup_info_tests;

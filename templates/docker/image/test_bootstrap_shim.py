@@ -126,6 +126,7 @@ class HandoffTests(unittest.TestCase):
             "g=m['main'].__globals__; "
             "g['JIT_PATH']=g['Path'](sys.argv[2]); "
             "g['RUNNER_ROOT']=g['Path'](sys.argv[3]); "
+            "g['SETUP_HELPER']=g['Path'](sys.argv[1]).with_name('setup_info.py'); "
             "g['LISTENER']=sys.argv[4]; "
             "sys.argv=[sys.argv[1]]; "
             "sys.exit(g['main']())"
@@ -208,6 +209,36 @@ class HandoffTests(unittest.TestCase):
         ):
             self.assertEqual(shim.main(), 78)
         execute.assert_not_called()
+
+    def test_setup_failure_does_not_swallow_jit_failure(self):
+        self.jit_path.write_bytes(b"invalid-jit")
+        with (
+            mock.patch.object(shim, "JIT_PATH", self.jit_path),
+            mock.patch.object(shim, "prepare_setup_info") as setup,
+            mock.patch.object(shim.os, "execve") as execute,
+            mock.patch.object(shim.sys, "argv", ["bootstrap-shim"]),
+            mock.patch.object(shim.sys, "stderr"),
+        ):
+            self.assertEqual(shim.main(), 78)
+        setup.assert_not_called()
+        execute.assert_not_called()
+
+    def test_setup_helper_failure_preserves_successful_jit_handoff(self):
+        with (
+            mock.patch.object(shim, "JIT_PATH", self.jit_path),
+            mock.patch.object(shim.importlib.util, "spec_from_file_location",
+                              side_effect=RuntimeError("private-diagnostic")),
+            mock.patch.object(shim.os, "execve") as execute,
+            mock.patch.object(shim.os, "chdir"),
+            mock.patch.object(shim.sys, "argv", ["bootstrap-shim"]),
+            mock.patch.object(shim.sys, "stderr") as stderr,
+        ):
+            self.assertIsNone(shim.main())
+        self.assertFalse(self.jit_path.exists())
+        execute.assert_called_once()
+        environment = execute.call_args.args[2]
+        self.assertEqual(environment["ACTIONS_RUNNER_INPUT_JITCONFIG"], VALID_JIT.decode())
+        stderr.write.assert_called_once_with("bootstrap-shim: setup info unavailable\n")
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ use shaula_core::registry::{FleetRuntimeGuard, SessionEffectContext, SessionInst
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
-pub(super) async fn ready() -> TestResult<(crate::Store, SessionEffectContext)> {
+pub(crate) async fn ready() -> TestResult<(crate::Store, SessionEffectContext)> {
     let (store, captured, auth_context) = super::auth_execution::ready().await;
     store
         .handoff_acknowledge(
@@ -71,6 +71,7 @@ pub(super) fn message(id: i64, demand: i64) -> PollMessage {
         job_available: vec![JobMessage {
             runner_request_id: 101,
             job_id: "job-1".into(),
+            metadata: Default::default(),
         }],
         job_assigned: vec![],
         job_started: vec![JobStartedMessage {
@@ -78,6 +79,7 @@ pub(super) fn message(id: i64, demand: i64) -> PollMessage {
             job_id: "job-old".into(),
             runner_id: 2,
             runner_name: "runner-2".into(),
+            metadata: Default::default(),
         }],
         job_completed: vec![],
     }

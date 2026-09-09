@@ -4,6 +4,10 @@ use shaula_core::ports::{PollMessage, ScaleSetView, StatisticsSnapshot};
 
 use crate::wire;
 
+#[path = "port_job_metadata.rs"]
+mod metadata;
+use metadata::WireJobMetadata;
+
 pub(crate) fn scale_set_view(value: &wire::RunnerScaleSet) -> ScaleSetView {
     ScaleSetView {
         id: value.id.unwrap_or_default(),
@@ -59,6 +63,8 @@ struct WireJobMessage {
     runner_request_id: i64,
     #[serde(default)]
     job_id: String,
+    #[serde(flatten)]
+    metadata: WireJobMetadata,
 }
 
 #[derive(serde::Deserialize)]
@@ -71,6 +77,8 @@ struct WireJobStarted {
     runner_id: i64,
     #[serde(default)]
     runner_name: String,
+    #[serde(flatten)]
+    metadata: WireJobMetadata,
 }
 
 #[derive(serde::Deserialize)]
@@ -83,6 +91,9 @@ struct WireJobCompleted {
     runner_id: i64,
     #[serde(default)]
     runner_name: String,
+    #[serde(flatten)]
+    metadata: WireJobMetadata,
+    result: Option<String>,
 }
 
 /// A KNOWN job type that fails to decode fails the WHOLE batch: the
@@ -127,6 +138,7 @@ pub fn parse_job_messages(
                 message.job_available.push(shaula_core::ports::JobMessage {
                     runner_request_id: job.runner_request_id,
                     job_id: job.job_id,
+                    metadata: job.metadata.into(),
                 });
             }
             "JobAssigned" => {
@@ -134,6 +146,7 @@ pub fn parse_job_messages(
                 message.job_assigned.push(shaula_core::ports::JobMessage {
                     runner_request_id: job.runner_request_id,
                     job_id: job.job_id,
+                    metadata: job.metadata.into(),
                 });
             }
             "JobStarted" => {
@@ -145,6 +158,7 @@ pub fn parse_job_messages(
                         job_id: job.job_id,
                         runner_id: job.runner_id,
                         runner_name: job.runner_name,
+                        metadata: job.metadata.into(),
                     });
             }
             "JobCompleted" => {
@@ -157,6 +171,8 @@ pub fn parse_job_messages(
                         job_id: job.job_id,
                         runner_id: job.runner_id,
                         runner_name: job.runner_name,
+                        metadata: job.metadata.into(),
+                        result: metadata::bounded_text(job.result, 128),
                     });
             }
             _ => {}

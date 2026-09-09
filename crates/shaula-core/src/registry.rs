@@ -27,6 +27,7 @@ impl Actor {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
     FleetRead,
+    LogsRead,
     FleetWrite,
     FleetRetire,
     TemplateRead,
@@ -42,6 +43,7 @@ impl Scope {
     pub fn as_str(self) -> &'static str {
         match self {
             Scope::FleetRead => "fleet.read",
+            Scope::LogsRead => "logs.read",
             Scope::FleetWrite => "fleet.write",
             Scope::FleetRetire => "fleet.retire",
             Scope::TemplateRead => "template.read",

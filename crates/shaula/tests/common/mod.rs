@@ -138,6 +138,8 @@ async fn build_app_inner() -> (
         oidc: oidc::oidc().await,
         body_limit: 64 * 1024 * 1024,
         request_body_limit: 64 * 1024 * 1024,
+        jobs: None,
+        logs: None,
         artifact_publisher: Arc::new(TestPublisher {
             root: artifact_root.clone(),
         }),

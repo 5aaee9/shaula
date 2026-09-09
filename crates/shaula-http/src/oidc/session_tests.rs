@@ -155,6 +155,29 @@ fn oidc_tests_template_publish_return_targets_require_valid_routes() {
 }
 
 #[test]
+fn oidc_tests_jobs_return_targets_preserve_filters_only_on_valid_documents() {
+    for target in [
+        "/jobs",
+        "/jobs/job-1",
+        "/jobs/runners/gen-1",
+        "/jobs?fleet_key=linux&repository=acme%2Frepo&job_name=Build+Linux",
+        "/jobs/runners?fleet_key=linux&cursor=abc123",
+    ] {
+        assert_eq!(crate::oidc::login::return_target(Some(target)), target);
+    }
+    for target in [
+        "/jobs//evil",
+        "/jobs/%2e%2e",
+        "/jobs/job-1/extra",
+        "/jobs?return_to=https://evil.example",
+        "/jobs?job_name=%0D%0ALocation:evil",
+        "/jobs?status=running&status=completed",
+    ] {
+        assert_eq!(crate::oidc::login::return_target(Some(target)), "/fleets");
+    }
+}
+
+#[test]
 fn oidc_tests_refreshable_idle_expiry_requires_renewal_without_local_logout() {
     use crate::oidc::session_refresh::Admission;
     let mut store = Sessions::default();

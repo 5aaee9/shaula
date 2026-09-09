@@ -14,7 +14,7 @@ use std::sync::{Arc, OnceLock};
 mod token;
 pub use token::TokenControl;
 
-pub const SCOPES: &str = "fleet.read fleet.write fleet.retire template.read template.publish template.attest template.retire auth.read auth.write auth.retire";
+pub const SCOPES: &str = "fleet.read logs.read fleet.write fleet.retire template.read template.publish template.attest template.retire auth.read auth.write auth.retire";
 pub const KEY: &str = include_str!("../../../shaula-scaleset/tests/fixtures/app.private.pem");
 pub const MODULUS: &str = "zBswup1vHos8WZhq32wBqrmCHTFbszkB0QSXNUF4-hJcHHqwrCMzRrEdPk9F5pUmE9oqtVoj1OX8UShriZfwSEx49J3WLcopKMJ3H4VILiqV2oqWt8LOGeUShzGsDpw5ulfPFDOjzTY72CHQscBlDD34Tj38OQkiEXlrYKj5fdBJ66GHVfv4zpARR7H8Yz9g1_QgHwdI9C-krawkJTnpgtaN9islh0keayWd7JgS7ygbeZRB-Ad25gxeXFpsdL-8T9w5c2w3tplJ1ob4Gb8MrSBrLo6qX0sSGKa-ozgX0AWkY3g041qWLuy7Ukf0PsoOR9o0RM6M9Uw9NczpYYtfjw";
 

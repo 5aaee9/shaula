@@ -21,6 +21,21 @@ pub struct OidcArgs {
 }
 
 impl OidcArgs {
+    pub fn validate_setup_origin(
+        &self,
+        setup: Option<&shaula_core::setup_info::SetupInfoConfig>,
+    ) -> Result<(), String> {
+        if let Some(setup) = setup {
+            let management = reqwest::Url::parse(&self.oidc_public_url)
+                .map_err(|_| "OIDC public URL invalid")?;
+            let delivery = reqwest::Url::parse(&setup.advertised_origin)
+                .map_err(|_| "setup info origin invalid")?;
+            if management.origin() == delivery.origin() {
+                return Err("setup info requires an origin separate from the management UI".into());
+            }
+        }
+        Ok(())
+    }
     pub async fn initialize(
         self,
         grants: Vec<AuthorizationGrant>,

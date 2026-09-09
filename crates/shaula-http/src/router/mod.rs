@@ -4,6 +4,7 @@
 
 pub mod fleet_routes;
 mod input_contract;
+mod jobs;
 pub mod profile_auth_reads;
 pub mod profile_reads;
 pub mod profile_routes;
@@ -38,6 +39,8 @@ pub struct AppState {
     pub request_body_limit: usize,
     /// Content-addressed artifact publisher (digest-addressed uploads).
     pub artifact_publisher: Arc<dyn ArtifactPublisher>,
+    pub jobs: Option<Arc<dyn shaula_core::jobs::JobsReadPort>>,
+    pub logs: Option<Arc<dyn shaula_core::operation_log::OperationLogReadPort>>,
 }
 
 /// Artifact upload seam; `shaula-template`'s store backs the production
@@ -200,6 +203,12 @@ pub fn build_router(state: AppState) -> Router {
     use axum::extract::DefaultBodyLimit;
     Router::new()
         .route("/api/v1/session", get(session))
+        .route("/api/v1/jobs", get(jobs::list))
+        .route("/api/v1/jobs/{id}", get(jobs::detail))
+        .route("/api/v1/generations", get(jobs::generations))
+        .route("/api/v1/generations/{id}", get(jobs::generation))
+        .route("/api/v1/generations/{id}/invocations", get(jobs::invocations))
+        .route("/api/v1/invocations/{id}/logs", get(jobs::logs))
         .route("/api/v1/template-sources", get(template_library::sources))
         .route("/api/v1/template-artifacts/{digest}/variables", get(template_library::variables))
         .route("/auth/oidc/login", get(crate::oidc::login))

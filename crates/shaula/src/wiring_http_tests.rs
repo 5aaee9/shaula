@@ -90,6 +90,8 @@ async fn http_app(control_plane: &TestPlane) -> axum::Router {
         oidc: http_oidc::provider().oidc().await,
         body_limit: 64 * 1024 * 1024,
         request_body_limit: 64 * 1024 * 1024,
+        jobs: None,
+        logs: None,
         artifact_publisher: Arc::new(NeverPublisher),
     })
 }

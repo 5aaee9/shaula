@@ -13,3 +13,5 @@ pub use artifact::ArtifactStore;
 pub mod artifact_cache;
 pub use runtime::TemplateRuntime;
 mod artifact_integrity;
+mod operation_capture;
+mod operation_sanitize;

@@ -15,6 +15,7 @@ pub mod oidc;
 pub mod problem;
 pub mod router;
 pub mod server;
+pub mod setup_info;
 pub mod state_backend;
 mod web;
 

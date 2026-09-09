@@ -11,8 +11,6 @@ use tokio::process::Command;
 
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 
-use engine_process::spawn_fenced;
-
 #[path = "engine_process.rs"]
 pub mod engine_process;
 
@@ -43,16 +41,33 @@ impl ProcessOutput {
 /// bytes, always drains to EOF and reports I/O errors instead of
 /// silently yielding empty output. Each stream owns ONE task running
 /// this helper (two tasks, two buffers — never merged, C12).
-pub(crate) async fn bounded_drain<R: tokio::io::AsyncRead + Unpin>(
+pub(crate) async fn logged_drain<R: tokio::io::AsyncRead + Unpin>(
     mut pipe: R,
+    mut capture: Option<crate::operation_capture::PipeCapture>,
 ) -> std::io::Result<Vec<u8>> {
     let mut kept = Vec::new();
     let mut chunk = [0u8; 8192];
+    let mut flush = tokio::time::interval(Duration::from_secs(1));
     loop {
-        match pipe.read(&mut chunk).await {
-            Ok(0) => break,
+        let read = tokio::select! {
+            result = pipe.read(&mut chunk) => result,
+            _ = flush.tick(), if capture.is_some() => {
+                if let Some(capture) = &mut capture { capture.flush(); }
+                continue;
+            }
+        };
+        match read {
+            Ok(0) => {
+                if let Some(capture) = &mut capture {
+                    capture.finish(true);
+                }
+                break;
+            }
             Err(e) => return Err(e),
             Ok(n) => {
+                if let Some(capture) = &mut capture {
+                    capture.feed(&chunk[..n]);
+                }
                 if kept.len() < MAX_OUTPUT_BYTES {
                     let take = n.min(MAX_OUTPUT_BYTES - kept.len());
                     kept.extend_from_slice(&chunk[..take]);
@@ -116,7 +131,12 @@ pub async fn run_engine(
     timeout: Duration,
 ) -> CoreResult<ProcessOutput> {
     let mut command = build_engine_command(executable, cwd, args, extra_env)?;
-    spawn_fenced(&mut command, timeout)?.wait().await
+    let capture = args
+        .first()
+        .and_then(|phase| crate::operation_capture::command(phase));
+    engine_process::spawn_fenced_logged(&mut command, timeout, capture)?
+        .wait()
+        .await
 }
 
 fn base_allowlist(extra: &[(String, String)]) -> Vec<(String, String)> {

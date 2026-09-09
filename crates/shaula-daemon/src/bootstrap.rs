@@ -26,6 +26,8 @@ pub struct ValidatedBootstrap {
     pub operation_timeout: Duration,
     pub terraform_executable: PathBuf,
     pub service_name: String,
+    pub operation_logs: shaula_core::operation_log::LogConfig,
+    pub setup_info: Option<shaula_core::setup_info::SetupInfoConfig>,
 }
 
 // Type-bound redaction: the bindings server key is a
@@ -49,6 +51,8 @@ impl std::fmt::Debug for ValidatedBootstrap {
             .field("operation_timeout", &self.operation_timeout)
             .field("terraform_executable", &self.terraform_executable)
             .field("service_name", &self.service_name)
+            .field("operation_logs", &self.operation_logs)
+            .field("setup_info", &self.setup_info)
             .finish()
     }
 }
@@ -135,6 +139,13 @@ impl ValidatedBootstrap {
     }
 
     pub fn validate(config: BootstrapConfig) -> Result<Self, String> {
+        config.operation_logs.validate()?;
+        if let Some(delivery) = &config.setup_info {
+            delivery.validate()?;
+            if config.http.listen.parse::<std::net::SocketAddr>().ok() == Some(delivery.listen) {
+                return Err("setup_info listener must be separate from management HTTP".into());
+            }
+        }
         if config.version != 1 {
             return Err(format!("unsupported bootstrap version {}", config.version));
         }
@@ -220,6 +231,8 @@ impl ValidatedBootstrap {
             operation_timeout: Duration::from_secs(config.execution.operation_timeout_secs),
             terraform_executable,
             service_name: config.observability.service_name,
+            operation_logs: config.operation_logs,
+            setup_info: config.setup_info,
         })
     }
 }

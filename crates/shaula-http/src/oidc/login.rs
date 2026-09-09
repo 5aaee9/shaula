@@ -186,16 +186,33 @@ pub(crate) async fn logout(
 pub(crate) fn document(path: &str) -> bool {
     matches!(
         path,
-        "/" | "/fleets" | "/templates" | "/templates/new" | "/auth" | "/changes"
-    ) || path.strip_prefix("/fleets/").is_some_and(|key| {
-        !matches!(key, "." | "..") && shaula_core::fleet::FleetKey::new(key).is_ok()
-    }) || path
-        .strip_prefix("/templates/")
-        .and_then(|path| path.strip_suffix("/revisions/new"))
-        .is_some_and(|key| {
-            !matches!(key, "." | "..")
-                && shaula_core::template::TemplateProfileKey::new(key).is_ok()
+        "/" | "/fleets"
+            | "/templates"
+            | "/templates/new"
+            | "/auth"
+            | "/changes"
+            | "/jobs"
+            | "/jobs/runners"
+    ) || path
+        .strip_prefix("/jobs/runners/")
+        .or_else(|| path.strip_prefix("/jobs/"))
+        .is_some_and(|id| {
+            !id.is_empty()
+                && id.len() <= 128
+                && id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
         })
+        || path.strip_prefix("/fleets/").is_some_and(|key| {
+            !matches!(key, "." | "..") && shaula_core::fleet::FleetKey::new(key).is_ok()
+        })
+        || path
+            .strip_prefix("/templates/")
+            .and_then(|path| path.strip_suffix("/revisions/new"))
+            .is_some_and(|key| {
+                !matches!(key, "." | "..")
+                    && shaula_core::template::TemplateProfileKey::new(key).is_ok()
+            })
 }
 
 pub(super) fn return_target(raw: Option<&str>) -> String {
@@ -209,6 +226,31 @@ pub(super) fn return_target(raw: Option<&str>) -> String {
         return "/fleets".into();
     }
     let params: Vec<_> = url::form_urlencoded::parse(query.as_bytes()).collect();
+    if path == "/jobs" || path.starts_with("/jobs/") {
+        let mut keys = std::collections::HashSet::new();
+        if params.len() > 12
+            || params.iter().any(|(key, value)| {
+                !matches!(
+                    key.as_ref(),
+                    "fleet_key"
+                        | "repository"
+                        | "job_name"
+                        | "status"
+                        | "since"
+                        | "until"
+                        | "cursor"
+                        | "limit"
+                        | "association"
+                ) || !keys.insert(key.as_ref())
+                    || value.len() > 2048
+                    || value.chars().any(char::is_control)
+                    || value.contains('\\')
+            })
+        {
+            return "/fleets".into();
+        }
+        return raw.to_owned();
+    }
     if params.iter().any(|(key, value)| {
         !matches!(key.as_ref(), "key" | "id" | "type")
             || value.len() > 256

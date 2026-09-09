@@ -140,6 +140,8 @@ pub struct StatisticsSnapshot {
 pub struct JobMessage {
     pub runner_request_id: i64,
     pub job_id: String,
+    #[serde(default, skip_serializing_if = "crate::jobs::JobMetadata::is_empty")]
+    pub metadata: crate::jobs::JobMetadata,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -148,6 +150,8 @@ pub struct JobStartedMessage {
     pub job_id: String,
     pub runner_id: i64,
     pub runner_name: String,
+    #[serde(default, skip_serializing_if = "crate::jobs::JobMetadata::is_empty")]
+    pub metadata: crate::jobs::JobMetadata,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -156,6 +160,10 @@ pub struct JobCompletedMessage {
     pub job_id: String,
     pub runner_id: i64,
     pub runner_name: String,
+    #[serde(default, skip_serializing_if = "crate::jobs::JobMetadata::is_empty")]
+    pub metadata: crate::jobs::JobMetadata,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
 }
 
 /// A live message session with its queue access material.

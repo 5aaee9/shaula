@@ -1,10 +1,12 @@
 //! Atomic message facts and acknowledged checkpoints; no network calls.
 use sea_orm::{ConnectionTrait, DatabaseTransaction, DbBackend, QueryResult, Statement};
-use sha2::Digest;
 use shaula_core::ports::PollMessage;
 use shaula_core::registry::{IngestedMessage, SessionEffectContext};
 
 use crate::{Store, StoreError, StoreResult};
+
+#[path = "listener_digest.rs"]
+mod digest;
 
 impl Store {
     pub(crate) async fn listener_context_current_tx(
@@ -42,17 +44,43 @@ impl Store {
                 "invalid listener message statistics or ID".into(),
             ));
         }
-        let payload = serde_json::to_vec(message)
-            .map_err(|_| StoreError::Corrupt("listener message cannot be encoded".into()))?;
-        let digest = hex::encode(sha2::Sha256::digest(payload));
+        let digest = digest::current(message)?;
         if let Some(row) = self
             .listener_message_tx(&tx, fleet, context, message.message_id)
             .await?
         {
-            if row.try_get::<String>("", "payload_digest")? != digest {
+            let version: i64 = row.try_get("", "payload_digest_version")?;
+            let expected = match version {
+                1 => digest::legacy(message)?,
+                2 => digest.clone(),
+                _ => {
+                    return Err(StoreError::Corrupt(
+                        "unsupported listener digest version".into(),
+                    ))
+                }
+            };
+            if row.try_get::<String>("", "payload_digest")? != expected {
                 return Err(StoreError::Corrupt(
                     "redelivered listener message changed contents".into(),
                 ));
+            }
+            if version == 1 {
+                // Only a real, currently authorized re-delivery can supply the
+                // metadata omitted by the old adapter. Freeze it exactly once.
+                self.jobs_ingest_tx(&tx, fleet, context, message, now)
+                    .await?;
+                tx.execute(Statement::from_sql_and_values(
+                    DbBackend::Sqlite,
+                    "UPDATE listener_messages SET payload_digest=?,payload_digest_version=2
+                     WHERE fleet_key=? AND epoch=? AND message_id=? AND payload_digest_version=1",
+                    [
+                        digest.clone().into(),
+                        fleet.into(),
+                        context.epoch.into(),
+                        message.message_id.into(),
+                    ],
+                ))
+                .await?;
             }
             let result = self
                 .listener_message_view_tx(&tx, fleet, context.epoch, &row)
@@ -76,9 +104,9 @@ impl Store {
         let json = serde_json::to_string(&context.auth_context)
             .map_err(|_| StoreError::Corrupt("listener context cannot be encoded".into()))?;
         tx.execute(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "INSERT INTO listener_messages(fleet_key,epoch,message_id,payload_digest,incarnation,
+            "INSERT INTO listener_messages(fleet_key,epoch,message_id,payload_digest,payload_digest_version,incarnation,
              fleet_revision,mutation_fence,profile_key,auth_revision,context_json,created_at,updated_at)
-             VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+             VALUES(?,?,?,?,2,?,?,?,?,?,?,?,?)",
             [fleet.into(),context.epoch.into(),message.message_id.into(),digest.into(),
              context.guard.incarnation.clone().into(),context.guard.desired_revision.into(),
              context.guard.mutation_fence.into(),context.auth_context.profile_key.clone().into(),
@@ -96,6 +124,8 @@ impl Store {
         ))
         .await?;
         self.listener_observations_tx(&tx, fleet, context.epoch, message, now)
+            .await?;
+        self.jobs_ingest_tx(&tx, fleet, context, message, now)
             .await?;
         self.outbox_enqueue(
             &tx,

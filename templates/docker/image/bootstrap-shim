@@ -2,6 +2,7 @@
 """Consume the fixed JIT upload, then replace this process with Runner.Listener."""
 
 import base64
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,19 @@ RUNNER_ROOT = Path("/home/runner")
 LISTENER = "/home/runner/bin/Runner.Listener"
 MAX_JIT_BYTES = 65536
 CONFIG_FILES = frozenset({".runner", ".credentials", ".credentials_rsaparams"})
+SETUP_HELPER = Path("/usr/local/lib/shaula/setup_info.py")
+
+
+def prepare_setup_info():
+    try:
+        module_spec = importlib.util.spec_from_file_location("shaula_setup_info", SETUP_HELPER)
+        helper = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(helper)
+        if not helper.prepare(runner_root=RUNNER_ROOT):
+            sys.stderr.write("bootstrap-shim: setup info unavailable\n")
+    except Exception:
+        # Optional diagnostics have a separate failure boundary from required JIT.
+        sys.stderr.write("bootstrap-shim: setup info unavailable\n")
 
 
 def unique_object(pairs):
@@ -76,10 +90,11 @@ def main():
             raise ValueError("bootstrap arguments are not supported")
         os.umask(0o077)
         jit = consume_jit()
+        prepare_setup_info()
         environment = {
             key: value
             for key, value in os.environ.items()
-            if not key.upper().startswith("ACTIONS_RUNNER_INPUT_")
+            if not key.upper().startswith(("ACTIONS_RUNNER_INPUT_", "SHAULA_SETUP_"))
         }
         environment["ACTIONS_RUNNER_INPUT_JITCONFIG"] = jit
         os.chdir(RUNNER_ROOT)

@@ -6,9 +6,9 @@ use std::time::Duration;
 
 use shaula_core::error::{CoreResult, ReasonCode};
 
+use super::build_engine_command;
 use super::engine_process::EngineSpawn;
 use super::engine_state::parse_raw_state_v4;
-use super::{build_engine_command, spawn_fenced};
 use super::{engine_version, err, hash_binary, run_engine, ProcessOutput, TerraformFlow};
 
 impl TerraformFlow {
@@ -45,6 +45,7 @@ impl TerraformFlow {
     ) -> CoreResult<ProcessOutput> {
         let mut args = vec![
             "init".to_string(),
+            "-no-color".to_string(),
             "-input=false".to_string(),
             // R9-06 (spec 0004 §5): the published lock file IS the
             // attested provider-set authority — init must never modify
@@ -70,6 +71,7 @@ impl TerraformFlow {
         // `shaula.tfvars.json` is not in Terraform's auto-load set.
         let mut args = vec![
             "plan".to_string(),
+            "-no-color".to_string(),
             "-input=false".to_string(),
             "-var-file=shaula.tfvars.json".to_string(),
             "-out=tfplan".to_string(),
@@ -121,12 +123,17 @@ impl TerraformFlow {
     ) -> CoreResult<EngineSpawn> {
         let args = vec![
             "apply".to_string(),
+            "-no-color".to_string(),
             "-input=false".to_string(),
             "-auto-approve".to_string(),
             "tfplan".to_string(),
         ];
         let mut command = build_engine_command(&self.executable, cwd, &args, env)?;
-        spawn_fenced(&mut command, self.timeout)
+        super::engine_process::spawn_fenced_logged(
+            &mut command,
+            self.timeout,
+            crate::operation_capture::command("apply"),
+        )
     }
 
     /// Read-only state listing for the empty-state proof. Read-only
