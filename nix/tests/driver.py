@@ -32,7 +32,7 @@ with subtest("TLS-verified OIDC, embedded assets and authenticated persistence")
         "sqlite3 /var/lib/shaula/shaula.db 'PRAGMA integrity_check' | grep '^ok$'"
     )
     machine.fail(
-        "journalctl -u shaula --no-pager | grep -F github_pat_nixos_fixture_never_valid"
+        "journalctl -u shaula --no-pager | grep -F github_app_nixos_fixture_never_valid"
     )
     machine.fail(
         "journalctl -u shaula --no-pager | grep -F nixos-test-only-oidc-secret"

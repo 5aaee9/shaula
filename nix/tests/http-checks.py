@@ -11,7 +11,8 @@ import requests
 BASE = "https://shaula.test"
 ISSUER = "https://idp.test:8443"
 PROFILE = "/api/v1/github-auth-profiles/vm-test"
-PAT = "github_pat_nixos_fixture_never_valid"
+APP_ID = "4863460"
+PRIVATE_KEY = "github_app_nixos_fixture_never_valid"
 STATE = Path("/tmp/shaula-client-state.json")
 CA = "/etc/ssl/certs/ca-certificates.crt"
 
@@ -37,7 +38,7 @@ def expect(client, method, path, status, **kwargs):
         f"{method} {path}: expected {status}, got {response.status_code}"
     )
     assert "no-store" in response.headers.get("Cache-Control", ""), path
-    assert PAT not in response.text, "credential leaked in HTTP response"
+    assert PRIVATE_KEY not in response.text, "credential leaked in HTTP response"
     return response
 
 
@@ -76,10 +77,11 @@ def initial():
     expect(api(subject="reader"), "PUT", PROFILE, 403, json={})
 
     body = {
-        "kind": "pat",
-        "token": PAT,
-        "pat_principal": "octocat",
-        "target_allowlist": [{"kind": "organization", "owner": "example-org"}],
+        "kind": "github_app",
+        "schema_version": 2,
+        "app_id": APP_ID,
+        "private_key": PRIVATE_KEY,
+        "target_policy": [{"kind": "organization", "owner": "example-org"}],
     }
     expect(operator, "PUT", PROFILE, 428, json=body)
     headers = {"If-None-Match": "*", "Idempotency-Key": "nixos-profile-create"}
