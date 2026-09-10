@@ -172,6 +172,11 @@ in
         DynamicUser = true;
         StateDirectory = cfg.stateDirectory;
         StateDirectoryMode = "0700";
+        # terraform init downloads provider plugins into per-generation
+        # workspaces under the state dir and fork/execs them during
+        # plan/apply; the DynamicUser private state bind mount is noexec,
+        # so mark it executable for the service namespace.
+        ExecPaths = [ "/var/lib/private/${cfg.stateDirectory}" ];
         RuntimeDirectory = "shaula";
         RuntimeDirectoryMode = "0700";
         WorkingDirectory = dataDir;
