@@ -44,7 +44,23 @@ impl FleetSupervisor {
             .await?;
         let jit = match self.github.generate_jit(scale_set_id, runner_name).await {
             Ok(EffectOutcome::Definite(jit)) => jit,
-            Ok(EffectOutcome::Uncertain { .. }) | Err(_) => {
+            Ok(EffectOutcome::Uncertain { summary, .. }) => {
+                tracing::warn!(
+                    generation = %generation_id,
+                    summary = %summary,
+                    "jit mint uncertain; generation quarantined"
+                );
+                self.store
+                    .generation_advance(generation_id, GenerationState::Quarantined, now)
+                    .await?;
+                return Ok(None);
+            }
+            Err(failure) => {
+                tracing::warn!(
+                    generation = %generation_id,
+                    summary = %failure.summary(),
+                    "jit mint failed; generation quarantined"
+                );
                 self.store
                     .generation_advance(generation_id, GenerationState::Quarantined, now)
                     .await?;

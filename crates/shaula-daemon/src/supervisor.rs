@@ -230,6 +230,18 @@ impl FleetSupervisor {
             },
             &counters,
         );
+        // Permanent ops telemetry: the create/retire decision inputs are
+        // otherwise invisible when a fleet silently stalls (2026-09-10
+        // incident: quarantined generations and missing transitions were
+        // undiagnosable without them).
+        tracing::info!(
+            fleet = %self.config.fleet_key,
+            demand,
+            effective = counters.effective_capacity,
+            occupancy = counters.resource_occupancy,
+            creates,
+            "capacity decision"
+        );
         let current_target = target(
             &self.config.capacity,
             &AssignedDemand {
