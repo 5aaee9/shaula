@@ -79,8 +79,9 @@ Templates 已发布模板提供 **Update**，进入独立 review 页面。操作
 5. 仅提交 **Update** 才执行 mutation。沿用 publication admission、static validation 和
    自动 activation。既有 Active 在新候选通过前保持有效；不兼容 platform/bindings contract、
    schema 或 policy 按原门禁拒绝，不自动修正或扩大授权范围。
-6. 成功后展示 Change 及新 revision。历史 revision 和秘密绑定字节保持不可变；所有 Fleet
-   仍保留原 pin，采用新 Active 需显式 Fleet replacement 并满足原 occupancy 门禁。
+6. 成功后展示 Change 及新 revision。历史 revision 和秘密绑定字节保持不可变；pinned
+   Fleet 仍保留原 pin，采用新 Active 需显式 Fleet replacement 并满足原 occupancy 门禁。
+   bare key 引用的 follower Fleet 由 daemon 级联自动升级（spec 0023），本条款不再适用。
 
 ## 5. HTTP publication and update contract
 
