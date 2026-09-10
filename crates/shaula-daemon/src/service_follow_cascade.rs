@@ -7,7 +7,7 @@
 
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::fleet::FleetSpec;
-use shaula_core::registry::{Actor, ChangeView, MutationError, MutationFacts, Scope};
+use shaula_core::registry::{Actor, MutationError, Scope};
 
 use super::ControlPlane;
 
@@ -101,13 +101,10 @@ impl ControlPlane {
             return Ok(false);
         }
 
-        let revision = head.desired_revision + 1;
-        let change_id = self.new_id();
-        let facts = MutationFacts {
-            resource_kind: "fleet",
-            resource_key: key.to_string(),
+        let draft = super::FleetMutationDraft {
+            key: key.to_string(),
             incarnation: head.incarnation.clone(),
-            revision,
+            revision: head.desired_revision + 1,
             // The spec is verbatim: the bare key already encodes "follow".
             spec_json: latest.spec_json.clone(),
             template: Some(pin),
@@ -117,28 +114,22 @@ impl ControlPlane {
             auth_desired: Some(latest.auth_desired.clone()),
             inputs_digest: latest.inputs_digest.clone(),
             actor: "shaula-daemon".to_string(),
+            kind: "Replace",
             now,
-            change: ChangeView {
-                id: change_id.clone(),
-                resource_kind: "fleet".into(),
-                resource_key: key.to_string(),
-                revision,
-                kind: "Replace".into(),
-                state: "Pending".into(),
-                reason: None,
-            },
-            outbox_topic: "fleet.change".to_string(),
-            outbox_payload: format!("{{\"change\":\"{change_id}\"}}"),
-            idempotency: None,
         };
+        let change_id = self.new_id();
+        let change = draft.change_view(&change_id);
         // Serialize against in-flight admission claims exactly like an
         // operator PUT (R6-02).
         let effect_gate = self.effect_gates.acquire_exclusive(key).await;
-        let committed = self.store.commit_fleet_mutation(facts).await;
+        let committed = self
+            .store
+            .commit_fleet_mutation(draft.into_facts(change, None))
+            .await;
         drop(effect_gate);
         match committed? {
             Ok(()) => {
-                tracing::info!(fleet = %key, revision, "follower upgraded to active template revision");
+                tracing::info!(fleet = %key, revision = head.desired_revision, "follower upgraded to active template revision");
                 Ok(true)
             }
             // A lost fence race or a just-created generation defers to the

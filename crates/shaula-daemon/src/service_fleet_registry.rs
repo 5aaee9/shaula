@@ -4,12 +4,11 @@ use async_trait::async_trait;
 
 use super::{template_referenced, unprocessable, ControlPlane};
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
-use shaula_core::fleet::TemplateProfileRefDto;
 use shaula_core::fleet::{normalize_fleet, validate_fleet_spec, FleetSpec};
 use shaula_core::registry::HealthPort;
 use shaula_core::registry::{
     Actor, ChangeView, FleetRegistryPort, FleetResource, FleetStatus, MutationAccepted,
-    MutationError, MutationFacts, Scope,
+    MutationError, Scope,
 };
 
 #[async_trait]
@@ -111,11 +110,12 @@ impl FleetRegistryPort for ControlPlane {
             }
         }
 
-        // Admission: an already-admitted Fleet keeps its retained exact pin
-        // when the reference is unchanged; only a NEW key/revision resolves
-        // current Active (and then requires zero occupancy) — spec 0005
-        // section 5.1/158. Inputs are validated against both authorities
-        // (schema + alias policy). Extracted to `service_fleet_ops`.
+        // Admission: an already-admitted Fleet keeps its retained pin
+        // when the reference (a bare key since spec 0023) is unchanged;
+        // only a NEW key resolves current Active (and then requires zero
+        // occupancy) — spec 0005 §6. Inputs are validated against both
+        // authorities (schema + alias policy). Extracted to
+        // `service_fleet_ops`.
         let (template, resolved_auth) = match self.resolve_admission_materials(key, &spec).await? {
             Ok(materials) => materials,
             Err(e) => return Ok(Err(e)),
@@ -229,25 +229,30 @@ impl FleetRegistryPort for ControlPlane {
             .as_ref()
             .map(|f| f.incarnation.clone())
             .unwrap_or_else(|| self.new_id());
-        let now = self.now_ms();
-        let change_id = self.new_id();
         let kind = if existing.is_some() {
             "Replace"
         } else {
             "Create"
         };
-
+        let draft = super::FleetMutationDraft {
+            key: key.to_string(),
+            incarnation: incarnation.clone(),
+            revision,
+            spec_json: spec_json.clone(),
+            template,
+            auth_desired: Some((
+                resolved_auth.profile_key.as_str().to_string(),
+                resolved_auth.revision as i64,
+            )),
+            inputs_digest: normalized.inputs_digest.clone(),
+            actor: actor.name.clone(),
+            kind,
+            now: self.now_ms(),
+        };
+        let change_id = self.new_id();
         let accepted = MutationAccepted {
             etag: format!("{incarnation}:{revision}"),
-            change: ChangeView {
-                id: change_id.clone(),
-                resource_kind: "fleet".to_string(),
-                resource_key: key.to_string(),
-                revision,
-                kind: kind.to_string(),
-                state: "Pending".to_string(),
-                reason: None,
-            },
+            change: draft.change_view(&change_id),
             no_op: false,
         };
 
@@ -266,25 +271,7 @@ impl FleetRegistryPort for ControlPlane {
             None => None,
         };
 
-        let facts = MutationFacts {
-            resource_kind: "fleet",
-            resource_key: key.to_string(),
-            incarnation: incarnation.clone(),
-            revision,
-            spec_json,
-            template,
-            auth_desired: Some((
-                resolved_auth.profile_key.as_str().to_string(),
-                resolved_auth.revision as i64,
-            )),
-            inputs_digest: normalized.inputs_digest,
-            actor: actor.name.clone(),
-            now,
-            change: accepted.change.clone(),
-            outbox_topic: "fleet.change".to_string(),
-            outbox_payload: format!("{{\"change\":\"{change_id}\"}}"),
-            idempotency,
-        };
+        let facts = draft.into_facts(accepted.change.clone(), idempotency);
         // A lost fence race surfaces as a precondition failure so the
         // client re-reads the current desired head; never overwrite.
         // R6-02: the head-advancing commit takes the fleet's effect
@@ -371,14 +358,5 @@ impl FleetRegistryPort for ControlPlane {
         change_id: &str,
     ) -> CoreResult<Option<ChangeView>> {
         self.store.fleet_change_get(change_id).await
-    }
-
-    async fn resolve_template_ref(
-        &self,
-        reference: &TemplateProfileRefDto,
-    ) -> CoreResult<Option<(String, i64, String, String)>> {
-        ControlPlane::resolve_template_ref(self, reference)
-            .await
-            .map(Some)
     }
 }

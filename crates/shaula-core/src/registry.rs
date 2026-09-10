@@ -6,7 +6,7 @@ use async_trait::async_trait;
 
 use crate::auth::AuthKind;
 use crate::error::CoreResult;
-use crate::fleet::{FleetSpec, TemplateProfileRefDto};
+use crate::fleet::FleetSpec;
 
 /// Authenticated principal and effective grants supplied by the HTTP adapter.
 /// `name` is a versioned stable identity, not a mutable display name.
@@ -289,13 +289,6 @@ pub trait FleetRegistryPort: Send + Sync {
         actor: &Actor,
         change_id: &str,
     ) -> CoreResult<Option<ChangeView>>;
-
-    /// Resolves a bare or exact template reference against the current
-    /// active revision; part of admission.
-    async fn resolve_template_ref(
-        &self,
-        reference: &TemplateProfileRefDto,
-    ) -> CoreResult<Option<(String, i64, String, String)>>;
 }
 
 pub mod attestation_subject;

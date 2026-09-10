@@ -12,7 +12,7 @@ use shaula_core::lifecycle::GenerationState;
 use shaula_core::registry::{ControlPlaneStore, GenerationRecord, LifecycleStore};
 use tower::ServiceExt;
 
-use common::attestation_harness::seed_profile;
+use common::attestation_harness::{put_template_profile, seed_profile};
 use common::*;
 
 /// Same platform/shape as [`fixture_artifact`] with bumped policy marker —
@@ -86,37 +86,10 @@ async fn publish_revision_2(
             .replace(r#"{"size_class": ["standard"]}"#, policy),
         None => TEMPLATE_PUT_BODY.replace("PLACEHOLDER", &digest2),
     };
-    let current = app
-        .clone()
-        .oneshot(authorized(
-            "GET",
-            "/api/v1/template-profiles/k8s-linux",
-            None,
-        ))
-        .await
-        .unwrap();
-    let etag = current.headers().get("etag").unwrap().clone();
-    let request = Request::builder()
-        .method("PUT")
-        .uri("/api/v1/template-profiles/k8s-linux")
-        .header(
-            "authorization",
-            common::oidc::bearer("template.read template.publish template.attest"),
-        )
-        .header("if-match", etag)
-        .body(Body::from(body))
-        .unwrap();
-    let response = app.clone().oneshot(request).await.unwrap();
-    let status = response.status();
-    if status != StatusCode::ACCEPTED {
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        panic!(
-            "profile PUT failed {status}: {}",
-            String::from_utf8_lossy(&body)
-        );
-    }
+    assert_eq!(
+        put_template_profile(app, "k8s-linux", body).await,
+        StatusCode::ACCEPTED
+    );
     control_plane
         .periodic_scan(1_800_000_002_000)
         .await

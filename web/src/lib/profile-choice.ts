@@ -1,5 +1,5 @@
 import type { Resource } from "./api";
-import type { FleetSpec, TemplateSummary } from "./types";
+import type { TemplateSummary } from "./types";
 
 export interface ProfileChoices {
   data?: Resource<{ profiles: TemplateSummary[] }>;
@@ -21,12 +21,4 @@ export function canChooseProfile(query: ProfileChoices, key: string, canRead: bo
   if (!canRead || !query.isSuccess) return false;
   const profile = query.data?.data.profiles.find((profile) => profile.key === key);
   return !!profile && !profileUnavailableReason(profile);
-}
-
-export function sameTemplateReference(
-  left: FleetSpec["template_profile_ref"],
-  right: FleetSpec["template_profile_ref"] | undefined,
-) {
-  // Follow-only model (ARD-0029): references are bare keys.
-  return left === right;
 }

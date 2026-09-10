@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, Save } from "lucide-react";
 import { api, MutationAttempt, resourcePath, type Resource } from "@/lib/api";
 import { useAuthProfiles, useTemplates } from "@/lib/queries";
-import { canChooseProfile, sameTemplateReference } from "@/lib/profile-choice";
+import { canChooseProfile } from "@/lib/profile-choice";
 import type { Accepted, ChangeRef, FleetResource, FleetSpec } from "@/lib/types";
 import { AdvancedSettings } from "./advanced-settings";
 import { Modal } from "./modal";
@@ -56,7 +56,7 @@ export function FleetForm({
     (!!resource && spec.github.auth_profile_ref === originalAuth) ||
     canChooseProfile(authProfiles, spec.github.auth_profile_ref, canReadAuth);
   const templateAllowed =
-    sameTemplateReference(editor.reference, resource?.data.spec.template_profile_ref) ||
+    (!!resource && editor.reference === resource.data.spec.template_profile_ref) ||
     canChooseProfile(templates, editor.template, editor.canRead);
   const customSettings = [
     !!spec.github.scale_set_name && spec.github.scale_set_name !== key,

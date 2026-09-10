@@ -2,16 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { api, resourcePath, type Resource } from "./api";
 import { checkInputContract, type InputContract } from "./input-contract";
 import { fleetInputsJson, inputEntries, inputsJson } from "./input-values";
-import { profileUnavailableReason, sameTemplateReference } from "./profile-choice";
-import type { FleetResource, FleetSpec, TemplateResource } from "./types";
+import { profileUnavailableReason } from "./profile-choice";
+import type { FleetResource, TemplateResource } from "./types";
 
-type Selection = { contract: InputContract; reference: FleetSpec["template_profile_ref"] };
+// Follow-only model (spec 0023): the submitted reference is always the
+// bare profile key, so a selection is fully described by its contract.
+type Selection = { contract: InputContract };
 type ContractRead = {
   key: string;
   revision: number;
   digest?: string;
   incarnation?: string;
-  reference: FleetSpec["template_profile_ref"];
   original: boolean;
 };
 const identity = (contract: InputContract) =>
@@ -23,8 +24,7 @@ const identity = (contract: InputContract) =>
   ]);
 
 export function useFleetInputs(resource: Resource<FleetResource> | undefined, canRead: boolean) {
-  const originalRef = resource?.data.spec.template_profile_ref;
-  const originalKey = typeof originalRef === "string" ? originalRef : (originalRef ?? "");
+  const originalKey = resource?.data.spec.template_profile_ref ?? "";
   const [template, setTemplate] = useState(originalKey);
   const [values, setValues] = useState(() =>
     inputEntries(
@@ -68,14 +68,12 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
       let selectedKey = key;
       let selectedRevision: number;
       let digest: string | undefined;
-      let reference: FleetSpec["template_profile_ref"];
       let incarnation: string | undefined;
       if (previousRead) {
         selectedKey = previousRead.key;
         selectedRevision = previousRead.revision;
         digest = previousRead.digest;
         incarnation = previousRead.incarnation;
-        reference = previousRead.reference;
         useOriginal = previousRead.original;
       } else if (useOriginal && resource) {
         const pin = resource.data.resolved.template;
@@ -83,7 +81,6 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
         selectedKey = pin.key;
         selectedRevision = pin.revision;
         digest = pin.artifactDigest;
-        reference = resource.data.spec.template_profile_ref;
       } else {
         if (!selectedKey) throw new Error("Choose a template profile first.");
         const profile = await api<TemplateResource>(
@@ -94,10 +91,6 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
         if (unavailable) throw new Error(`This template cannot be selected: ${unavailable}.`);
         selectedRevision = profile.data.activeRevision!;
         incarnation = profile.data.incarnation;
-        // Follow-latest only (spec 0023, ARD-0029): the submitted
-        // reference is always the bare key; the resolved revision appears
-        // only in the contract read.
-        reference = selectedKey;
       }
       if (generation !== sequence.current) return;
       lastRead.current = {
@@ -105,7 +98,6 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
         revision: selectedRevision,
         digest,
         incarnation,
-        reference,
         original: useOriginal,
       };
       const response = await api<InputContract>(
@@ -118,14 +110,14 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
           "The template was replaced while loading its inputs. Load it again explicitly.",
         );
       if (generation !== sequence.current) return;
-      const next = { contract, reference };
+      const next = { contract };
       setFailedSwitch(false);
       if (useOriginal) {
         originalSelection.current = next;
         setSelection(next);
         setTemplate(selectedKey);
       } else if (selection && identity(selection.contract) === identity(contract)) {
-        // Re-reading identical material cannot reset drafts or rewrite a legacy bare reference.
+        // Re-reading identical material cannot reset drafts.
         setTemplate(selectedKey);
       } else if (values.size) {
         setPending(next);
@@ -231,9 +223,9 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
     cancelSwitch,
     confirmSwitch,
     canRestoreOriginal:
-      !!resource && !sameTemplateReference(selection?.reference ?? originalRef ?? "", originalRef),
+      !!resource && (selection?.contract.profileKey ?? originalKey) !== originalKey,
     restoreOriginal,
-    reference: selection?.reference ?? originalRef ?? "",
+    reference: currentKey,
     json: inputsJson(values),
   };
 }
