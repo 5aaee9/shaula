@@ -105,12 +105,6 @@ pub struct RunnerGroupList {
     pub value: Vec<RunnerGroup>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateSessionBody {
-    pub owner_name: String,
-}
-
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunnerScaleSetSession {
@@ -203,14 +197,6 @@ pub struct RunnerReferenceList {
     pub count: i64,
     #[serde(default)]
     pub value: Vec<RunnerReference>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RunnerScaleSetJitRunnerSetting {
-    pub name: String,
-    #[serde(rename = "workFolder")]
-    pub work_folder: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
