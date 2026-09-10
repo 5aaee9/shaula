@@ -376,8 +376,15 @@ target[fleet] = min(maxRunners[fleet], minRunners[fleet] + TotalAssignedJobs[fle
 createCount[fleet] = min(
     max(0, target[fleet] - effectiveCapacity[fleet]),
     max(0, maxRunners[fleet] - resourceOccupancy[fleet])
+
 )
 ```
+
+一个 tick 算出的 create 预算**并发启动**：每个 Create 在入口获取全局 create
+信号量（`create_concurrency`，跨 Fleet 共享），因此 N 个同时排队的 job 不需要
+串行等待 N 次 JIT+init+plan+apply 链路。已启动的 Create 全部结束后才传播首个
+错误——不得取消已越过效果边界（JIT 已 mint / apply 已跑）的兄弟；下一 tick
+从账本 level-triggered 地重算容量，不盲目重发。
 
 scale-down 优先选择 observed Idle；由于 Completed 可能丢失，stale Busy observation 不能永久阻塞候选检查，但 GitHub removal 的 `JobStillRunning` 仍是 Destroy 前的 authoritative safety gate。Retirement 一旦开始即单调前进；需求回升会在 occupancy 允许时新建 Generation，而不 Update 或恢复旧 Generation。
 
