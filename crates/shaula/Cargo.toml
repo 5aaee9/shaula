@@ -15,14 +15,11 @@ shaula-core = { workspace = true }
 shaula-daemon = { workspace = true }
 shaula-http = { workspace = true }
 shaula-store = { workspace = true }
-shaula-store-migration = { workspace = true }
 shaula-scaleset = { workspace = true }
 shaula-template = { workspace = true }
 shaula-observability = { workspace = true }
 clap = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 reqwest = { workspace = true }
@@ -34,6 +31,8 @@ hex = { workspace = true }
 tempfile = "3"
 
 [dev-dependencies]
+serde = { workspace = true }
+serde_yaml = { workspace = true }
 uuid = { workspace = true }
 base64 = { workspace = true }
 sea-orm = { workspace = true }

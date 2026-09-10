@@ -8,7 +8,6 @@ description = "Axum adapter and strict HTTP DTOs for the Shaula control plane"
 
 [dependencies]
 shaula-core = { workspace = true }
-shaula-observability = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
 bytes = { workspace = true }
@@ -36,7 +35,6 @@ uuid = { workspace = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
 axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rcgen = "0.13"
