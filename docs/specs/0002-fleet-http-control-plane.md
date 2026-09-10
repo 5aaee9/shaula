@@ -87,7 +87,7 @@ YAML、Git 或其他系统可以调用 HTTP，但只是 client。Template bytes 
 
 ### 3.3 Runtime artifacts
 
-SQLite（含 HTTP-backed Terraform state/locks/worker facts）、retained artifacts/inputs 和 unresolved emergency state 构成 spec 0010 的 durability set；普通 Workspace 副本可重建。Artifact bytes 不是 desired resource；只有 current `active_revision` 及其 durable activation provenance 可以接收新的 Fleet reference。激活由 [spec 0017](0017-automatic-template-activation.md) 的静态校验自动触发，conformance 为独立运行证据。已准入 Fleet 的旧 exact Revision/artifact/activation provenance pin 在引用清除前仍可用于其正常 reconcile、未来 Create、Destroy 与恢复。Workspace/state 只属于一个 Runner Generation，不能成为共享 Fleet configuration。
+SQLite（含 HTTP-backed Terraform state/locks/worker facts）、retained artifacts/inputs 和 unresolved emergency state 构成 spec 0010 的 durability set；普通 Workspace 副本可重建。Artifact bytes 不是 desired resource；只有 current `active_revision` 及其 durable activation provenance 可以接收新的 Fleet reference。激活由 [spec 0017](0017-automatic-template-activation.md) 的静态校验自动触发，conformance 为独立运行证据。已准入 Fleet 的 retained Revision/artifact/activation provenance pin 在引用清除前仍可用于其正常 reconcile、未来 Create、Destroy 与恢复。Workspace/state 只属于一个 Runner Generation，不能成为共享 Fleet configuration。
 
 ## 4. Resource model
 
@@ -113,10 +113,7 @@ Canonical desired Fleet representation 至少包含：
       "min_runners": 0,
       "max_runners": 20
     },
-    "template_profile_ref": {
-      "key": "kubernetes-linux-x64",
-      "revision": 4
-    },
+    "template_profile_ref": "kubernetes-linux-x64",
     "template_inputs": {
       "size_class": "standard"
     }
@@ -455,8 +452,8 @@ OTLP failure 不使 committed mutation 失效或阻塞 reconcile。Rate-limited 
 | In-memory wakeup lost | Outbox/periodic scan eventually observes revision |
 | Daemon crashes after commit | Startup resumes Fleet Change/Auth Handoff/Runner Operation from SQLite |
 | Client disconnects after commit | Continue asynchronous reconciliation |
-| Template key has no Active revision | Reject every new or replacement Fleet reference；an already-admitted Fleet may continue from its retained exact pin without current Active |
-| Pinned Template revision/artifact/attestation unavailable or invalid | Block affected Fleet closed and preserve evidence；never substitute a newer revision |
+| Template key has no Active revision | Reject every new or replacement Fleet reference；an already-admitted Fleet may continue from its retained pin without current Active |
+| Retained Template revision/artifact/attestation unavailable or invalid | Block affected Fleet closed and preserve evidence；never substitute a newer revision |
 | Auth Candidate validation fails | Keep prior active revision and do not advance dependent desired Auth tuples |
 | Auth Handoff cannot prove access/ownership | Keep dependent Fleet quiesced/degraded with explicit desired/observed tuple lag；retain all referenced revisions and never fallback |
 | Unbound Fleet or authenticated Scale Set absence during handoff | Record access/absence context only；ordinary Fleet reconciliation exclusively decides create-or-adopt, ID binding and session |

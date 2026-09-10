@@ -253,8 +253,8 @@ export function TemplateUpdateForm({
         )}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-lg text-xs text-muted-foreground">
-            The new revision activates after validation. Existing fleets keep their pinned revision;
-            update each fleet explicitly to adopt the new Active revision.
+            The new revision activates after validation. Fleets follow the new Active revision
+            automatically once their runners drain (spec 0023); no per-fleet update is needed.
           </p>
           <div className="flex gap-2">
             <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
