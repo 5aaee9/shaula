@@ -104,7 +104,7 @@ printf 'pre-start\\n' >> "$GUEST_ROOT/trace"
         # Retain the production control flow. Only absolute guest paths and
         # the block-device predicate are replaced; host operations are stubs.
         source = (TEMPLATE / "bootstrap.tftpl").read_text(encoding="utf-8")
-        guest_paths = r"/(?:var/lib/shaula|opt/actions-runner|var/lib/cloud|run/cloud-init)(?:/[\w.-]+)*"
+        guest_paths = r"/(?:var/lib/shaula|opt/actions-runner|var/lib/cloud|run/cloud-init|_work)(?:/[\w.-]+)*"
         source = re.sub(guest_paths, lambda match: '"${GUEST_ROOT}' + match[0] + '"', source)
         self.write("bootstrap", source)
         self.write("fixture-environment", """export PATH="$GUEST_ROOT/commands:$PATH"

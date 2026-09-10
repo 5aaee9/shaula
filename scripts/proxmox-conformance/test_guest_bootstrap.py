@@ -36,6 +36,16 @@ class GuestBootstrapTests(unittest.TestCase):
         self.assertEqual(self.guest.trace().count("listener-env-ok"), 1)
         self.assertEqual(self.guest.trace().count("pre-start"), 1)
 
+    def test_workdir_precreated_for_runner_before_listener(self):
+        # The scale-set JIT config pins the ARC-style absolute "/_work"
+        # workFolder; the guest must hand the runner user a writable one.
+        result = self.guest.run()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace = self.guest.trace()
+        self.assertIn("chown <runner:runner>", trace)
+        self.assertLess(trace.index("chown <runner:runner>"), trace.index("runuser"))
+        self.assertTrue((self.guest.root / "_work").is_dir())
+
     def test_pre_start_failure_prevents_registration_and_retry(self):
         self.guest.write("var/lib/shaula/pre-start", "exit 17\n")
         self.assert_stopped_before_listener(self.guest.run())

@@ -9,6 +9,12 @@ mkdir /var/lib/shaula/started
 test -x /opt/actions-runner/bin/Runner.Listener
 id runner >/dev/null
 
+# The scale-set JIT config pins the ARC container-style absolute workFolder
+# ("/_work"); on a VM the runner user cannot create it at the fs root, so
+# pre-create it owned by the runner before the Listener validates it.
+mkdir -p /_work
+chown runner:runner /_work
+
 # Publisher-authored preparation code receives no JIT environment. A failed
 # hook prevents registration; its text is data to Terraform, not a template.
 /bin/bash -euo pipefail /var/lib/shaula/pre-start
