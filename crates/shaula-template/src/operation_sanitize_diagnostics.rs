@@ -1,114 +1,105 @@
-//! Operator diagnostics, separate from the stricter Runner Setup Info projection.
+//! Operator diagnostics: publish by default, redact sensitive content in place.
+//!
+//! The caller replaces every known sensitive value before this stage. Here we
+//! redact sensitive-keyed assignments, JSON pairs and well-known token shapes
+//! so ordinary provider text survives. Only content that cannot be redacted
+//! in place (PEM blocks) is withheld; redaction failures fail closed.
 use std::sync::LazyLock;
 
 use regex::Regex;
 
+/// Key-name fragments whose values are never published, in any syntax.
+const SENSITIVE_KEYS: &str = r"(?:password|passwd|token|secret|credential|authorization|cookie|private[_ -]?key|client[_ -]?secret|access[_ -]?key|api[_ -]?key)";
+
 #[derive(Default)]
 pub(super) struct Diagnostics {
-    remaining: usize,
     pem: bool,
-    dump_depth: usize,
-    dump_quote: bool,
-    dump_escape: bool,
-    dump_paragraph: bool,
 }
 
 impl Diagnostics {
+    /// Returns the publishable line; `None` when the record must be withheld.
     pub(super) fn line(&mut self, text: &str) -> Option<String> {
         let content = text.trim_start().trim_start_matches('│').trim_start();
         if self.pem || content.contains("-----BEGIN ") {
             self.pem = !content.contains("-----END ");
             return None;
         }
-        if self.dump_depth > 0 || content.contains('{') || structured_array(content) {
-            self.track_dump(content);
-            return None;
-        }
-        if self.dump_paragraph {
-            self.dump_paragraph = !content.is_empty();
-            return None;
-        }
-        let lowered = content.to_ascii_lowercase();
-        if [
-            "response body:",
-            "request body:",
-            "state dump:",
-            "debug dump:",
-        ]
-        .iter()
-        .any(|marker| lowered.contains(marker))
-        {
-            self.dump_paragraph = true;
-            return None;
-        }
-        let text = redact_url_parts(text);
-        let content = text.trim_start().trim_start_matches('│').trim_start();
-        if unsafe_diagnostic(content) {
-            return None;
-        }
-        if content.starts_with("Error:") || content.starts_with("Warning:") {
-            // A diagnostic may have paragraphs and source context, but cannot
-            // authorize an unbounded stream of arbitrary provider output.
-            self.remaining = 256;
-            return Some(text);
-        }
-        if let Some(progress) = super::progress_line(content) {
-            self.remaining = 0;
-            return Some(progress);
-        }
-        if provider_context(content) {
-            return Some(text);
-        }
-        if content == "╷" || content == "╵" {
-            self.remaining = 0;
-            return Some(text);
-        }
-        if self.remaining > 0 {
-            self.remaining -= 1;
-            return Some(text);
-        }
-        None
-    }
-
-    fn track_dump(&mut self, text: &str) {
-        for character in text.chars() {
-            if self.dump_escape {
-                self.dump_escape = false;
-            } else if self.dump_quote && character == '\\' {
-                self.dump_escape = true;
-            } else if character == '"' {
-                self.dump_quote = !self.dump_quote;
-            } else if !self.dump_quote {
-                match character {
-                    '{' | '[' => self.dump_depth = self.dump_depth.saturating_add(1),
-                    '}' | ']' => self.dump_depth = self.dump_depth.saturating_sub(1),
-                    _ => {}
-                }
-            }
-        }
+        redact_inline(text)
     }
 }
 
-fn structured_array(text: &str) -> bool {
-    text.starts_with('[') && !text.starts_with("[REDACTED]")
+/// GitHub Actions workflow commands (`::error ...::`, `::add-mask::`) never
+/// leave the sanitizer: archived text may later be echoed into a workflow
+/// step where the runner would execute them. Plain `::` (IPv6, namespaces)
+/// is not matched.
+pub(super) fn actions_command(text: &str) -> bool {
+    static COMMAND: LazyLock<Option<Regex>> = LazyLock::new(|| {
+        Regex::new(
+            r"::(?:add-mask|set-output|set-env|add-path|add-matcher|remove-matcher|error|warning|notice|debug|group|endgroup|save-state|stop-commands|echo)(?:[ \t][^\n:]*)?::",
+        )
+        .ok()
+    });
+    COMMAND.as_ref().is_some_and(|re| re.is_match(text))
 }
 
-fn unsafe_diagnostic(text: &str) -> bool {
+fn redact_inline(text: &str) -> Option<String> {
+    let text = redact_url_parts(text);
+    let text = redact_json_pairs(&text)?;
+    let text = redact_assignments(&text)?;
+    redact_tokens(&text)
+}
+
+/// `"key": "value"` pairs with a sensitive key keep the key; the value is
+/// redacted, including quoted values that contain spaces.
+fn redact_json_pairs(text: &str) -> Option<String> {
+    static PAIR: LazyLock<Option<Regex>> = LazyLock::new(|| {
+        Regex::new(&format!(
+            r#"(?i)("[^"\n]*{keys}[^"\n]*")(\s*:\s*)("(?:[^"\\\n]|\\.)*"|-?[0-9]+(?:\.[0-9]+)?|true|false|null)"#,
+            keys = SENSITIVE_KEYS,
+        ))
+        .ok()
+    });
+    let pair = PAIR.as_ref()?;
+    Some(
+        pair.replace_all(text, r#"${1}${2}"[REDACTED]""#)
+            .into_owned(),
+    )
+}
+
+/// Sensitive assignments (`password = x`, `token: x`, `secret is x`) keep the
+/// key; the value and the rest of the record are redacted so headers such as
+/// `Authorization: Bearer …` cannot leak their second token.
+fn redact_assignments(text: &str) -> Option<String> {
     static ASSIGNMENT: LazyLock<Option<Regex>> = LazyLock::new(|| {
-        Regex::new(r#"(?i)(?:password|passwd|token|secret|credential|authorization|cookie|private[_ -]?key|client[_ -]?secret|access[_ -]?key)\s*(?:[:=]|\bis\b)\s*\S|^\s*(?:\d+:\s*)?[\w.\[\]"-]+\s*=|^\s*"[^"\n]+"\s*:"#).ok()
+        Regex::new(&format!(
+            r#"(?i)({keys}[\w.\[\]" -]*\s*(?:[:=]|\bis\b)\s*)\S[^\n]*"#,
+            keys = SENSITIVE_KEYS,
+        ))
+        .ok()
     });
-    static SECRET: LazyLock<Option<Regex>> = LazyLock::new(|| {
-        Regex::new(r"(?i)\bbearer\s+\S+|\b(?:gh[pousr]_|github_pat_|AKIA|ASIA)[a-z0-9_]+|\beyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+|[a-z0-9+/_=-]{80,}|\b[a-f0-9]{32,}\b").ok()
-    });
-    ASSIGNMENT.as_ref().is_some_and(|re| re.is_match(text))
-        || SECRET.as_ref().is_some_and(|re| re.is_match(text))
+    let assignment = ASSIGNMENT.as_ref()?;
+    Some(assignment.replace_all(text, "${1}[REDACTED]").into_owned())
 }
 
-fn provider_context(text: &str) -> bool {
-    static PROVIDER: LazyLock<Option<Regex>> = LazyLock::new(|| {
-        Regex::new(r#"^- (?:Finding|Installing|Installed|Using previously-installed|Reusing previous version of) [a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+(?: from the dependency lock file| versions matching "[0-9.,~><= -]+"| v[0-9][0-9a-zA-Z.+-]*)?(?:\.\.\.| \((?:signed by HashiCorp|unauthenticated|self-signed, key ID [A-Fa-f0-9]{8,40})\))?$"#).ok()
+/// Well-known token shapes are redacted wherever they appear in a line.
+fn redact_tokens(text: &str) -> Option<String> {
+    static BEARER: LazyLock<Option<Regex>> =
+        LazyLock::new(|| Regex::new(r"\b([Bb]earer[ \t]+)\S+").ok());
+    static WELL_KNOWN: LazyLock<Option<Regex>> = LazyLock::new(|| {
+        Regex::new(
+            r"\b(?:gh[pousr]_|github_pat_|AKIA|ASIA)[A-Za-z0-9_]+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+",
+        )
+        .ok()
     });
-    PROVIDER.as_ref().is_some_and(|re| re.is_match(text))
+    static LONG_BLOB: LazyLock<Option<Regex>> =
+        LazyLock::new(|| Regex::new(r"[A-Za-z0-9+/_=-]{80,}").ok());
+    static LONG_HEX: LazyLock<Option<Regex>> =
+        LazyLock::new(|| Regex::new(r"\b[a-f0-9]{32,}\b").ok());
+    let text = BEARER.as_ref()?.replace_all(text, "${1}[REDACTED]");
+    let text = WELL_KNOWN.as_ref()?.replace_all(&text, "[REDACTED]");
+    let text = LONG_BLOB.as_ref()?.replace_all(&text, "[REDACTED]");
+    let text = LONG_HEX.as_ref()?.replace_all(&text, "[REDACTED]");
+    Some(text.into_owned())
 }
 
 fn redact_url_parts(text: &str) -> String {

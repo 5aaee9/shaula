@@ -9,11 +9,14 @@ use crate::error::CoreResult;
 mod page;
 pub use page::{InvocationQuery, InvocationsPage};
 
-pub const SANITIZATION_POLICY: &str = "shaula.operation-text/v2";
+pub const SANITIZATION_POLICY: &str = "shaula.operation-text/v3";
 
 /// Earlier sanitized archives remain readable; an unknown policy fails closed.
 pub fn supported_sanitization_policy(policy: &str) -> bool {
-    matches!(policy, "shaula.operation-text/v1" | SANITIZATION_POLICY)
+    matches!(
+        policy,
+        "shaula.operation-text/v1" | "shaula.operation-text/v2" | SANITIZATION_POLICY
+    )
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

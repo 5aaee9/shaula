@@ -1,4 +1,7 @@
-//! Record-buffered publication: arbitrary provider dumps never become log text.
+//! Record-buffered publication: provider output is published by default with
+//! known values and sensitive shapes redacted in place. Records that cannot be
+//! redacted safely (invalid encoding, oversized, control characters, workflow
+//! commands, key material) are withheld instead of ever falling back to raw.
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use zeroize::Zeroizing;
@@ -187,8 +190,8 @@ impl Sanitizer {
             return ("\n".into(), false);
         }
         if text.chars().any(|c| c.is_control() && c != '\t')
-            || text.contains("::")
             || text.contains("##[")
+            || diagnostics::actions_command(text)
         {
             return (WITHHELD.into(), true);
         }
@@ -197,71 +200,6 @@ impl Sanitizer {
             None => (WITHHELD.into(), true),
         }
     }
-}
-
-fn progress_line(text: &str) -> Option<String> {
-    let text = text.trim();
-    let static_lines = [
-        "Initializing the backend...",
-        "Initializing provider plugins...",
-        "Terraform has been successfully initialized!",
-        "No changes. Your infrastructure matches the configuration.",
-        "Success! The configuration is valid.",
-    ];
-    if static_lines.contains(&text) {
-        return Some(text.into());
-    }
-    for prefix in [
-        "Apply complete! Resources:",
-        "Destroy complete! Resources:",
-        "Plan:",
-    ] {
-        if let Some(tail) = text.strip_prefix(prefix) {
-            if tail
-                .chars()
-                .all(|c| c.is_ascii_digit() || " addedchangedestroytoimport.,- ".contains(c))
-            {
-                return Some(text.into());
-            }
-        }
-    }
-    if let Some((address, action)) = text.split_once(": ") {
-        let safe_address = address.split('[').next().unwrap_or_default();
-        if safe_address.len() <= 256
-            && safe_address.contains('.')
-            && safe_address
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "_.-".contains(c))
-        {
-            for verb in [
-                "Creating...",
-                "Still creating...",
-                "Creation complete",
-                "Destroying...",
-                "Still destroying...",
-                "Destruction complete",
-                "Refreshing state...",
-                "Reading...",
-                "Read complete",
-            ] {
-                if let Some(tail) = action.strip_prefix(verb) {
-                    // Provider IDs, URLs and data-bearing suffixes are never projected.
-                    let duration = tail.split('[').next().unwrap_or_default().trim();
-                    if duration
-                        .chars()
-                        .all(|c| c.is_ascii_digit() || " after elapsedhms.,- ".contains(c))
-                    {
-                        return Some(
-                            format!("{safe_address}: {verb} {duration}")
-                                .trim_end()
-                                .to_string(),
-                        );
-                    }
-                }
-            }
-        }
-    }
-    None
 }
 
 #[cfg(test)]
@@ -286,7 +224,7 @@ mod tests {
         assert!(text.contains("Error:"));
         assert_eq!(
             sanitizer.feed(b"password = arbitrary-new-secret\n")[0].0,
-            WITHHELD
+            "password = [REDACTED]\n"
         );
     }
 
@@ -299,7 +237,7 @@ mod tests {
             .feed(b"docker_container.runner: Creation complete after 5s [id=private-id]\n");
         assert_eq!(
             line[0].0,
-            "docker_container.runner: Creation complete after 5s\n"
+            "docker_container.runner: Creation complete after 5s [id=private-id]\n"
         );
         assert_eq!(
             sanitizer.feed(b"Apply complete! Resources: 1 added, 0 changed, 0 destroyed.\n")[0].0,
@@ -308,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn exhausted_secret_budget_withholds_even_otherwise_safe_progress() {
+    fn exhausted_budget_withholds_and_known_values_are_redacted_in_place() {
         let input = serde_json::json!({"bindings": {"large": "x".repeat(RECORD_LIMIT + 1)}});
         let mut sanitizer = Sanitizer::new(std::sync::Arc::new(SensitiveValues::from_input(
             &input,
@@ -324,7 +262,7 @@ mod tests {
         )));
         assert_eq!(
             sanitizer.feed(b"private.backend: Creating...\n")[0].0,
-            WITHHELD
+            "[REDACTED]: Creating...\n"
         );
     }
 }

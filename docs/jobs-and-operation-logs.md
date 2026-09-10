@@ -8,7 +8,7 @@ daemon 默认把各次 Create/Destroy 调用的执行记录写入 SQLite，将�
 
 Jobs、Runner 和执行状态需要 `fleet.read`；日志正文还需要独立的 `logs.read`。`fleet.write` 不授予读取日志的权限。将该 scope 添加到 [OIDC authorization grant](oidc-deployment.md) 后重启 daemon。页面只保留当前会话的内存数据，不将日志保存到 localStorage；注销或认证失效会清除页面和查询缓存。
 
-归档不是原始 provider stdout/stderr 的副本。日志先过滤已知 JIT、bindings、parameters 和其他凭据，再按发布策略保留进度及批准的诊断；其他内容用 withheld 标记代替。Terraform state、plan JSON、output JSON、环境变量和命令参数不在日志 API 中。执行结果与日志可用性分别显示：例如 Destroy 成功时日志仍可能 partial；日志完整也不证明 workflow job 成功。
+归档不是原始 provider stdout/stderr 的副本。日志先替换已知 JIT、bindings、parameters 和其他凭据，再按发布策略对敏感 key 的赋值/JSON 对与已知 token 形状做行内脱敏后发布；无法安全脱敏的记录（私钥/PEM 块、控制字符、超长行、workflow command 注入等）用 withheld 标记代替。Terraform state、plan JSON、output JSON、环境变量和命令参数不在日志 API 中。执行结果与日志可用性分别显示：例如 Destroy 成功时日志仍可能 partial；日志完整也不证明 workflow job 成功。
 
 可在现有 bootstrap YAML 的顶层设置：
 

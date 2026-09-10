@@ -112,7 +112,7 @@ Operator Log 必须保留可诊断的普通 Terraform/provider 正文，包括�
 
 脱敏覆盖本次 execution 已知的 JIT、其解码凭据、provider credential、schema-sensitive bindings/parameters、setup capability 和已知编码形式；不可记录 argv/env/state body，不通过字符串 Debug 绕过规则。匹配必须跨 pipe-read/chunk 和多行边界，不能逐个网络 chunk 独立替换后便声称完整。超长/无法安全处理记录以可见省略项替代。
 
-已知值替换不是识别任意未知 secret 的保证。受信 Template/runtime policy 必须约束 provider/provisioner 的可发布输出；明显 secret-bearing 的 payload、state/env/credential dump、私钥或认证材料等高风险记录仍使用固定占位并标记 withheld。控制字符、无效编码、超长记录及跨片段安全边界无法证明的内容继续保护，发布失败不能回退 raw。普通诊断仅因未匹配某个标题白名单，不构成无法安全发布的理由。可以用 Terraform `-json` 的批准字段构造相同文本投影，但不能直接转发全部 JSON、未知事件或 `@message` 并把 JSON 视为天然脱敏。
+已知值替换不是识别任意未知 secret 的保证。受信 Template/runtime policy 必须约束 provider/provisioner 的可发布输出。Operator Log 默认发布正文，并对敏感内容行内脱敏：敏感 key 的赋值与 JSON 对保留 key、redact value；已知 token 形状（Bearer、JWT、`ghp_`/`AKIA` 等及长 hex/base64）就地替换；带凭据/查询/片段的 URL 去掉对应部分。私钥/PEM 块、控制字符、无效编码、超长记录、workflow command 注入（`::cmd::`、`##[`）及跨片段安全边界无法证明的内容仍使用固定占位并标记 withheld；敏感值预算耗尽时整段 withheld，发布失败不能回退 raw。普通诊断仅因未匹配某个标题白名单，不构成无法安全发布的理由。行内脱敏不承诺识别未知形状的 secret；Terraform `-json` 事件流仍不能直接转发为“天然脱敏”。
 
 记录策略版本、过滤/缺失状态；不暴露被替换 secret 的长度、hash 或命中值。过滤前后与 malformed UTF-8、ANSI、换行、极长行都应有明确测试。UI 纯文本转义，不执行 HTML、ANSI 或 workflow commands；Setup Info 使用固定单行 Group，并规范化会干扰 Runner 日志显示的控制标记。
 

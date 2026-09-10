@@ -55,14 +55,14 @@ fn useful_diagnostic_context_survives_while_secret_fragments_are_redacted() {
 }
 
 #[test]
-fn diagnostic_context_never_turns_structured_dumps_or_pem_into_log_text() {
+fn diagnostic_context_redacts_sensitive_content_in_place_and_withholds_pem() {
     let mut sanitizer = Sanitizer::new(std::sync::Arc::new(SensitiveValues::default()));
     let text = output(
         &mut sanitizer,
         concat!(
             "Error: Remote API failed\n",
             "password = arbitrary-new-secret\n",
-            "{\n  \"opaque\": \"unknown-credential-value\"\n}\n",
+            "{\n  \"token\": \"unknown-credential-value\"\n}\n",
             "-----BEGIN PRIVATE KEY-----\n",
             "unknownPrivateKeyMaterialAcrossRecords\n",
             "-----END PRIVATE KEY-----\n",
@@ -79,4 +79,22 @@ fn diagnostic_context_never_turns_structured_dumps_or_pem_into_log_text() {
     ] {
         assert!(!text.contains(secret), "released {secret}: {text}");
     }
+    assert!(text.contains("Error: Remote API failed"));
+    assert!(text.contains("password = [REDACTED]"));
+    assert!(
+        text.contains("{\n"),
+        "structured dump braces survive: {text}"
+    );
+    assert!(text.contains("\"token\": [REDACTED]"));
+    assert!(text.contains("Authorization: [REDACTED]"));
+}
+
+#[test]
+fn ipv6_addresses_and_plain_namespaces_are_not_workflow_commands() {
+    let mut sanitizer = Sanitizer::new(std::sync::Arc::new(SensitiveValues::default()));
+    let text = concat!(
+        "Listening on 2001:db8::1 port 8080\n",
+        "module.runner::output rendered\n",
+    );
+    assert_eq!(output(&mut sanitizer, text), text);
 }
