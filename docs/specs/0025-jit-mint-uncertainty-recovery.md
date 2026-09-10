@@ -23,7 +23,11 @@ tick 不再到达容量决策（2026-09-10 生产事故）。替代流程按精�
    `Quarantined` 并记 WARN（含失败摘要）。实体可能残留，inventory 保持阻塞，
    由操作者处置——与"歧义即隔离"的既有规则一致。
 
-`Err`（确定性失败，请求从未到达或被明确拒绝）行为不变：记 WARN 后 quarantine。
+`Err`（确定性失败，请求从未到达或被明确拒绝）行为不变：记 WARN 后 quarantine。边界：效果类
+端点（如 generatejitconfig）**响应体解码失败**时效果可能已落地，理想分类是 Uncertain 而非
+Err；传输层解码失败目前仍归入 Err，本 spec 的恢复路径不覆盖该窗口。2026-09-10 事故中该
+窗口的触发图（generatejitconfig 返回数字 AgentStatus 导致解码失败）已在 wire 层修复，
+但传输分类的完善留给后续 ARD。
 
 ## 2. 状态与占用
 

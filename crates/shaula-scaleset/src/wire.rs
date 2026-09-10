@@ -172,9 +172,30 @@ pub struct RunnerReference {
     pub name: String,
     #[serde(rename = "runnerScaleSetId", default)]
     pub runner_scale_set_id: i64,
-    /// Inventory status; absent tolerant for older mock responses.
-    #[serde(default)]
+    /// Inventory status. The agent-list endpoint returns a string
+    /// ("online"/"offline") while generatejitconfig returns the numeric
+    /// AgentStatus enum (1 = online); normalize both (spec 0024).
+    #[serde(default, deserialize_with = "deserialize_runner_status")]
     pub status: String,
+}
+
+fn deserialize_runner_status<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde_json::Value;
+    Ok(match Value::deserialize(deserializer)? {
+        Value::String(status) => status,
+        // Azure DevOps AgentStatus: 1 = online, anything else is offline.
+        Value::Number(status) => {
+            if status.as_i64() == Some(1) {
+                "online".to_string()
+            } else {
+                "offline".to_string()
+            }
+        }
+        _ => "offline".to_string(),
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -336,5 +357,31 @@ mod wire_tests {
             "Debug output must not contain the queue access token: {rendered}"
         );
         assert!(rendered.contains("REDACTED"));
+    }
+}
+
+#[cfg(test)]
+mod runner_status_tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+    use super::*;
+
+    #[test]
+    fn runner_status_accepts_numeric_and_string_forms() {
+        // generatejitconfig embeds the numeric AgentStatus enum.
+        let numeric: RunnerReference =
+            serde_json::from_str(r#"{"id":1,"name":"r","runnerScaleSetId":9,"status":0}"#).unwrap();
+        assert_eq!(numeric.status, "offline");
+        let online: RunnerReference =
+            serde_json::from_str(r#"{"id":1,"name":"r","runnerScaleSetId":9,"status":1}"#).unwrap();
+        assert_eq!(online.status, "online");
+        // The agent-list endpoint uses string statuses.
+        let textual: RunnerReference =
+            serde_json::from_str(r#"{"id":1,"name":"r","runnerScaleSetId":9,"status":"online"}"#)
+                .unwrap();
+        assert_eq!(textual.status, "online");
+        // Absent stays tolerant for older mock responses.
+        let absent: RunnerReference =
+            serde_json::from_str(r#"{"id":1,"name":"r","runnerScaleSetId":9}"#).unwrap();
+        assert_eq!(absent.status, "");
     }
 }
