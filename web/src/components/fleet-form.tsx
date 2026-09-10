@@ -263,31 +263,6 @@ export function FleetForm({
                   }
                 />
               </Field>
-              <Field label="Pinned revision">
-                <Input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={editor.revision}
-                  disabled={editor.locked || editor.loading}
-                  placeholder="Follow latest Active"
-                  onChange={(event) => editor.setRevision(event.target.value)}
-                />
-                <p className="text-muted-foreground text-sm">
-                  Empty follows the latest Active revision automatically. Enter a number and load
-                  it to pin this exact revision.
-                </p>
-                {editor.revision && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={editor.locked || editor.loading}
-                    onClick={() => void editor.load()}
-                  >
-                    Load template revision
-                  </Button>
-                )}
-              </Field>
             </div>
             <Field label="Labels">
               <Input

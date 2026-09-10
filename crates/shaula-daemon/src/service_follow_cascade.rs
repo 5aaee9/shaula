@@ -6,7 +6,7 @@
 //! the scan loop itself never fails from one fleet's state.
 
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
-use shaula_core::fleet::{FleetSpec, TemplateProfileRefDto};
+use shaula_core::fleet::FleetSpec;
 use shaula_core::registry::{Actor, ChangeView, MutationError, MutationFacts, Scope};
 
 use super::ControlPlane;
@@ -55,10 +55,8 @@ impl ControlPlane {
         };
         let spec: FleetSpec = serde_json::from_str(&latest.spec_json)
             .map_err(|e| CoreError::new(ReasonCode::Internal, e.to_string()))?;
-        // Only bare-key references follow; an exact pin is operator authority.
-        let TemplateProfileRefDto::BareKey(_) = &spec.template_profile_ref else {
-            return Ok(false);
-        };
+        // ARD-0029: every live fleet follows its profile's Active revision;
+        // legacy exact pins normalized on read above land here as followers.
         // Resolve the CURRENT Active revision directly: the retained-pin
         // shortcut in admission resolution would freeze the lagging pin.
         let pin = match self.resolve_template_ref(&spec.template_profile_ref).await {

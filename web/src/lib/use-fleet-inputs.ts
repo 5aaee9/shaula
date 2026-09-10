@@ -24,9 +24,8 @@ const identity = (contract: InputContract) =>
 
 export function useFleetInputs(resource: Resource<FleetResource> | undefined, canRead: boolean) {
   const originalRef = resource?.data.spec.template_profile_ref;
-  const originalKey = typeof originalRef === "string" ? originalRef : (originalRef?.key ?? "");
+  const originalKey = typeof originalRef === "string" ? originalRef : (originalRef ?? "");
   const [template, setTemplate] = useState(originalKey);
-  const [revision, setRevision] = useState("");
   const [values, setValues] = useState(() =>
     inputEntries(
       resource?.rawJson
@@ -51,10 +50,9 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
 
   async function load({
     original: useOriginal = false,
-    latest: useLatest = false,
     retry = false,
     key = template.trim(),
-  }: { original?: boolean; latest?: boolean; retry?: boolean; key?: string } = {}) {
+  }: { original?: boolean; retry?: boolean; key?: string } = {}) {
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
@@ -94,17 +92,12 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
         );
         const unavailable = profileUnavailableReason(profile.data);
         if (unavailable) throw new Error(`This template cannot be selected: ${unavailable}.`);
-        const active = profile.data.activeRevision!;
-        if (!useLatest && revision && Number(revision) !== active)
-          throw new Error(
-            `Revision ${revision} is not current Active. The current Active revision is ${active}.`,
-          );
-        selectedRevision = active;
+        selectedRevision = profile.data.activeRevision!;
         incarnation = profile.data.incarnation;
-        // Follow-latest is the default (spec 0023): an explicit revision
-        // input is the pin opt-in; an empty field submits the bare key
-        // reference and the daemon cascades future Active revisions.
-        reference = revision ? { key: selectedKey, revision: active } : selectedKey;
+        // Follow-latest only (spec 0023, ARD-0029): the submitted
+        // reference is always the bare key; the resolved revision appears
+        // only in the contract read.
+        reference = selectedKey;
       }
       if (generation !== sequence.current) return;
       lastRead.current = {
@@ -134,13 +127,11 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
       } else if (selection && identity(selection.contract) === identity(contract)) {
         // Re-reading identical material cannot reset drafts or rewrite a legacy bare reference.
         setTemplate(selectedKey);
-        setRevision("");
       } else if (values.size) {
         setPending(next);
       } else {
         setSelection(next);
         setTemplate(selectedKey);
-        setRevision("");
         setValues(new Map());
         setPresetChosen(false);
       }
@@ -171,14 +162,12 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
     setFailedSwitch(false);
     setError(null);
     setTemplate(currentKey);
-    setRevision("");
     lastRead.current = undefined;
   }
   function confirmSwitch() {
     if (!pending) return;
     setSelection(pending);
     setTemplate(pending.contract.profileKey);
-    setRevision("");
     setValues(new Map());
     setPresetChosen(false);
     setPending(undefined);
@@ -204,19 +193,10 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
     setLoading(false);
     setPending(undefined);
     setTemplate(key);
-    setRevision("");
     setError(null);
     setFailedSwitch(false);
     lastRead.current = undefined;
-    if (key) void load({ key, latest: true });
-  }
-  function changeRevision(value: string) {
-    sequence.current++;
-    request.current?.abort();
-    setLoading(false);
-    setPending(undefined);
-    setRevision(value);
-    lastRead.current = undefined;
+    if (key) void load({ key });
   }
   function updateValue(key: string, value?: string) {
     setValues((current) => {
@@ -226,11 +206,9 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
       return next;
     });
   }
-  const dirtyReference = template.trim() !== currentKey || !!revision;
+  const dirtyReference = template.trim() !== currentKey;
   return {
     template,
-    revision,
-    setRevision: changeRevision,
     changeTemplate,
     values,
     updateValue,

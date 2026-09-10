@@ -27,6 +27,6 @@ export function sameTemplateReference(
   left: FleetSpec["template_profile_ref"],
   right: FleetSpec["template_profile_ref"] | undefined,
 ) {
-  if (typeof left === "string" || typeof right === "string") return left === right;
-  return !!right && left.key === right.key && left.revision === right.revision;
+  // Follow-only model (ARD-0029): references are bare keys.
+  return left === right;
 }

@@ -32,7 +32,7 @@ export function FleetTemplateSelection({
           type="button"
           variant="outline"
           disabled={editor.loading || !editor.template.trim()}
-          onClick={() => void editor.load({ latest: true })}
+          onClick={() => void editor.load()}
         >
           Load latest Active
         </Button>

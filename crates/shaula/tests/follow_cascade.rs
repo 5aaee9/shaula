@@ -173,25 +173,31 @@ async fn follower_auto_upgrades_after_new_revision_activates() {
 }
 
 #[tokio::test]
-async fn pinned_fleet_never_cascades() {
+async fn legacy_pinned_spec_normalizes_and_cascades() {
+    // ARD-0029: a stored `{key, revision}` reference from before the
+    // follow-only model reads back as its key and follows like any fleet.
     let (app, control_plane, _engine, service) = build_app_with_service().await;
     seed_profile(&app, &control_plane, "k8s-linux", true).await;
-    let pinned = FLEET_BODY.replace(
+    let legacy = FLEET_BODY.replace(
         r#""template_profile_ref": "k8s-linux""#,
         r#""template_profile_ref": {"key": "k8s-linux", "revision": 1}"#,
     );
-    let create = put_with_idempotency("/api/v1/fleets/linux-x64", "pin-1", pinned);
+    let create = put_with_idempotency("/api/v1/fleets/linux-x64", "legacy-1", legacy);
     assert_eq!(
         app.clone().oneshot(create).await.unwrap().status(),
         StatusCode::ACCEPTED
     );
+    // The stored spec normalizes to the bare key on read.
+    let fleet = get_json(&app, "/api/v1/fleets/linux-x64").await;
+    assert_eq!(fleet["spec"]["template_profile_ref"], "k8s-linux");
+
     publish_revision_2(&app, &control_plane, None).await;
     let upgraded = service
         .cascade_template_follow_upgrades(1_800_000_003_000)
         .await
         .unwrap();
-    assert_eq!(upgraded, 0);
-    assert_eq!(fleet_revision_pin(&app, "linux-x64").await, (1, 1));
+    assert_eq!(upgraded, 1);
+    assert_eq!(fleet_revision_pin(&app, "linux-x64").await, (2, 2));
 }
 
 #[tokio::test]

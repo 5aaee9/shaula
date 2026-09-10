@@ -108,13 +108,9 @@ impl ControlPlane {
         &self,
         reference: &TemplateProfileRefDto,
     ) -> CoreResult<(String, i64, String, String)> {
-        let (key, requested) = match reference {
-            TemplateProfileRefDto::BareKey(key) => (key.clone(), None),
-            TemplateProfileRefDto::Exact { key, revision } => (
-                key.clone(),
-                Some(i64::try_from(*revision).unwrap_or(i64::MAX)),
-            ),
-        };
+        // Follow-latest (ARD-0029): the only resolution is the current
+        // Active revision; no requested-revision comparison remains.
+        let key = reference.key().to_string();
         let Some(profile) = self.store.template_profile_get(&key).await? else {
             return Err(CoreError::new(
                 ReasonCode::TemplateNotFound,
@@ -127,16 +123,6 @@ impl ControlPlane {
                 format!("template profile {key} has no active revision"),
             ));
         };
-        if let Some(requested) = requested {
-            if requested != active {
-                return Err(CoreError::new(
-                    ReasonCode::TemplateNotActive,
-                    format!(
-                        "template revision {key}/{requested} is not the current active revision"
-                    ),
-                ));
-            }
-        }
         let revision = self
             .store
             .template_revision_get(&key, active)
@@ -244,10 +230,9 @@ impl ControlPlane {
 }
 
 pub(crate) fn template_referenced(spec: &FleetSpec) -> String {
-    match &spec.template_profile_ref {
-        TemplateProfileRefDto::BareKey(key) => key.clone(),
-        TemplateProfileRefDto::Exact { key, revision } => format!("{key}#{revision}"),
-    }
+    // Key-only comparison: legacy exact pins normalize to their key on
+    // read, so a stored pin never looks "changed" after ARD-0029.
+    spec.template_profile_ref.key().to_string()
 }
 
 #[path = "service_fleet_registry.rs"]

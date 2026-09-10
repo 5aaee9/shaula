@@ -19,7 +19,7 @@ export interface FleetSpec {
     labels: string[];
   };
   capacity: { min_runners: number; max_runners: number };
-  template_profile_ref: string | { key: string; revision: number };
+  template_profile_ref: string;
   template_inputs: Record<string, unknown>;
 }
 export interface FleetResource {

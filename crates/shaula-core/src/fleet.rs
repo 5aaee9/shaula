@@ -49,13 +49,41 @@ impl From<CapacityPolicyDto> for CapacityPolicy {
     }
 }
 
-/// `{key, revision}` explicit pin, or a bare key resolved to the current
-/// active revision during admission.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum TemplateProfileRefDto {
-    Exact { key: String, revision: u64 },
-    BareKey(String),
+/// Bare template profile key. Fleets always follow the profile's latest
+/// Active revision (spec 0023) — there is no pinned form. Legacy
+/// `{key, revision}` objects stored before ARD-0029 deserialize to their
+/// key; the resolved pin lives on the fleet revision row, never here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct TemplateProfileRefDto(String);
+
+impl TemplateProfileRefDto {
+    pub fn key(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for TemplateProfileRefDto {
+    fn from(key: String) -> Self {
+        Self(key)
+    }
+}
+
+impl<'de> Deserialize<'de> for TemplateProfileRefDto {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Bare(String),
+            Legacy { key: String, revision: u64 },
+        }
+        Ok(match Repr::deserialize(deserializer)? {
+            Repr::Bare(key) | Repr::Legacy { key, .. } => Self(key),
+        })
+    }
 }
 
 /// Admission facts frozen into the immutable Fleet Revision. Resolved in the
@@ -174,7 +202,7 @@ mod tests {
                 min_runners: 0,
                 max_runners: 20,
             },
-            template_profile_ref: TemplateProfileRefDto::BareKey("kubernetes-linux-x64".into()),
+            template_profile_ref: TemplateProfileRefDto::from("kubernetes-linux-x64".to_string()),
             template_inputs: serde_json::Map::new(),
         }
     }
@@ -210,18 +238,14 @@ mod tests {
     }
 
     #[test]
-    fn bare_key_and_exact_ref_deserialize() {
+    fn bare_key_deserializes_and_legacy_pin_normalizes() {
         let bare: TemplateProfileRefDto = serde_json::from_str("\"tpl\"").unwrap();
-        assert_eq!(bare, TemplateProfileRefDto::BareKey("tpl".into()));
-        let exact: TemplateProfileRefDto =
+        assert_eq!(bare.key(), "tpl");
+        let legacy: TemplateProfileRefDto =
             serde_json::from_str(r#"{"key":"tpl","revision":4}"#).unwrap();
-        assert_eq!(
-            exact,
-            TemplateProfileRefDto::Exact {
-                key: "tpl".into(),
-                revision: 4
-            }
-        );
+        assert_eq!(legacy.key(), "tpl");
+        // The write form is always the bare key.
+        assert_eq!(serde_json::to_string(&legacy).unwrap(), "\"tpl\"");
     }
 
     #[test]
