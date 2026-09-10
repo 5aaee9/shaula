@@ -172,6 +172,9 @@ pub struct RunnerReference {
     pub name: String,
     #[serde(rename = "runnerScaleSetId", default)]
     pub runner_scale_set_id: i64,
+    /// Inventory status; absent tolerant for older mock responses.
+    #[serde(default)]
+    pub status: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -114,6 +114,9 @@ pub struct RunnerRef {
     pub id: i64,
     pub name: String,
     pub scale_set_id: i64,
+    /// Inventory status ("online" / "offline"; unknown values are
+    /// treated as not-online). Drives generation readiness (spec 0024).
+    pub status: String,
 }
 
 /// Message produced by a poll. Owned idempotent facts derive from these.

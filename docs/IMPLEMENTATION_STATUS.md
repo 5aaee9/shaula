@@ -786,8 +786,11 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
   release gate. See the dedicated OIDC evidence section below.
 - The per-Fleet capacity/ownership/cleanup supervisor and Auth validator are
   started by the binary. The listener repair above adds separately scheduled
-  sessions and persist-before-ACK message ingestion/acquisition. Complete
-  online/busy inventory classification, operation recovery and Fleet
+  sessions and persist-before-ACK message ingestion/acquisition. WaitingOnline
+  generations are driven by the spec 0024 readiness reconciliation
+  (inventory-online → Idle; readiness timeout → CleanupRequired, covering
+  ephemeral JIT runners that self-deregister after their single job).
+  Complete busy-state classification, operation recovery and Fleet
   decommission/tombstone acceptance remain open. Store and scripted-listener
   tests alone do not prove these complete external workflows.
 - End-to-end real-GitHub validation and the Go-oracle differential suite

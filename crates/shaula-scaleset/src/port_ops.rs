@@ -183,6 +183,7 @@ impl ScalesetClient {
                 id: 0,
                 name: runner_name.to_string(),
                 runner_scale_set_id: scale_set_id,
+                status: String::new(),
             });
             JitConfig {
                 encoded: config.encoded_jit_config,
@@ -190,6 +191,9 @@ impl ScalesetClient {
                     id: runner_ref.id,
                     name: runner_ref.name,
                     scale_set_id,
+                    // The mint response carries no status; the runner is
+                    // by definition not online yet (spec 0024 grace).
+                    status: "offline".to_string(),
                 },
             }
         }))
@@ -244,6 +248,7 @@ impl ScalesetClient {
                         id: runner.id,
                         name: runner.name.clone(),
                         scale_set_id: runner.runner_scale_set_id,
+                        status: runner.status.clone(),
                     }))
                 }
             }
@@ -328,6 +333,7 @@ impl ScalesetClient {
                 id: r.id,
                 name: r.name,
                 scale_set_id: r.runner_scale_set_id,
+                status: r.status,
             })
             .collect())
     }

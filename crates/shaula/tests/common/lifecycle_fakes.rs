@@ -123,6 +123,7 @@ impl GitHubAccessPort for GitHub {
                 id: 77,
                 name: name.into(),
                 scale_set_id,
+                status: "offline".to_string(),
             };
             self.runners.lock().unwrap().push(runner.clone());
             return Ok(EffectOutcome::Definite(JitConfig {

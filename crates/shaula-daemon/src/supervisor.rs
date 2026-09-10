@@ -207,6 +207,11 @@ impl FleetSupervisor {
             }
         }
 
+        // 2.5 Readiness reconciliation (spec 0024): WaitingOnline
+        // generations join Idle/cleanup before this tick's capacity pass,
+        // so a completed ephemeral runner frees its slot immediately.
+        self.reconcile_generation_readiness(now).await?;
+
         // 3. Capacity convergence.
         let demand = self
             .handoff
@@ -319,6 +324,10 @@ mod status_impl;
 
 #[path = "supervisor_lifecycle.rs"]
 mod lifecycle_impl;
+
+#[path = "supervisor_readiness.rs"]
+mod readiness_impl;
+pub use readiness_impl::READINESS_TIMEOUT_MS;
 
 #[path = "supervisor_destroy.rs"]
 mod destroy_impl;

@@ -271,6 +271,7 @@ async fn adopted_access_failure_and_unknown_inventory_block_effects() {
             id: 999,
             name: "foreign".into(),
             scale_set_id: 42,
+            status: "offline".to_string(),
         });
     let blocked = supervisor.tick(30).await.unwrap();
     assert!(blocked.blocked);
@@ -313,4 +314,91 @@ async fn route_proof_denial_blocks_ownership_and_creates_only() {
     let report = supervisor.tick(30).await.unwrap();
     assert!(!report.blocked);
     assert!(report.scale_set_bound);
+}
+
+async fn seed_waiting_online(store: &impl LifecycleStore, digest: &str) {
+    store
+        .generation_insert(GenerationRecord {
+            id: "gen1".into(),
+            fleet_key: "f1".into(),
+            runner_name: "runner1".into(),
+            generation_name: "generation1".into(),
+            fleet_revision: 1,
+            template_profile_key: "k8s-linux".into(),
+            template_revision: 1,
+            template_artifact_digest: digest.into(),
+            attestation_id: "att".into(),
+            inputs_digest: "inputs".into(),
+            state: G::CreatePending,
+            github_runner_id: None,
+            workspace_path: "unused".into(),
+            created_at: 1,
+            updated_at: 1,
+        })
+        .await
+        .unwrap();
+    store
+        .generation_set_github_runner("gen1", 12, 2)
+        .await
+        .unwrap();
+    for state in [G::Creating, G::WaitingOnline] {
+        store.generation_advance("gen1", state, 3).await.unwrap();
+    }
+}
+
+async fn generation_state(store: &impl LifecycleStore) -> G {
+    store
+        .generations_for_fleet("f1")
+        .await
+        .unwrap()
+        .pop()
+        .unwrap()
+        .state
+}
+
+#[tokio::test]
+async fn readiness_observed_online_runner_advences_waiting_generation_to_idle() {
+    let (store, github, supervisor, digest) = setup().await;
+    seed_waiting_online(store.as_ref(), &digest).await;
+    supervisor.tick(5).await.unwrap(); // settle the Pending handoff.
+    github
+        .runners
+        .lock()
+        .unwrap()
+        .push(shaula_core::ports::RunnerRef {
+            id: 12,
+            name: "runner1".into(),
+            scale_set_id: 42,
+            status: "online".into(),
+        });
+    // Busy gates runner removal, so retirement engages (proving Idle was
+    // reached) without driving a gated destroy in this harness.
+    github.busy.store(true, Ordering::SeqCst);
+    supervisor.tick(30).await.unwrap();
+    assert_eq!(generation_state(store.as_ref()).await, G::Retiring);
+    assert_eq!(github.removals.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn readiness_timeout_moves_absent_runner_to_cleanup() {
+    let (store, github, supervisor, digest) = setup().await;
+    seed_waiting_online(store.as_ref(), &digest).await;
+    supervisor.tick(5).await.unwrap();
+    // No runner in the inventory (never registered, or an ephemeral JIT
+    // runner that served its job and self-deregistered) and past the
+    // grace period (spec 0024 §2).
+    let late = 1 + shaula_daemon::supervisor::READINESS_TIMEOUT_MS + 1;
+    supervisor.tick(late).await.unwrap();
+    assert_eq!(generation_state(store.as_ref()).await, G::CleanupRequired);
+    assert_eq!(github.removals.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn readiness_keeps_young_absent_generation_waiting() {
+    let (store, _github, supervisor, digest) = setup().await;
+    seed_waiting_online(store.as_ref(), &digest).await;
+    supervisor.tick(5).await.unwrap();
+    // Within the boot grace: no transition, no removal, no cleanup.
+    supervisor.tick(5 * 60 * 1000).await.unwrap();
+    assert_eq!(generation_state(store.as_ref()).await, G::WaitingOnline);
 }
