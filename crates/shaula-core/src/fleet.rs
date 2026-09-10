@@ -78,10 +78,13 @@ impl<'de> Deserialize<'de> for TemplateProfileRefDto {
         #[serde(untagged)]
         enum Repr {
             Bare(String),
-            Legacy { key: String, revision: u64 },
+            // The legacy pin object's revision is deliberately ignored:
+            // extra fields are not denied, and the resolved pin authority
+            // is the fleet revision row, never this request field.
+            Legacy { key: String },
         }
         Ok(match Repr::deserialize(deserializer)? {
-            Repr::Bare(key) | Repr::Legacy { key, .. } => Self(key),
+            Repr::Bare(key) | Repr::Legacy { key } => Self(key),
         })
     }
 }

@@ -1,9 +1,9 @@
-//! Follow-latest template cascade (spec 0023): a fleet whose
-//! `template_profile_ref` is a bare key follows the profile's Active
-//! revision. The level-triggered scan mints a replacement revision —
-//! unchanged spec, new resolved pin — once the fleet drains to zero
-//! occupancy. Failures degrade to per-fleet WARNs and retry next tick;
-//! the scan loop itself never fails from one fleet's state.
+//! Follow-latest template cascade (spec 0023): every live fleet follows
+//! its profile's Active revision (follow-only since ARD-0029). The
+//! level-triggered scan mints a replacement revision — unchanged spec,
+//! new resolved pin — once the fleet drains to zero occupancy. Failures
+//! degrade to per-fleet WARNs and retry next tick; the scan loop itself
+//! never fails from one fleet's state.
 
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::fleet::FleetSpec;
