@@ -101,7 +101,10 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
           );
         selectedRevision = active;
         incarnation = profile.data.incarnation;
-        reference = { key: selectedKey, revision: active };
+        // Follow-latest is the default (spec 0023): an explicit revision
+        // input is the pin opt-in; an empty field submits the bare key
+        // reference and the daemon cascades future Active revisions.
+        reference = revision ? { key: selectedKey, revision: active } : selectedKey;
       }
       if (generation !== sequence.current) return;
       lastRead.current = {

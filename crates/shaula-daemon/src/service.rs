@@ -256,6 +256,9 @@ mod fleet_registry;
 #[path = "service_fleet_ops.rs"]
 mod fleet_ops;
 
+#[path = "service_follow_cascade.rs"]
+mod follow_cascade;
+
 #[path = "service_profile_registry.rs"]
 mod profile_registry;
 

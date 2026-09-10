@@ -235,6 +235,7 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
     // alive to retry; shutdown drains it before the server stops.
     let scan_store = control_plane_store.clone();
     let scan_ready = service.clone();
+    let scan_cascade = service.clone();
     let mut scan_shutdown = shutdown_tx.subscribe();
     let mut scan_handle = tokio::spawn(async move {
         let mut ticker = tokio::time::interval(shaula_daemon::daemon::SCAN_INTERVAL);
@@ -243,9 +244,17 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
             tokio::select! {
                 _ = ticker.tick() => {
                     let scan_store = scan_store.clone();
+                    let scan_cascade = scan_cascade.clone();
                     let tick_clock = clock.clone();
                     let mut scan = tokio::spawn(async move {
-                        scan_store.periodic_scan(tick_clock.now_unix_ms()).await
+                        let now = tick_clock.now_unix_ms();
+                        let scan_result = scan_store.periodic_scan(now).await;
+                        // Follower fleets upgrade on the same level-triggered
+                        // cadence (spec 0023): independent of scan outcome.
+                        let cascade_result = scan_cascade
+                            .cascade_template_follow_upgrades(now)
+                            .await;
+                        (scan_result, cascade_result)
                     });
                     // The in-flight tick is itself cancellable: shutdown
                     // aborts it so no inner task can outlive the loop and
@@ -254,9 +263,13 @@ async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Result<(), Strin
                     tokio::select! {
                         result = &mut scan => {
                             match result {
-                                Ok(Ok(_report)) => {}
-                                Ok(Err(e)) => {
-                                    tracing::warn!(summary = %e.summary, "periodic scan failed");
+                                Ok((scan_result, cascade_result)) => {
+                                    if let Err(e) = scan_result {
+                                        tracing::warn!(summary = %e.summary, "periodic scan failed");
+                                    }
+                                    if let Err(e) = cascade_result {
+                                        tracing::warn!(summary = %e.summary, "template follow cascade failed");
+                                    }
                                 }
                                 Err(join_err) => {
                                     tracing::error!(summary = %join_err, "periodic scan panicked");

@@ -270,9 +270,13 @@ export function FleetForm({
                   step={1}
                   value={editor.revision}
                   disabled={editor.locked || editor.loading}
-                  placeholder="Current active revision"
+                  placeholder="Follow latest Active"
                   onChange={(event) => editor.setRevision(event.target.value)}
                 />
+                <p className="text-muted-foreground text-sm">
+                  Empty follows the latest Active revision automatically. Enter a number and load
+                  it to pin this exact revision.
+                </p>
                 {editor.revision && (
                   <Button
                     type="button"
