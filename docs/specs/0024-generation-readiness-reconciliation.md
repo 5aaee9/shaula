@@ -16,7 +16,7 @@
    needs_removal 集合），后续按 excess 正常销毁。
 2. 未匹配到 runner（从未注册、或注册后因一次性 JIT 完成自注销而消失）且
    `now - created_at` 超过 readiness 超时 → 推进 `CleanupRequired`，进入现有
-   cleanup/destroy 通道。
+   cleanup/destroy 通道（见 §2.1）。
 3. 未匹配但在宽限期内（默认 15 分钟，daemon 常量）→ 保持 `WaitingOnline`，
    继续等待注册。匹配到但状态非 online（boot 阶段的 offline）同样等待。
 
@@ -37,6 +37,17 @@ JIT 生成的 runner 是 ephemeral：执行完一个 job 后自行注销并从�
 若 tick 恰好观察到在线瞬间，Generation 先进 `Idle`，由 retirement 通道完成
 带 `remove_runner`（AlreadyAbsent 视为成功）的完整销毁——两条路径最终都
 收敛到同一个 destroy 效果。
+
+## 2.1 CleanupRequired 的 destroy 驱动（rev 2，2026-09-10 事故修订）
+
+原实现把 CleanupRequired 交给不存在的"现有 cleanup 通道"：60 秒后 quarantine_stale
+直接转隔离，VM/ISO 永不销毁（同日 23:24 矩阵事故：8 台 VM 在 Proxmox 泄漏）。
+修订为：supervisor tick 对龄越过 grace 的 CleanupRequired Generation **先驱动
+`remove_runner`（有 runner id 时；AlreadyAbsent 幂等）再进入 Retiring →
+DestroyPending → Destroying → Destroyed 的正常 destroy 流**；仅当 destroy 无法
+开始或无法证明终止（state identity 缺失、provenance 缺失、JobStillRunning 门禁
+阻塞）时按原 60 秒规则 quarantine。即 quarantine_stale_cleanup 的语义从"60 秒
+后隔离"改为"60 秒后先尝试 destroy，不可证明才隔离"。
 
 ## 3. Ordering 与并发
 

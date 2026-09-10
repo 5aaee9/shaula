@@ -31,20 +31,27 @@ impl FleetSupervisor {
             // gate blocks again), so Retiring generations with a known
             // runner re-run the gate instead of skipping straight to the
             // destroy effect.
-            let needs_removal = matches!(
+            let mut needs_removal = matches!(
                 generation.state,
                 GenerationState::Idle | GenerationState::Retiring
             ) && generation.github_runner_id.is_some();
+            // Spec 0024 §2.1: a CleanupRequired generation past the
+            // one-tick grace is driven through the SAME destroy chain
+            // instead of being stranded for quarantine — its runner
+            // entity (if any) is removed and its infrastructure
+            // destroyed; only unprovable destroys quarantine (below).
+            let cleanup_due = generation.state == GenerationState::CleanupRequired
+                && now.saturating_sub(generation.updated_at) >= 60_000;
             let resumable_destroy = matches!(
                 generation.state,
                 GenerationState::Retiring
                     | GenerationState::DestroyPending
                     | GenerationState::Destroying
             );
-            if !needs_removal && !resumable_destroy {
+            if !needs_removal && !resumable_destroy && !cleanup_due {
                 continue;
             }
-            if !resumable_destroy && excess <= 0 {
+            if !resumable_destroy && !cleanup_due && excess <= 0 {
                 continue;
             }
             let mut state = generation.state;
@@ -65,6 +72,21 @@ impl FleetSupervisor {
                     .await?;
                 state = GenerationState::Retiring;
                 excess -= 1;
+            }
+            if state == GenerationState::CleanupRequired {
+                // Same durable-intent rule as Idle: the cleanup path's
+                // external effects begin with runner removal, so the
+                // ledger must show Retiring first (legal transition).
+                self.store
+                    .generation_advance(&generation.id, GenerationState::Retiring, now)
+                    .await?;
+                state = GenerationState::Retiring;
+                // The cleanup entry also gates on runner removal like a
+                // fresh retirement (the entity usually self-deregistered;
+                // AlreadyAbsent makes this idempotent).
+                if generation.github_runner_id.is_some() {
+                    needs_removal = true;
+                }
             }
             if needs_removal {
                 let Some(runner_id) = generation.github_runner_id else {
