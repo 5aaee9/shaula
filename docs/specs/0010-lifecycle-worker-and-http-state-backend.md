@@ -104,6 +104,15 @@ Terraform 标准 HTTP backend 在 update query 传 lock `ID`，不提供通用 `
 
 所有 LOCK、UNLOCK、state write 与 completion seal 通过同一 SQLite writer/事务 discipline 排序；不得先在事务外检查锁，再独立 UPDATE state。需要 CAS 的读取/写入在同一受保护事务中，数据库唯一约束保证并发创建空锁只有一胜者。
 
+### 6.1 写锁排队纪律（2026-09-10 锁风暴修订）
+
+SQLite 串行化写者：WAL 下 `synchronous=FULL` 的每次提交 fsync，而 WAL checkpoint
+与写事务争同一把锁。并发 Create 高峰（知例：矩阵 job 同时排队 8 个 Generation）
+令写队列超出短 busy timeout，tick/listener/scan 大量失败——等待优于失败：事务
+均为短临界区且不跨网络调用，排队不可能死锁，且全部循环是 level-triggered 的，
+延迟到达不丢义务。故 busy timeout 取 60 秒量级而非秒级；失败仍按原语义 WARN
+并在下一 tick 重试。Checkpoint 由 SQLite 自动策略处理，不在应用层强制。
+
 - **LOCK**：认证并验证 current Claim、Generation 未 sealed、该 worker 无冲突 Terraform command；只有无锁时能原子安装新 ID。同 Claim/ID 的相同请求可幂等成功；另一 ID 或 epoch 返回 423，不能覆盖 lock metadata 或靠相同字符串冒充持有者。
 - **POST**：即使当前没有锁也拒绝无锁写。事务内校验 capability/epoch、unsealed、query ID 等于当前 lock ID，以及当前 backend revision；验证有效、有界且受支持的 state header 后更新 bytes、serial 和 backend revision。条件更新必须确认唯一目标行匹配；零行/版本冲突不能返回成功。已验证的同内容 replay 除外，不重复改写。失败不改变 state 或锁。
 - **Lineage/serial**：首次 state 写入固定 lineage；后续 lineage 不变，serial 不倒退。相同 serial 仅允许相同 bytes 的幂等重放；相同 serial 不同内容、旧 serial、其他 lineage 都返回 conflict。更高 serial 可推进，不要求固定 +1，以兼容 Terraform 的合法持久化行为；不同 generation 不共享 lineage authority。

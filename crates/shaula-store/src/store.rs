@@ -51,12 +51,19 @@ impl Store {
             .sqlx_logging(false)
             // Apply on EVERY pooled connection, not four arbitrary checkouts.
             // FULL preserves acknowledged authoritative state across a crash.
+            // The busy timeout is the write-queue budget: SQLite serializes
+            // writers, and under concurrent creates every commit fsyncs the
+            // WAL (FULL) while checkpoints contend for the same lock — the
+            // 2026-09-10 storm (8 parallel matrix generations) exhausted a
+            // 5s budget and failed ticks. 60s lets short transactions queue
+            // instead of failing; no transaction spans a network call, so
+            // waiting cannot deadlock (spec 0010 §8.1).
             .map_sqlx_sqlite_opts(|options| {
                 options
                     .pragma("journal_mode", "WAL")
                     .pragma("synchronous", "FULL")
                     .foreign_keys(true)
-                    .busy_timeout(Duration::from_secs(5))
+                    .busy_timeout(Duration::from_secs(60))
             });
         let db = Database::connect(options).await?;
         Ok(Self { db })
