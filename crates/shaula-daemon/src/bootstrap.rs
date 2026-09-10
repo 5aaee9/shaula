@@ -26,6 +26,7 @@ pub struct ValidatedBootstrap {
     pub operation_timeout: Duration,
     pub terraform_executable: PathBuf,
     pub service_name: String,
+    pub otlp_endpoint: Option<String>,
     pub operation_logs: shaula_core::operation_log::LogConfig,
     pub setup_info: Option<shaula_core::setup_info::SetupInfoConfig>,
 }
@@ -204,6 +205,16 @@ impl ValidatedBootstrap {
         if config.execution.create_concurrency == 0 || config.execution.destroy_concurrency == 0 {
             return Err("concurrency values must be positive".to_string());
         }
+        if config.observability.otlp.protocol != "http/json" {
+            return Err("observability.otlp.protocol must be http/json".to_string());
+        }
+        if let Some(endpoint) = config.observability.otlp.endpoint.as_deref() {
+            if !endpoint.trim().is_empty() {
+                if let Err(error) = shaula_observability::parse_collector_endpoint(endpoint) {
+                    return Err(format!("observability.otlp.endpoint invalid: {error}"));
+                }
+            }
+        }
 
         // OpenTofu is not advertised; only terraform is accepted. The
         // path is frozen to ONE absolute executable here so hashing
@@ -231,6 +242,7 @@ impl ValidatedBootstrap {
             operation_timeout: Duration::from_secs(config.execution.operation_timeout_secs),
             terraform_executable,
             service_name: config.observability.service_name,
+            otlp_endpoint: config.observability.otlp.endpoint,
             operation_logs: config.operation_logs,
             setup_info: config.setup_info,
         })

@@ -8,6 +8,7 @@ description = "Axum adapter and strict HTTP DTOs for the Shaula control plane"
 
 [dependencies]
 shaula-core = { workspace = true }
+shaula-observability = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
 bytes = { workspace = true }

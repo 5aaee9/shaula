@@ -8,6 +8,7 @@ description = "Use cases, supervisors, reconcile and scheduling for the Shaula d
 
 [dependencies]
 shaula-core = { workspace = true }
+shaula-observability = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }

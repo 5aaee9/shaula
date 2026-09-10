@@ -23,6 +23,7 @@ use axum::{Json, Router};
 use shaula_core::registry::{
     Actor, FleetRegistryPort, HealthPort, MutationAccepted, ProfileRegistryPort, Scope,
 };
+use tracing::Instrument;
 
 use crate::oidc::{Authenticated, Oidc};
 use crate::problem::problem;
@@ -199,6 +200,43 @@ async fn session(auth: Authenticated) -> Response {
     response
 }
 
+/// Outermost metrics layer: every served request is counted once with the
+/// finite operation/result labels (spec 0001 §13.2) and wrapped in the
+/// `shaula.http.request` span carrying the route template (spec 0001
+/// §13.1). Route paths, actors and queries never become metric labels.
+async fn record_http_outcome(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    // Router-level layers run after matching, so the route template is
+    // available here; unmatched requests (web fallback) stay bounded.
+    let route = request
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .map_or_else(
+            || "unmatched".to_owned(),
+            |matched| matched.as_str().to_owned(),
+        );
+    let span = tracing::info_span!(
+        "shaula.http.request",
+        "http.route" = %route,
+        "http.response.status_code" = tracing::field::Empty,
+    );
+    let response = next.run(request).instrument(span.clone()).await;
+    span.record("http.response.status_code", response.status().as_u16());
+    let result = if response.status().is_server_error() {
+        shaula_observability::MetricResult::Failed
+    } else {
+        shaula_observability::MetricResult::Ok
+    };
+    shaula_observability::TelemetryHandle::new().record(
+        shaula_observability::MetricOperation::Http,
+        result,
+        1,
+    );
+    response
+}
+
 /// Builds the full v1 router. R10-06: the configured body limits are
 /// ENFORCED at the HTTP layer — the artifact route gets the artifact
 /// limit, every other route the smaller management limit — instead of
@@ -304,5 +342,8 @@ pub fn build_router(state: AppState) -> Router {
         .layer(DefaultBodyLimit::max(state.request_body_limit))
         .fallback(crate::web::serve)
         .layer(axum::middleware::from_fn_with_state(state.clone(), crate::oidc::guard))
+        // Added LAST so the metrics layer is OUTERMOST: auth rejections,
+        // body-limit failures and fallback responses are counted too.
+        .layer(axum::middleware::from_fn(record_http_outcome))
         .with_state(state)
 }

@@ -159,3 +159,69 @@ fn size_parsing() {
     assert_eq!(parse_size("1024B"), Ok(1024));
     assert!(parse_size("12GB").is_err());
 }
+
+#[test]
+fn otlp_endpoint_is_optional_and_passes_through_validation() {
+    let validated = ValidatedBootstrap::validate(base_config()).unwrap();
+    assert_eq!(
+        validated.otlp_endpoint, None,
+        "a missing otlp section keeps local-only telemetry"
+    );
+    let mut config = base_config();
+    config.observability.otlp.endpoint = Some("http://127.0.0.1:4318".to_string());
+    let validated = ValidatedBootstrap::validate(config).unwrap();
+    assert_eq!(
+        validated.otlp_endpoint.as_deref(),
+        Some("http://127.0.0.1:4318")
+    );
+}
+
+#[test]
+fn otlp_protocol_other_than_http_json_fails_bootstrap() {
+    let mut config = base_config();
+    config.observability.otlp.protocol = "grpc".to_string();
+    let error = ValidatedBootstrap::validate(config).unwrap_err();
+    assert!(
+        error.contains("http/json"),
+        "the exporter speaks OTLP/HTTP http/json only: {error}"
+    );
+}
+
+#[test]
+fn otlp_endpoint_must_be_plain_http() {
+    let mut config = base_config();
+    config.observability.otlp.endpoint = Some("https://collector:4318".to_string());
+    let error = ValidatedBootstrap::validate(config).unwrap_err();
+    assert!(
+        error.contains("http://"),
+        "TLS terminates at the collector boundary, not in the exporter: {error}"
+    );
+}
+
+#[test]
+fn observability_dead_metrics_and_trace_config_rejected() {
+    // The traces/metrics knobs died with the unconsumed registry: unknown
+    // observability keys must fail closed, not be silently ignored.
+    let parsed: Result<BootstrapConfig, _> = serde_yaml::from_str(&format!(
+        r#"
+version: 1
+storage:
+  data_dir: /var/lib/shaula
+http:
+  listen: 127.0.0.1:8080
+  bindings_server_key: "bootstrap-bindings-key-0123456789abcdef"
+execution:
+  engines:
+    terraform:
+      executable: "{}"
+observability:
+  metrics:
+    interval_secs: 15
+"#,
+        engine_fixture()
+    ));
+    assert!(
+        parsed.is_err(),
+        "observability.metrics is no longer a config field"
+    );
+}

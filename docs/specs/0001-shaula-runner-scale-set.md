@@ -225,13 +225,12 @@ execution:
 
 observability:
   service_name: shaula
+  # Optional OTLP/HTTP (http/json) collector base URL. Export is
+  # asynchronous and bounded; omitting the otlp section keeps local
+  # JSON telemetry only. Any other protocol value fails bootstrap.
   otlp:
-    endpoint: http://otel-collector:4317
-    protocol: grpc
-  traces:
-    sampler: always_on
-  metrics:
-    interval: 15s
+    endpoint: http://127.0.0.1:4318
+    protocol: http/json
 ```
 
 Bootstrap MUST NOT 包含任何 Fleet、Template Profile、GitHub Auth Profile 或平台 binding catalog。前三类资源只通过 HTTP 创建并保存在 SQLite；平台 bindings 属于 Template Profile Revision。HTTP clients 可以从 YAML 或 Git 生成请求，但这些文件不是 daemon watch 的真相源。
@@ -467,7 +466,7 @@ GitHub mutation 与可能启动的基础设施 mutation 均受 durable identity/
 
 全局 startup barrier 只做共享工作：
 
-1. 由 `shaula-observability` 初始化 Rust `tracing`、local structured logging 和 OpenTelemetry SDK/export pipeline；
+1. 由 `shaula-observability` 初始化 Rust `tracing`、local structured logging 和可选的 OTLP/HTTP metric export pipeline（[ARD-0032](../ard/0032-process-telemetry-uses-otlp-http.md)）；
 2. 验证 daemon bootstrap、HTTP safety、engine 和 filesystem roots，并完成 clap/env mandatory OIDC 配置及 discovery/JWKS validation；任一失败均不启动 HTTP listener 或资源 workers；
 3. 获取 data-directory ownership lock，迁移 SQLite，验证数据库/artifact/workspace consistency；
 4. 启动管理 HTTP registries、独立内部 control/state backend、Executor/budgets 和 periodic scans；内部 backend 可用前不 launch worker；
@@ -521,6 +520,8 @@ Graceful shutdown 遵循 spec 0010 §8：先停止管理 mutation/acquisition/ne
 
 Shaula MUST 在 ledger migration 或 remote side effect 之前由 `shaula-observability` 初始化 Rust `tracing`/OpenTelemetry traces 和 metrics。测试可以通过 in-memory Adapters 观察 spans 与 measurements。
 
+v1 落地范围由 [ARD-0032](../ard/0032-process-telemetry-uses-otlp-http.md) 记录：`shaula-observability` 持有进程级 subscriber、local JSON sink、finite metric labels 和可选的 OTLP/HTTP（http/json）导出器；metrics 经窄 `TelemetryHandle` facade 从生产调用点记录，导出为 `shaula.operations.total{operation,result}` 的 DELTA monotonic sum。traces 由 crate 内的 `tracing` Layer 采集（仅 `shaula` target 的 span），经有界队列批量导出到 `/v1/traces`，traceId 由根 span 的 registry id 零扩展派生；初始 span 集覆盖 `shaula.daemon.startup`/`shaula.daemon.shutdown`、`shaula.http.request`（route template）、registry mutation、bounded GitHub operations、IaC create/destroy 与 reconcile tick，其余 §13.1 span 家族随后续 spec 增量交付。degraded export 以进程内 counter 报告，导出失败永不阻塞 listener、commit、lifecycle 或 shutdown；shutdown 时 telemetry flush 有明确 budget。测试可以直接观察 layer 的内存 channel（in-memory span adapter）。core 不持有 telemetry port。
+
 ### 13.1 Required spans
 
 至少包括：
@@ -541,7 +542,7 @@ process lifetime、listener lifetime 和 successful empty poll 不建立长时�
 
 Operation Log 是 spec 0019 定义的专门持久制品，不通过 OTel/普通请求日志承载正文。经脱敏的 operator 读取与面向 workflow 的 Setup Info 采用各自发布策略；raw credentials、state/input body 与 provider secret 仍不得公开。新增 Runner Setup Info capability 只允许读取本 Generation 的 Create 安全投影，经独立 loopback listener/HTTPS proxy 交付；它不属于管理或 worker/control/state 通道，也不能访问它们。
 
-Metrics 至少覆盖 HTTP、registry admission、desired-to-observed lag、Profile Change、Auth rollout、active Fleets、capacity/occupancy、reconcile/queue、Runner Operation、GitHub access、IaC operation、listener/inventory/reaper、quarantine 和 exporter degradation。
+Metrics 至少覆盖 HTTP、registry admission、desired-to-observed lag、Profile Change、Auth rollout、active Fleets、capacity/occupancy、reconcile/queue、Runner Operation、GitHub access、IaC operation、listener/inventory/reaper、quarantine 和 exporter degradation。v1 的 `shaula.operations.total{operation,result}` 覆盖其中 HTTP request、registry admission、reconcile、Runner/GitHub operation、IaC operation 和 exporter degradation（`MetricOperation::Exporter` 只进进程内 counter，不产生导出流量）；其余维度随后续 spec 交付。
 
 属性必须来自 finite allowlist。`action=create|destroy`；Template `platform=kubernetes|docker|proxmox|other` 仅作为 bounded metadata。Fleet/Profile key、revision、artifact digest、actor、Target owner/repository、Runner/job/Workspace/resource identity、URL 和 error text 不得作为 metric labels。
 

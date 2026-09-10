@@ -183,6 +183,34 @@ pub struct EngineConfig {
 pub struct ObservabilityConfig {
     #[serde(default = "default_service_name")]
     pub service_name: String,
+    #[serde(default)]
+    pub otlp: OtlpConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OtlpConfig {
+    /// OTLP/HTTP collector base URL, for example `http://127.0.0.1:4318`.
+    #[serde(default)]
+    pub endpoint: Option<String>,
+    #[serde(default = "default_otlp_protocol")]
+    pub protocol: String,
+}
+
+impl Default for OtlpConfig {
+    // The derived Default would carry an EMPTY protocol, so a config
+    // without an observability section would fail bootstrap validation;
+    // a missing section must equal a missing field.
+    fn default() -> Self {
+        Self {
+            endpoint: None,
+            protocol: default_otlp_protocol(),
+        }
+    }
+}
+
+fn default_otlp_protocol() -> String {
+    "http/json".to_string()
 }
 
 impl Default for ObservabilityConfig {
@@ -192,6 +220,7 @@ impl Default for ObservabilityConfig {
     fn default() -> Self {
         Self {
             service_name: default_service_name(),
+            otlp: OtlpConfig::default(),
         }
     }
 }

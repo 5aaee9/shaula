@@ -26,6 +26,7 @@ impl ProfileRegistryPort for ControlPlane {
         self.input_contract_get_impl(actor, key, revision).await
     }
 
+    #[tracing::instrument(name = "shaula.registry.template_put", skip_all, fields(key = %key))]
     async fn template_put(
         &self,
         actor: &Actor,
@@ -35,19 +36,22 @@ impl ProfileRegistryPort for ControlPlane {
         if_match: Option<(String, i64)>,
         idempotency_key: Option<String>,
     ) -> CoreResult<Result<MutationAccepted, MutationError>> {
-        self.template_put_impl(
-            actor,
-            key,
-            super::profile_update::TemplatePublication {
-                payload,
-                if_none_match,
-                if_match,
-                idempotency_key,
-                update_identity: None,
-                update_base_source: None,
-            },
-        )
-        .await
+        let outcome = self
+            .template_put_impl(
+                actor,
+                key,
+                super::profile_update::TemplatePublication {
+                    payload,
+                    if_none_match,
+                    if_match,
+                    idempotency_key,
+                    update_identity: None,
+                    update_base_source: None,
+                },
+            )
+            .await;
+        super::metrics::record_admission(&outcome);
+        outcome
     }
 
     async fn template_update(

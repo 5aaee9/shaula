@@ -23,7 +23,6 @@ pub mod registry;
 pub mod secret;
 pub mod setup_info;
 pub mod state_backend;
-pub mod telemetry;
 pub mod template;
 
 pub use error::CoreError;

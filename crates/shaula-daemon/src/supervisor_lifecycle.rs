@@ -5,8 +5,14 @@
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::ports::TemplateCreateRequest;
 use shaula_core::registry::{GenerationRecord, ScaleSetRow};
+use shaula_observability::{MetricOperation, MetricResult, TelemetryHandle};
 
 use super::{fingerprint, FleetSupervisor};
+
+/// One bounded IaC engine operation completed with the given outcome.
+fn record_iac(result: MetricResult) {
+    TelemetryHandle::new().record(MetricOperation::IaC, result, 1);
+}
 
 #[path = "supervisor_operations.rs"]
 mod operations;
@@ -39,6 +45,7 @@ impl FleetSupervisor {
     /// Creates one runner generation: durable identity, then JIT (once), then
     /// apply (once) then WaitingOnline. The Create claim re-validates the
     /// fleet deletion marker before any external effect (0002 section 8).
+    #[tracing::instrument(name = "shaula.iac.generation_create", skip_all, fields(fleet_key = %self.config.fleet_key))]
     pub(crate) async fn create_one_generation(&self, now: i64) -> CoreResult<bool> {
         let _permit = self
             .limits
@@ -325,6 +332,7 @@ impl FleetSupervisor {
         };
         match self.runtime.create(request).await {
             Ok(result) => {
+                record_iac(MetricResult::Ok);
                 // Persist the result envelope TOGETHER WITH the REAL
                 // post-apply state identity: this is the ownership proof
                 // every later Destroy re-verifies at its effect boundary
@@ -349,6 +357,7 @@ impl FleetSupervisor {
                 Ok(true)
             }
             Err(shaula_core::ports::TemplateOutcomeError::PlanFailed { .. }) => {
+                record_iac(MetricResult::Failed);
                 // No apply admitted; the generation never touched infra.
                 self.store
                     .generation_advance(
@@ -360,6 +369,7 @@ impl FleetSupervisor {
                 Ok(false)
             }
             Err(_) => {
+                record_iac(MetricResult::Failed);
                 // Apply may have started: never re-apply; cleanup path.
                 self.store
                     .generation_advance(

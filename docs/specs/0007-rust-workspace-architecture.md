@@ -47,11 +47,12 @@ flowchart TD
     Bin --> OTel["shaula-observability"]
     Store --> Migration["shaula-store-migration"]
     Daemon --> Core["shaula-core"]
+    Daemon --> OTel
     HTTP --> Core
+    HTTP --> OTel
     Store --> Core
     ScaleSet --> Core
     Template --> Core
-    OTel --> Core
 ```
 
 `shaula-core` owns domain vocabulary and caller-facing ports. `shaula-daemon` implements inbound use cases and calls injected outbound ports. Adapters implement those ports；they do not call one another or reach through an adjacent adapter. The binary is the only location that sees all concrete implementations.
@@ -131,9 +132,9 @@ It has no linked Kubernetes/Docker SDK or general platform dispatch. [Spec 0020]
 
 ### 3.8 `shaula-observability`
 
-This crate initializes the Rust `tracing`/OpenTelemetry bridge, SDK providers, OTLP exporters, in-memory test exporters, metric instruments, propagation and bounded shutdown. It centralizes the attribute allowlist and redaction layer. Export failure never blocks lifecycle correctness；local structured logs remain available and correlated.
+This crate initializes the Rust `tracing` subscriber, the local structured JSON sink and the optional bounded OTLP/HTTP exporters for metrics and traces (spec 0001 §13, [ARD-0032](../ard/0032-process-telemetry-uses-otlp-http.md)). It centralizes the finite attribute allowlist and redaction layer. Export failure never blocks lifecycle correctness；local structured logs remain available and correlated, and degraded export is reported through an in-process counter.
 
-Other crates may depend on narrow tracing/instrumentation facades or a core telemetry port, but do not construct exporters or invent unbounded metric dimensions.
+Other crates may depend on the narrow tracing/instrumentation facade (`TelemetryHandle`, finite `MetricOperation`/`MetricResult` labels) from `shaula-daemon`, `shaula-http` or the binary, but do not construct exporters or invent unbounded metric dimensions. The crate depends on no other workspace crate and deliberately links NO HTTP client (the export is a bounded plain-HTTP POST over Tokio, with TLS at the collector boundary) — that is what keeps `reqwest` out of the daemon's dependency tree, which §2's gate enforces. The former core telemetry port is gone ([ARD-0032](../ard/0032-process-telemetry-uses-otlp-http.md)).
 
 ## 4. Scale Set Go oracle
 

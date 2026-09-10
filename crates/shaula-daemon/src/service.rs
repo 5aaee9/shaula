@@ -296,6 +296,9 @@ impl FleetMutationDraft {
 #[path = "service_fleet_registry.rs"]
 mod fleet_registry;
 
+#[path = "service_metrics.rs"]
+pub(crate) mod metrics;
+
 #[path = "service_fleet_ops.rs"]
 mod fleet_ops;
 

@@ -24,6 +24,7 @@ impl HealthPort for ControlPlane {
 
 #[async_trait]
 impl FleetRegistryPort for ControlPlane {
+    #[tracing::instrument(name = "shaula.registry.fleet_put", skip_all, fields(key = %key))]
     async fn fleet_put(
         &self,
         actor: &Actor,
@@ -283,6 +284,7 @@ impl FleetRegistryPort for ControlPlane {
         let effect_gate = self.effect_gates.acquire_exclusive(key).await;
         let committed = self.store.commit_fleet_mutation(facts).await;
         drop(effect_gate);
+        super::metrics::record_admission(&committed);
         if let Err(fence) = committed? {
             return Ok(Err(fence));
         }

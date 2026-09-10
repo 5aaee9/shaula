@@ -3,8 +3,14 @@
 
 use shaula_core::error::{CoreResult, ReasonCode};
 use shaula_core::ports::{AccessFailure, EffectOutcome, ScaleSetView};
+use shaula_observability::{MetricOperation, MetricResult, TelemetryHandle};
 
 use super::{fingerprint, FleetSupervisor, LookupOutcome, OwnershipOutcome};
+
+/// One bounded GitHub runner operation completed with the given outcome.
+fn record_runner(result: MetricResult) {
+    TelemetryHandle::new().record(MetricOperation::Runner, result, 1);
+}
 
 impl FleetSupervisor {
     /// Re-verifies the exact persisted binding on every tick. Identity drift
@@ -198,6 +204,7 @@ impl FleetSupervisor {
         }
     }
 
+    #[tracing::instrument(name = "shaula.github.scale_set_create", skip_all, fields(fleet_key = %self.config.fleet_key))]
     async fn create_owned_scale_set(
         &self,
         group_id: i64,
@@ -218,6 +225,7 @@ impl FleetSupervisor {
             .await
         {
             Ok(EffectOutcome::Definite(view)) => {
+                record_runner(MetricResult::Ok);
                 if !self.view_compatible(&view, group_id) {
                     self.upsert_ownership(
                         (view.id > 0).then_some(view.id),
@@ -235,11 +243,13 @@ impl FleetSupervisor {
             // Uncertain requests may have reached GitHub. The next tick's
             // authoritative lookup classifies the persisted attempt.
             Ok(EffectOutcome::Uncertain { .. }) | Err(AccessFailure::RequestUncertain { .. }) => {
+                record_runner(MetricResult::Degraded);
                 Ok(OwnershipOutcome::Blocked(
                     ReasonCode::ScaleSetCreateUncertain,
                 ))
             }
             Err(failure) => {
+                record_runner(MetricResult::Failed);
                 self.access_blocked(None, Some(attempt_id), &failure, now)
                     .await
             }

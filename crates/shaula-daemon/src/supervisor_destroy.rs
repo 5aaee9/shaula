@@ -3,8 +3,14 @@
 
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::ports::{RemovalOutcome, TemplateDestroyRequest};
+use shaula_observability::{MetricOperation, MetricResult, TelemetryHandle};
 
 use super::FleetSupervisor;
+
+/// One bounded IaC engine operation completed with the given outcome.
+fn record_iac(result: MetricResult) {
+    TelemetryHandle::new().record(MetricOperation::IaC, result, 1);
+}
 
 impl FleetSupervisor {
     /// Retirement: GitHub removal gate (`JobStillRunning` authoritative)
@@ -17,6 +23,7 @@ impl FleetSupervisor {
     /// retirement intent is persisted (`Retiring`) BEFORE the remote
     /// runner removal, so a lost removal response still shows durable
     /// evidence.
+    #[tracing::instrument(name = "shaula.iac.generation_destroy", skip_all, fields(fleet_key = %self.config.fleet_key))]
     pub(crate) async fn retire_excess(&self, mut excess: i64, now: i64) -> CoreResult<u32> {
         use shaula_core::lifecycle::GenerationState;
         let mut destroyed = 0u32;
@@ -243,6 +250,7 @@ impl FleetSupervisor {
                 };
                 match self.runtime.destroy(request).await {
                     Ok(_) => {
+                        record_iac(MetricResult::Ok);
                         apply_intent.complete(self.store.as_ref(), now).await?;
                         self.store
                             .generation_advance(
@@ -254,6 +262,7 @@ impl FleetSupervisor {
                         destroyed += 1;
                     }
                     Err(_) => {
+                        record_iac(MetricResult::Failed);
                         self.store
                             .generation_advance(
                                 &generation.id,

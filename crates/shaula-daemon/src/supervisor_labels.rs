@@ -2,10 +2,17 @@
 
 use shaula_core::error::{CoreResult, ReasonCode};
 use shaula_core::ports::{AccessFailure, EffectOutcome};
+use shaula_observability::{MetricOperation, MetricResult, TelemetryHandle};
 
 use super::{fingerprint, FleetSupervisor, LookupOutcome, OwnershipOutcome};
 
+/// One bounded GitHub runner operation completed with the given outcome.
+fn record_runner(result: MetricResult) {
+    TelemetryHandle::new().record(MetricOperation::Runner, result, 1);
+}
+
 impl FleetSupervisor {
+    #[tracing::instrument(name = "shaula.github.scale_set_labels_update", skip_all, fields(fleet_key = %self.config.fleet_key))]
     pub(super) async fn reconcile_labels(
         &self,
         bound_id: i64,
@@ -70,8 +77,9 @@ impl FleetSupervisor {
             .update_scale_set_labels(bound_id, &self.fallback_labels())
             .await
         {
-            Ok(EffectOutcome::Definite(_)) => {}
+            Ok(EffectOutcome::Definite(_)) => record_runner(MetricResult::Ok),
             Ok(EffectOutcome::Uncertain { .. }) | Err(AccessFailure::RequestUncertain { .. }) => {
+                record_runner(MetricResult::Degraded);
                 self.upsert_ownership(Some(bound_id), "LabelsUpdateUncertain", None, now)
                     .await?;
                 return Ok(OwnershipOutcome::Blocked(
@@ -79,9 +87,10 @@ impl FleetSupervisor {
                 ));
             }
             Err(failure) => {
+                record_runner(MetricResult::Failed);
                 return self
                     .access_blocked(Some(bound_id), None, &failure, now)
-                    .await
+                    .await;
             }
         }
         // Never mark Ready merely because PUT returned 200.

@@ -4,8 +4,15 @@ use super::FleetSupervisor;
 use shaula_core::error::CoreResult;
 use shaula_core::lifecycle::GenerationState;
 use shaula_core::ports::{EffectOutcome, JitConfig};
+use shaula_observability::{MetricOperation, MetricResult, TelemetryHandle};
+
+/// One bounded GitHub runner operation completed with the given outcome.
+fn record_runner(result: MetricResult) {
+    TelemetryHandle::new().record(MetricOperation::Runner, result, 1);
+}
 
 impl FleetSupervisor {
+    #[tracing::instrument(name = "shaula.github.jit_mint", skip_all, fields(fleet_key = %self.config.fleet_key, generation_id = %generation_id, scale_set_id = scale_set_id))]
     pub(super) async fn acquire_generation_jit(
         &self,
         generation_id: &str,
@@ -43,8 +50,12 @@ impl FleetSupervisor {
             })
             .await?;
         let jit = match self.github.generate_jit(scale_set_id, runner_name).await {
-            Ok(EffectOutcome::Definite(jit)) => jit,
+            Ok(EffectOutcome::Definite(jit)) => {
+                record_runner(MetricResult::Ok);
+                jit
+            }
             Ok(EffectOutcome::Uncertain { summary }) => {
+                record_runner(MetricResult::Degraded);
                 tracing::warn!(
                     generation = %generation_id,
                     summary = %summary,
@@ -55,6 +66,7 @@ impl FleetSupervisor {
                     .await;
             }
             Err(failure) => {
+                record_runner(MetricResult::Failed);
                 tracing::warn!(
                     generation = %generation_id,
                     summary = %failure.summary(),
