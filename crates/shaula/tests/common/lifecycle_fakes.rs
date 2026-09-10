@@ -15,6 +15,11 @@ pub struct GitHub {
     pub effects: AtomicUsize,
     pub jit_definite: AtomicBool,
     pub jit_uncertain: AtomicBool,
+    /// With jit_uncertain, also create the runner entity first — modeling
+    /// "the mint landed but the response was lost" (spec 0025 incident).
+    pub jit_uncertain_lands: AtomicBool,
+    /// Make exact-name lookups fail (classification-unavailable branch).
+    pub runner_lookup_denied: AtomicBool,
     pub runners: Mutex<Vec<RunnerRef>>,
     pub labels: Mutex<Option<Vec<Label>>>,
     pub lookup_override: Mutex<Option<Result<LookupOutcome, AccessFailure>>>,
@@ -132,14 +137,41 @@ impl GitHubAccessPort for GitHub {
             }));
         }
         if self.jit_uncertain.load(Ordering::SeqCst) {
+            if self.jit_uncertain_lands.load(Ordering::SeqCst) {
+                self.runners.lock().unwrap().push(RunnerRef {
+                    id: 78,
+                    name: name.into(),
+                    scale_set_id,
+                    status: "offline".to_string(),
+                });
+            }
             return Ok(EffectOutcome::Uncertain {
                 summary: "response lost".into(),
             });
         }
         Err(AccessFailure::PermissionDenied)
     }
-    async fn get_runner_by_name(&self, _: i64, _: &str) -> Result<RunnerLookup, AccessFailure> {
-        unreachable!()
+    async fn get_runner_by_name(
+        &self,
+        _scale_set_id: i64,
+        name: &str,
+    ) -> Result<RunnerLookup, AccessFailure> {
+        if self.runner_lookup_denied.load(Ordering::SeqCst) {
+            return Err(AccessFailure::PermissionDenied);
+        }
+        let matches: Vec<_> = self
+            .runners
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|runner| runner.name == name)
+            .cloned()
+            .collect();
+        match matches.len() {
+            0 => Ok(RunnerLookup::None),
+            1 => Ok(RunnerLookup::ExactlyOne(matches[0].clone())),
+            _ => Ok(RunnerLookup::Multiple),
+        }
     }
     fn allows_target(&self, _: &GitHubTarget) -> bool {
         true

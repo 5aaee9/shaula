@@ -44,16 +44,15 @@ impl FleetSupervisor {
             .await?;
         let jit = match self.github.generate_jit(scale_set_id, runner_name).await {
             Ok(EffectOutcome::Definite(jit)) => jit,
-            Ok(EffectOutcome::Uncertain { summary, .. }) => {
+            Ok(EffectOutcome::Uncertain { summary }) => {
                 tracing::warn!(
                     generation = %generation_id,
                     summary = %summary,
-                    "jit mint uncertain; generation quarantined"
+                    "jit mint uncertain; classifying by exact-name lookup (spec 0025)"
                 );
-                self.store
-                    .generation_advance(generation_id, GenerationState::Quarantined, now)
-                    .await?;
-                return Ok(None);
+                return self
+                    .recover_uncertain_jit(generation_id, scale_set_id, runner_name, now)
+                    .await;
             }
             Err(failure) => {
                 tracing::warn!(
@@ -79,5 +78,93 @@ impl FleetSupervisor {
             .operation_update_state(&operation_id, "Succeeded", now)
             .await?;
         Ok(Some(jit))
+    }
+
+    /// Spec 0025: an Uncertain mint is classified by exact-name lookup.
+    /// A landed entity is recorded and removed (no orphan inventory); a
+    /// proven-absent mint routes the resource-free generation to cleanup;
+    /// ambiguity and lookup/removal failures stay quarantined.
+    async fn recover_uncertain_jit(
+        &self,
+        generation_id: &str,
+        scale_set_id: i64,
+        runner_name: &str,
+        now: i64,
+    ) -> CoreResult<Option<JitConfig>> {
+        use shaula_core::ports::{RemovalOutcome, RunnerLookup};
+        match self
+            .github
+            .get_runner_by_name(scale_set_id, runner_name)
+            .await
+        {
+            Ok(RunnerLookup::ExactlyOne(runner)) => {
+                // The encoded JIT config is unrecoverable; the generation
+                // can never boot. Record the identity so inventory stays
+                // attributable, then converge the entity away.
+                self.store
+                    .generation_set_github_runner(generation_id, runner.id, now)
+                    .await?;
+                match self.github.remove_runner(runner.id).await {
+                    Ok(RemovalOutcome::Removed) | Ok(RemovalOutcome::AlreadyAbsent) => {
+                        tracing::warn!(
+                            generation = %generation_id,
+                            runner = runner.id,
+                            "uncertain mint landed; entity removed, generation to cleanup"
+                        );
+                        self.store
+                            .generation_advance(
+                                generation_id,
+                                GenerationState::CleanupRequired,
+                                now,
+                            )
+                            .await?;
+                    }
+                    outcome => {
+                        let summary = match outcome {
+                            Ok(RemovalOutcome::JobStillRunning) => "runner still has a job",
+                            _ => "removal unavailable",
+                        };
+                        tracing::warn!(
+                            generation = %generation_id,
+                            runner = runner.id,
+                            summary,
+                            "uncertain mint landed but removal blocked; generation quarantined"
+                        );
+                        self.store
+                            .generation_advance(generation_id, GenerationState::Quarantined, now)
+                            .await?;
+                    }
+                }
+            }
+            Ok(RunnerLookup::None) => {
+                tracing::warn!(
+                    generation = %generation_id,
+                    "uncertain mint proven absent; generation to cleanup"
+                );
+                self.store
+                    .generation_advance(generation_id, GenerationState::CleanupRequired, now)
+                    .await?;
+            }
+            Ok(RunnerLookup::Multiple) => {
+                tracing::warn!(
+                    generation = %generation_id,
+                    "ambiguous exact-name lookup; generation quarantined"
+                );
+                self.store
+                    .generation_advance(generation_id, GenerationState::Quarantined, now)
+                    .await?;
+            }
+            Err(failure) => {
+                tracing::warn!(
+                    generation = %generation_id,
+                    summary = %failure.summary(),
+                    "classification lookup failed; generation quarantined"
+                );
+                self.store
+                    .generation_advance(generation_id, GenerationState::Quarantined, now)
+                    .await?;
+            }
+        }
+        Ok(None)
     }
 }

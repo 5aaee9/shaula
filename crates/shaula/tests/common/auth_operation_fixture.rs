@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use super::common::*;
 use shaula_core::{plan::PlanIntent, ports::*, template::ShaulaResultEnvelope};
 use shaula_daemon::supervisor::*;

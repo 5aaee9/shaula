@@ -85,7 +85,17 @@ async fn uncertain_jit_and_access_error_keep_original_auth_and_never_repost() {
             .jit_uncertain
             .store(uncertain, Ordering::SeqCst);
         let generation = create(&harness).await;
-        assert_eq!(generation.state, G::Quarantined);
+        // Spec 0025: an uncertain mint with no landed entity is proven
+        // resource-free and routes to cleanup; a definite failure still
+        // quarantines.
+        assert_eq!(
+            generation.state,
+            if uncertain {
+                G::CleanupRequired
+            } else {
+                G::Quarantined
+            }
+        );
         let open = harness
             .store
             .operations_open_for_generation(&generation.id)
