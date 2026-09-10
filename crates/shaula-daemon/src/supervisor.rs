@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use futures::future::join_all;
 use sha2::Digest;
 use shaula_core::capacity::{
     create_count, target, AssignedDemand, CapacityCounters, CapacityPolicy,
@@ -252,8 +253,16 @@ impl FleetSupervisor {
         let excess = (effective - current_target).max(0);
         report.destroyed = self.retire_excess(excess, now).await?;
 
-        for _ in 0..creates {
-            if self.create_one_generation(now).await? {
+        // Start the whole deficit together. Each operation acquires the
+        // shared create semaphore inside `create_one_generation`, so this
+        // preserves the global create budget while allowing independent
+        // workspaces to make progress concurrently. Wait for every started
+        // operation before propagating an error so one failure does not
+        // cancel sibling creates that may already have crossed an effect
+        // boundary.
+        let results = join_all((0..creates).map(|_| self.create_one_generation(now))).await;
+        for result in results {
+            if result? {
                 report.created += 1;
             }
         }
