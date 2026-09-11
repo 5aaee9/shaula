@@ -17,4 +17,6 @@ mod operation_capture;
 mod operation_sanitize;
 
 #[cfg(test)]
+mod aws_tests;
+#[cfg(test)]
 mod proxmox_tests;

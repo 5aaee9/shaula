@@ -96,14 +96,43 @@ fn docker_template_publishes_and_validates() {
 }
 
 #[test]
-fn both_templates_declare_distinct_contracts() {
+fn proxmox_template_publishes_and_validates() {
+    smoke_test_template("proxmox", "proxmox");
+}
+
+#[test]
+fn aws_template_publishes_and_validates() {
+    smoke_test_template("aws", "aws");
+}
+
+#[test]
+fn bundled_templates_declare_distinct_contracts() {
     let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let k8s =
-        std::fs::read_to_string(workspace_root.join("templates/kubernetes/profile.yaml")).unwrap();
-    let docker =
-        std::fs::read_to_string(workspace_root.join("templates/docker/profile.yaml")).unwrap();
+    let read = |name: &str| {
+        std::fs::read_to_string(
+            workspace_root
+                .join("templates")
+                .join(name)
+                .join("profile.yaml"),
+        )
+        .unwrap()
+    };
+    let k8s = read("kubernetes");
+    let docker = read("docker");
+    let proxmox = read("proxmox");
+    let aws = read("aws");
     assert!(k8s.contains("shaula.bindings.kubernetes/v1"));
     assert!(docker.contains("shaula.bindings.docker/v1"));
+    assert!(proxmox.contains("shaula.bindings.proxmox/v1"));
+    assert!(aws.contains("shaula.bindings.aws/v1"));
     assert!(k8s.contains("kubernetes_secret_v1") && k8s.contains("kubernetes_pod_v1"));
     assert!(docker.contains("docker_container"));
+    assert!(proxmox.contains("proxmox_qemu_vm") && proxmox.contains("proxmox_nocloud_iso"));
+    assert!(aws.contains("aws_instance"));
+    // VM platforms use the explicit operator-managed image contract; the
+    // container platforms keep immutable OCI digest pins instead.
+    assert!(proxmox.contains("vm_image_contract: shaula.proxmox-template/v1"));
+    assert!(aws.contains("vm_image_contract: shaula.aws-ami/v1"));
+    assert!(!k8s.contains("vm_image_contract"));
+    assert!(!docker.contains("vm_image_contract"));
 }

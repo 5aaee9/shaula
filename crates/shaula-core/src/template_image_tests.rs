@@ -69,6 +69,44 @@ fn vm_contract_rejects_claimed_pins_and_bootstrap_contracts() -> TestResult {
     Ok(())
 }
 
+fn aws_vm_manifest() -> Result<ProfileManifest, Box<dyn std::error::Error>> {
+    let mut manifest = vm_manifest()?;
+    manifest.platform = "aws".into();
+    manifest.bindings_contract = "shaula.bindings.aws/v1".into();
+    manifest.vm_image_contract = Some(AWS_VM_IMAGE_CONTRACT.into());
+    Ok(manifest)
+}
+
+#[test]
+fn aws_ami_contract_binds_aws_platform_only() -> TestResult {
+    let manifest = aws_vm_manifest()?;
+    manifest.validate_new_container_profile()?;
+    assert_eq!(manifest.platform(), TemplatePlatform::Aws);
+    assert_eq!(manifest.platform().metric_label(), "aws");
+
+    // The AWS contract cannot be reused by another platform or bindings.
+    let mut other_platform = aws_vm_manifest()?;
+    other_platform.platform = "proxmox".into();
+    assert!(other_platform.validate().is_err());
+    let mut other_bindings = aws_vm_manifest()?;
+    other_bindings.bindings_contract = "shaula.bindings.proxmox/v1".into();
+    assert!(other_bindings.validate().is_err());
+
+    // Cross-wiring the proxmox contract onto aws is equally rejected.
+    let mut cross = aws_vm_manifest()?;
+    cross.vm_image_contract = Some(PROXMOX_VM_IMAGE_CONTRACT.into());
+    assert!(cross.validate().is_err());
+
+    // OCI pins and container/legacy setup contracts stay incompatible.
+    let mut pinned = aws_vm_manifest()?;
+    pinned.runner_image_digests = container_manifest()?.runner_image_digests;
+    assert!(pinned.validate().is_err());
+    let mut bootstrap = aws_vm_manifest()?;
+    bootstrap.container_bootstrap_contract = Some(CONTAINER_BOOTSTRAP_CONTRACT.into());
+    assert!(bootstrap.validate().is_err());
+    Ok(())
+}
+
 #[test]
 fn existing_manifests_keep_nonempty_immutable_image_authority() -> TestResult {
     let legacy = container_manifest()?;

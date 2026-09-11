@@ -1,0 +1,19 @@
+api_version: shaula.io/template-profile/v1
+kind: RunnerTemplateProfile
+platform: aws
+runtime:
+  protocol: terraform-cli/v1
+  engine: terraform
+  root_module: .
+  required_version: ">= 1.9, < 2.0"
+bindings_contract: shaula.bindings.aws/v1
+vm_image_contract: shaula.aws-ami/v1
+schemas:
+  bindings: schemas/bindings.schema.json
+  parameters: schemas/parameters.schema.json
+managed_resource_shape:
+  - role: runner
+    terraform_type: aws_instance
+    exact_count: 1
+runner_image_digests: []
+runtime_policy_digest: sha256:bcf49fcb915aff5f3303f8736d31934099d9bf03d432f7c6269d95715b521d3c

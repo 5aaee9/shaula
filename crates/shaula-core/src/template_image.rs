@@ -3,13 +3,23 @@
 use super::{CoreError, CoreResult, ProfileManifest, ReasonCode};
 
 pub const PROXMOX_VM_IMAGE_CONTRACT: &str = "shaula.proxmox-template/v1";
+pub const AWS_VM_IMAGE_CONTRACT: &str = "shaula.aws-ami/v1";
+
+/// Each VM image contract binds exactly one platform and its bindings
+/// contract; unknown contracts or cross-platform reuse are rejected.
+fn vm_image_contract_binding(contract: &str) -> Option<(&'static str, &'static str)> {
+    match contract {
+        PROXMOX_VM_IMAGE_CONTRACT => Some(("proxmox", "shaula.bindings.proxmox/v1")),
+        AWS_VM_IMAGE_CONTRACT => Some(("aws", "shaula.bindings.aws/v1")),
+        _ => None,
+    }
+}
 
 impl ProfileManifest {
     pub(super) fn validate_image_contract(&self) -> CoreResult<()> {
         if let Some(contract) = &self.vm_image_contract {
-            if contract != PROXMOX_VM_IMAGE_CONTRACT
-                || self.platform != "proxmox"
-                || self.bindings_contract != "shaula.bindings.proxmox/v1"
+            let expected = vm_image_contract_binding(contract);
+            if expected != Some((self.platform.as_str(), self.bindings_contract.as_str()))
                 || self.input_contract_version != 1
                 || self.setup_info_contract.is_some()
                 || self.container_bootstrap_contract.is_some()

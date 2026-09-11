@@ -219,4 +219,25 @@ fn bundled_profile_schemas_are_admissible() {
             schema_path.display()
         );
     }
+
+    // The VM profiles admit an empty Fleet input object: no parameters are
+    // exposed and additional properties stay rejected.
+    for path in [
+        "../../templates/proxmox/schemas/parameters.schema.json",
+        "../../templates/aws/schemas/parameters.schema.json",
+    ] {
+        let schema_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(path);
+        let schema = std::fs::read_to_string(&schema_path)
+            .unwrap_or_else(|e| panic!("bundled schema {} must exist: {e}", schema_path.display()));
+        assert!(
+            validate_inputs(&serde_json::Map::new(), "{}", Some(schema.as_str())).is_ok(),
+            "bundled schema {} must admit empty Fleet inputs",
+            schema_path.display()
+        );
+        assert!(
+            validate_inputs(&inputs(json!({"extra": true})), "{}", Some(schema.as_str())).is_err(),
+            "bundled schema {} must reject undeclared inputs",
+            schema_path.display()
+        );
+    }
 }

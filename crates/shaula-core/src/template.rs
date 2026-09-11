@@ -36,6 +36,7 @@ pub enum TemplatePlatform {
     Kubernetes,
     Docker,
     Proxmox,
+    Aws,
     Other,
 }
 
@@ -46,6 +47,7 @@ impl TemplatePlatform {
             "kubernetes" => TemplatePlatform::Kubernetes,
             "docker" => TemplatePlatform::Docker,
             "proxmox" => TemplatePlatform::Proxmox,
+            "aws" => TemplatePlatform::Aws,
             _ => TemplatePlatform::Other,
         }
     }
@@ -55,6 +57,7 @@ impl TemplatePlatform {
             TemplatePlatform::Kubernetes => "kubernetes",
             TemplatePlatform::Docker => "docker",
             TemplatePlatform::Proxmox => "proxmox",
+            TemplatePlatform::Aws => "aws",
             TemplatePlatform::Other => "other",
         }
     }
@@ -278,7 +281,7 @@ pub use container::CONTAINER_BOOTSTRAP_CONTRACT;
 
 #[path = "template_image.rs"]
 mod image;
-pub use image::PROXMOX_VM_IMAGE_CONTRACT;
+pub use image::{AWS_VM_IMAGE_CONTRACT, PROXMOX_VM_IMAGE_CONTRACT};
 
 fn default_input_contract_version() -> u32 {
     1

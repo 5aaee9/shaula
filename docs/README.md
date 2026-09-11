@@ -39,6 +39,7 @@
 | 数据库模板库、默认文件导入与 Terraform 变量发现 | [spec 0015](specs/0015-template-library-and-variable-discovery.md) / [ARD-0019](ard/0019-store-template-sources-and-discover-terraform-variables.md) |
 | 内置模板同步与已发布模板 Update | [spec 0021](specs/0021-default-template-updates.md) / [ARD-0025](ard/0025-sync-default-templates-and-explicitly-update-published-revisions.md) |
 | Proxmox VM clone、NoCloud 和基础镜像信任 | [spec 0022](specs/0022-proxmox-runner-template.md) / [ARD-0026](ard/0026-provision-proxmox-runners-with-nocloud.md) |
+| AWS EC2、user-data cloud-init 与官方 Ubuntu AMI 信任 | [spec 0027](specs/0027-aws-runner-template.md) / [ARD-0034](ard/0034-provision-aws-runners-with-ec2-user-data.md)；Draft + `proposed`，尚未接受 |
 | Fleet 跟随最新 Active 模板 Revision（follow-only 引用与 level-triggered 级联升级） | [spec 0023](specs/0023-fleet-template-follow-latest.md) / [ARD-0028](ard/0028-follow-latest-active-template-revision.md) / [ARD-0029](ard/0029-drop-pinned-template-revisions.md) |
 | Generation readiness 对账（WaitingOnline → Idle / CleanupRequired 的库存驱动） | [spec 0024](specs/0024-generation-readiness-reconciliation.md) / [ARD-0030](ard/0030-drive-generation-readiness-from-inventory.md) |
 | JIT mint 不确定性恢复（精确名查找分类：落地即移除、缺失即清理、歧义隔离） | [spec 0025](specs/0025-jit-mint-uncertainty-recovery.md) / [ARD-0031](ard/0031-classify-uncertain-jit-mints-by-exact-name-lookup.md) |

@@ -52,7 +52,7 @@ rustPlatform.buildRustPackage {
     npm exec --prefix web -- tsc --noEmit --project web/tsconfig.json
   '';
   postInstall = ''
-    for name in docker kubernetes proxmox; do
+    for name in docker kubernetes proxmox aws; do
       destination="$out/share/shaula/templates/$name"
       mkdir -p "$destination"
       cp "templates/$name/profile.yaml" \

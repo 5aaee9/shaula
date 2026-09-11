@@ -1,0 +1,55 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+# This unit is never enabled at boot. The durable marker also fails closed on
+# a manual restart or a repeated cloud-init invocation after any partial run.
+chmod 0700 /var/lib/shaula
+mkdir /var/lib/shaula/started
+
+# Publisher-authored preparation code receives no JIT environment. A failed
+# hook prevents the install and registration; its text is data to Terraform,
+# not a template.
+/bin/bash -euo pipefail /var/lib/shaula/pre-start
+rm -- /var/lib/shaula/pre-start
+
+# The runner package is artifact-pinned material: the version and sha256 are
+# fixed here, never resolved from a mutable "latest" channel, and never a
+# binding or Fleet input. Upgrading the runner publishes a new Revision.
+RUNNER_VERSION=2.337.0
+RUNNER_SHA256=70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613
+RUNNER_URL="https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
+
+# Dedicated unprivileged identity and install root on the stock Ubuntu image.
+id runner >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin runner
+install -d -m 0755 -o runner -g runner /opt/actions-runner
+
+package=$(mktemp /var/lib/shaula/runner.XXXXXX.tar.gz)
+curl -fsSL --retry 3 --connect-timeout 15 --max-time 600 -o "$package" "$RUNNER_URL"
+echo "$RUNNER_SHA256  $package" | sha256sum --check --strict
+tar -xzf "$package" -C /opt/actions-runner
+rm -- "$package"
+chown -R runner:runner /opt/actions-runner
+test -x /opt/actions-runner/bin/Runner.Listener
+
+# The scale-set JIT config pins the ARC container-style absolute workFolder
+# ("/_work"); on a VM the runner user cannot create it at the fs root, so
+# pre-create it owned by the runner before the Listener validates it.
+mkdir -p /_work
+chown runner:runner /_work
+
+# cloud-final has finished reading user-data. Restrict its guest-side caches
+# before starting any workflow process. EC2 user-data remains retrievable via
+# IMDSv2 by any guest process able to reach the metadata endpoint; Terraform
+# state still requires privileged protection.
+chmod 0700 /var/lib/cloud /run/cloud-init
+
+# No credential enters a command argument or generated executable. The
+# Listener captures this supported environment input and clears it before
+# executing jobs. runuser preserves custom variables while selecting runner.
+ACTIONS_RUNNER_INPUT_JITCONFIG=$(cat -- /var/lib/shaula/jit-config)
+test -n "$ACTIONS_RUNNER_INPUT_JITCONFIG"
+rm -- /var/lib/shaula/jit-config
+export ACTIONS_RUNNER_INPUT_JITCONFIG
+cd /opt/actions-runner
+exec runuser -u runner -- /opt/actions-runner/bin/Runner.Listener run

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shaula AWS Profile bindings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["aws_region", "aws_access_key_id", "aws_secret_access_key"],
+  "properties": {
+    "aws_region": {
+      "type": "string",
+      "pattern": "^[a-z]{2}(-[a-z]+)+-[0-9]$",
+      "description": "AWS region for the runner instances, for example us-east-1. The region must contain the Canonical Ubuntu AMI publications and the target subnet.",
+      "sensitive": false
+    },
+    "aws_access_key_id": {
+      "type": "string",
+      "pattern": "^[A-Z0-9]{16,128}$",
+      "description": "IAM access key ID used only for the Terraform AWS provider. Needs ec2:RunInstances/Describe/Terminate plus EBS volume and AMI describe permissions; stored as a sensitive publisher binding and never delivered to the instance.",
+      "sensitive": true
+    },
+    "aws_secret_access_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192,
+      "description": "IAM secret access key paired with aws_access_key_id. Stored as a sensitive publisher binding; it never enters user-data, tags, or guest files.",
+      "sensitive": true
+    },
+    "aws_ami_name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_./:*-]+$",
+      "minLength": 1,
+      "maxLength": 255,
+      "description": "Canonical official Ubuntu AMI name pattern resolved with most_recent under owner 099720109477, default ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*. Pin a dated serial suffix for an immutable image.",
+      "sensitive": false
+    },
+    "aws_instance_type": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+\\.[a-z0-9]+$",
+      "description": "EC2 instance type, default t3.large. Must be available in the bound region and subnet's availability zone.",
+      "sensitive": false
+    },
+    "aws_subnet_id": {
+      "type": "string",
+      "pattern": "^(subnet-[0-9a-f]{8,17})?$",
+      "description": "Optional target subnet; empty uses the region's default VPC default subnet. The subnet needs outbound reachability to GitHub and the runner download endpoints.",
+      "sensitive": false
+    },
+    "aws_security_group_ids": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^sg-[0-9a-f]{8,17}$" },
+      "maxItems": 5,
+      "description": "Optional additional security group IDs; empty attaches the VPC default security group. The template creates no security group itself.",
+      "sensitive": false
+    },
+    "aws_root_volume_gb": {
+      "type": "integer",
+      "enum": [8, 16, 30, 50, 100, 150, 200],
+      "description": "Encrypted gp3 root volume size in GiB, default 30. The volume is deleted on instance termination.",
+      "sensitive": false
+    },
+    "aws_cloud_init_cmd": {
+      "type": "string",
+      "maxLength": 65536,
+      "description": "Optional publisher-authored Bash preparation body, executed as root before the runner install and the mandatory JIT handoff. Default empty. Use code only, never credentials; no variable substitution or JIT environment is provided. Failure prevents runner startup.",
+      "sensitive": false
+    }
+  }
+}
