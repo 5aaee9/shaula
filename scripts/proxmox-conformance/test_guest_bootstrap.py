@@ -2,7 +2,7 @@
 
 import unittest
 
-from guest_fixture import GuestFixture, JIT_CANARY, TEMPLATE
+from guest_fixture import JIT_CANARY, TEMPLATE, GuestFixture
 
 
 class GuestBootstrapTests(unittest.TestCase):
@@ -71,8 +71,8 @@ class GuestBootstrapTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("blkid <-L> <CIDATA>", self.guest.trace())
         cloud = (TEMPLATE / "user-data.tftpl").read_text(encoding="utf-8")
-        self.assertIn(r'ENV{ID_FS_LABEL}==\"CIDATA\"', cloud)
-        self.assertIn(r'OWNER=\"root\", GROUP=\"root\", MODE=\"0600\"', cloud)
+        self.assertIn(r"ENV{ID_FS_LABEL}==\"CIDATA\"", cloud)
+        self.assertIn(r"OWNER=\"root\", GROUP=\"root\", MODE=\"0600\"", cloud)
 
     def test_empty_jit_blocks_listener(self):
         self.guest.write("var/lib/shaula/jit-config", "")
@@ -92,7 +92,9 @@ class GuestBootstrapTests(unittest.TestCase):
         self.assertIn("ConditionPathExists=!/var/lib/shaula/started", unit)
         self.assertIn("Restart=no", unit)
         self.assertNotIn("[Install]", unit)
-        self.assertIn('["systemctl", "start", "--no-block", "shaula-runner.service"]', cloud)
+        self.assertIn(
+            '["systemctl", "start", "--no-block", "shaula-runner.service"]', cloud
+        )
         self.assertNotIn('"enable"', cloud)
 
 

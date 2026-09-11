@@ -1,12 +1,11 @@
 """Execute the packaged Bash bootstrap against files and command stubs in a temp dir."""
 
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import tempfile
-
+from pathlib import Path
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 TEMPLATE = REPOSITORY / "templates" / "proxmox"
@@ -82,7 +81,10 @@ class GuestFixture:
         if os.name == "nt":
             converted = subprocess.run(
                 [self.bash, "-c", 'cygpath -u "$1"', "fixture", str(self.root)],
-                check=True, capture_output=True, text=True, timeout=10,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             shell_root = converted.stdout.strip()
         else:
@@ -91,23 +93,39 @@ class GuestFixture:
         self.environment["BASH_ENV"] = str(self.root / "fixture-environment")
         self.write("var/lib/shaula/jit-config", JIT_CANARY)
         self.write("expected-jit", JIT_CANARY)
-        self.write("var/lib/shaula/pre-start", """test -z "${ACTIONS_RUNNER_INPUT_JITCONFIG:-}"
+        self.write(
+            "var/lib/shaula/pre-start",
+            """test -z "${ACTIONS_RUNNER_INPUT_JITCONFIG:-}"
 printf 'pre-start\\n' >> "$GUEST_ROOT/trace"
-""")
+""",
+        )
         self.write("opt/actions-runner/bin/Runner.Listener", LISTENER, executable=True)
         self.write("dev/sr0", "synthetic block device")
         for directory in ["var/lib/cloud", "run/cloud-init", "seed mount"]:
             (self.root / directory).mkdir(parents=True)
-        for command in ["chmod", "chown", "udevadm", "id", "blkid", "findmnt", "umount", "runuser"]:
+        for command in [
+            "chmod",
+            "chown",
+            "udevadm",
+            "id",
+            "blkid",
+            "findmnt",
+            "umount",
+            "runuser",
+        ]:
             self.write(f"commands/{command}", COMMANDS, executable=True)
 
         # Retain the production control flow. Only absolute guest paths and
         # the block-device predicate are replaced; host operations are stubs.
         source = (TEMPLATE / "bootstrap.tftpl").read_text(encoding="utf-8")
         guest_paths = r"/(?:var/lib/shaula|opt/actions-runner|var/lib/cloud|run/cloud-init|_work)(?:/[\w.-]+)*"
-        source = re.sub(guest_paths, lambda match: '"${GUEST_ROOT}' + match[0] + '"', source)
+        source = re.sub(
+            guest_paths, lambda match: '"${GUEST_ROOT}' + match[0] + '"', source
+        )
         self.write("bootstrap", source)
-        self.write("fixture-environment", """export PATH="$GUEST_ROOT/commands:$PATH"
+        self.write(
+            "fixture-environment",
+            """export PATH="$GUEST_ROOT/commands:$PATH"
 test() {
   if [[ "${1:-}" == -b ]]; then
     [[ "$2" == "$GUEST_ROOT/dev/sr0" && -f "$2" ]]
@@ -115,7 +133,8 @@ test() {
     builtin test "$@"
   fi
 }
-""")
+""",
+        )
 
     def close(self):
         self.temporary.cleanup()
@@ -131,7 +150,10 @@ test() {
         return subprocess.run(
             [self.bash, str(self.root / "bootstrap")],
             env=self.environment | environment,
-            capture_output=True, text=True, timeout=15,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
         )
 
     def trace(self):
