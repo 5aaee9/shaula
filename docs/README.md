@@ -42,6 +42,7 @@
 | Fleet 跟随最新 Active 模板 Revision（follow-only 引用与 level-triggered 级联升级） | [spec 0023](specs/0023-fleet-template-follow-latest.md) / [ARD-0028](ard/0028-follow-latest-active-template-revision.md) / [ARD-0029](ard/0029-drop-pinned-template-revisions.md) |
 | Generation readiness 对账（WaitingOnline → Idle / CleanupRequired 的库存驱动） | [spec 0024](specs/0024-generation-readiness-reconciliation.md) / [ARD-0030](ard/0030-drive-generation-readiness-from-inventory.md) |
 | JIT mint 不确定性恢复（精确名查找分类：落地即移除、缺失即清理、歧义隔离） | [spec 0025](specs/0025-jit-mint-uncertainty-recovery.md) / [ARD-0031](ard/0031-classify-uncertain-jit-mints-by-exact-name-lookup.md) |
+| Forgejo Runner Backend（provider 维度、Pool 切片、未验证关联、Busy-safe removal） | [spec 0026](specs/0026-forgejo-runner-backend.md) / [ARD-0033](ard/0033-admit-forgejo-through-a-pool-backend-first.md)；Draft + `proposed`，尚未接受 |
 | Fleet authentication/template Profile 服务端列表选择 | [spec 0016](specs/0016-fleet-profile-selection.md) / [ARD-0020](ard/0020-load-fleet-profile-choices-from-registry.md) |
 | Template 静态校验后的自动激活与旧 Ready 升级 | [spec 0017](specs/0017-automatic-template-activation.md) / [ARD-0021](ard/0021-activate-templates-after-static-validation.md) |
 | 仅支持 v2 GitHub App authentication、历史格式停用与部署检查 | [spec 0018](specs/0018-github-app-only-authentication.md) / [ARD-0022](ard/0022-retire-legacy-github-authentication.md) |
@@ -59,7 +60,7 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 - Terraform state 通过 daemon 内部 HTTP backend 写入 SQLite；LOCK/UNLOCK、锁持有者校验和 state 写入是数据库事务契约，不以本地 `terraform.tfstate` 为主状态。
 - daemon 保管 GitHub 控制面凭据，worker 通过受授权控制通道请求 JIT、观察与安全删除；管理 HTTP 保持 OIDC，内部 worker/state HTTP 使用分权的 Generation/worker 专用凭据。
 - Runner Generation 不可变；Create 与 Destroy 是唯一基础设施 mutation，Busy-safe removal、原始 inputs/artifact、worker fencing 和故障时保留证据不因进程拆分而取消。
-- Kubernetes、Docker 与 Proxmox 是 bundled Template Platforms；GitHub authentication 只支持 schema 2 GitHub App、显式 TargetPolicy 和 Revision-scoped account bindings，不做运行时 credential fallback。PAT、旧 allowlist 和固定 installation publication 已按 spec 0018 停用。
+- Kubernetes、Docker 与 Proxmox 是 bundled Template Platforms；GitHub authentication 只支持 schema 2 GitHub App、显式 TargetPolicy 和 Revision-scoped account bindings，不做运行时 credential fallback。PAT、旧 allowlist 和固定 installation publication 已按 spec 0018 停用。Forgejo 后端的 token 型 profile 是独立 kind，与 GitHub authentication 不共用 schema，也不构成 PAT 的复活（[spec 0026](specs/0026-forgejo-runner-backend.md)，Draft）。
 - Fleet Decommission 保留空 Scale Set；Profile DELETE 是异步 retirement，不因正在使用而改成同步删除或 force delete。
 - Template 当前候选静态校验通过后自动激活，已有 Ready 在扫描时重新校验并激活；独立 `template.attest` 的 exact conformance 记录作为运行验证证据保留，不再控制激活，见 spec 0017。
 - 默认 Docker Runner 不挂载 host socket；JIT 同 Runner Execution Domain 的进程检查风险、Kubernetes name-based deletion 风险和同 OS identity IaC children 的 ambient host-admin 风险按相应 ARD 记录。
@@ -77,9 +78,12 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 | D2 | 运行策略 | Changes、幂等记录、audit、tombstones、retired credentials、artifacts、state snapshots、emergency state 与 Workspace 的 retention 时限；原始凭据的外部撤销时机。Operation Log/Jobs 历史的独立默认值已由 spec 0019 冻结，不扩展为上述恢复材料的 GC 规则 | 0005 §7 / 0019 §5 |
 | D3 | 运行策略 | operation/recovery timeout、retry budget、reaper interval、worker/backend body/rate/backlog/concurrency 的最终默认值与硬上限；OIDC 已有具体值见部署说明，Operation Log/Setup Info 的默认值见 spec 0019，不重新标为待定 | 0001 §5 / 0009 / 0019 |
 | D4 | 持久格式，阻塞发布冻结 | `bindings_digest` 是否继续作为独立 commitment，以及 exact Revision/incarnation 绑定、编码和兼容迁移；本轮不新增 bd2/HMAC 格式，不重写旧记录 | 0004 §3 / 0005 §5 |
+| D5 | 协议验收 | Forgejo 凭据的 profile kind/schema、scope → token 类型与最小权限的 exact 映射，以及激活前验证读取的契约；不属于 GitHub authentication，也不作为其 fallback | 0026 §7 |
+| D6 | 运行策略 | Forgejo 轮询的规模边界与默认值：jobs/inventory 端点无分页且 labels 在服务端内存过滤，需要最终 interval/backoff/条数上限、idle deadline 与可支持的实例规模上限 | 0026 §3 / §4 |
 | R1 | 发布配置与验收 | Rust toolchain/features、Terraform binary、provider locks/checksums、官方 Runner image/宿主 bootstrap CLI、runtime/trust policy 与 conformance suite 的 exact tuple | 0003 / 0004 / 0006 / 0007 |
 | R2 | 协议验收 | Go oracle 的 commit/module/checksum、获取方式和完整 differential suite；真实已注册 OIDC Provider 的 browser/API 验收 | 0007 §4 / 0009 §7 |
 | R3 | 平台验收 | Kubernetes CPU/memory/ephemeral-storage、安全上下文、seccomp/capabilities、namespace sharing/network policy 和所需 RBAC；host OS 的 worker/descendant fencing | 0003 §10 |
+| R4 | 发布配置与验收 | Forgejo Backend 的 exact tuple：Forgejo 最低版本、forgejo-runner 版本、官方 runner 镜像 registry/digest、labels backend target 与 Template Platform 的组合、runtime policy 与 conformance suite | 0026 §3 / §5 |
 
 代码或 manifest 已选择某个库/字段，不自动等于其兼容性验收通过；已有实现也不应继续作为“完全未实现”记录。
 
@@ -87,7 +91,7 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 
 多账户 GitHub authentication 已按 [spec 0011](specs/0011-multi-account-github-authentication.md) 与 [ADR-0015](ard/0015-route-one-github-app-profile-to-multiple-accounts.md) 接受并完成本地实现：一份 App credential、多个明确账户/Target selector、个人未来仓库的按需验证。它替代单 installation、同 key policy 不可变的旧基线条款。[spec 0018](specs/0018-github-app-only-authentication.md) 进一步取消 PAT、v1 publication/replay、旧格式升级和 reference-only execution。历史 rows/credential bytes 保留且不自动转换；部署前必须确认没有仍依赖旧格式的 active/desired 或 retained execution 引用。真实验收与部署证据以 [implementation status](IMPLEMENTATION_STATUS.md) 为准。
 
-以下需要新的决定和对应验收，不阻塞按现有基线实现：额外 high-trust Runner-socket Profile、Docker memory-only JIT、pre-JIT provider-backed namespace preflight、每 Profile 独立 OS identity/sandbox、OpenTofu advertisement、远程 Executor Driver、多主/HA、自动删除 Scale Set、Quarantine force-recovery。它们不能作为匿名认证、跳过 locking 或丢弃可能残留资源的理由。
+以下需要新的决定和对应验收，不阻塞按现有基线实现：额外 high-trust Runner-socket Profile、Docker memory-only JIT、pre-JIT provider-backed namespace preflight、每 Profile 独立 OS identity/sandbox、OpenTofu advertisement、远程 Executor Driver、多主/HA、自动删除 Scale Set、Quarantine force-recovery、Forgejo Runner Backend（spec 0026 Draft，Pool 切片先行，见 ARD-0033）。它们不能作为匿名认证、跳过 locking 或丢弃可能残留资源的理由。
 
 ## 维护与验收
 

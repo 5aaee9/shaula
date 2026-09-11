@@ -255,3 +255,15 @@ _Avoid_: State file alone, database backup alone, best-effort cache
 **Create Start Authorization**:
 daemon 针对 current Worker Claim 和 Fleet Mutation Fence 记录的单次 Create-start 许可；未解决的 spawn handover 必须保守视为 Create 可能已开始，不能通过重启获得第二次 Create apply。
 _Avoid_: Terraform lock, PID alone, retry counter
+
+**Runner Backend**:
+决定一个 Fleet 如何注册 runner、读取需求快照并为 Generation 准备引导材料的控制面类型；GitHub Actions Scale Set 与 Forgejo 是它的两个取值，provider 维度不影响 Generation 状态机、worker fencing 或 state backend。
+_Avoid_: Template Platform, Executor Driver, IaC provider
+
+**Pool Fleet**:
+后端不提供预分配或 job 定向时使用的 Fleet 形态：一个 Generation 是「预注册 + 等待」的单任务 runner，job 与 Generation 的关联最多为未验证。等待中的 runner 持续占用基础设施，因此容量上限与 idle deadline 是安全边界的一部分。
+_Avoid_: Scale Set, persistent runner pool, warm spare
+
+**Runner Bootstrap Material**:
+一个 Generation 的 runner 进程向控制面证明身份所需的 provider 专用一次性材料（GitHub 为 JIT config，Forgejo 为实例 URL、注册 uuid 与一次性 token）。它是 credential-grade，只能经受保护通道交付，且不得作为控制面凭据使用。
+_Avoid_: Setup Info, Template Binding, runner credential
