@@ -1078,9 +1078,9 @@ web source was changed for this Nix increment. aarch64 native execution and a
 pushed GitHub workflow run have **not** been observed. None of these checks closes
 the real-Provider, GitHub, Runner Platform or worker-integration gates above.
 
-## Forgejo runner backend: contract drafted, nothing implemented (2026-09-11)
+## Forgejo runner backend: adapter and CI E2E slice implemented (2026-09-11)
 
-[Spec 0026](specs/0026-forgejo-runner-backend.md) (Draft) and [ARD-0033](ard/0033-admit-forgejo-through-a-pool-backend-first.md) (`proposed`) record the pool-first Forgejo path. Nothing exists in code yet: the Fleet provider dimension, the Forgejo adapter and its port, the token profile kind, the runner bootstrap material, the admitted forgejo-runner image family and the Jobs unverified-association display are all unimplemented, and no migration, template or UI change has been made. The source facts quoted by the spec were read from Forgejo `e27d0384` and forgejo-runner `667c8d97`; they are not instance acceptance. The A1–A8 acceptance list has not been run, and the D5/D6/R4 freeze items are open. Until an owner accepts the ARD, this is a proposal and not a release commitment.
+[Spec 0026](specs/0026-forgejo-runner-backend.md) and [ARD-0033](ard/0033-admit-forgejo-through-a-pool-backend-first.md) remain the governing draft/proposed contract. The new `shaula-forgejo` crate implements the provider-specific HTTP slice: explicit instance/organization/user/repository routes, bounded pagination, `visible=false` inventory reads, ephemeral registration, token-redacted diagnostics, safe removal classification, and conservative uncertain-registration classification that requires `ephemeral` plus Fleet-label evidence. `.github/workflows/forgejo-e2e.yml` starts Forgejo 16.0.4, creates a repository and workflow, registers a runner through the API, runs `forgejo-runner one-job` v13.1.0, verifies job success, and verifies the ephemeral runner disappears. Fleet provider storage, token profiles, template integration, UI, and the A1–A8 acceptance matrix remain open; this slice does not claim the full daemon lifecycle is shipped.
 
 ## Known accepted limitations (per ADR)
 

@@ -10,6 +10,7 @@ members = [
     "crates/shaula-scaleset",
     "crates/shaula-template",
     "crates/shaula-observability",
+    "crates/shaula-forgejo",
 ]
 
 [workspace.package]
@@ -27,6 +28,7 @@ shaula-store-migration = { path = "crates/shaula-store-migration" }
 shaula-scaleset = { path = "crates/shaula-scaleset" }
 shaula-template = { path = "crates/shaula-template" }
 shaula-observability = { path = "crates/shaula-observability" }
+shaula-forgejo = { path = "crates/shaula-forgejo" }
 
 async-trait = "0.1"
 axum = "0.8"

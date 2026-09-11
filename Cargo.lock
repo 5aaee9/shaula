@@ -2585,6 +2585,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "shaula-forgejo"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "url",
+]
+
+[[package]]
 name = "shaula-http"
 version = "0.1.0"
 dependencies = [

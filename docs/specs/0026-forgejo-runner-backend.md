@@ -80,7 +80,7 @@ Create 顺序：
   - **已从 inventory 消失**（服务端在任务结束后删除）→ 安全，继续 Destroy。
   - **仍存在且 `idle`，且模板侧进程/资源证据表明未持有任务** → 允许先 `DELETE` 注册再 Destroy；删除返回 404/不存在视为已收敛。
   - **`active`、状态未知或证据矛盾** → MUST 保守延迟并记为 Busy，MUST NOT 删除注册、MUST NOT 销毁资源。
-- 注册的 Uncertain（响应丢失）按精确名字在 scope inventory 内分类：`ExactlyOne` → 效果已落地；由于 `token` 只在响应中出现一次、不可恢复，该注册 MUST 立即移除并使 Generation 进入 `CleanupRequired`（与 [spec 0025](0025-jit-mint-uncertainty-recovery.md) 同构）；`None` → 零资源，可直接重试新的 Generation/name；`Multiple`、查找失败或移除被 Busy 阻塞 → `Quarantined` 并保留 occupancy，由操作者处置。
+- 注册的 Uncertain（响应丢失）按精确名字**并联合证据**在 scope inventory 内分类：候选必须同时匹配 `ephemeral=true` 与 Fleet 声明的全部 labels；仅名字相同不足以证明归属。`ExactlyOne` → 效果已落地；由于 `token` 只在响应中出现一次、不可恢复，该注册 MUST 立即移除并使 Generation 进入 `CleanupRequired`（与 [spec 0025](0025-jit-mint-uncertainty-recovery.md) 同构）；`None` → 零资源，可直接重试新的 Generation/name；`Multiple`、查找失败或移除被 Busy 阻塞 → `Quarantined` 并保留 occupancy，由操作者处置。
 - 凭据轮换：本切片**不实现 Auth Handoff**。轮换 = 新的 Fleet revision + 现有 Generation 收敛（未持有任务的先 Destroy 再以新凭据重建，Busy 的等其结束后销毁）。额外 destroy/create 是本切片的显式代价，MUST 在 UI 与文档中说明，不得宣称无缝切换。
 
 ## 7. 认证与凭据

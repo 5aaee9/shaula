@@ -1,0 +1,37 @@
+name: Forgejo runner E2E
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  forgejo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Start Forgejo
+        run: |
+          docker run --detach --name forgejo --network host \
+            -e FORGEJO__actions__ENABLED=true \
+            -e FORGEJO__server__ROOT_URL=http://127.0.0.1:3000/ \
+            -e FORGEJO__security__INSTALL_LOCK=true \
+            -e FORGEJO__service__DISABLE_REGISTRATION=true \
+            codeberg.org/forgejo/forgejo:16.0.4
+      - name: Register runner and run a Forgejo job
+        env:
+          FORGEJO_RUNNER_VERSION: 13.1.0
+        run: bash scripts/forgejo-e2e.sh
+      - name: Dump Forgejo logs on failure
+        if: failure()
+        run: docker logs forgejo
+      - name: Stop Forgejo
+        if: always()
+        run: docker rm --force forgejo
