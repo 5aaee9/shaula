@@ -1,7 +1,7 @@
 import { createServer as httpServer, request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, test } from "@playwright/test";
-import { createServer, preview } from "vite";
+import { build, createServer, preview } from "vite";
 
 async function rawStatus(origin: string, path: string) {
   // Preserve dot segments so the guard is checked against the actual request path.
@@ -30,6 +30,10 @@ test("normal Vite dev and preview authenticate source assets and disable shared 
     configFile: "vite.config.ts",
     server: { host: "127.0.0.1", port: 0 },
   });
+  // `vite preview` serves the production output directory and does not build it
+  // implicitly. Keep this contract test self-contained on a clean checkout,
+  // where the ignored `web/dist` directory is absent.
+  await build({ configFile: "vite.config.ts" });
   const production = await preview({
     configFile: "vite.config.ts",
     preview: { host: "127.0.0.1", port: 0 },

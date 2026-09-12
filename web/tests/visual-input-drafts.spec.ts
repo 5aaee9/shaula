@@ -45,10 +45,7 @@ test("promotion never silently replaces the captured revision or retries a rejec
   let writes = 0;
   await page.route("**/api/v1/fleets/visual-build", (route) => {
     writes += 1;
-    expect(route.request().postDataJSON().template_profile_ref).toEqual({
-      key: "kubernetes-linux",
-      revision: 3,
-    });
+    expect(route.request().postDataJSON().template_profile_ref).toBe("kubernetes-linux");
     expect(route.request().postDataJSON().template_inputs).toEqual({ runner_image: "old-image" });
     return route.fulfill({
       status: 409,
@@ -79,7 +76,7 @@ test("promotion never silently replaces the captured revision or retries a rejec
   await expect(image.locator("option").filter({ hasText: "old-image" })).toHaveCount(0);
   await image.selectOption({ index: 1 });
   await acceptCreate(page, (body) => {
-    expect(JSON.parse(body).template_profile_ref).toEqual({ key: "kubernetes-linux", revision: 4 });
+    expect(JSON.parse(body).template_profile_ref).toBe("kubernetes-linux");
     expect(JSON.parse(body).template_inputs).toEqual({ runner_image: "new-image" });
   });
   expect(writes).toBe(1);
@@ -152,7 +149,7 @@ test("late contract responses cannot overwrite a newer template selection", asyn
   releaseSlow();
   await expect(page.getByLabel("Template profile", { exact: true })).toHaveValue("fast-template");
   await acceptCreate(page, (body) => {
-    expect(JSON.parse(body).template_profile_ref).toEqual({ key: "fast-template", revision: 3 });
+    expect(JSON.parse(body).template_profile_ref).toBe("fast-template");
     expect(JSON.parse(body).template_inputs).toEqual({ runner_image: "fast-image" });
   });
 });

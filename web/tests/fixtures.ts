@@ -52,7 +52,7 @@ export function fleet(key: string, revision = 2) {
         labels: ["linux", "x64"],
       },
       capacity: { min_runners: 1, max_runners: 10 },
-      template_profile_ref: { key: "kubernetes-linux", revision: 3 },
+      template_profile_ref: "kubernetes-linux",
       template_inputs: {},
     },
     resolved: {

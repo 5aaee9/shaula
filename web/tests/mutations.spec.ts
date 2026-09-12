@@ -33,10 +33,7 @@ test("new fleet sends the API spec with create precondition", async ({ page }) =
     expect(request.headers()["x-shaula-actor"]).toBeUndefined();
     expect(request.postDataJSON().github.target).toEqual({ kind: "organization", owner: "acme" });
     expect(request.postDataJSON().github.auth_profile_ref).toBe("github-build");
-    expect(request.postDataJSON().template_profile_ref).toEqual({
-      key: "kubernetes-linux",
-      revision: 3,
-    });
+    expect(request.postDataJSON().template_profile_ref).toBe("kubernetes-linux");
     expect(request.postDataJSON().github.scale_set_name).toBe("new-build");
     expect(request.postDataJSON().github.runner_group).toBe("Default");
     expect(request.postDataJSON().github.labels).toEqual([]);

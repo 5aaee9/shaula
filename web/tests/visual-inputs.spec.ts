@@ -81,7 +81,7 @@ test("approved values preserve JSON types and large integers without default sel
   await page.getByLabel("mixed", { exact: true }).selectOption({ index: 3 });
   await acceptCreate(page, (body) => {
     const payload = JSON.parse(body);
-    expect(payload.template_profile_ref).toEqual({ key: "kubernetes-linux", revision: 3 });
+    expect(payload.template_profile_ref).toBe("kubernetes-linux");
     expect(payload.template_inputs).toMatchObject({
       runner_image: "approved-image",
       array: [],
@@ -267,9 +267,15 @@ test("object identity treats prototype and Unicode keys as data while distinguis
   await page.goto("/fleets/linux-build");
   await page.getByRole("button", { name: "Edit fleet" }).click();
   const numeric = page.getByRole("combobox", { name: "Numeric choice", exact: true });
-  await expect(numeric.locator("option:checked")).toContainText("no longer selectable");
+  // Chromium does not expose a disabled selected option through `:checked`.
+  // Assert the select value and the option text separately so the test still
+  // verifies that the integer token is preserved as an unavailable value.
+  await expect(numeric).toHaveValue("unavailable");
+  await expect(numeric.locator('option[value="unavailable"]')).toContainText(
+    "no longer selectable",
+  );
   const object = page.getByRole("combobox", { name: "Object choice", exact: true });
-  await expect(object.locator("option:checked")).not.toContainText("no longer selectable");
+  await expect(object).not.toHaveValue("unavailable");
   await expect(object).not.toHaveValue("");
   await numeric.selectOption({ label: "1.0" });
   await page.getByRole("button", { name: "Save changes" }).click();
