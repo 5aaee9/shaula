@@ -17,6 +17,7 @@ pub(super) async fn commit_labels(plane: &TestPlane, labels: &[&str], now: i64) 
             incarnation: head.incarnation,
             revision,
             spec_json: serde_json::to_string(&spec).unwrap(),
+            template_pool: Vec::new(),
             template: None,
             auth_desired: Some(previous.auth_desired),
             inputs_digest: previous.inputs_digest,

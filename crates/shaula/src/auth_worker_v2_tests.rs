@@ -98,6 +98,7 @@ pub(crate) async fn seed_candidate_as(
         incarnation: "inc-v2".into(),
         revision,
         spec_json: String::new(),
+        template_pool: Vec::new(),
         template: None,
         auth_desired: None,
         inputs_digest: String::new(),

@@ -179,6 +179,7 @@ async fn changing_template_inputs_requires_zero_occupancy() {
             runner_name: "runner".into(),
             generation_name: "generation".into(),
             fleet_revision: 1,
+            pool_member_key: None,
             template_profile_key: "k8s-linux".into(),
             template_revision: 1,
             template_artifact_digest: digest,

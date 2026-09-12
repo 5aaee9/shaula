@@ -106,41 +106,63 @@ impl SqliteControlPlane {
                 p.template_profile_key != new_template_key
                     || p.template_revision != new_template_revision
             });
-            let previous_pool_members = if let Some(p) = previous.as_ref() {
-                fleet_revision_pool_members::Entity::find()
-                    .filter(fleet_revision_pool_members::Column::FleetKey.eq(&facts.resource_key))
-                    .filter(fleet_revision_pool_members::Column::FleetRevision.eq(p.revision))
-                    .all(&tx)
-                    .await
-                    .map_err(|e| core_err(crate::store::StoreError::from(e)))?
+            // Whether the PREVIOUS revision declared a pool is a property
+            // of its admitted spec, not of how many member rows exist: a
+            // non-pool fleet simply has no pool members, so comparing row
+            // counts alone would misread every non-pool replacement as a
+            // pool conversion.
+            let previous_is_pool = previous
+                .as_ref()
+                .and_then(|p| {
+                    serde_json::from_str::<shaula_core::fleet::FleetSpec>(&p.spec_json).ok()
+                })
+                .is_some_and(|spec| spec.template_pool.is_some());
+            let previous_pool_members = if previous_is_pool {
+                if let Some(p) = previous.as_ref() {
+                    fleet_revision_pool_members::Entity::find()
+                        .filter(
+                            fleet_revision_pool_members::Column::FleetKey.eq(&facts.resource_key),
+                        )
+                        .filter(fleet_revision_pool_members::Column::FleetRevision.eq(p.revision))
+                        .all(&tx)
+                        .await
+                        .map_err(|e| core_err(crate::store::StoreError::from(e)))?
+                } else {
+                    Vec::new()
+                }
             } else {
                 Vec::new()
             };
             let new_pool = !facts.template_pool.is_empty();
-            let pool_changed = previous_pool_members.len() != facts.template_pool.len()
-                || previous_pool_members.iter().any(|row| {
-                    match facts
-                        .template_pool
-                        .iter()
-                        .find(|member| member.key == row.member_key)
-                    {
-                        Some(member) => {
-                            member.template_profile_key != row.template_profile_key
-                                || member.template_revision != row.template_revision
-                                || member.template_artifact_digest != row.template_artifact_digest
-                                || member.template_attestation_id != row.template_attestation_id
-                                || serde_json::to_string(&member.template_inputs)
-                                    .ok()
-                                    .as_deref()
-                                    != Some(row.template_inputs_json.as_str())
-                                || member.inputs_digest != row.inputs_digest
-                                || member.weight as i64 != row.weight
-                                || member.max_runners != row.max_runners
+            let pool_changed = previous_is_pool
+                && (previous_pool_members.len() != facts.template_pool.len()
+                    || previous_pool_members.iter().any(|row| {
+                        match facts
+                            .template_pool
+                            .iter()
+                            .find(|member| member.key == row.member_key)
+                        {
+                            Some(member) => {
+                                member.template_profile_key != row.template_profile_key
+                                    || member.template_revision != row.template_revision
+                                    || member.template_artifact_digest
+                                        != row.template_artifact_digest
+                                    || member.template_attestation_id != row.template_attestation_id
+                                    || serde_json::to_string(&member.template_inputs)
+                                        .ok()
+                                        .as_deref()
+                                        != Some(row.template_inputs_json.as_str())
+                                    || member.inputs_digest != row.inputs_digest
+                                    || member.weight as i64 != row.weight
+                                    || member.max_runners != row.max_runners
+                            }
+                            None => true,
                         }
-                        None => true,
-                    }
-                });
-            if (previous_pool_members.is_empty() != new_pool) || pool_changed {
+                    }));
+            // A pool<->non-pool conversion, or a change to the pool route
+            // set itself, requires zero occupancy. A non-pool fleet whose
+            // routes never entered a pool is not a conversion.
+            if (previous_is_pool != new_pool) || pool_changed {
                 let occupancy = fleet_replacement_occupancy_in_tx(&tx, &facts.resource_key)
                     .await
                     .map_err(core_err)?;

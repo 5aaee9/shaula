@@ -170,6 +170,7 @@ pub(crate) async fn seed_profile_and_fleet_config(
         incarnation: "inc-f1".into(),
         revision: 1,
         spec_json,
+        template_pool: Vec::new(),
         template: None,
         auth_desired: Some((KEY.to_string(), 1)),
         inputs_digest: "sha256:inputs".into(),

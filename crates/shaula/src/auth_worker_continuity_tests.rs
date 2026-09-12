@@ -73,6 +73,7 @@ async fn seed_predecessor(control_plane: &Arc<SqliteControlPlane>, app_id: &str)
         incarnation: "inc-v2".into(),
         revision: 1,
         spec_json: String::new(),
+        template_pool: Vec::new(),
         template: None,
         auth_desired: None,
         inputs_digest: String::new(),

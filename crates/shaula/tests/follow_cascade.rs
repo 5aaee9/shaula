@@ -200,6 +200,7 @@ async fn occupied_follower_defers_then_upgrades_after_drain() {
             runner_name: "runner-occupied".into(),
             generation_name: "occupied".into(),
             fleet_revision: 1,
+            pool_member_key: None,
             template_profile_key: "k8s-linux".into(),
             template_revision: 1,
             template_artifact_digest: digest1,

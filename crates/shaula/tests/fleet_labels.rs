@@ -56,6 +56,7 @@ async fn fleet_labels_can_change_after_creation() -> Result<(), Box<dyn std::err
             runner_name: "busy-runner".into(),
             generation_name: "busy-generation".into(),
             fleet_revision: 1,
+            pool_member_key: None,
             template_profile_key: "k8s-linux".into(),
             template_revision: 1,
             template_artifact_digest: digest,

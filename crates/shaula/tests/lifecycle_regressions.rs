@@ -27,6 +27,7 @@ async fn transaction_rejects_same_profile_revision_switch_with_occupancy() {
             incarnation: head.incarnation,
             revision: 2,
             spec_json: previous.spec_json,
+            template_pool: Vec::new(),
             template: Some(("k8s-linux".into(), 2, digest, "att-2".into())),
             auth_desired: Some(previous.auth_desired),
             inputs_digest: previous.inputs_digest,
@@ -185,6 +186,7 @@ async fn seed_idle(store: &impl LifecycleStore, digest: &str) {
             runner_name: "runner1".into(),
             generation_name: "generation1".into(),
             fleet_revision: 1,
+            pool_member_key: None,
             template_profile_key: "k8s-linux".into(),
             template_revision: 1,
             template_artifact_digest: digest.into(),
@@ -255,6 +257,7 @@ async fn cleanup_with_missing_auth_reference_is_quarantined() {
             // No matching fleet revision exists, so the destroy path cannot
             // prove which auth client owns the runner removal.
             fleet_revision: 999,
+            pool_member_key: None,
             template_profile_key: "k8s-linux".into(),
             template_revision: 1,
             template_artifact_digest: digest,
@@ -377,6 +380,7 @@ async fn seed_waiting_online(store: &impl LifecycleStore, digest: &str) {
             runner_name: "runner1".into(),
             generation_name: "generation1".into(),
             fleet_revision: 1,
+            pool_member_key: None,
             template_profile_key: "k8s-linux".into(),
             template_revision: 1,
             template_artifact_digest: digest.into(),
