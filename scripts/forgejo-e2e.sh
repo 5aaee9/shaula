@@ -70,7 +70,7 @@ inventory_status=""
 for _ in $(seq 1 60); do
   inventory="$(json_api "$base_url/api/v1/admin/actions/runners?limit=50" || true)"
   inventory_status="$(jq -r --arg name "$runner_name" '[.[] | select(.name == $name)][0].status // empty' <<<"$inventory")"
-  if [[ "$inventory_status" == idle ]]; then break; fi
+  if [[ $inventory_status == idle ]]; then break; fi
   sleep 1
 done
 test "$inventory_status" = idle
@@ -100,7 +100,7 @@ mismatch_status=""
 for _ in $(seq 1 30); do
   runs="$(json_api "$base_url/api/v1/repos/$forgejo_user/$repo/actions/runs?limit=50" || true)"
   mismatch_status="$(jq -r '[.workflow_runs[]? | select(.name == "shaula-forgejo-mismatch")][0].status // empty' <<<"$runs")"
-  [[ -n "$mismatch_status" ]] && break
+  [[ -n $mismatch_status ]] && break
   sleep 1
 done
 test "$mismatch_status" != success
