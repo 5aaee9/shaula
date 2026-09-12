@@ -100,6 +100,10 @@ _Avoid_: Tenant sandbox, credential broker, control-plane trust domain
 一个可被 Fleet 选择的稳定 Runner 基础设施契约，其各个 Revision 对同一组输入定义可复现、能力同质的 Runner；当前候选静态校验通过后自动激活，运行验证证据独立保留。
 _Avoid_: Provider, image, template directory
 
+**Template Pool**:
+一个共享单一 GitHub Scale Set 路由身份、并以明确权重提供多个 Template Profile Revision 的逻辑执行集合；权重是 Shaula 对 eligible acquisition 的长期调度目标，不是 GitHub 的 job 路由保证。
+_Avoid_: Fleet, Scale Set, guaranteed job ratio
+
 **Template Profile Revision**:
 一个 Template Profile 的不可变版本，固定其 Template Artifact、manifest contracts、bindings 和输入契约；只有 current Active Revision 可接收新的 Fleet 引用，旧 exact pin 可供已准入 Fleet 正常 reconcile/Create/Destroy/recovery。
 _Avoid_: Runner Generation, mutable profile, latest template

@@ -82,6 +82,7 @@ v1 不包括：
 - GitHub Enterprise Server 或 `github.com` enterprise-level Scale Set；
 - 通用 Kubernetes/Docker client、watcher、controller、core 平台对象 schema 或平台特定 reconcile 分支；spec 0020 的固定 Runtime bootstrap 不属于通用平台 API；
 - 在单个 Scale Set 内按逐 job labels 动态选择 Template Profile；
+- 单个 Scale Set 多 Template 的加权扩展见 Proposed [spec 0029](0029-weighted-template-pool.md)，不属于当前 v1；
 - Runner 或 Scale Set 原地 Update、模板热更新、自动 drift repair；
 - 实现 Kubernetes Job 或远程 Executor Driver；仅保留其可替换 Interface，不禁止未来另行决策的扩展；
 - 多主、跨主机 HA、共享 SQLite 或分布式 operation lease；

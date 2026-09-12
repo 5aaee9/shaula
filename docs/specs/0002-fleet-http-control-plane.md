@@ -8,7 +8,7 @@
 - Auth handoff visibility: explicit desired/observed Auth Revision Ref
 - Observability: Day 0 OpenTelemetry
 
-This specification extends the [Multi-Fleet Runner Scale Set Controller Specification](0001-shaula-runner-scale-set.md). It defines Fleet desired state and HTTP behavior；it does not expose direct Runner or Terraform endpoints on management HTTP. The separate private worker/state protocol is owned by [spec 0010](0010-lifecycle-worker-and-http-state-backend.md).
+This specification extends the [Multi-Fleet Runner Scale Set Controller Specification](0001-shaula-runner-scale-set.md). It defines Fleet desired state and HTTP behavior；it does not expose direct Runner or Terraform endpoints on management HTTP. The separate private worker/state protocol is owned by [spec 0010](0010-lifecycle-worker-and-http-state-backend.md). The optional single-Scale-Set weighted Template Pool extension is defined by [spec 0029](0029-weighted-template-pool.md); this document remains the owner of its admission, revision and HTTP mutation barriers.
 
 Template/Auth Profile publication, validation and retirement are normative in the [Profile HTTP Control-Plane Specification](0005-profile-http-control-plane.md). The provider-neutral execution seam is normative in the [Template Profile Runtime Specification](0004-template-profile-runtime.md). Kubernetes and Docker details live in their [Kubernetes](0003-kubernetes-runner-resource.md) and [Docker](0006-docker-runner-resource.md) specializations；neither becomes a Fleet HTTP or native daemon object model.
 
@@ -154,14 +154,16 @@ Template Profile 固定 executable artifact、engine、provider bindings、provi
 
 本地 admission 不声明 GitHub access 此刻可用。Fleet Change 进行 bounded authenticated reads；`401`、`403` 和 access-filtered `404` 形成 access Condition，不能作为 Scale Set 不存在的证据。
 
+当 Fleet 使用 `template_pool` 时，提交体必须遵循 [spec 0029](0029-weighted-template-pool.md)：它与单模板 `template_profile_ref` 互斥，成员和权重属于同一个 Fleet desired revision。每个成员的 Profile reference、输入和 resolved activation provenance 都必须在 admission 时分别校验并持久化；成员替换或权重变更继续使用本节的 conditional replacement、zero-occupancy 和 in-flight-effect barriers。HTTP representation 可以返回有限成员状态和权重，但不得回显任何 Template credential。
+
 ### 4.2 Fleet Revision
 
 每次 effective desired mutation append immutable Fleet Revision 并原子推进 desired head。Revision 在一个 Fleet incarnation 内单调递增且不回退。Revision 固定：
 
 - canonical Fleet Spec 和 normalized GitHub Target；
 - requested Auth Profile key 及 admission-time desired Auth Revision Ref；
-- exact Template Profile key/revision/artifact digest/activation provenance；
-- normalized Template inputs 和 input digest；
+- exact Template Profile key/revision/artifact digest/activation provenance；Pool Fleet additionally stores one such tuple per member together with its bounded positive weight；
+- normalized Template inputs 和 input digest；Pool Fleet additionally stores each member's input digest；
 - authenticated actor、reason 和 timestamps。
 
 Fast successive capacity changes 可以 supersede 尚未 observed 的中间 Revision；history 保留 audit，已经启动的 Runner Operation 使用其原始 revision 完成或安全 cleanup。

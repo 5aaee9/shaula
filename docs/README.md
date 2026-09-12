@@ -38,6 +38,7 @@
 | Workflow Jobs、Apply/Destroy 日志保留与 Setup Info 内容 | [spec 0019](specs/0019-workflow-jobs-and-operation-logs.md) / [ARD-0023](ard/0023-retain-operation-logs-and-present-workflow-jobs.md)；已有本地实现，真实平台验收边界见 implementation status |
 | 官方容器镜像、宿主 bootstrap 与启动门槛 | [spec 0020](specs/0020-official-container-runner-bootstrap.md) / [ARD-0024](ard/0024-bootstrap-official-runner-images-outside-containers.md) |
 | Fleet Template inputs 可视化编辑 | [spec 0014](specs/0014-visual-template-inputs.md) / [ADR-0018](ard/0018-render-fleet-inputs-from-approved-template-options.md) |
+| Weighted Template Pool（单 Scale Set 多模板、加权 acquisition；Proposed） | [spec 0029](specs/0029-weighted-template-pool.md) / [ARD-0036](ard/0036-weighted-template-pool.md) |
 | 数据库模板库、默认文件导入与 Terraform 变量发现 | [spec 0015](specs/0015-template-library-and-variable-discovery.md) / [ARD-0019](ard/0019-store-template-sources-and-discover-terraform-variables.md) |
 | 内置模板同步与已发布模板 Update | [spec 0021](specs/0021-default-template-updates.md) / [ARD-0025](ard/0025-sync-default-templates-and-explicitly-update-published-revisions.md) |
 | Proxmox VM clone、NoCloud 和基础镜像信任 | [spec 0022](specs/0022-proxmox-runner-template.md) / [ARD-0026](ard/0026-provision-proxmox-runners-with-nocloud.md) |
