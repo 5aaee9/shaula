@@ -4,7 +4,9 @@ mod common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use shaula_core::lifecycle::GenerationState;
 use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::GenerationRecord;
 use tower::ServiceExt;
 
 use common::attestation_harness::put_template_profile;
@@ -148,6 +150,82 @@ async fn automatic_activation_allows_fleet_admission_and_exact_input_contract_wi
     assert_eq!(fleet["resolved"]["template"]["revision"], 1);
     assert_eq!(fleet["resolved"]["template"]["artifactDigest"], digest);
     assert_eq!(fleet["resolved"]["template"]["attestationId"], activation);
+}
+
+#[tokio::test]
+async fn changing_template_inputs_requires_zero_occupancy() {
+    let (app, control_plane, _engine) = build_app_with_scan().await;
+    let digest =
+        common::attestation_harness::seed_profile(&app, &control_plane, "k8s-linux", true).await;
+
+    let created = app
+        .clone()
+        .oneshot(put_with_idempotency(
+            "/api/v1/fleets/parameterized",
+            "parameterized-create",
+            FLEET_BODY.to_string(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::ACCEPTED);
+    let etag = created.headers()["etag"].clone();
+
+    // An occupied Fleet has a live generation whose envelope was built from
+    // the original template_inputs object.
+    control_plane
+        .generation_insert(GenerationRecord {
+            id: "parameterized-generation".into(),
+            fleet_key: "parameterized".into(),
+            runner_name: "runner".into(),
+            generation_name: "generation".into(),
+            fleet_revision: 1,
+            template_profile_key: "k8s-linux".into(),
+            template_revision: 1,
+            template_artifact_digest: digest,
+            attestation_id: "static-validation-v1:test".into(),
+            inputs_digest: "original-inputs".into(),
+            state: GenerationState::Idle,
+            github_runner_id: Some(1),
+            workspace_path: "unused".into(),
+            created_at: 1,
+            updated_at: 1,
+        })
+        .await
+        .unwrap();
+
+    let mut changed: serde_json::Value = serde_json::from_str(FLEET_BODY).unwrap();
+    changed["template_inputs"] = serde_json::json!({"size_class": "standard"});
+    let mut request = authorized(
+        "PUT",
+        "/api/v1/fleets/parameterized",
+        Some(changed.to_string()),
+    );
+    request.headers_mut().insert("if-match", etag);
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::CONFLICT,
+        "input changes must wait for all generations to retire"
+    );
+    let body = axum::body::to_bytes(response.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(error["code"], "ResourceInUse");
+    assert_eq!(
+        error["detail"],
+        "retirement blocked: template input replacement requires zero resource occupancy"
+    );
+    assert_eq!(
+        control_plane
+            .fleet_get("parameterized")
+            .await
+            .unwrap()
+            .unwrap()
+            .desired_revision,
+        1,
+        "rejected input changes must not append a Fleet revision"
+    );
 }
 
 #[tokio::test]

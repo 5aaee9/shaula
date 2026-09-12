@@ -240,7 +240,7 @@ Completion predicate 有界：
 
 - Create：ownership verified、所需 Auth Revision Ref observed、listener established，并在一个 transaction 中记录 Fleet observed revision、所采用 demand checkpoint 和由此派生的 lifecycle intents；不等待不断变化的 capacity 永久静止。
 - Capacity replacement：记录 observed Fleet revision、demand checkpoint 和相应 Create/Destroy intents。
-- Template replacement：仅在 occupancy 和 active Runner Operations 为零时 admission；新的 current active exact Revision/attestation 被 supervisor observed 后成功。
+- Template replacement 或 Template input replacement：仅在 occupancy 和 active Runner Operations 为零时 admission；新的 current active exact Revision/attestation 或参数集被 supervisor observed 后成功。
 - Decommission：所有 owned Generations terminal、supervisor stopped、tombstone durable 后成功。
 
 后续 Assigned Demand 触发新的 level reconcile，不 reopen 已完成 Change。同 Profile Auth promotion 触发独立 durable handoff；跨 Profile replacement 是受零占用 gate 保护的 Fleet mutation。

@@ -148,11 +148,22 @@ impl FleetRegistryPort for ControlPlane {
             if identity_changed {
                 return Ok(Err(MutationError::IdentityConflict));
             }
-            if template_referenced(&previous_spec) != template_referenced(&spec) {
+            // Template inputs are part of the immutable execution envelope.
+            // Changing them while generations are present would leave one
+            // Fleet serving runners created from different parameter sets.
+            // Treat an inputs change like a template or auth replacement and
+            // require zero occupancy before admitting the new revision.
+            if template_referenced(&previous_spec) != template_referenced(&spec)
+                || previous_spec.template_inputs != spec.template_inputs
+            {
                 let occupancy = self.store.generations_occupancy(key).await?;
                 if occupancy > 0 {
                     return Ok(Err(MutationError::RetirementBlocked {
-                        reason: "replacement requires zero resource occupancy".into(),
+                        reason: if previous_spec.template_inputs != spec.template_inputs {
+                            "template input replacement requires zero resource occupancy".into()
+                        } else {
+                            "replacement requires zero resource occupancy".into()
+                        },
                     }));
                 }
             }

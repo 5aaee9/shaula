@@ -51,11 +51,34 @@ fn bundled_proxmox_manifest_admits_operator_image_and_two_owned_resources() -> T
 }
 
 #[test]
-fn bundled_proxmox_inputs_discover_defaults_without_exposing_platform_controls_to_fleets(
-) -> TestResult {
+fn bundled_proxmox_inputs_discover_fleet_hardware_options_and_binding_defaults() -> TestResult {
     let variables = crate::variables::discover_variables(&source(), "artifact")?;
     assert!(variables.available);
-    assert!(variables.parameters.is_empty());
+    assert_eq!(variables.parameters.len(), 2);
+    for (key, expected, options) in [
+        ("cpu_cores", "2", ["1", "2", "4", "8"].as_slice()),
+        (
+            "memory_mb",
+            "4096",
+            ["2048", "4096", "8192", "16384"].as_slice(),
+        ),
+    ] {
+        let field = variables
+            .parameters
+            .iter()
+            .find(|field| field.key == key)
+            .ok_or("parameter missing")?;
+        assert_eq!(field.default_value_json.as_deref(), Some(expected), "{key}");
+        assert_eq!(
+            field
+                .options
+                .iter()
+                .map(|option| option.value_json.as_str())
+                .collect::<Vec<_>>(),
+            options,
+            "{key} options"
+        );
+    }
     assert_eq!(variables.bindings.len(), 8);
     for (key, expected) in [
         ("proxmox_insecure", "true"),

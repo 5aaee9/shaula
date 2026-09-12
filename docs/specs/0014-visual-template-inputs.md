@@ -18,7 +18,8 @@ credentials 均不属于这份编辑器。领域含义见 [CONTEXT.md](../CONTEX
 
 当前实现不是完整 JSON Schema 表单系统：每个输入必须同时满足 artifact parameter schema
 和所选 Revision 的 finite alias policy。Docker 的 `runner_image`、Kubernetes 的
-`runner_image` / `cpu_request` / `memory_request` 都是有限选项；实际可选值还必须经过该
+`runner_image` / `cpu_request` / `memory_request`，以及 Proxmox 的 `cpu_cores` /
+`memory_mb` 都是有限选项；实际可选值还必须经过该
 Revision 的 policy 收窄。不能根据平台名称硬编码这些字段，也不能只根据 schema enum 展示值。
 
 ## 2. Input authority and read contract

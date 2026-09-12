@@ -6,6 +6,7 @@ import {
   field,
   loadTemplate,
   mockContract,
+  mockTemplateChoices,
   openCreate,
 } from "./visual-input-fixtures";
 
@@ -135,6 +136,67 @@ test("optional inputs stay visible when Advanced settings is collapsed and can b
   await acceptCreate(page, (body) =>
     expect(JSON.parse(body).template_inputs).toEqual({ runner_image: "approved-image" }),
   );
+});
+
+test("fleet parameters allow each fleet to choose its own CPU and memory", async ({ page }) => {
+  await mockApi(page);
+  await mockContract(
+    page,
+    contract([
+      field("cpu_request", ['"500m"', '"1"', '"2"'], false, "CPU request"),
+      field("memory_request", ['"2Gi"', '"4Gi"', '"8Gi"'], false, "Memory request"),
+    ]),
+  );
+  await openCreate(page);
+  await loadTemplate(page);
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("GitHub authentication profile", { exact: true })).toHaveValue(
+    "github-build",
+  );
+  const cpu = dialog.getByRole("combobox", { name: "CPU request", exact: true });
+  const memory = dialog.getByRole("combobox", { name: "Memory request", exact: true });
+  await expect(cpu).toBeVisible();
+  await expect(memory).toBeVisible();
+  await cpu.selectOption({ label: "2" });
+  await memory.selectOption({ label: "8Gi" });
+  await acceptCreate(page, (body) => {
+    const payload = JSON.parse(body);
+    expect(payload.github.auth_profile_ref).toBe("github-build");
+    expect(payload.template_inputs).toEqual({
+      cpu_request: "2",
+      memory_request: "8Gi",
+    });
+    expect(payload.template_inputs.auth_profile_ref).toBeUndefined();
+  });
+});
+
+test("Proxmox fleets can choose CPU cores and memory size as typed inputs", async ({ page }) => {
+  await mockApi(page);
+  await mockTemplateChoices(page, ["proxmox"]);
+  await mockContract(
+    page,
+    contract(
+      [
+        field("cpu_cores", ["1", "2", "4", "8"], false, "CPU cores"),
+        field("memory_mb", ["2048", "4096", "8192", "16384"], false, "Memory (MiB)"),
+      ],
+      "proxmox",
+    ),
+  );
+  await openCreate(page);
+  await loadTemplate(page, "proxmox");
+  const dialog = page.getByRole("dialog");
+  const cpu = dialog.getByRole("combobox", { name: "CPU cores", exact: true });
+  const memory = dialog.getByRole("combobox", { name: "Memory (MiB)", exact: true });
+  await expect(cpu).toBeVisible();
+  await expect(memory).toBeVisible();
+  await cpu.selectOption({ label: "4" });
+  await memory.selectOption({ label: "8192" });
+  await acceptCreate(page, (body) => {
+    const payload = JSON.parse(body);
+    expect(payload.template_profile_ref).toEqual({ key: "proxmox", revision: 3 });
+    expect(payload.template_inputs).toEqual({ cpu_cores: 4, memory_mb: 8192 });
+  });
 });
 
 test("root presets submit one complete approved configuration", async ({ page }) => {

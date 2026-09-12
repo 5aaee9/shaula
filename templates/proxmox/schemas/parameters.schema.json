@@ -3,5 +3,18 @@
   "title": "Shaula Proxmox Profile Fleet inputs",
   "type": "object",
   "additionalProperties": false,
-  "properties": {}
+  "properties": {
+    "cpu_cores": {
+      "type": "integer",
+      "enum": [1, 2, 4, 8],
+      "title": "CPU cores",
+      "description": "Number of virtual CPU cores assigned to each Proxmox runner VM."
+    },
+    "memory_mb": {
+      "type": "integer",
+      "enum": [2048, 4096, 8192, 16384],
+      "title": "Memory (MiB)",
+      "description": "Memory assigned to each Proxmox runner VM, in MiB."
+    }
+  }
 }

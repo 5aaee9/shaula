@@ -148,9 +148,11 @@ class Handler(BaseHTTPRequestHandler):
             if method == "GET" and path.endswith("/config"):
                 return self.reply(vm["config"])
             if method == "PUT" and path.endswith("/config"):
-                assert not {"scsi0", "net0", "cores", "memory"}.intersection(form), (
-                    "Inherited hardware must not be managed"
+                assert not {"scsi0", "net0"}.intersection(form), (
+                    "Inherited disks and NICs must not be managed"
                 )
+                assert form.get("cores") == ["2"]
+                assert form.get("memory") == ["4096"]
                 for key, value in form.items():
                     vm["config"][key] = (
                         int(value[0]) if key in {"onboot", "protection"} else value[0]

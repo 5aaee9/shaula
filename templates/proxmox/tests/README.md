@@ -20,7 +20,7 @@ It never calls a real Proxmox host or provisions a real VM.
 The harness verifies actual provider filtering for missing and duplicate
 templates, malformed bindings, defaults, literal custom-script and JIT
 rendering, API token splitting at the first equals sign, create/stop/delete
-ordering, inherited hardware, and cleanup after the source template disappears.
+ordering, Fleet-selected hardware, and cleanup after the source template disappears.
 It also checks the final Terraform state contains no retained resources.
 These are Terraform/API composition tests; they do not prove a guest obtained
 DHCP, ran cloud-init, registered with GitHub, or completed a workflow.

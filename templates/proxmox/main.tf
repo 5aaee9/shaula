@@ -79,8 +79,11 @@ resource "proxmox_qemu_vm" "runner" {
     full        = var.shaula.bindings.proxmox_full_clone
   }
 
-  # Keep inherited root disks, NICs, CPU and memory outside the managed map.
+  # Keep inherited root disks and NICs outside the managed map. CPU and memory
+  # are Fleet parameters so each Fleet can choose an approved VM size.
   # The provider refuses a foreign disk/ISO or a second inherited seed.
+  cores             = var.shaula.parameters.cpu_cores
+  memory            = var.shaula.parameters.memory_mb
   nocloud_cdrom_slot = "ide2"
   disk = {
     ide2 = {
@@ -128,7 +131,10 @@ variable "shaula" {
       proxmox_full_clone     = optional(bool, false)
       proxmox_cloud_init_cmd = optional(string, "")
     })
-    parameters = object({})
+    parameters = object({
+      cpu_cores = optional(number, 2)
+      memory_mb = optional(number, 4096)
+    })
   })
   sensitive = true
 

@@ -144,7 +144,7 @@ def main():
                     "proxmox_host": f"https://127.0.0.1:{server.server_port}",
                     "proxmox_token": "test@pve!shaula=synthetic=secret",
                 },
-                "parameters": {},
+                "parameters": {"cpu_cores": 2, "memory_mb": 4096},
             }
 
             def inputs():
@@ -205,6 +205,23 @@ def main():
             inputs()
             create = plan("create")
             check_plan(create, jit)
+            vm_values = next(
+                item["values"]
+                for item in create["planned_values"]["root_module"]["resources"]
+                if item["address"] == "proxmox_qemu_vm.runner"
+            )
+            assert vm_values["cores"] == 2 and vm_values["memory"] == 4096
+            envelope["parameters"] = {"cpu_cores": 8, "memory_mb": 16384}
+            inputs()
+            sized = plan("custom-size")
+            sized_vm = next(
+                item["values"]
+                for item in sized["planned_values"]["root_module"]["resources"]
+                if item["address"] == "proxmox_qemu_vm.runner"
+            )
+            assert sized_vm["cores"] == 8 and sized_vm["memory"] == 16384
+            envelope["parameters"] = {"cpu_cores": 2, "memory_mb": 4096}
+            inputs()
             # Publisher code is literal data; Terraform must not interpret the
             # shell's dollar syntax or offer it the JIT configuration.
             body = "printf '%s\\n' '${not_a_terraform_variable} $(not_a_terraform_command)'"
@@ -273,7 +290,7 @@ def main():
                 not state.get("values", {}).get("root_module", {}).get("resources", [])
             )
             print(
-                "PASS: real Terraform/provider create and destroy, six negative plans, literal hook/JIT rendering, API token splitting, inherited hardware, lifecycle ordering and empty final state"
+                "PASS: real Terraform/provider create and destroy, six negative plans, literal hook/JIT rendering, API token splitting, variable Fleet hardware, lifecycle ordering and empty final state"
             )
         finally:
             server.shutdown()

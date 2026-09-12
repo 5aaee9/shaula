@@ -28,7 +28,8 @@ worker fencing、state 和恢复；平台启动成功不等于 Runner 在线或 
 
 只声明一个 sensitive 的 `variable "shaula"`，使用 input contract v1。
 下列配置属于可信 publisher 的 bindings，类型和默认值定义在 Terraform，schema 只补充
-描述、边界和敏感性。Fleet parameters 为空对象，不暴露脚本、平台凭据或网络配置。
+描述、边界和敏感性。CPU 和内存是有限的 Fleet parameters；脚本、平台凭据和网络配置
+仍不会暴露给 Fleet。
 
 | Binding | Type | Default | Meaning |
 | --- | --- | --- | --- |
@@ -41,12 +42,17 @@ worker fencing、state 和恢复；平台启动成功不等于 Runner 在线或 
 | `proxmox_full_clone` | bool | `false` | `false` 为链接克隆，共享基础 VM 磁盘；存储不支持链接克隆时设 `true` |
 | `proxmox_cloud_init_cmd` | string | empty | 可选的 root 初始化脚本，在固定 JIT 启动前运行 |
 
+| Fleet parameter | Type | Default | Approved values | Meaning |
+| --- | --- | --- | --- | --- |
+| `cpu_cores` | integer | `2` | `1`, `2`, `4`, `8` | 每个 runner VM 的 vCPU 数量 |
+| `memory_mb` | integer | `4096` | `2048`, `4096`, `8192`, `16384` | 每个 runner VM 的内存，单位 MiB |
+
 `proxmox_cloud_init_cmd` 是受信任的发布代码，不是凭据容器，不支持插入平台 token 或自行替换
 JIT 注册逻辑。以独立文件传入，不把用户脚本文本再次解释为 Terraform template 表达式。
 失败阻止 Listener 启动；成功后始终执行项目固定的 JIT handoff。它不能成为 Fleet input。
 
 默认网络为 DHCP IPv4；不提供 bridge、VLAN、静态地址、DNS 或 NIC 配置项。
-继承基础 VM 的磁盘、CPU、内存和 NIC。第一版要求 Linux、systemd、cloud-init、DHCP 可达网络、
+继承基础 VM 的磁盘和 NIC；CPU、内存由 Fleet parameters 覆盖。第一版要求 Linux、systemd、cloud-init、DHCP 可达网络、
 预装 `/opt/actions-runner` 及其依赖和 `runner` 用户；基础镜像不能携带已注册 runner 状态或
 自动运行的旧 runner 服务。支持的网卡命名及软件前提由随 artifact 固定的 runtime policy 声明。
 
@@ -119,7 +125,7 @@ checksum 校验、运行时改写 lock 或重新 apply 原 Generation 绕过该�
 ## 6. Acceptance
 
 - Rust tests：显式 VM image contract 与不合法混用、旧 manifest 兼容、变量默认值/敏感性/
-  空 Fleet inputs、真实 archive 导入保留 `.tftpl` 和拒绝不安全目录项。
+  Fleet hardware options、真实 archive 导入保留 `.tftpl` 和拒绝不安全目录项。
 - Terraform：在真实执行平台以冻结 lock 运行 `init -lockfile=readonly`，随后实际执行
   validate 和无 apply 的 plan，确认 provider 可加载且 lock 未变；init 成功本身不够。
   测试唯一/缺失/歧义 template、token 分割、

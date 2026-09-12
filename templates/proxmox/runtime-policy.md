@@ -6,8 +6,9 @@ The provider finds exactly one visible template by its case-sensitive name,
 clones on that template's node, allocates a free VMID at or above the bound,
 attaches the seed to `ide2`, and starts the VM once. The clone is a linked
 clone by default; the publisher may request a full clone, and a linked clone
-requires template disks on storage Proxmox supports for them. The VM inherits CPU,
-memory, root disks and its one Ethernet NIC. Its seed requests IPv4 DHCP for
+requires template disks on storage Proxmox supports for them. The VM inherits
+root disks and its one Ethernet NIC; Fleet-approved `cpu_cores` and `memory_mb`
+parameters set its virtual CPU count and memory in MiB. Its seed requests IPv4 DHCP for
 an `eth*` or `en*` interface; networking is not a publisher or Fleet option.
 Host-boot autostart and deletion protection are disabled. Refresh does not
 restart a stopped guest. Destruction stops and removes the owned VM before

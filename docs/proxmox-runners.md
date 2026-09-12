@@ -2,7 +2,8 @@
 
 内置 `proxmox` 模板通过 `indexyz/proxmox` 0.5.0 创建一个链接克隆 VM 和专属 NoCloud ISO。
 模板随包启动同步到数据库，进入 **Templates → New template → Default template** 后选择
-`proxmox`；发布时配置平台 bindings，Fleet 选择发布后的 Template，无需 Fleet inputs。
+`proxmox`；发布时配置平台 bindings，Fleet 选择发布后的 Template，并可为每个 Fleet 选择 CPU
+核心数和内存大小。
 协议见 [spec 0022](specs/0022-proxmox-runner-template.md)。
 
 ## 准备基础 VM
@@ -13,7 +14,7 @@ DHCP 网络，以及拥有 `/opt/actions-runner` 的 `runner` 用户和已安装
 不要预先注册 runner，也不要启用旧 runner 服务。cloud-init 状态须按镜像制作流程清理，
 让每次 clone 的新 instance-id 触发初始化。
 
-模板继承原 VM 的 CPU、内存、磁盘和 NIC，使用单张名称以 `en` 或 `eth` 开头的 Ethernet NIC；
+模板继承原 VM 的磁盘和 NIC；Fleet 可在批准的选项中选择 CPU 核心数和内存大小。使用单张名称以 `en` 或 `eth` 开头的 Ethernet NIC；
 NoCloud network-config 固定 DHCP IPv4。当前没有 bridge、VLAN 或静态地址选项。
 `ide2` 必须为空或原生 PVE cloud-init 介质，不能留另一份 seed 或安装光盘。
 基础 VM 内容由你管理：同名模板被修改后，后续 runner 会使用新内容，需要重新验收。
@@ -35,6 +36,13 @@ NoCloud network-config 固定 DHCP IPv4。当前没有 bridge、VLAN 或静态�
 | `proxmox_iso_storage` | `local` |
 | `proxmox_full_clone` | `false`；链接克隆共享基础 VM 磁盘，其存储须支持链接克隆，不支持时设置 `true` |
 | `proxmox_cloud_init_cmd` | 空，不执行额外初始化 |
+
+Fleet 参数由模板发布者批准后，在 Fleet 创建页选择：
+
+| 参数 | 默认值 | 可选值 |
+| --- | --- | --- |
+| `cpu_cores` | `2` | `1`, `2`, `4`, `8` |
+| `memory_mb` | `4096` MiB | `2048`, `4096`, `8192`, `16384` MiB |
 
 可选初始化脚本以 root 执行，成功后运行固定 JIT bootstrap；失败则不启动 Listener。
 它适合设置工作目录等镜像初始化步骤，不要包含平台凭据、注册 token 或无限等待的命令。
