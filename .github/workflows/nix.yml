@@ -85,4 +85,4 @@ jobs:
       - name: Install Chromium
         run: npm exec --prefix web -- playwright install --with-deps chromium
       - name: Run Playwright suite
-        run: npm test --prefix web
+        run: npm test --prefix web -- --workers=6
