@@ -12,16 +12,12 @@ use shaula_core::lifecycle::GenerationState;
 use shaula_core::registry::{ControlPlaneStore, GenerationRecord, LifecycleStore};
 use tower::ServiceExt;
 
-use common::attestation_harness::{put_template_profile, seed_profile};
+use common::attestation_harness::{put_template_profile, seed_profile, seed_profile_artifact};
 use common::*;
 
-/// Same platform/shape as [`fixture_artifact`] with bumped policy marker —
-/// a genuinely new artifact digest for the profile's second revision.
-fn fixture_artifact_v2() -> (String, Vec<u8>) {
-    fixture_artifact_with_policy("sha256:policy-v2")
-}
-
-fn fixture_artifact_with_policy(policy: &str) -> (String, Vec<u8>) {
+/// Same platform/shape as [`fixture_artifact`] with a caller-chosen
+/// policy marker and parameters schema — a genuinely new artifact digest.
+fn fixture_artifact_with_parts(policy: &str, parameters_schema: &str) -> (String, Vec<u8>) {
     let manifest = format!(
         "api_version: shaula.io/template-profile/v1\nkind: RunnerTemplateProfile\nplatform: kubernetes\nruntime:\n  protocol: terraform-cli/v1\n  engine: terraform\n  root_module: .\n  required_version: \">= 1.9, < 2.0\"\nbindings_contract: shaula.bindings.kubernetes/v1\ncontainer_bootstrap_contract: shaula.container-bootstrap/v1\nschemas:\n  bindings: schemas/bindings.schema.json\n  parameters: schemas/parameters.schema.json\nmanaged_resource_shape:\n  - role: bootstrap\n    terraform_type: kubernetes_secret_v1\n    exact_count: 1\n  - role: runner\n    terraform_type: kubernetes_pod_v1\n    exact_count: 1\nrunner_image_digests:\n  - ghcr.io/actions/actions-runner:2.323.0@sha256:3f2a1b9c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8\nruntime_policy_digest: {policy}\n"
     );
@@ -30,7 +26,7 @@ fn fixture_artifact_with_policy(policy: &str) -> (String, Vec<u8>) {
         ("profile.yaml", manifest.as_str()),
         (".terraform.lock.hcl", FIXTURE_LOCK_HCL),
         ("schemas/bindings.schema.json", "{}"),
-        ("schemas/parameters.schema.json", "{}"),
+        ("schemas/parameters.schema.json", parameters_schema),
         (
             "main.tf",
             "resource \"kubernetes_secret_v1\" \"bootstrap\" {}\n",
@@ -64,7 +60,16 @@ async fn publish_revision_2(
     control_plane: &std::sync::Arc<shaula_store::registry_impl::SqliteControlPlane>,
     policy_json: Option<&str>,
 ) -> String {
-    let (digest2, bytes2) = fixture_artifact_v2();
+    publish_revision_2_with(app, control_plane, policy_json, "{}").await
+}
+
+async fn publish_revision_2_with(
+    app: &axum::Router,
+    control_plane: &std::sync::Arc<shaula_store::registry_impl::SqliteControlPlane>,
+    policy_json: Option<&str>,
+    parameters_schema: &str,
+) -> String {
+    let (digest2, bytes2) = fixture_artifact_with_parts("sha256:policy-v2", parameters_schema);
     let request = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/template-artifacts/{digest2}"))
@@ -240,6 +245,72 @@ async fn occupied_follower_defers_then_upgrades_after_drain() {
         .unwrap();
     assert_eq!(upgraded, 1);
     assert_eq!(fleet_revision_pin(&app, "linux-x64").await, (2, 2));
+}
+
+#[tokio::test]
+async fn changed_inputs_validate_against_the_active_revision_schema() {
+    // spec 0023: the fleet's bare key follows the profile's Active
+    // revision, so a PUT that changes template_inputs must be admitted
+    // against the CURRENT Active schema/policy — not the stale retained
+    // pin — and resolves that pin for the new fleet revision.
+    let (app, control_plane, _engine, _service) = build_app_with_service().await;
+
+    // Revision 1's artifact closes the schema: undeclared inputs fail.
+    let closed_schema = r#"{"type":"object","additionalProperties":false}"#;
+    let (digest1, bytes1) = fixture_artifact_with_parts("sha256:policy-v1", closed_schema);
+    seed_profile_artifact(&app, &control_plane, "k8s-linux", digest1, bytes1, true).await;
+    let create = put_with_idempotency("/api/v1/fleets/linux-x64", "sch-1", FLEET_BODY.into());
+    assert_eq!(
+        app.clone().oneshot(create).await.unwrap().status(),
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(fleet_revision_pin(&app, "linux-x64").await, (1, 1));
+
+    // An unchanged re-assertion is still a durable NoOp: the lagging pin
+    // stays retained — PUT never becomes an implicit upgrade channel.
+    publish_revision_2_with(
+        &app,
+        &control_plane,
+        Some(r#"{"size_class": ["standard"]}"#),
+        r#"{"type":"object","additionalProperties":false,"properties":{"size_class":{"type":"string","enum":["standard"]}}}"#,
+    )
+    .await;
+    let noop = authorized_fleet_put(&app, "/api/v1/fleets/linux-x64", FLEET_BODY.into()).await;
+    let response = app.clone().oneshot(noop).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(fleet_revision_pin(&app, "linux-x64").await, (1, 1));
+
+    // Changing inputs resolves the follow-latest target: revision 2's
+    // schema declares size_class, so the request validates and the new
+    // fleet revision re-pins to Active (occupancy is zero).
+    let changed = FLEET_BODY.replace(
+        r#""template_inputs": {}"#,
+        r#""template_inputs": {"size_class": "standard"}"#,
+    );
+    let update = authorized_fleet_put(&app, "/api/v1/fleets/linux-x64", changed).await;
+    let response = app.clone().oneshot(update).await.unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::ACCEPTED,
+        "{:?}",
+        axum::body::to_bytes(response.into_body(), usize::MAX).await
+    );
+    assert_eq!(fleet_revision_pin(&app, "linux-x64").await, (2, 2));
+}
+
+/// A replace-style fleet PUT carrying If-Match on the current head ETag.
+async fn authorized_fleet_put(app: &axum::Router, uri: &str, body: String) -> Request<Body> {
+    let head = app
+        .clone()
+        .oneshot(authorized("GET", uri, None))
+        .await
+        .unwrap();
+    let etag = head.headers()["etag"].clone();
+    let mut request = authorized("PUT", uri, Some(body));
+    let headers = request.headers_mut();
+    headers.remove("if-none-match");
+    headers.insert("if-match", etag);
+    request
 }
 
 #[tokio::test]

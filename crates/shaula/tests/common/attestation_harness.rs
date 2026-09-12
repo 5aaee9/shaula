@@ -17,6 +17,20 @@ pub async fn seed_profile(
     key: &str,
     activate_auth: bool,
 ) -> String {
+    let (digest, bytes) = fixture_artifact();
+    seed_profile_artifact(app, control_plane, key, digest, bytes, activate_auth).await
+}
+
+/// Like [`seed_profile`] but publishes the caller-supplied artifact as
+/// revision 1 instead of the default fixture.
+pub async fn seed_profile_artifact(
+    app: &axum::Router,
+    control_plane: &std::sync::Arc<shaula_store::registry_impl::SqliteControlPlane>,
+    key: &str,
+    digest: String,
+    bytes: Vec<u8>,
+    activate_auth: bool,
+) -> String {
     // R10-05: the auth PUT carries the CORRECT precondition — create
     // (If-None-Match: *) when the profile is fresh, If-Match on the
     // current ETag when it already exists (second seed of the same
@@ -53,7 +67,6 @@ pub async fn seed_profile(
         put_status == StatusCode::ACCEPTED || put_status == StatusCode::CONFLICT,
         "auth seed: {put_status} (CONFLICT = same principal already accepted)"
     );
-    let (digest, bytes) = fixture_artifact();
     let request = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/template-artifacts/{digest}"))

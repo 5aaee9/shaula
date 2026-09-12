@@ -27,7 +27,9 @@ pub struct FleetSpec {
     pub forgejo: Option<FleetForgejoSection>,
     pub capacity: CapacityPolicyDto,
     pub template_profile_ref: TemplateProfileRefDto,
-    /// Bounded template inputs; schema-checked against the pinned revision.
+    /// Bounded template inputs; schema-checked against the revision the new
+    /// Fleet Revision resolves to (the profile's current Active when the
+    /// inputs change, else the retained pin).
     #[serde(default)]
     pub template_inputs: serde_json::Map<String, serde_json::Value>,
 }

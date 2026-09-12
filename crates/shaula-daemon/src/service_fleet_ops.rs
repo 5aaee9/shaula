@@ -282,15 +282,24 @@ impl ControlPlane {
                     r.template_attestation_id.clone()?,
                 ))
             });
-        let reference_unchanged = previous_row.as_ref().is_some_and(|prev| {
-            let prev_spec: std::result::Result<FleetSpec, _> =
-                serde_json::from_str(&prev.spec_json);
-            match prev_spec {
-                Ok(ps) => super::template_referenced(&ps) == super::template_referenced(spec),
-                Err(_) => false,
-            }
-        });
-        let template = if reference_unchanged {
+        let previous_spec: Option<FleetSpec> = previous_row
+            .as_ref()
+            .and_then(|prev| serde_json::from_str(&prev.spec_json).ok());
+        let reference_unchanged = previous_spec
+            .as_ref()
+            .is_some_and(|ps| super::template_referenced(ps) == super::template_referenced(spec));
+        // The retained pin preserves "PUT is not an implicit upgrade
+        // channel" for an identical re-assertion (spec 0023 §2). Once the
+        // spec's template inputs change, the new revision is admitted
+        // against the fleet's actual follow-latest target — the profile's
+        // current Active revision — whose parameter schema may have been
+        // extended by a template update since the pin was minted. Inputs
+        // changes already pass the zero-occupancy gate, so resolving the
+        // pin to Active here is not an upgrade around the drain rule.
+        let inputs_unchanged = previous_spec
+            .as_ref()
+            .is_some_and(|ps| ps.template_inputs == spec.template_inputs);
+        let template = if reference_unchanged && inputs_unchanged {
             previous_pin.clone()
         } else {
             match self.resolve_template_ref(&spec.template_profile_ref).await {
