@@ -81,7 +81,9 @@ git -C "$tmp_dir" push -q origin main
 
 status=""
 for _ in $(seq 1 90); do
-  runs="$(json_api "$base_url/api/v1/repos/$forgejo_user/$repo/actions/runs?limit=1" || true)"
+  # Both workflows dispatch on the same push; limit must cover every run or the
+  # newest-first list can hide the match run behind the mismatch run.
+  runs="$(json_api "$base_url/api/v1/repos/$forgejo_user/$repo/actions/runs?limit=50" || true)"
   status="$(jq -r '[.workflow_runs[]? | select(.name == "shaula-forgejo-match")][0].status // empty' <<<"$runs")"
   case "$status" in
   success) break ;;
@@ -93,7 +95,11 @@ for _ in $(seq 1 90); do
   esac
   sleep 2
 done
-test "$status" = success
+if [[ $status != success ]]; then
+  cat "$tmp_dir/runner.log" >&2
+  echo "Forgejo workflow did not succeed, last status: '${status:-none}'" >&2
+  exit 1
+fi
 wait "$runner_pid"
 
 mismatch_status=""
