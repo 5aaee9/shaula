@@ -1,9 +1,18 @@
-//! Generation readiness reconciliation (spec 0024): drives the two
+//! Generation readiness reconciliation (spec 0024): drives the
 //! `WaitingOnline` exits designed in spec 0001's state machine —
 //! inventory-online advances to `Idle`, and the readiness timeout (which
 //! uniformly covers a runner that never registered AND an ephemeral JIT
 //! runner that served its single job and self-deregistered) moves the
 //! generation into `CleanupRequired` and the existing destroy channel.
+//!
+//! Rev 3 additionally reconciles `Idle` generations against inventory:
+//! a JIT ephemeral runner that was observed online and then served its
+//! single job self-deregisters and vanishes from inventory. Without a
+//! re-check, such a phantom `Idle` generation holds effective capacity
+//! forever — the fleet reports demand but never creates a replacement
+//! and never destroys the dead resource (2026-09-12 incident). `Idle`
+//! plus a missing or non-online inventory entry advances to `Retiring`,
+//! entering the normal remove-then-destroy chain.
 
 use shaula_core::error::CoreResult;
 use shaula_core::lifecycle::GenerationState;
@@ -20,15 +29,22 @@ impl FleetSupervisor {
     /// inventory read only WARNs: the reconciliation is level-triggered
     /// and retries on the next tick.
     pub(super) async fn reconcile_generation_readiness(&self, now: i64) -> CoreResult<()> {
-        let waiting: Vec<_> = self
+        let observed: Vec<_> = self
             .store
             .generations_for_fleet(&self.config.fleet_key)
             .await?
             .into_iter()
-            .filter(|generation| generation.state == GenerationState::WaitingOnline)
+            .filter(|generation| {
+                matches!(
+                    generation.state,
+                    GenerationState::WaitingOnline | GenerationState::Idle
+                )
+            })
             .collect();
-        if waiting.is_empty() {
-            // Zero extra API traffic in the steady state (spec 0024 §1).
+        if observed.is_empty() {
+            // Zero extra API traffic in the steady state (spec 0024 §1):
+            // no WaitingOnline or Idle generation means nothing to
+            // reconcile against the inventory.
             return Ok(());
         }
         let Some(scale_set_id) = self
@@ -46,13 +62,35 @@ impl FleetSupervisor {
                 return Ok(());
             }
         };
-        for generation in waiting {
+        for generation in observed {
             let online = runners.iter().any(|runner| {
                 runner.scale_set_id == scale_set_id
                     && generation.github_runner_id == Some(runner.id)
                     && generation.runner_name == runner.name
                     && runner.status.eq_ignore_ascii_case("online")
             });
+            if generation.state == GenerationState::Idle {
+                if online {
+                    continue;
+                }
+                // A previously-online Idle generation whose runner is
+                // absent or no longer online can never accept another
+                // job: the JIT ephemeral runner either served its single
+                // job and self-deregistered (absent) or the agent died
+                // without restarting (offline; the runner unit is
+                // Restart=no). Retirement removes the entity when it
+                // still exists (JobStillRunning re-gates) and destroys
+                // the dead infrastructure — it never strands capacity
+                // on a phantom runner (spec 0024 rev 3).
+                if let Err(e) = self
+                    .store
+                    .generation_advance(&generation.id, GenerationState::Retiring, now)
+                    .await
+                {
+                    tracing::debug!(generation = %generation.id, summary = %e, "readiness retiring transition rejected");
+                }
+                continue;
+            }
             if online {
                 // Idle joins the retirement channel (retire_excess's
                 // needs_removal set) in this same tick.

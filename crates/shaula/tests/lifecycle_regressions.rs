@@ -446,6 +446,87 @@ async fn readiness_timeout_moves_absent_runner_to_cleanup() {
     assert_eq!(github.removals.load(Ordering::SeqCst), 0);
 }
 
+/// 2026-09-12 incident: a JIT ephemeral runner observed online (Idle)
+/// then served its job and self-deregistered. With demand still >= 1
+/// (the next job already assigned to the scale set), the phantom Idle
+/// generation held effective capacity forever: nothing created a
+/// replacement and nothing destroyed the dead VM. The Idle inventory
+/// re-check must advance it to Retiring so the removal/destroy chain
+/// runs even at zero excess (rev 3, spec 0024).
+#[tokio::test]
+async fn idle_generation_whose_runner_vanished_from_inventory_retires() {
+    let (store, github, supervisor, digest) = setup().await;
+    seed_idle(store.as_ref(), &digest).await;
+    supervisor.tick(5).await.unwrap(); // settle the Pending handoff.
+                                       // Demand snapshot keeps target at 1 while the runner is already
+                                       // gone from the inventory (self-deregistered after its single job).
+    store.demand_snapshot("f1", 1, 6).await.unwrap();
+    supervisor.tick(10).await.unwrap();
+    // Idle -> Retiring, then the retirement chain re-gates the runner
+    // removal at zero excess and attempts it once (the seeded row has
+    // no Create provenance, so the destroy gate quarantines it rather
+    // than reaching Terraform).
+    assert_eq!(
+        store.generation_get("gen1").await.unwrap().unwrap().state,
+        G::Quarantined
+    );
+    assert_eq!(github.removals.load(Ordering::SeqCst), 1);
+}
+
+/// An Idle generation whose runner is still online in the inventory is
+/// untouched: the phantom-runner re-check must never retire live
+/// capacity.
+#[tokio::test]
+async fn idle_generation_with_online_runner_stays_idle() {
+    let (store, github, supervisor, digest) = setup().await;
+    seed_idle(store.as_ref(), &digest).await;
+    supervisor.tick(5).await.unwrap(); // settle the Pending handoff.
+    github
+        .runners
+        .lock()
+        .unwrap()
+        .push(shaula_core::ports::RunnerRef {
+            id: 12,
+            name: "runner1".into(),
+            scale_set_id: 42,
+            status: "online".into(),
+        });
+    store.demand_snapshot("f1", 1, 6).await.unwrap();
+    supervisor.tick(10).await.unwrap();
+    assert_eq!(
+        store.generation_get("gen1").await.unwrap().unwrap().state,
+        G::Idle
+    );
+    assert_eq!(github.removals.load(Ordering::SeqCst), 0);
+}
+
+/// An Idle generation whose runner is still registered but offline
+/// (agent dead, unit is Restart=no) can never serve another job — it
+/// retires rather than stranding capacity on a zombie registration.
+#[tokio::test]
+async fn idle_generation_with_offline_runner_retires() {
+    let (store, github, supervisor, digest) = setup().await;
+    seed_idle(store.as_ref(), &digest).await;
+    supervisor.tick(5).await.unwrap(); // settle the Pending handoff.
+    github
+        .runners
+        .lock()
+        .unwrap()
+        .push(shaula_core::ports::RunnerRef {
+            id: 12,
+            name: "runner1".into(),
+            scale_set_id: 42,
+            status: "offline".into(),
+        });
+    store.demand_snapshot("f1", 1, 6).await.unwrap();
+    supervisor.tick(10).await.unwrap();
+    assert_eq!(
+        store.generation_get("gen1").await.unwrap().unwrap().state,
+        G::Quarantined
+    );
+    assert_eq!(github.removals.load(Ordering::SeqCst), 1);
+}
+
 #[tokio::test]
 async fn readiness_keeps_young_absent_generation_waiting() {
     let (store, _github, supervisor, digest) = setup().await;
