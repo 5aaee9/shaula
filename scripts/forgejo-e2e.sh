@@ -27,8 +27,8 @@ json_api -X POST "$base_url/api/v1/user/repos" --data "{\"name\":\"$repo\",\"pri
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 mkdir -p "$tmp_dir/.forgejo/workflows"
-cat >"$tmp_dir/.forgejo/workflows/e2e.yaml" <<'YAML'
-name: shaula-forgejo-e2e
+cat >"$tmp_dir/.forgejo/workflows/match.yaml" <<'YAML'
+name: shaula-forgejo-match
 on: [push]
 jobs:
   smoke:
@@ -37,6 +37,15 @@ jobs:
       - run: test "$FORGEJO_REPOSITORY" = "shaula-e2e-admin/shaula-forgejo-e2e"
       - run: echo forgejo-e2e-ok > forgejo-e2e-result.txt
 YAML
+cat >"$tmp_dir/.forgejo/workflows/mismatch.yaml" <<'YAML'
+name: shaula-forgejo-mismatch
+on: [push]
+jobs:
+  mismatch:
+    runs-on: [shaula-e2e-mismatch]
+    steps:
+      - run: echo this-job-must-remain-queued
+YAML
 git -C "$tmp_dir" init -q
 git -C "$tmp_dir" config user.email e2e@example.invalid
 git -C "$tmp_dir" config user.name shaula-e2e
@@ -44,8 +53,6 @@ git -C "$tmp_dir" add .
 git -C "$tmp_dir" commit -qm 'test: forgejo e2e workflow'
 git -C "$tmp_dir" branch -M main
 git -C "$tmp_dir" remote add origin "http://$forgejo_user:$admin_password@127.0.0.1:3000/$forgejo_user/$repo.git"
-git -C "$tmp_dir" push -q origin main
-
 registration="$(json_api -X POST "$base_url/api/v1/admin/actions/runners" --data "{\"name\":\"$runner_name\",\"ephemeral\":true}")"
 runner_uuid="$(jq -r .uuid <<<"$registration")"
 runner_token="$(jq -r .token <<<"$registration")"
@@ -59,10 +66,23 @@ chmod +x "$tmp_dir/forgejo-runner"
 "$tmp_dir/forgejo-runner" one-job --url "$base_url" --uuid "$runner_uuid" --token-url "file://$tmp_dir/token" --label "$runner_label:docker://node:20-bookworm" --wait >"$tmp_dir/runner.log" 2>&1 &
 runner_pid=$!
 
+inventory_status=""
+for _ in $(seq 1 60); do
+  inventory="$(json_api "$base_url/api/v1/admin/actions/runners?limit=50" || true)"
+  inventory_status="$(jq -r --arg name "$runner_name" '[.[] | select(.name == $name)][0].status // empty' <<<"$inventory")"
+  if [[ "$inventory_status" == idle ]]; then break; fi
+  sleep 1
+done
+test "$inventory_status" = idle
+
+# Dispatch only after the ephemeral runner has been observed idle. The second
+# workflow uses a label for which no runner exists and must remain queued.
+git -C "$tmp_dir" push -q origin main
+
 status=""
 for _ in $(seq 1 90); do
   runs="$(json_api "$base_url/api/v1/repos/$forgejo_user/$repo/actions/runs?limit=1" || true)"
-  status="$(jq -r '.workflow_runs[0].status // .[0].status // empty' <<<"$runs")"
+  status="$(jq -r '[.workflow_runs[]? | select(.name == "shaula-forgejo-match")][0].status // empty' <<<"$runs")"
   case "$status" in
   success) break ;;
   failure | cancelled)
@@ -75,6 +95,16 @@ for _ in $(seq 1 90); do
 done
 test "$status" = success
 wait "$runner_pid"
+
+mismatch_status=""
+for _ in $(seq 1 30); do
+  runs="$(json_api "$base_url/api/v1/repos/$forgejo_user/$repo/actions/runs?limit=50" || true)"
+  mismatch_status="$(jq -r '[.workflow_runs[]? | select(.name == "shaula-forgejo-mismatch")][0].status // empty' <<<"$runs")"
+  [[ -n "$mismatch_status" ]] && break
+  sleep 1
+done
+test "$mismatch_status" != success
+test "$mismatch_status" != cancelled
 
 for _ in $(seq 1 30); do
   remaining="$(json_api "$base_url/api/v1/admin/actions/runners?limit=50" || true)"

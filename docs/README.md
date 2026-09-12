@@ -16,6 +16,7 @@
 | Proxmox 基础 VM、DHCP 与 cloud-init 配置 | [Proxmox Runner](proxmox-runners.md) |
 | 已实现范围、集成缺口与验收证据 | [实现状态](IMPLEMENTATION_STATUS.md) |
 | Forgejo Busy-safe drain 的源码证据、竞态与发布阻塞 | [Forgejo drain](forgejo-drain.md) |
+| Forgejo A1–A8 本地与真实平台验收矩阵 | [Forgejo A1–A8 evidence](evidence/forgejo-a1-a8-2026-09-12/README.md) |
 
 ## 设计与决策
 

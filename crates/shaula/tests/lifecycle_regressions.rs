@@ -243,6 +243,59 @@ async fn destroy_pending_is_reclassified_without_excess() {
 }
 
 #[tokio::test]
+async fn cleanup_with_missing_auth_reference_is_quarantined() {
+    let (store, github, supervisor, digest) = setup().await;
+    supervisor.tick(5).await.unwrap(); // settle the Pending handoff first.
+    store
+        .generation_insert(GenerationRecord {
+            id: "orphan-auth".into(),
+            fleet_key: "f1".into(),
+            runner_name: "runner-orphan-auth".into(),
+            generation_name: "generation-orphan-auth".into(),
+            // No matching fleet revision exists, so the destroy path cannot
+            // prove which auth client owns the runner removal.
+            fleet_revision: 999,
+            template_profile_key: "k8s-linux".into(),
+            template_revision: 1,
+            template_artifact_digest: digest,
+            attestation_id: "att".into(),
+            inputs_digest: "inputs".into(),
+            state: G::CreatePending,
+            github_runner_id: None,
+            workspace_path: "unused".into(),
+            created_at: 1,
+            updated_at: 1,
+        })
+        .await
+        .unwrap();
+    store
+        .generation_set_github_runner("orphan-auth", 12, 2)
+        .await
+        .unwrap();
+    for state in [G::Creating, G::WaitingOnline, G::CleanupRequired] {
+        store
+            .generation_advance("orphan-auth", state, 3)
+            .await
+            .unwrap();
+    }
+
+    // Give the settled listener one effect pass before exercising cleanup.
+    supervisor.tick(4).await.unwrap();
+    let report = supervisor.tick(60_003).await.unwrap();
+    assert_eq!(report.quarantined, 0);
+    assert_eq!(github.removals.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        store
+            .generation_get("orphan-auth")
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        G::Quarantined
+    );
+}
+
+#[tokio::test]
 async fn adopted_access_failure_and_unknown_inventory_block_effects() {
     let (store, github, supervisor, _) = setup().await;
     // G3: the first pass settles the Pending handoff; effects reconcile

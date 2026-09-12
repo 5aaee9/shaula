@@ -180,15 +180,19 @@ impl ForgejoClient {
             .await
             .map_err(|error| ForgejoError::uncertain(error.to_string()))?;
         if response.status() != StatusCode::CREATED {
-            return Err(
-                if response.status().is_success() || response.status().is_server_error() {
-                    // The effect may have landed. Never project the response body:
-                    // a nonconforming proxy may have included the one-shot token.
+            // The effect may have landed. Never project any registration
+            // response body: a nonconforming proxy may have included the
+            // one-shot token, even on an auth/permission error.
+            return Err(match response.status() {
+                status if status.is_success() || status.is_server_error() => {
                     ForgejoError::uncertain("unexpected registration response status")
-                } else {
-                    self.status_error(response).await
-                },
-            );
+                }
+                StatusCode::UNAUTHORIZED => ForgejoError::Unauthenticated,
+                StatusCode::FORBIDDEN => ForgejoError::PermissionDenied,
+                StatusCode::NOT_FOUND => ForgejoError::TargetHiddenOrNotFound,
+                StatusCode::TOO_MANY_REQUESTS => ForgejoError::RateLimited,
+                _ => ForgejoError::uncertain("registration request was not accepted"),
+            });
         }
         let registration: RawRegistration = self.decode_body(response).await.map_err(|_| {
             ForgejoError::uncertain("registration succeeded but its response was unreadable")

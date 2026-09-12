@@ -63,6 +63,20 @@ async fn unexpected_registration_status_is_uncertain_without_leaking_response() 
 }
 
 #[tokio::test]
+async fn registration_auth_errors_never_project_response_tokens() -> TestResult {
+    for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
+        let (_server, client) = serve(status, r#"{"token":"one-shot-secret"}"#).await?;
+        let result = client.register_runner("pool-g", None).await;
+        assert!(!format!("{result:?}").contains("one-shot-secret"));
+        assert!(matches!(
+            result,
+            Err(ForgejoError::Unauthenticated | ForgejoError::PermissionDenied)
+        ));
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn registration_body_is_bounded_before_network_effects() -> TestResult {
     let client = ForgejoClient::new(
         "http://127.0.0.1:1",

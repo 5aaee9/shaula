@@ -1095,9 +1095,9 @@ Still open:
 - Uncertain registrations that have not declared labels are quarantined, because the spec's joint-label ownership proof cannot identify them yet. This retains occupancy rather than silently leaking/replacing them.
 - Bundled Forgejo templates, exact image tuple R4, platform conformance, Forgejo UI/jobs projection, exact scope/permission and image-content admission evidence, and A1–A8 real-platform evidence. The pinned [official image](https://code.forgejo.org/forgejo/runner/src/commit/667c8d975b9255e7bf32164e012146f68f0022c6/Dockerfile) uses `/data`, UID 1000 and `dumb-init`; bootstrap validators reflect those facts, but have not been validated against a live container in this increment.
 
-Latest local checks (2026-09-12) for this worktree: `cargo fmt`, `cargo clippy --workspace --all-targets`, and `cargo nextest run --manifest-path Cargo.toml --workspace test` pass (641 tests passed; 154 filtered/skipped). These are not real-platform acceptance evidence.
+Latest local checks (2026-09-12) for this worktree: `cargo fmt --all -- --check`, targeted strict Clippy for the changed Rust packages, and the full unfiltered `cargo nextest run --manifest-path Cargo.toml --workspace --no-fail-fast --status-level fail --final-status-level fail` pass (803 tests passed; 2 skipped). The workspace-wide Clippy invocation remains blocked by the Windows Vite native dependency (`UNLOADABLE_DEPENDENCY`) and `spawn EPERM` while building `shaula-http`; this is an environment blocker, not a Rust diagnostic. These checks are not real-platform acceptance evidence.
 
-The existing `.github/workflows/forgejo-e2e.yml` exercises Forgejo 16.0.4 with runner 13.1.0 using shell API calls. It is not an end-to-end test of the new Rust Pool driver, and was not rerun as live-platform evidence here.
+The existing `.github/workflows/forgejo-e2e.yml` exercises Forgejo 16.0.4 with runner 13.1.0 using shell API calls. Run [34694263009](https://github.com/5aaee9/shaula/actions/runs/34694263009) passed registration, a matching job, and ephemeral disappearance, but it is not an end-to-end test of the new Rust Pool driver and does not provide the full A1–A8 evidence. The per-item local/real evidence split is recorded in [the A1–A8 matrix](evidence/forgejo-a1-a8-2026-09-12/README.md).
 
 ## Known accepted limitations (per ADR)
 

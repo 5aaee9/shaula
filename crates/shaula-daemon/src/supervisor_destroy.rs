@@ -101,6 +101,17 @@ impl FleetSupervisor {
                 };
                 let Some(reference) = self.handoff.auth_generation_ref(&generation.id).await?
                 else {
+                    // Cleanup cannot safely remove a runner without the
+                    // exact authority that admitted the generation. Keep
+                    // the durable evidence, but quarantine instead of
+                    // leaving the generation in Retiring forever.
+                    tracing::error!(
+                        generation = %generation.id,
+                        "generation auth reference missing; quarantining cleanup"
+                    );
+                    self.store
+                        .generation_advance(&generation.id, GenerationState::Quarantined, now)
+                        .await?;
                     continue;
                 };
                 let current = (
@@ -113,6 +124,15 @@ impl FleetSupervisor {
                     self.revision_clients.get(&reference)
                 };
                 let Some(github) = github else {
+                    tracing::error!(
+                        generation = %generation.id,
+                        auth_profile = %reference.0,
+                        auth_revision = reference.1,
+                        "generation auth client unavailable; quarantining cleanup"
+                    );
+                    self.store
+                        .generation_advance(&generation.id, GenerationState::Quarantined, now)
+                        .await?;
                     continue;
                 };
                 match github.remove_runner(runner_id).await {

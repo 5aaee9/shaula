@@ -84,8 +84,10 @@ pub fn discover_variables(dir: &Path, digest: &str) -> CoreResult<TemplateVariab
             .parse()
             .map_err(|_| invalid("Terraform source contains invalid HCL"))?;
         // The preserving AST retains spelling and comments, but duplicate object keys
-        // overwrite their earlier entry. Refuse any lost source before using that tree.
-        if parsed.to_string() != text {
+        // overwrite their earlier entry. Compare after normalizing line endings so
+        // checked-in CRLF templates are not mistaken for lossy syntax.
+        let normalize = |value: &str| value.replace("\r\n", "\n").replace('\r', "\n");
+        if normalize(&parsed.to_string()) != normalize(&text) {
             return Err(invalid(
                 "Terraform source contains ambiguous or lossy object declarations",
             ));

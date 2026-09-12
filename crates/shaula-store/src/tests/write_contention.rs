@@ -82,3 +82,38 @@ async fn cancelling_a_waiting_transaction_releases_the_connection_and_writer() -
     subsequent.commit().await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn writer_contention_snapshot_records_a_waiting_writer() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let store = crate::Store::open(&dir.path().join("observed-contention.db")).await?;
+    store.migrate().await?;
+
+    let first = store.begin().await?;
+    let competing = async {
+        let second = store.begin().await?;
+        second.commit().await?;
+        Ok::<_, crate::StoreError>(())
+    };
+    tokio::pin!(competing);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), &mut competing)
+            .await
+            .is_err(),
+        "the competing writer must remain queued while the first writer is held"
+    );
+    first.rollback().await?;
+    competing.await?;
+
+    let contention = store.writer_contention();
+    assert!(
+        contention.waits >= 1,
+        "the queued writer wait must be recorded"
+    );
+    assert!(
+        contention.max_wait_ms >= 50,
+        "the recorded wait should cover the held writer interval"
+    );
+    assert!(contention.total_wait_ms >= contention.max_wait_ms);
+    Ok(())
+}
