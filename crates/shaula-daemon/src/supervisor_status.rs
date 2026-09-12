@@ -34,7 +34,11 @@ impl FleetSupervisor {
                 FleetObservationPhase::Degraded,
                 Some(report.reason.unwrap_or(ReasonCode::OwnershipProofFailed)),
             ),
-            Ok(report) if report.listener_ready => (FleetObservationPhase::Ready, None),
+            // A deletion-marked fleet never reports listener_ready; its
+            // completion predicate is every owned Generation terminal.
+            Ok(report) if report.decommission_complete || report.listener_ready => {
+                (FleetObservationPhase::Ready, None)
+            }
             Ok(_) => (FleetObservationPhase::Reconciling, None),
             Err(error) => (FleetObservationPhase::Degraded, Some(error.code)),
         };

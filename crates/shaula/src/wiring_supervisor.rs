@@ -34,10 +34,28 @@ impl SupervisorWiring {
         revision: i64,
         phase: &str,
     ) -> CoreResult<Option<Arc<FleetSupervisor>>> {
+        let Some(head) = self.store.fleet_get(key).await? else {
+            return Ok(None);
+        };
+        // `revision` is the caller-captured desired head: a supervisor
+        // built against a stale head must not run (the runtime guard's
+        // fence CAS is the second line of defence).
+        if head.desired_revision != revision || head.tombstone {
+            return Ok(None);
+        }
         let Some(latest) = self.store.fleet_revision_latest(key).await? else {
             return Ok(None);
         };
-        if latest.revision != revision {
+        // Spec 0002 §8: DELETE bumps the desired head WITHOUT writing a
+        // spec row, so a deletion-marked fleet's head is strictly ahead
+        // of the last admitted spec revision. The cleanup supervisor is
+        // bound to that LAST ADMITTED spec (identity, labels, template
+        // pins) while its runtime guard stays on the head.
+        if head.deletion_marker {
+            if latest.revision >= head.desired_revision {
+                return Ok(None);
+            }
+        } else if latest.revision != head.desired_revision {
             return Ok(None);
         }
         let Ok(spec) = serde_json::from_str::<shaula_core::fleet::FleetSpec>(&latest.spec_json)
@@ -95,12 +113,6 @@ impl SupervisorWiring {
             }
         }
         let execution_ready = observed.is_some();
-        let Some(head) = self.store.fleet_get(key).await? else {
-            return Ok(None);
-        };
-        if head.desired_revision != latest.revision || head.tombstone {
-            return Ok(None);
-        }
         let guard = FleetRuntimeGuard::from(&head);
         let fence = guard.mutation_fence;
         let mut execution_contexts = Vec::new();

@@ -223,6 +223,8 @@ Fleet phase 是 `Pending`、`Reconciling`、`Ready`、`Degraded`、`Decommission
 
 Runtime observation 同时 CAS Fleet incarnation、desired Revision、mutation fence 与当前 session epoch；捕获旧 Revision 的任务不能用新的 head 令牌替旧 spec 记为 Ready。状态与对应 Fleet Change 的 Running/Blocked/Succeeded 进度在一个短 transaction 中推进，已经完成的 Change 不因后续 listener failure reopen；DELETE/tombstone 不能被迟到的观测改回普通运行 phase。
 
+Deletion-marked Fleet 的观测是同一条 fenced 通道但走 decommission 分支：session epoch 与 Ready/session guard 不适用（acquisition 已永久关闭），CAS 仍要求 incarnation、desired Revision、mutation fence 匹配且 tombstone 未写；此外该 desired Revision 必须存在一条 `Decommission` Change —— 这证明 marker 来自真实 DELETE 提交而非被单独置位的中间/损坏态，也确保 marker 先于观测落库时迟到的 pre-DELETE 观测仍被拒绝。此类观测推进 `observed_revision` 与 Change 进度但不改写 `Decommissioning` phase；仅当 cleanup reconcile 报告所有 owned Generation terminal 时，同一 transaction 写 durable tombstone、`Decommissioned` phase 并把该 Fleet 所有 non-terminal Change 置为 `Succeeded`。DELETE 不 materialize spec Revision row，因此 deletion-marked Fleet 的 desired head 总是严格领先最后一条 `fleet_revisions` 行 —— cleanup supervisor 绑定该最后 admitted Revision 的 spec（identity/labels/template pin），runtime guard 仍绑定 head。
+
 ### 4.4 Fleet Change
 
 Fleet Change 跟踪一个 accepted Fleet mutation 的异步处理，与 Profile Change、Auth Handoff acknowledgement 和 Runner Operation 不同：

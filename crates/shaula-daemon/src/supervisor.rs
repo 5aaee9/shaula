@@ -49,6 +49,10 @@ pub struct ReconcileReport {
     pub blocked: bool,
     pub reason: Option<shaula_core::error::ReasonCode>,
     pub listener_ready: bool,
+    /// Spec 0002 §4.4: a deletion-marked fleet completes its Decommission
+    /// Change only when every owned Generation is terminal. Set on the
+    /// tick where the last non-terminal generation is proven gone.
+    pub decommission_complete: bool,
     pub session_epoch: Option<i64>,
 }
 
@@ -169,6 +173,15 @@ impl FleetSupervisor {
             }
             report.destroyed = self.retire_excess(i64::MAX, now).await?;
             report.quarantined = self.quarantine_stale_cleanup(now).await?;
+            // Completion predicate (spec 0002 §4.4): every owned
+            // Generation terminal (Destroyed). A still-Retiring or
+            // Quarantined generation keeps the Decommission Change
+            // visibly non-terminal; it never reports complete.
+            let generations = self
+                .store
+                .generations_for_fleet(&self.config.fleet_key)
+                .await?;
+            report.decommission_complete = generations.iter().all(|g| g.state.is_terminal());
             return Ok(report);
         }
 

@@ -790,8 +790,12 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
   generations are driven by the spec 0024 readiness reconciliation
   (inventory-online → Idle; readiness timeout → CleanupRequired, covering
   ephemeral JIT runners that self-deregister after their single job).
-  Complete busy-state classification, operation recovery and Fleet
-  decommission/tombstone acceptance remain open. Store and scripted-listener
+  Fleet decommission converges end-to-end in wiring tests: the deletion-
+  marked fleet's cleanup supervisor binds the last admitted spec revision
+  (DELETE writes no spec row), retires all owned generations and lands
+  tombstone + `Decommissioned` + Change `Succeeded` in one transaction.
+  Complete busy-state classification, operation recovery and real-platform
+  decommission acceptance remain open. Store and scripted-listener
   tests alone do not prove these complete external workflows.
 - End-to-end real-GitHub validation and the Go-oracle differential suite
   (`references/scaleset`, pinned commit) have not been executed.

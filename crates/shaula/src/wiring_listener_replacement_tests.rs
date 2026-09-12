@@ -232,3 +232,97 @@ async fn decommission_after_same_auth_replacement_accepts_only_the_current_hando
     assert_eq!(mock.scale_set_creates.load(Ordering::SeqCst), 0);
     wiring.tasks.shutdown().await;
 }
+
+/// Spec 0002 §8 end-to-end: DELETE bumps the desired head without a spec
+/// row, yet the cleanup supervisor must still spawn (bound to the last
+/// admitted spec), retire every owned Generation and land the tombstone.
+/// Regression: before the fix `supervisor_for` refused to build because
+/// `fleet_revision_latest` could never reach the decommission revision.
+#[tokio::test]
+async fn decommission_converges_to_tombstone_without_a_spec_revision_row() {
+    let (plane, mut wiring, _listener, clock, mock) = setup().await;
+    ready(&plane, &mut wiring, &clock).await;
+    let store = &plane.control_plane;
+    let head = store.fleet_get(FLEET).await.unwrap().unwrap();
+    let spec_rows = store.fleet_revision_latest(FLEET).await.unwrap().unwrap();
+    assert_eq!(spec_rows.revision, head.desired_revision);
+    store
+        .commit_decommission(MutationFacts {
+            resource_kind: "fleet",
+            resource_key: FLEET.into(),
+            incarnation: head.incarnation.clone(),
+            revision: head.desired_revision + 1,
+            spec_json: "{}".into(),
+            template: None,
+            auth_desired: None,
+            inputs_digest: "decommission".into(),
+            actor: "op".into(),
+            now: NOW + 5_000,
+            change: ChangeView {
+                id: "f1-decommission".into(),
+                resource_kind: "fleet".into(),
+                resource_key: FLEET.into(),
+                revision: head.desired_revision + 1,
+                kind: "Decommission".into(),
+                state: "Pending".into(),
+                reason: None,
+            },
+            outbox_topic: "fleet.change".into(),
+            outbox_payload: "{}".into(),
+            idempotency: None,
+        })
+        .await
+        .unwrap()
+        .unwrap();
+    let deleting = store.fleet_get(FLEET).await.unwrap().unwrap();
+    assert!(deleting.deletion_marker);
+    assert_eq!(deleting.desired_revision, spec_rows.revision + 1);
+    assert_eq!(deleting.phase, "Decommissioning");
+    // No spec row exists at the decommission revision — this is the
+    // contract the supervisor construction must tolerate.
+    assert_eq!(
+        store
+            .fleet_revision_latest(FLEET)
+            .await
+            .unwrap()
+            .unwrap()
+            .revision,
+        spec_rows.revision
+    );
+
+    // The cleanup supervisor must exist and tick even though the desired
+    // head has no fleet_revisions row.
+    let supervisor = wiring
+        .supervisor_for(FLEET, deleting.desired_revision, &deleting.phase)
+        .await
+        .unwrap();
+    assert!(
+        supervisor.is_some(),
+        "a deletion-marked fleet must yield a cleanup supervisor"
+    );
+
+    // No generations exist; the cleanup reconcile converges to tombstone.
+    for step in 0..4 {
+        tick(&mut wiring, &clock, NOW + 6_000 + step * 1000).await;
+        if store.fleet_get(FLEET).await.unwrap().unwrap().tombstone {
+            break;
+        }
+    }
+    let head = store.fleet_get(FLEET).await.unwrap().unwrap();
+    assert!(head.tombstone, "{head:?}");
+    assert_eq!(head.phase, "Decommissioned");
+    assert_eq!(head.observed_revision, head.desired_revision);
+    assert_eq!(
+        store
+            .fleet_change_get("f1-decommission")
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        "Succeeded"
+    );
+    // The empty Scale Set is preserved; only sessions/acquisition stop.
+    assert!(store.scale_set_get(FLEET).await.unwrap().is_some());
+    assert_eq!(mock.scale_set_creates.load(Ordering::SeqCst), 0);
+    wiring.tasks.shutdown().await;
+}

@@ -30,7 +30,7 @@ Fleet-level replacement 不是 Runner Update primitive。每个既有 Runner Gen
 - GitHub access、Profile readiness 和 Template Platform prerequisites 是异步 status Conditions，不得让 HTTP transaction 调用远端系统。
 - YAML 或 Git 可以产生 HTTP requests，但 daemon 不监视它们作为第二个 desired-state source。
 - HTTP request cancellation 不会取消已提交的 Fleet Change 或其产生的 Runner Operation。
-- Fleet Decommission 永久停止新 acquisition/Create，但允许持久化的 cleanup-only Auth Handoff；它等待安全 GitHub removal，Destroy 全部 owned Runner Resource，关闭 Fleet supervisor，并保留空 GitHub Scale Set 与 auditable tombstone。
+- Fleet Decommission 永久停止新 acquisition/Create，但允许持久化的 cleanup-only Auth Handoff；它等待安全 GitHub removal，Destroy 全部 owned Runner Resource，关闭 Fleet supervisor，并保留空 GitHub Scale Set 与 auditable tombstone。DELETE 推进 desired head 但不写 spec Revision row；cleanup supervisor 绑定最后 admitted Revision 的 spec 执行 inventory/removal/Destroy，runtime guard 仍绑定新的 head fence。
 - 不提供 force-delete path；Busy jobs、unknown remote Runners、Quarantine 或 missing state 可以让 Decommission 明确阻塞。
 - Template Profile、Template Artifact 和 GitHub Auth Profile 由独立的 Profile HTTP resources 管理；`template.publish`、`template.attest` 与 `fleet.write` 分权，Fleet mutation 不能发布模板代码、提交 attestation 或提交原始 credential。
 - Management authentication、authorization、mutation audit 和 HTTP telemetry 是 Day 0 requirements。经 [ADR-0013](0013-require-openid-connect-for-all-http-access.md) 修订：v1 listener 仍只允许 loopback，non-loopback configuration 在 startup fail closed；reverse proxy 提供 HTTPS，Shaula 自行验证 mandatory OIDC session/API token 并执行 authorization/audit。Legacy backend token 与 actor headers 不再建立身份；native inbound TLS/mTLS 不在范围内。
