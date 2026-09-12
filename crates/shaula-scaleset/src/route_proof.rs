@@ -116,6 +116,7 @@ impl ScalesetClient {
                 })
             }
             Err(failure) => {
+                tracing::warn!(summary = %failure.summary(), "route proof refresh failed");
                 state.positive = None;
                 state.negative = Some((
                     self.proof_epoch.load(Ordering::SeqCst),
