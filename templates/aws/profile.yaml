@@ -16,4 +16,4 @@ managed_resource_shape:
     terraform_type: aws_instance
     exact_count: 1
 runner_image_digests: []
-runtime_policy_digest: sha256:a4f439a034c020a113f9d1635d3ca77444451602989ef8fabeb610d2e0d14d90
+runtime_policy_digest: sha256:bcf49fcb915aff5f3303f8736d31934099d9bf03d432f7c6269d95715b521d3c
