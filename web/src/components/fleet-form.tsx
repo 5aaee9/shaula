@@ -1,11 +1,17 @@
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useRef, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, Save } from "lucide-react";
+import { LoaderCircle, Save, Plus, Trash2 } from "lucide-react";
 import { api, MutationAttempt, resourcePath, type Resource } from "@/lib/api";
 import { useAuthProfiles, useTemplates } from "@/lib/queries";
 import { canChooseProfile } from "@/lib/profile-choice";
-import type { Accepted, ChangeRef, FleetResource, FleetSpec } from "@/lib/types";
+import type {
+  Accepted,
+  ChangeRef,
+  FleetResource,
+  FleetSpec,
+  TemplatePoolMemberSpec,
+} from "@/lib/types";
 import { AdvancedSettings } from "./advanced-settings";
 import { Modal } from "./modal";
 import { Button } from "./ui/button";
@@ -27,6 +33,12 @@ const initial: FleetSpec = {
   template_profile_ref: "",
   template_inputs: {},
 };
+const initialMember = (index: number): TemplatePoolMemberSpec => ({
+  key: `member-${index + 1}`,
+  template_profile_ref: "",
+  weight: 1,
+  template_inputs: {},
+});
 export function FleetForm({
   resource: currentResource,
   scopes,
@@ -42,6 +54,14 @@ export function FleetForm({
   const client = useQueryClient();
   const [key, setKey] = useState(resource?.data.key || "");
   const [spec, setSpec] = useState<FleetSpec>(resource?.data.spec || initial);
+  const initialPool = resource?.data.spec.template_pool;
+  const [poolMode, setPoolMode] = useState(!!initialPool);
+  const [poolMembers, setPoolMembers] = useState<TemplatePoolMemberSpec[]>(
+    initialPool?.members || [initialMember(0)],
+  );
+  const [failurePolicy, setFailurePolicy] = useState<"backpressure" | "redistribute">(
+    initialPool?.failure_policy || "backpressure",
+  );
   const editor = useFleetInputs(resource, scopes.includes("template.read"));
   const [labels, setLabels] = useState(spec.github.labels.join(", "));
   const [error, setError] = useState<unknown>(null);
@@ -71,15 +91,28 @@ export function FleetForm({
     event.preventDefault();
     setError(null);
     try {
-      if (!editor.canSubmit)
+      if (!poolMode && !editor.canSubmit)
         throw new Error("Load and review the template input contract before submitting.");
-      if (!authAllowed || !templateAllowed)
+      if (!authAllowed || (!poolMode && !templateAllowed))
         throw new Error(
           "Choose available profiles from a successfully loaded list before submitting.",
         );
       if (spec.capacity.min_runners > spec.capacity.max_runners) {
         setAdvancedOpen(true);
         throw new Error("Minimum runners cannot exceed maximum runners.");
+      }
+      if (poolMode) {
+        if (poolMembers.length < 1 || poolMembers.length > 32)
+          throw new Error("Template pool must contain between 1 and 32 members.");
+        const keys = new Set<string>();
+        for (const member of poolMembers) {
+          if (!/^[a-z0-9][a-z0-9-]*$/.test(member.key))
+            throw new Error(`Invalid member key: ${member.key}`);
+          if (keys.has(member.key)) throw new Error(`Duplicate member key: ${member.key}`);
+          keys.add(member.key);
+          if (!Number.isInteger(member.weight) || member.weight < 1 || member.weight > 10000)
+            throw new Error(`Weight for ${member.key} must be an integer from 1 to 10000.`);
+        }
       }
       const bodyWithoutInputs = JSON.stringify({
         ...spec,
@@ -91,10 +124,15 @@ export function FleetForm({
             .map((value) => value.trim())
             .filter(Boolean),
         },
-        template_inputs: undefined,
-        template_profile_ref: editor.reference,
+        template_inputs: poolMode ? undefined : undefined,
+        template_profile_ref: poolMode ? undefined : editor.reference,
+        template_pool: poolMode
+          ? { members: poolMembers, failure_policy: failurePolicy }
+          : undefined,
       });
-      const body = `${bodyWithoutInputs.slice(0, -1)},"template_inputs":${editor.json}}`;
+      const body = poolMode
+        ? bodyWithoutInputs
+        : `${bodyWithoutInputs.slice(0, -1)},"template_inputs":${editor.json}}`;
       const path = resourcePath("fleets", key);
       const headers = attempt.current.headers("PUT", path, body, resource?.etag || null, !resource);
       setBusy(true);
@@ -196,8 +234,37 @@ export function FleetForm({
               Restore original authentication
             </Button>
           )}
-          <FleetTemplateSelection editor={editor} templates={templates} />
-          <FleetTemplateInputs editor={editor} />
+          {!poolMode ? (
+            <>
+              <FleetTemplateSelection editor={editor} templates={templates} />
+              <FleetTemplateInputs editor={editor} />
+            </>
+          ) : (
+            <TemplatePoolEditor
+              members={poolMembers}
+              setMembers={setPoolMembers}
+              failurePolicy={failurePolicy}
+              setFailurePolicy={setFailurePolicy}
+              templates={templates}
+            />
+          )}
+          {!resource && (
+            <Field label="Template placement">
+              <NativeSelect
+                value={poolMode ? "pool" : "single"}
+                onChange={(event) => setPoolMode(event.target.value === "pool")}
+              >
+                <NativeSelectOption value="single">Single template</NativeSelectOption>
+                <NativeSelectOption value="pool">Weighted template pool</NativeSelectOption>
+              </NativeSelect>
+              {poolMode && (
+                <p className="text-sm text-muted-foreground">
+                  Each new Runner draws a member independently by weight. Weights influence the
+                  long-run mix; finite batches can vary and GitHub job routing is not controlled.
+                </p>
+              )}
+            </Field>
+          )}
           <Field label="Maximum runners">
             <Input
               required
@@ -284,7 +351,9 @@ export function FleetForm({
             Cancel
           </Button>
           <Button
-            disabled={busy || !editor.canSubmit || !authAllowed || !templateAllowed}
+            disabled={
+              busy || (!poolMode && (!editor.canSubmit || !templateAllowed)) || !authAllowed
+            }
             type="submit"
           >
             {busy ? <LoaderCircle className="animate-spin" /> : <Save />}
@@ -293,5 +362,154 @@ export function FleetForm({
         </div>
       </form>
     </Modal>
+  );
+}
+
+function TemplatePoolEditor({
+  members,
+  setMembers,
+  failurePolicy,
+  setFailurePolicy,
+  templates,
+}: {
+  members: TemplatePoolMemberSpec[];
+  setMembers: (members: TemplatePoolMemberSpec[]) => void;
+  failurePolicy: "backpressure" | "redistribute";
+  setFailurePolicy: (value: "backpressure" | "redistribute") => void;
+  templates: ReturnType<typeof useTemplates>;
+}) {
+  const available = templates.data?.data.profiles || [];
+  return (
+    <section className="form-stack rounded-md border p-3" aria-label="Weighted template pool">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-medium">Weighted template members</h3>
+          <p className="text-sm text-muted-foreground">1–32 members; integer weights 1–10000.</p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={members.length >= 32}
+          onClick={() => setMembers([...members, initialMember(members.length)])}
+        >
+          <Plus /> Add member
+        </Button>
+      </div>
+      {members.map((member, index) => (
+        <div key={member.key} className="form-stack rounded-md border p-3">
+          <div className="form-grid">
+            <Field label="Member key">
+              <Input
+                value={member.key}
+                onChange={(e) =>
+                  setMembers(
+                    members.map((m, i) => (i === index ? { ...m, key: e.target.value } : m)),
+                  )
+                }
+                pattern="[a-z0-9][a-z0-9-]*"
+                required
+              />
+            </Field>
+            <Field label="Weight">
+              <Input
+                type="number"
+                min={1}
+                max={10000}
+                step={1}
+                value={member.weight}
+                onChange={(e) =>
+                  setMembers(
+                    members.map((m, i) =>
+                      i === index ? { ...m, weight: Number(e.target.value) } : m,
+                    ),
+                  )
+                }
+                required
+              />
+            </Field>
+          </div>
+          <Field label="Template profile">
+            <NativeSelect
+              value={member.template_profile_ref}
+              required
+              onChange={(e) =>
+                setMembers(
+                  members.map((m, i) =>
+                    i === index ? { ...m, template_profile_ref: e.target.value } : m,
+                  ),
+                )
+              }
+            >
+              <NativeSelectOption value="">Choose a template</NativeSelectOption>
+              {available.map((profile) => (
+                <NativeSelectOption
+                  key={profile.key}
+                  value={profile.key}
+                  disabled={!profile.activeRevision}
+                >
+                  {profile.key} · {profile.status}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Field label="Template inputs (JSON)">
+            <textarea
+              className="min-h-20 w-full rounded-md border bg-background p-2 font-mono text-sm"
+              value={JSON.stringify(member.template_inputs, null, 2)}
+              onChange={(e) => {
+                try {
+                  const parsed = JSON.parse(e.target.value);
+                  if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+                    setMembers(
+                      members.map((m, i) => (i === index ? { ...m, template_inputs: parsed } : m)),
+                    );
+                } catch {
+                  // Keep the last valid object until JSON is complete.
+                }
+              }}
+            />
+          </Field>
+          <Field label="Maximum runners (optional)">
+            <Input
+              type="number"
+              min={0}
+              step={1}
+              value={member.max_runners ?? ""}
+              onChange={(e) =>
+                setMembers(
+                  members.map((m, i) =>
+                    i === index
+                      ? {
+                          ...m,
+                          max_runners: e.target.value === "" ? undefined : Number(e.target.value),
+                        }
+                      : m,
+                  ),
+                )
+              }
+            />
+          </Field>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={members.length <= 1}
+            onClick={() => setMembers(members.filter((_, i) => i !== index))}
+          >
+            <Trash2 /> Remove member
+          </Button>
+        </div>
+      ))}
+      <Field label="Failure policy">
+        <NativeSelect
+          value={failurePolicy}
+          onChange={(e) => setFailurePolicy(e.target.value as typeof failurePolicy)}
+        >
+          <NativeSelectOption value="backpressure">Backpressure</NativeSelectOption>
+          <NativeSelectOption value="redistribute">
+            Redistribute to other members
+          </NativeSelectOption>
+        </NativeSelect>
+      </Field>
+    </section>
   );
 }

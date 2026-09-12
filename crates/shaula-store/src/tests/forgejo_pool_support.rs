@@ -137,6 +137,7 @@ impl Fixture {
             generation_name: "generation".into(),
             fleet_revision: 1,
             template_profile_key: "profile".into(),
+            pool_member_key: None,
             template_revision: 1,
             template_artifact_digest: format!("sha256:{}", "a".repeat(64)),
             attestation_id: "attestation".into(),

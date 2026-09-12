@@ -82,6 +82,30 @@ pub mod fleet_auth_handoffs {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+pub mod fleet_revision_pool_members {
+    use sea_orm::entity::prelude::*;
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "fleet_revision_pool_members")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i32,
+        pub fleet_key: String,
+        pub fleet_revision: i64,
+        pub member_key: String,
+        pub template_profile_key: String,
+        pub template_revision: i64,
+        pub template_artifact_digest: String,
+        pub template_attestation_id: String,
+        pub template_inputs_json: String,
+        pub inputs_digest: String,
+        pub weight: i64,
+        pub max_runners: Option<i64>,
+    }
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 pub mod fleet_changes {
     use sea_orm::entity::prelude::*;
 

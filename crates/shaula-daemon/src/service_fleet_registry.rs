@@ -117,10 +117,11 @@ impl FleetRegistryPort for ControlPlane {
         // occupancy) — spec 0005 §6. Inputs are validated against both
         // authorities (schema + alias policy). Extracted to
         // `service_fleet_ops`.
-        let (template, resolved_auth) = match self.resolve_admission_materials(key, &spec).await? {
-            Ok(materials) => materials,
-            Err(e) => return Ok(Err(e)),
-        };
+        let (template, template_pool, resolved_auth) =
+            match self.resolve_admission_materials(key, &spec).await? {
+                Ok(materials) => materials,
+                Err(e) => return Ok(Err(e)),
+            };
 
         // Replacement gates: remote identity immutable per incarnation;
         // template/auth-key replacement requires zero occupancy.
@@ -153,14 +154,18 @@ impl FleetRegistryPort for ControlPlane {
             // Fleet serving runners created from different parameter sets.
             // Treat an inputs change like a template or auth replacement and
             // require zero occupancy before admitting the new revision.
+            let pool_changed = previous_spec.template_pool != spec.template_pool;
             if template_referenced(&previous_spec) != template_referenced(&spec)
                 || previous_spec.template_inputs != spec.template_inputs
+                || pool_changed
             {
                 let occupancy = self.store.generations_occupancy(key).await?;
                 if occupancy > 0 {
                     return Ok(Err(MutationError::RetirementBlocked {
                         reason: if previous_spec.template_inputs != spec.template_inputs {
                             "template input replacement requires zero resource occupancy".into()
+                        } else if pool_changed {
+                            "template pool replacement requires zero resource occupancy".into()
                         } else {
                             "replacement requires zero resource occupancy".into()
                         },
@@ -264,6 +269,7 @@ impl FleetRegistryPort for ControlPlane {
             revision,
             spec_json: spec_json.clone(),
             template,
+            template_pool,
             auth_desired: Some((
                 resolved_auth.profile_key.as_str().to_string(),
                 resolved_auth.revision as i64,
@@ -348,6 +354,7 @@ impl FleetRegistryPort for ControlPlane {
                     revision.template_attestation_id.clone().unwrap_or_default(),
                 )
             }),
+            resolved_template_pool: revision.template_pool.clone(),
             resolved_auth: revision.auth_desired.clone(),
             created_at: revision.created_at,
             updated_at: revision.created_at,

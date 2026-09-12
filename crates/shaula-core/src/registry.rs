@@ -66,6 +66,7 @@ pub struct FleetResource {
     pub revision: i64,
     /// Resolved admission facts; exact pin frozen at acceptance.
     pub resolved_template: Option<(String, i64, String, String)>,
+    pub resolved_template_pool: Vec<crate::template_pool::ResolvedTemplatePoolMember>,
     pub resolved_auth: (String, i64),
     pub created_at: i64,
     pub updated_at: i64,

@@ -20,6 +20,7 @@ async fn fixture() -> Result<(tempfile::TempDir, Store, PlanProvenance), Box<dyn
             generation_name: "generation".into(),
             fleet_revision: 1,
             template_profile_key: "profile".into(),
+            pool_member_key: None,
             template_revision: 1,
             template_artifact_digest: "sha256:artifact".into(),
             attestation_id: "attestation".into(),

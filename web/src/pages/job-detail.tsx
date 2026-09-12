@@ -89,6 +89,11 @@ export function JobDetail({ scopes }: { scopes: string[] }) {
                     >
                       {generation.runner_name}
                     </Link>
+                    {generation.pool_member_key && (
+                      <span className="text-xs text-muted-foreground">
+                        Pool member: {generation.pool_member_key}
+                      </span>
+                    )}
                     <StatusBadge value={generation.state} />
                   </div>
                   <OperationLogs generationId={generation.id} scopes={scopes} />

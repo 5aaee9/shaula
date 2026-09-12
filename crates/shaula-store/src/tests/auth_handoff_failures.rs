@@ -56,6 +56,7 @@ async fn mutate(store: &crate::registry_impl::SqliteControlPlane, mutation: Muta
                     revision: 2,
                     spec_json: previous.spec_json,
                     template: None,
+                    template_pool: Vec::new(),
                     auth_desired: Some(previous.auth_desired),
                     inputs_digest: previous.inputs_digest,
                     actor: "operator".into(),

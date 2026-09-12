@@ -4,7 +4,8 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
 use shaula_core::fleet::{
-    FleetForgejoSection, FleetGithubSection, FleetProviderKind, TemplateProfileRefDto,
+    FleetForgejoSection, FleetGithubSection, FleetProviderKind, TemplatePoolSpec,
+    TemplateProfileRefDto,
 };
 
 /// Fleet desired-state request body.
@@ -18,7 +19,10 @@ pub struct FleetSpecDto {
     #[serde(default)]
     pub forgejo: Option<FleetForgejoSection>,
     pub capacity: shaula_core::fleet::CapacityPolicyDto,
+    #[serde(default)]
     pub template_profile_ref: TemplateProfileRefDto,
+    #[serde(default)]
+    pub template_pool: Option<TemplatePoolSpec>,
     #[serde(default)]
     pub template_inputs: serde_json::Map<String, serde_json::Value>,
 }
@@ -31,6 +35,7 @@ impl FleetSpecDto {
             forgejo: self.forgejo,
             capacity: self.capacity,
             template_profile_ref: self.template_profile_ref,
+            template_pool: self.template_pool,
             template_inputs: self.template_inputs,
         }
     }
@@ -58,6 +63,8 @@ pub struct ResolvedDependenciesDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub template: Option<ResolvedTemplateDto>,
     pub auth_desired: AuthRefDto,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub template_pool: Vec<shaula_core::template_pool::ResolvedTemplatePoolMember>,
 }
 
 #[derive(Debug, Clone, Serialize)]

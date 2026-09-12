@@ -71,6 +71,7 @@ export function UnassignedRunners({ scopes }: { scopes: string[] }) {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Runner</TableHead>
+                        <TableHead>Pool member</TableHead>
                         <TableHead>Fleet</TableHead>
                         <TableHead>Runner status</TableHead>
                         <TableHead>Association</TableHead>
@@ -88,6 +89,7 @@ export function UnassignedRunners({ scopes }: { scopes: string[] }) {
                               {generation.runner_name}
                             </Link>
                           </TableCell>
+                          <TableCell>{generation.pool_member_key || "—"}</TableCell>
                           <TableCell>{generation.fleet_key}</TableCell>
                           <TableCell>
                             <StatusBadge value={generation.state} />

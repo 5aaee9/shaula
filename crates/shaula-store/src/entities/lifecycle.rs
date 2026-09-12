@@ -22,6 +22,7 @@ pub mod runner_generations {
         pub subphase: Option<String>,
         pub jit_phase: Option<String>,
         pub github_runner_id: Option<i64>,
+        pub pool_member_key: Option<String>,
         pub workspace_path: String,
         pub shaula_result_json: Option<String>,
         pub shaula_result_digest: Option<String>,

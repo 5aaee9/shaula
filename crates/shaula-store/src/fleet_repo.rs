@@ -6,7 +6,8 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder};
 
 use crate::entities::auth::github_auth_profiles;
-use crate::entities::fleet::{fleet_changes, fleet_revisions, fleets};
+use crate::entities::fleet::{fleet_changes, fleet_revision_pool_members, fleet_revisions, fleets};
+use crate::entities::template::template_profile_revisions;
 use crate::store::{Store, StoreResult};
 
 impl Store {
@@ -31,6 +32,18 @@ impl Store {
             .filter(fleet_revisions::Column::FleetKey.eq(key))
             .order_by_desc(fleet_revisions::Column::Revision)
             .one(self.connection())
+            .await?)
+    }
+
+    pub(crate) async fn fleet_revision_pool_members(
+        &self,
+        fleet_key: &str,
+        revision: i64,
+    ) -> StoreResult<Vec<fleet_revision_pool_members::Model>> {
+        Ok(fleet_revision_pool_members::Entity::find()
+            .filter(fleet_revision_pool_members::Column::FleetKey.eq(fleet_key))
+            .filter(fleet_revision_pool_members::Column::FleetRevision.eq(revision))
+            .all(self.connection())
             .await?)
     }
 
@@ -96,6 +109,60 @@ impl Store {
         fleet_revisions::Entity::insert(revision_row)
             .exec(tx)
             .await?;
+
+        for member in &insert.template_pool {
+            if member.weight == 0 || member.weight > 10_000 {
+                return Err(crate::store::StoreError::Conflict {
+                    resource: format!("{}:invalid-pool-weight", member.key),
+                });
+            }
+            let profile = crate::entities::template::template_profiles::Entity::find_by_id(
+                member.template_profile_key.clone(),
+            )
+            .one(tx)
+            .await?
+            .ok_or_else(|| crate::store::StoreError::Conflict {
+                resource: format!("{}:template-profile-missing", member.key),
+            })?;
+            if profile.deletion_requested
+                || profile.active_revision != Some(member.template_revision)
+            {
+                return Err(crate::store::StoreError::Conflict {
+                    resource: format!("{}:template-revision-not-active", member.key),
+                });
+            }
+            if template_profile_revisions::Entity::find()
+                .filter(
+                    template_profile_revisions::Column::ProfileKey
+                        .eq(member.template_profile_key.clone()),
+                )
+                .filter(template_profile_revisions::Column::Revision.eq(member.template_revision))
+                .one(tx)
+                .await?
+                .is_none()
+            {
+                return Err(crate::store::StoreError::Conflict {
+                    resource: format!("{}:template-revision-missing", member.key),
+                });
+            }
+            fleet_revision_pool_members::Entity::insert(fleet_revision_pool_members::ActiveModel {
+                id: sea_orm::ActiveValue::NotSet,
+                fleet_key: Set(key.to_string()),
+                fleet_revision: Set(insert.revision),
+                member_key: Set(member.key.clone()),
+                template_profile_key: Set(member.template_profile_key.clone()),
+                template_revision: Set(member.template_revision),
+                template_artifact_digest: Set(member.template_artifact_digest.clone()),
+                template_attestation_id: Set(member.template_attestation_id.clone()),
+                template_inputs_json: Set(serde_json::to_string(&member.template_inputs)
+                    .map_err(|e| crate::store::StoreError::Corrupt(e.to_string()))?),
+                inputs_digest: Set(member.inputs_digest.clone()),
+                weight: Set(i64::from(member.weight)),
+                max_runners: Set(member.max_runners),
+            })
+            .exec(tx)
+            .await?;
+        }
 
         match existing {
             None => {

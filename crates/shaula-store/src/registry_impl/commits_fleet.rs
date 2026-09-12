@@ -6,6 +6,7 @@ use shaula_core::registry::{MutationError, MutationFacts};
 
 use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
 
+use crate::entities::fleet::fleet_revision_pool_members;
 use crate::entities::fleet::fleet_revisions;
 use crate::entities::lifecycle::{runner_generations, runner_operations};
 
@@ -69,6 +70,7 @@ impl SqliteControlPlane {
                     revision: facts.revision,
                     spec_json: facts.spec_json.clone(),
                     template: facts.template.clone(),
+                    template_pool: facts.template_pool.clone(),
                     auth_desired: facts.auth_desired.clone().unwrap_or_default(),
                     inputs_digest: facts.inputs_digest.clone(),
                     actor: facts.actor.clone(),
@@ -104,6 +106,51 @@ impl SqliteControlPlane {
                 p.template_profile_key != new_template_key
                     || p.template_revision != new_template_revision
             });
+            let previous_pool_members = if let Some(p) = previous.as_ref() {
+                fleet_revision_pool_members::Entity::find()
+                    .filter(fleet_revision_pool_members::Column::FleetKey.eq(&facts.resource_key))
+                    .filter(fleet_revision_pool_members::Column::FleetRevision.eq(p.revision))
+                    .all(&tx)
+                    .await
+                    .map_err(|e| core_err(crate::store::StoreError::from(e)))?
+            } else {
+                Vec::new()
+            };
+            let new_pool = !facts.template_pool.is_empty();
+            let pool_changed = previous_pool_members.len() != facts.template_pool.len()
+                || previous_pool_members.iter().any(|row| {
+                    match facts
+                        .template_pool
+                        .iter()
+                        .find(|member| member.key == row.member_key)
+                    {
+                        Some(member) => {
+                            member.template_profile_key != row.template_profile_key
+                                || member.template_revision != row.template_revision
+                                || member.template_artifact_digest != row.template_artifact_digest
+                                || member.template_attestation_id != row.template_attestation_id
+                                || serde_json::to_string(&member.template_inputs)
+                                    .ok()
+                                    .as_deref()
+                                    != Some(row.template_inputs_json.as_str())
+                                || member.inputs_digest != row.inputs_digest
+                                || member.weight as i64 != row.weight
+                                || member.max_runners != row.max_runners
+                        }
+                        None => true,
+                    }
+                });
+            if (previous_pool_members.is_empty() != new_pool) || pool_changed {
+                let occupancy = fleet_replacement_occupancy_in_tx(&tx, &facts.resource_key)
+                    .await
+                    .map_err(core_err)?;
+                if occupancy > 0 {
+                    let _ = tx.rollback().await;
+                    return Ok(Err(MutationError::RetirementBlocked {
+                        reason: "pool conversion requires zero resource occupancy".into(),
+                    }));
+                }
+            }
             let new_auth_key = facts
                 .auth_desired
                 .as_ref()

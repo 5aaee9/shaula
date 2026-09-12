@@ -69,6 +69,7 @@ impl ForgejoPoolSupervisor {
             generation_name: generation_name.clone(),
             fleet_revision: snapshot.revision,
             template_profile_key: profile_key.clone(),
+            pool_member_key: None,
             template_revision,
             template_artifact_digest: artifact_digest.clone(),
             attestation_id,

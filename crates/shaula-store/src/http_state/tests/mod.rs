@@ -84,6 +84,7 @@ fn record(id: Uuid) -> GenerationRecord {
         generation_name: format!("s{}", id.simple()),
         fleet_revision: 1,
         template_profile_key: "template".into(),
+        pool_member_key: None,
         template_revision: 1,
         template_artifact_digest: "sha256:artifact".into(),
         attestation_id: "attested".into(),

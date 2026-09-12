@@ -137,7 +137,17 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
               <KeyValue label="Minimum runners">{data.spec.capacity.min_runners}</KeyValue>
               <KeyValue label="Maximum runners">{data.spec.capacity.max_runners}</KeyValue>
               <KeyValue label="Template profile">
-                {data.resolved.template ? (
+                {data.resolved.templatePool?.length ? (
+                  <div className="form-stack gap-1">
+                    <span>{data.resolved.templatePool.length} weighted members</span>
+                    {data.resolved.templatePool.map((member) => (
+                      <span key={member.key} className="text-sm text-muted-foreground">
+                        {member.key}: {member.template_profile_key} / r{member.template_revision} ·
+                        weight {member.weight}
+                      </span>
+                    ))}
+                  </div>
+                ) : data.resolved.template ? (
                   <Link
                     className="text-link"
                     to={`/templates?key=${encodeURIComponent(data.resolved.template.key)}`}
@@ -194,6 +204,37 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
                 <span className="mono text-xs">{data.metadata.incarnation}</span>
               </KeyValue>
             </dl>
+            {data.resolved.templatePool?.length ? (
+              <div className="mt-6">
+                <h3 className="font-medium">Template pool members</h3>
+                <div className="table-scroll mt-2">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Member</TableHead>
+                        <TableHead>Weight</TableHead>
+                        <TableHead>Template</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {data.resolved.templatePool.map((member) => (
+                        <TableRow key={member.key}>
+                          <TableCell>{member.key}</TableCell>
+                          <TableCell>{member.weight}</TableCell>
+                          <TableCell>
+                            {member.template_profile_key} / r{member.template_revision}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Each Runner is assigned by an independent weighted random draw. This does not
+                  guarantee exact ratios; the table shows the admitted member configuration.
+                </p>
+              </div>
+            ) : null}
           </section>
         </TabsContent>
         <TabsContent value="conditions">

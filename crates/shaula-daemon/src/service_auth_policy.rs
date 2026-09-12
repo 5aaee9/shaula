@@ -92,6 +92,7 @@ impl ControlPlane {
                     revision,
                     spec_json: String::new(),
                     template: None,
+                    template_pool: Vec::new(),
                     auth_desired: None,
                     inputs_digest: String::new(),
                     actor: actor.name.clone(),

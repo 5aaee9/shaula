@@ -25,6 +25,7 @@ pub mod secret;
 pub mod setup_info;
 pub mod state_backend;
 pub mod template;
+pub mod template_pool;
 
 pub use error::CoreError;
 pub use error::CoreResult;

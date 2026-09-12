@@ -57,6 +57,7 @@ async fn ready_fleet_converges_only_when_effective_and_occupied_capacity_match_t
                     generation_name: format!("generation-{index}"),
                     fleet_revision: 1,
                     template_profile_key: "test".into(),
+                    pool_member_key: None,
                     template_revision: 1,
                     template_artifact_digest: "sha256:test".into(),
                     attestation_id: "test".into(),

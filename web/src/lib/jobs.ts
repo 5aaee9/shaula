@@ -32,6 +32,7 @@ export interface Generation {
   association_status: string;
   created_at: number;
   updated_at: number;
+  pool_member_key?: string | null;
 }
 export interface Observation {
   id: string;

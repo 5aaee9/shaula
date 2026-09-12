@@ -137,6 +137,7 @@ async fn generation_with_runner(
             generation_name: id.into(),
             fleet_revision: 1,
             template_profile_key: "template".into(),
+            pool_member_key: None,
             template_revision: 1,
             template_artifact_digest: "digest".into(),
             attestation_id: "attestation".into(),

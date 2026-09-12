@@ -4,7 +4,7 @@
 
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::ports::TemplateCreateRequest;
-use shaula_core::registry::{GenerationRecord, ScaleSetRow};
+use shaula_core::registry::{FleetRuntimeGuard, GenerationRecord, ScaleSetRow};
 use shaula_observability::{MetricOperation, MetricResult, TelemetryHandle};
 
 use super::{fingerprint, FleetSupervisor};
@@ -90,21 +90,27 @@ impl FleetSupervisor {
         }
         let spec: shaula_core::fleet::FleetSpec = serde_json::from_str(&snapshot.spec_json)
             .map_err(|e| CoreError::new(ReasonCode::Internal, format!("spec invalid: {e}")))?;
-        let parameters = spec.template_inputs;
-        let (pin_profile, pin_revision, pin_artifact, pin_attestation) = match (
-            &snapshot.template_profile_key,
-            snapshot.template_revision,
-            &snapshot.template_artifact_digest,
-            &snapshot.template_attestation_id,
-        ) {
-            (Some(k), Some(r), Some(d), Some(a)) => (k.clone(), r, d.clone(), a.clone()),
-            _ => {
-                return Err(CoreError::new(
-                    ReasonCode::Internal,
-                    "admitted fleet revision has no resolved template pin",
-                ))
-            }
-        };
+        let mut parameters = spec.template_inputs;
+        let (pin_profile, pin_revision, pin_artifact, pin_attestation) =
+            if spec.template_pool.is_some() {
+                // Pool admission selects and freezes the member atomically below.
+                (String::new(), 0, String::new(), String::new())
+            } else {
+                match (
+                    &snapshot.template_profile_key,
+                    snapshot.template_revision,
+                    &snapshot.template_artifact_digest,
+                    &snapshot.template_attestation_id,
+                ) {
+                    (Some(k), Some(r), Some(d), Some(a)) => (k.clone(), r, d.clone(), a.clone()),
+                    _ => {
+                        return Err(CoreError::new(
+                            ReasonCode::Internal,
+                            "admitted fleet revision has no resolved template pin",
+                        ))
+                    }
+                }
+            };
 
         let generation_id = shaula_core::auth::new_attempt_id();
         // Kubernetes names cap at 63 chars: derive the generation-scoped
@@ -141,6 +147,7 @@ impl FleetSupervisor {
             generation_name: generation_name.clone(),
             fleet_revision: snapshot.revision,
             template_profile_key: pin_profile.clone(),
+            pool_member_key: None,
             template_revision: pin_revision,
             template_artifact_digest: pin_artifact.clone(),
             attestation_id: pin_attestation.clone(),
@@ -151,14 +158,28 @@ impl FleetSupervisor {
             created_at: now,
             updated_at: now,
         };
-        self.store.generation_insert(record.clone()).await?;
-        self.store
-            .generation_advance(
-                &generation_id,
-                shaula_core::lifecycle::GenerationState::Creating,
-                now,
-            )
-            .await?;
+        let record = if spec.template_pool.is_some() {
+            let guard = FleetRuntimeGuard::from(&head);
+            let Some(admission) = self.store.generation_admit_pool(record, &guard).await? else {
+                // No eligible member or a concurrent revision/fence change.
+                // The next convergence tick retries without creating a row.
+                return Ok(false);
+            };
+            parameters = admission.template_inputs;
+            admission.generation
+        } else {
+            self.store.generation_insert(record.clone()).await?;
+            record
+        };
+        if record.state == shaula_core::lifecycle::GenerationState::CreatePending {
+            self.store
+                .generation_advance(
+                    &generation_id,
+                    shaula_core::lifecycle::GenerationState::Creating,
+                    now,
+                )
+                .await?;
+        }
 
         // Durable ownership FIRST: the exact bound Scale Set ID must be
         // read and validated before JITStarting (spec 0001 §10.2). An
@@ -219,7 +240,7 @@ impl FleetSupervisor {
             .prepare_create(
                 &workspace,
                 &artifact_dir,
-                &pin_artifact,
+                &record.template_artifact_digest,
                 self.config.operation_timeout,
             )
             .await
@@ -254,10 +275,10 @@ impl FleetSupervisor {
             "runner_name": runner_name,
             "generation_name": generation_name,
             "scale_set_id": scale_set_id,
-            "template_profile": pin_profile,
-            "template_revision": pin_revision,
-            "artifact_digest": pin_artifact,
-            "attestation_id": pin_attestation,
+            "template_profile": record.template_profile_key,
+            "template_revision": record.template_revision,
+            "artifact_digest": record.template_artifact_digest,
+            "attestation_id": record.attestation_id,
             "auth_profile_key": self.config.auth_profile_key,
             "auth_revision": self.config.auth_revision,
             "identity_fingerprint": fingerprint(&self.identity),
@@ -320,7 +341,7 @@ impl FleetSupervisor {
         let request = TemplateCreateRequest {
             workspace_path: workspace,
             artifact_dir,
-            pinned_artifact_digest: pin_artifact,
+            pinned_artifact_digest: record.template_artifact_digest.clone(),
             input,
             expected_bindings_digest: shaula_core::template::BindingsDigest(
                 bindings_digest.clone(),

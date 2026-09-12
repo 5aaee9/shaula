@@ -90,6 +90,25 @@ pub(crate) async fn fleet_get(
                     "attestationId": t.3,
                 })
             });
+            let resolved_template_pool = (!resource.resolved_template_pool.is_empty()).then(|| {
+                resource
+                    .resolved_template_pool
+                    .iter()
+                    .map(|m| {
+                        serde_json::json!({
+                            "key": m.key,
+                            "templateProfileKey": m.template_profile_key,
+                            "templateRevision": m.template_revision,
+                            "templateArtifactDigest": m.template_artifact_digest,
+                            "templateAttestationId": m.template_attestation_id,
+                            "templateInputs": m.template_inputs,
+                            "inputsDigest": m.inputs_digest,
+                            "weight": m.weight,
+                            "maxRunners": m.max_runners,
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            });
             let body = serde_json::json!({
                 "key": resource.key,
                 "spec": spec_json,
@@ -99,6 +118,7 @@ pub(crate) async fn fleet_get(
                 },
                 "resolved": {
                     "template": resolved_template,
+                    "templatePool": resolved_template_pool,
                     "authDesired": {
                         "profileKey": resource.resolved_auth.0,
                         "revision": resource.resolved_auth.1,

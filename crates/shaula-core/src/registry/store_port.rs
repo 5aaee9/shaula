@@ -23,6 +23,7 @@ pub struct MutationFacts {
     /// Canonical spec JSON (fleet) or empty for decommission markers.
     pub spec_json: String,
     pub template: Option<(String, i64, String, String)>,
+    pub template_pool: Vec<crate::template_pool::ResolvedTemplatePoolMember>,
     pub auth_desired: Option<(String, i64)>,
     pub inputs_digest: String,
     pub actor: String,
@@ -310,6 +311,7 @@ pub struct FleetRevisionRow {
     pub template_revision: Option<i64>,
     pub template_artifact_digest: Option<String>,
     pub template_attestation_id: Option<String>,
+    pub template_pool: Vec<crate::template_pool::ResolvedTemplatePoolMember>,
     pub auth_desired: (String, i64),
     /// Digest of the admitted normalized template inputs, frozen at
     /// admission — the authority a generation's envelope must match.

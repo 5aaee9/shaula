@@ -70,6 +70,7 @@ impl Store {
             subphase: Set(None),
             jit_phase: Set(None),
             github_runner_id: Set(None),
+            pool_member_key: Set(record.pool_member_key.clone()),
             workspace_path: Set(workspace_path.to_string()),
             shaula_result_json: Set(None),
             shaula_result_digest: Set(None),

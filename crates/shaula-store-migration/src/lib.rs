@@ -19,6 +19,7 @@ pub mod m0014_setup_info_capabilities;
 pub mod m0015_template_revision_sources;
 pub mod m0016_scale_set_ownership;
 pub mod m0017_forgejo_generation_identity;
+pub mod m0018_weighted_template_pool;
 
 use sea_orm_migration::prelude::*;
 
@@ -47,6 +48,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0015_template_revision_sources::Migration),
             Box::new(m0016_scale_set_ownership::Migration),
             Box::new(m0017_forgejo_generation_identity::Migration),
+            Box::new(m0018_weighted_template_pool::Migration),
         ]
     }
 }

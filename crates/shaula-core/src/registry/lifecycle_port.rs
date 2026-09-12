@@ -12,6 +12,20 @@ use crate::error::CoreResult;
 /// cross-dedupe, cross-wake or cross-recover.
 #[async_trait]
 pub trait LifecycleStore: super::ListenerMessageStore + Send + Sync {
+    /// Admit a generation against a weighted template pool. Stores that do
+    /// not implement pools fail explicitly so callers cannot silently fall
+    /// back to a single template.
+    async fn generation_admit_pool(
+        &self,
+        record: GenerationRecord,
+        _guard: &super::FleetRuntimeGuard,
+    ) -> CoreResult<Option<crate::template_pool::PoolGenerationAdmission>> {
+        let _ = record;
+        Err(crate::error::CoreError::new(
+            crate::error::ReasonCode::Internal,
+            "weighted template pool admission unavailable",
+        ))
+    }
     async fn session_epoch(&self, fleet_key: &str) -> CoreResult<Option<i64>>;
     /// Checks the captured authority under the caller's exclusive effect gate
     /// before establishing a remote session. Installation checks it again.
@@ -228,6 +242,7 @@ pub struct GenerationRecord {
     pub generation_name: String,
     pub fleet_revision: i64,
     pub template_profile_key: String,
+    pub pool_member_key: Option<String>,
     pub template_revision: i64,
     pub template_artifact_digest: String,
     pub attestation_id: String,

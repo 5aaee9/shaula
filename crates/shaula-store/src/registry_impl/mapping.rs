@@ -21,6 +21,7 @@ pub(crate) fn fleet_head(f: crate::entities::fleet::fleets::Model) -> FleetHead 
 pub(crate) fn fleet_revision_row(
     r: crate::entities::fleet::fleet_revisions::Model,
 ) -> shaula_core::registry::store_port::FleetRevisionRow {
+    let template_pool = Vec::new();
     shaula_core::registry::store_port::FleetRevisionRow {
         fleet_key: r.fleet_key,
         revision: r.revision,
@@ -29,6 +30,7 @@ pub(crate) fn fleet_revision_row(
         template_revision: r.template_revision,
         template_artifact_digest: r.template_artifact_digest,
         template_attestation_id: r.template_attestation_id,
+        template_pool,
         auth_desired: (r.auth_desired_profile_key, r.auth_desired_revision),
         inputs_digest: r.inputs_digest,
         created_at: r.created_at,

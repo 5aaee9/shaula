@@ -55,6 +55,13 @@ impl ControlPlane {
         };
         let spec: FleetSpec = serde_json::from_str(&latest.spec_json)
             .map_err(|e| CoreError::new(ReasonCode::Internal, e.to_string()))?;
+        // Pool members own independent follow/pin state. The pool admission
+        // contract retains each member's exact revision, so the single
+        // template follow cascade must not reinterpret the empty top-level
+        // reference or rewrite a pool revision.
+        if spec.template_pool.is_some() {
+            return Ok(false);
+        }
         // ARD-0029: every live fleet follows its profile's Active revision;
         // legacy exact pins normalized on read above land here as followers.
         // Resolve the CURRENT Active revision directly: the retained-pin
@@ -108,6 +115,7 @@ impl ControlPlane {
             // The spec is verbatim: the bare key already encodes "follow".
             spec_json: latest.spec_json.clone(),
             template: Some(pin),
+            template_pool: Vec::new(),
             // Auth desired is untouched by a template upgrade; the auth
             // handoff retarget on rotation is a separate cascade (spec
             // 0023 §4) and the commit re-resolves it in-tx anyway (R9-03).

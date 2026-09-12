@@ -229,6 +229,7 @@ async fn historical_generation_and_session_references_survive_cross_profile_hand
             generation_name: "generation".into(),
             fleet_revision: 1,
             template_profile_key: "template".into(),
+            pool_member_key: None,
             template_revision: 1,
             template_artifact_digest: "sha256:a".into(),
             attestation_id: "att".into(),

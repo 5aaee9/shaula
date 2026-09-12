@@ -53,12 +53,36 @@ impl ControlPlaneStore for SqliteControlPlane {
         Ok(self.store.fleet_list().await.map_err(core_err)?.len())
     }
     async fn fleet_revision_latest(&self, key: &str) -> CoreResult<Option<FleetRevisionRow>> {
-        Ok(self
+        let Some(row) = self
             .store
             .fleet_revision_latest(key)
             .await
             .map_err(core_err)?
-            .map(fleet_revision_row))
+        else {
+            return Ok(None);
+        };
+        let mut mapped = fleet_revision_row(row.clone());
+        mapped.template_pool = self
+            .store
+            .fleet_revision_pool_members(key, row.revision)
+            .await
+            .map_err(core_err)?
+            .into_iter()
+            .filter_map(|m| {
+                Some(shaula_core::template_pool::ResolvedTemplatePoolMember {
+                    key: m.member_key,
+                    template_profile_key: m.template_profile_key,
+                    template_revision: m.template_revision,
+                    template_artifact_digest: m.template_artifact_digest,
+                    template_attestation_id: m.template_attestation_id,
+                    template_inputs: serde_json::from_str(&m.template_inputs_json).ok()?,
+                    inputs_digest: m.inputs_digest,
+                    weight: u32::try_from(m.weight).ok()?,
+                    max_runners: m.max_runners,
+                })
+            })
+            .collect();
+        Ok(Some(mapped))
     }
     async fn generation_lookup(
         &self,

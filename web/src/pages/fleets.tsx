@@ -237,13 +237,16 @@ export function FleetsPage({ scopes }: { scopes: string[] }) {
                     </TableCell>
                     <TableCell>
                       <div className="table-detail">
-                        {row.resource?.resolved.template?.key || "--"}
+                        {row.resource?.resolved.templatePool?.length
+                          ? `${row.resource.resolved.templatePool.length} weighted members`
+                          : row.resource?.resolved.template?.key || "--"}
                       </div>
-                      {row.resource?.resolved.template && (
-                        <small className="text-muted-foreground">
-                          Revision {row.resource.resolved.template.revision}
-                        </small>
-                      )}
+                      {row.resource?.resolved.template &&
+                        !row.resource.resolved.templatePool?.length && (
+                          <small className="text-muted-foreground">
+                            Revision {row.resource.resolved.template.revision}
+                          </small>
+                        )}
                     </TableCell>
                     <TableCell>
                       <span className="mono text-xs">r{row.revision}</span>

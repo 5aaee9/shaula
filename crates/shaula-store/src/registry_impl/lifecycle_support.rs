@@ -111,6 +111,7 @@ pub(crate) fn map_generation(
         state: shaula_core::lifecycle::GenerationState::from_str_repr(&g.state)
             .unwrap_or(shaula_core::lifecycle::GenerationState::Quarantined),
         github_runner_id: g.github_runner_id,
+        pool_member_key: g.pool_member_key,
         workspace_path: g.workspace_path,
         created_at: g.created_at,
         updated_at: g.updated_at,

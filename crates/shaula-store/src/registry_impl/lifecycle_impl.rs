@@ -8,9 +8,193 @@ use shaula_core::error::{CoreError, CoreResult};
 use super::core_err;
 use super::lifecycle_support::map_generation;
 use super::SqliteControlPlane;
+use crate::entities::{
+    fleet::{fleet_revision_pool_members, fleets},
+    lifecycle::runner_generations,
+};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
 #[async_trait]
 impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
+    async fn generation_admit_pool(
+        &self,
+        mut record: shaula_core::registry::GenerationRecord,
+        guard: &shaula_core::registry::FleetRuntimeGuard,
+    ) -> CoreResult<Option<shaula_core::template_pool::PoolGenerationAdmission>> {
+        let tx = self.store.begin().await.map_err(core_err)?;
+        let Some(fleet) = fleets::Entity::find_by_id(record.fleet_key.clone())
+            .one(&tx)
+            .await
+            .map_err(|e| core_err(e.into()))?
+        else {
+            tx.rollback().await.ok();
+            return Ok(None);
+        };
+        if fleet.incarnation != guard.incarnation
+            || fleet.desired_revision != guard.desired_revision
+            || fleet.mutation_fence != guard.mutation_fence
+            || fleet.deletion_marker
+            || fleet.tombstone
+        {
+            tx.rollback().await.ok();
+            return Ok(None);
+        }
+        if let Some(existing) = runner_generations::Entity::find_by_id(record.id.clone())
+            .one(&tx)
+            .await
+            .map_err(|e| core_err(e.into()))?
+        {
+            record = map_generation(existing);
+            let inputs = if let Some(key) = record.pool_member_key.as_deref() {
+                fleet_revision_pool_members::Entity::find()
+                    .filter(fleet_revision_pool_members::Column::FleetKey.eq(&record.fleet_key))
+                    .filter(
+                        fleet_revision_pool_members::Column::FleetRevision
+                            .eq(record.fleet_revision),
+                    )
+                    .filter(fleet_revision_pool_members::Column::MemberKey.eq(key))
+                    .one(&tx)
+                    .await
+                    .map_err(|e| core_err(e.into()))?
+                    .and_then(|m| serde_json::from_str(&m.template_inputs_json).ok())
+                    .unwrap_or_default()
+            } else {
+                serde_json::Map::new()
+            };
+            tx.rollback().await.map_err(|e| core_err(e.into()))?;
+            return Ok(Some(shaula_core::template_pool::PoolGenerationAdmission {
+                generation: record,
+                template_inputs: inputs,
+            }));
+        }
+        let members = fleet_revision_pool_members::Entity::find()
+            .filter(fleet_revision_pool_members::Column::FleetKey.eq(&record.fleet_key))
+            .filter(fleet_revision_pool_members::Column::FleetRevision.eq(record.fleet_revision))
+            .all(&tx)
+            .await
+            .map_err(|e| core_err(e.into()))?;
+        if members.is_empty() {
+            tx.rollback().await.map_err(|e| core_err(e.into()))?;
+            return Ok(None);
+        }
+        if let Some(revision_row) = crate::entities::fleet::fleet_revisions::Entity::find()
+            .filter(crate::entities::fleet::fleet_revisions::Column::FleetKey.eq(&record.fleet_key))
+            .filter(
+                crate::entities::fleet::fleet_revisions::Column::Revision.eq(record.fleet_revision),
+            )
+            .one(&tx)
+            .await
+            .map_err(|e| core_err(e.into()))?
+        {
+            if let Ok(spec) =
+                serde_json::from_str::<shaula_core::fleet::FleetSpec>(&revision_row.spec_json)
+            {
+                let occupancy = runner_generations::Entity::find()
+                    .filter(runner_generations::Column::FleetKey.eq(&record.fleet_key))
+                    .all(&tx)
+                    .await
+                    .map_err(|e| core_err(e.into()))?
+                    .iter()
+                    .filter(|g| g.state != "Destroyed")
+                    .count() as i64;
+                if occupancy >= spec.capacity.max_runners {
+                    tx.rollback().await.map_err(|e| core_err(e.into()))?;
+                    return Ok(None);
+                }
+            }
+        }
+        let generations = runner_generations::Entity::find()
+            .filter(runner_generations::Column::FleetKey.eq(&record.fleet_key))
+            .all(&tx)
+            .await
+            .map_err(|e| core_err(e.into()))?;
+        let mut eligible = Vec::new();
+        let mut member_at_capacity = false;
+        for member in members {
+            let used = generations
+                .iter()
+                .filter(|g| {
+                    g.state != "Destroyed"
+                        && g.pool_member_key.as_deref() == Some(member.member_key.as_str())
+                })
+                .count() as i64;
+            if member.max_runners.is_none_or(|cap| used < cap) {
+                eligible.push((member, used));
+            } else {
+                member_at_capacity = true;
+            }
+        }
+        // Backpressure keeps the configured pool contract intact when any
+        // route is unavailable. Redistribute explicitly permits a fresh
+        // weighted draw over the currently eligible subset.
+        if member_at_capacity {
+            let policy = crate::entities::fleet::fleet_revisions::Entity::find()
+                .filter(
+                    crate::entities::fleet::fleet_revisions::Column::FleetKey.eq(&record.fleet_key),
+                )
+                .filter(
+                    crate::entities::fleet::fleet_revisions::Column::Revision
+                        .eq(record.fleet_revision),
+                )
+                .one(&tx)
+                .await
+                .map_err(|e| core_err(e.into()))?
+                .and_then(|row| {
+                    serde_json::from_str::<shaula_core::fleet::FleetSpec>(&row.spec_json).ok()
+                })
+                .map(|spec| {
+                    spec.template_pool
+                        .map(|pool| pool.failure_policy)
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default();
+            if policy == shaula_core::template_pool::PoolFailurePolicy::Backpressure {
+                tx.rollback().await.map_err(|e| core_err(e.into()))?;
+                return Ok(None);
+            }
+        }
+        if eligible.is_empty() {
+            tx.rollback().await.map_err(|e| core_err(e.into()))?;
+            return Ok(None);
+        }
+        let weights: Vec<u32> = eligible
+            .iter()
+            .map(|(member, _)| member.weight as u32)
+            .collect();
+        let index = loop {
+            if let Some(index) = shaula_core::template_pool::weighted_member_index(
+                &weights,
+                uuid::Uuid::new_v4().as_u128(),
+            ) {
+                break index;
+            }
+        };
+        let selected = eligible
+            .into_iter()
+            .nth(index)
+            .ok_or_else(|| {
+                core_err(crate::store::StoreError::Corrupt(
+                    "weighted pool selection index missing".into(),
+                ))
+            })?
+            .0;
+        record.pool_member_key = Some(selected.member_key.clone());
+        record.template_profile_key = selected.template_profile_key.clone();
+        record.template_revision = selected.template_revision;
+        record.template_artifact_digest = selected.template_artifact_digest.clone();
+        record.attestation_id = selected.template_attestation_id.clone();
+        record.inputs_digest = selected.inputs_digest.clone();
+        crate::Store::generation_insert_on(&tx, record.clone())
+            .await
+            .map_err(core_err)?;
+        let template_inputs = serde_json::from_str(&selected.template_inputs_json)
+            .map_err(|e| core_err(crate::store::StoreError::Corrupt(e.to_string())))?;
+        tx.commit().await.map_err(|e| core_err(e.into()))?;
+        Ok(Some(shaula_core::template_pool::PoolGenerationAdmission {
+            generation: record,
+            template_inputs,
+        }))
+    }
     async fn operation_record_bootstrap_starting(
         &self,
         provenance: &shaula_core::ports::PlanProvenance,

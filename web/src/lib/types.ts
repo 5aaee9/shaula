@@ -10,6 +10,17 @@ export interface FleetSummary {
 export type GitHubTarget =
   | { kind: "organization"; owner: string }
   | { kind: "repository"; owner: string; repository: string };
+export interface TemplatePoolMemberSpec {
+  key: string;
+  template_profile_ref: string;
+  weight: number;
+  template_inputs: Record<string, unknown>;
+  max_runners?: number;
+}
+export interface TemplatePoolSpec {
+  members: TemplatePoolMemberSpec[];
+  failure_policy: "backpressure" | "redistribute";
+}
 export interface FleetSpec {
   github: {
     target: GitHubTarget;
@@ -19,8 +30,9 @@ export interface FleetSpec {
     labels: string[];
   };
   capacity: { min_runners: number; max_runners: number };
-  template_profile_ref: string;
-  template_inputs: Record<string, unknown>;
+  template_profile_ref?: string;
+  template_inputs?: Record<string, unknown>;
+  template_pool?: TemplatePoolSpec;
 }
 export interface FleetResource {
   key: string;
@@ -33,6 +45,17 @@ export interface FleetResource {
       artifactDigest: string;
       attestationId: string;
     } | null;
+    templatePool?: Array<{
+      key: string;
+      template_profile_key: string;
+      template_revision: number;
+      template_artifact_digest: string;
+      template_attestation_id: string;
+      template_inputs: Record<string, unknown>;
+      inputs_digest: string;
+      weight: number;
+      max_runners?: number;
+    }>;
     authDesired: { profileKey: string; revision: number };
   };
 }
@@ -44,6 +67,19 @@ export interface FleetStatus {
   conditions: { type: string; status: boolean; reason: string | null }[];
   capacity: { assignedDemand: number; target: number; effective: number; occupancy: number };
   lastError: string | null;
+  templatePool?: {
+    mode: "runner_mix";
+    members: Array<{
+      key: string;
+      weight: number;
+      created: number;
+      effective: number;
+      occupancy: number;
+      failures: number;
+      blocked_reason: string | null;
+      max_runners?: number;
+    }>;
+  };
   githubAuth?: {
     desired: { profileKey: string; revision: number };
     observed: { profileKey: string; revision: number } | null;

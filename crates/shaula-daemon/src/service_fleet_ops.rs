@@ -2,6 +2,7 @@
 //! impl to keep each file within the 400-line limit (AGENTS.md).
 
 use super::{unprocessable, AuthRevisionRef, ControlPlane};
+use sha2::Digest;
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::fleet::FleetSpec;
 use shaula_core::registry::{
@@ -234,6 +235,7 @@ impl ControlPlane {
             revision: new_revision,
             spec_json: "{}".to_string(),
             template: None,
+            template_pool: Vec::new(),
             auth_desired: None,
             inputs_digest: "decommission".to_string(),
             actor: actor.name.clone(),
@@ -269,8 +271,16 @@ impl ControlPlane {
         &self,
         key: &str,
         spec: &FleetSpec,
-    ) -> CoreResult<Result<(Option<(String, i64, String, String)>, AuthRevisionRef), MutationError>>
-    {
+    ) -> CoreResult<
+        Result<
+            (
+                Option<(String, i64, String, String)>,
+                Vec<shaula_core::template_pool::ResolvedTemplatePoolMember>,
+                AuthRevisionRef,
+            ),
+            MutationError,
+        >,
+    > {
         let previous_row = self.store.fleet_revision_latest(key).await?;
         let previous_pin: Option<(String, i64, String, String)> =
             previous_row.as_ref().and_then(|r| {
@@ -288,6 +298,12 @@ impl ControlPlane {
         let reference_unchanged = previous_spec
             .as_ref()
             .is_some_and(|ps| super::template_referenced(ps) == super::template_referenced(spec));
+        // Pool members carry immutable template pins. Reasserting an
+        // unchanged pool must retain those pins; resolving Active here would
+        // silently upgrade one member during an otherwise identical PUT.
+        let pool_unchanged = previous_spec
+            .as_ref()
+            .is_some_and(|ps| ps.template_pool == spec.template_pool);
         // The retained pin preserves "PUT is not an implicit upgrade
         // channel" for an identical re-assertion (spec 0023 §2). Once the
         // spec's template inputs change, the new revision is admitted
@@ -299,7 +315,9 @@ impl ControlPlane {
         let inputs_unchanged = previous_spec
             .as_ref()
             .is_some_and(|ps| ps.template_inputs == spec.template_inputs);
-        let template = if reference_unchanged && inputs_unchanged {
+        let template = if spec.template_pool.is_some() {
+            None
+        } else if reference_unchanged && inputs_unchanged {
             previous_pin.clone()
         } else {
             match self.resolve_template_ref(&spec.template_profile_ref).await {
@@ -356,6 +374,63 @@ impl ControlPlane {
                 return Ok(Err(unprocessable(e.code, e.summary)));
             }
         }
+        let mut resolved_pool = if pool_unchanged {
+            previous_row
+                .as_ref()
+                .map(|row| row.template_pool.clone())
+                .filter(|members| !members.is_empty())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        if resolved_pool.is_empty() {
+            if let Some(pool) = &spec.template_pool {
+                for member in &pool.members {
+                    let pin = match self
+                        .resolve_template_ref(&member.template_profile_ref)
+                        .await
+                    {
+                        Ok(pin) => pin,
+                        Err(e) => return Ok(Err(unprocessable(e.code, e.summary))),
+                    };
+                    let policy = self
+                        .store
+                        .template_revision_get(&pin.0, pin.1)
+                        .await?
+                        .and_then(|r| r.fleet_input_policy_json)
+                        .unwrap_or_else(|| "{}".into());
+                    let schema = self.store.artifact_parameter_schema(&pin.2).await?;
+                    if schema.trim().is_empty() {
+                        return Err(CoreError::new(
+                            ReasonCode::StorageUnavailable,
+                            "pool member artifact has a blank parameter schema document",
+                        ));
+                    }
+                    if let Err(e) =
+                        super::validate_inputs(&member.template_inputs, &policy, Some(&schema))
+                    {
+                        return Ok(Err(unprocessable(e.code, e.summary)));
+                    }
+                    let inputs_digest = format!(
+                        "sha256:{}",
+                        hex::encode(sha2::Sha256::digest(
+                            serde_json::to_vec(&member.template_inputs).unwrap_or_default()
+                        ))
+                    );
+                    resolved_pool.push(shaula_core::template_pool::ResolvedTemplatePoolMember {
+                        key: member.key.clone(),
+                        template_profile_key: pin.0,
+                        template_revision: pin.1,
+                        template_artifact_digest: pin.2,
+                        template_attestation_id: pin.3,
+                        template_inputs: member.template_inputs.clone(),
+                        inputs_digest,
+                        weight: member.weight,
+                        max_runners: member.max_runners,
+                    });
+                }
+            }
+        }
         let auth_profile_ref = spec.auth_profile_ref();
         if let Err(e) = self
             .assert_auth_target_allowed(auth_profile_ref, spec)
@@ -367,6 +442,6 @@ impl ControlPlane {
             Ok(found) => found,
             Err(e) => return Ok(Err(unprocessable(e.code, e.summary))),
         };
-        Ok(Ok((template, resolved_auth)))
+        Ok(Ok((template, resolved_pool, resolved_auth)))
     }
 }

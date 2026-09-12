@@ -11,6 +11,9 @@ pub use crate::forgejo::FleetForgejoSection;
 use crate::forgejo::{validate_labels as validate_forgejo_labels, ForgejoTarget};
 use crate::github::{GitHubTarget, Label, ScaleSetIdentity};
 use crate::template::TemplateProfileKey;
+pub use crate::template_pool::{
+    PoolFailurePolicy, ResolvedTemplatePoolMember, TemplatePoolMember, TemplatePoolSpec,
+};
 
 /// Client-submitted Fleet desired spec. Strict JSON rejects unknown fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -26,7 +29,10 @@ pub struct FleetSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forgejo: Option<FleetForgejoSection>,
     pub capacity: CapacityPolicyDto,
+    #[serde(default)]
     pub template_profile_ref: TemplateProfileRefDto,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template_pool: Option<TemplatePoolSpec>,
     /// Bounded template inputs; schema-checked against the revision the new
     /// Fleet Revision resolves to (the profile's current Active when the
     /// inputs change, else the retained pin).
@@ -109,13 +115,17 @@ impl From<CapacityPolicyDto> for CapacityPolicy {
 /// Active revision (spec 0023) — there is no pinned form. Legacy
 /// `{key, revision}` objects stored before ARD-0029 deserialize to their
 /// key; the resolved pin lives on the fleet revision row, never here.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 #[serde(transparent)]
 pub struct TemplateProfileRefDto(String);
 
 impl TemplateProfileRefDto {
     pub fn key(&self) -> &str {
         &self.0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
@@ -170,6 +180,28 @@ pub struct NormalizedFleet {
 
 /// Canonical validation shared by create, replace and decommission paths.
 pub fn validate_fleet_spec(spec: &FleetSpec) -> CoreResult<()> {
+    match (&spec.template_pool, spec.template_profile_ref.is_empty()) {
+        (Some(pool), true) => pool.validate()?,
+        (Some(_), false) => {
+            return Err(CoreError::new(
+                ReasonCode::SpecInvalid,
+                "template_profile_ref and template_pool are mutually exclusive",
+            ))
+        }
+        (None, true) => {
+            return Err(CoreError::new(
+                ReasonCode::SpecInvalid,
+                "one of template_profile_ref or template_pool is required",
+            ))
+        }
+        (None, false) => {}
+    }
+    if spec.template_pool.is_some() && !spec.template_inputs.is_empty() {
+        return Err(CoreError::new(
+            ReasonCode::SpecInvalid,
+            "template_inputs must be empty when template_pool is declared",
+        ));
+    }
     match spec.kind {
         FleetProviderKind::Github => {
             if spec.forgejo.is_some() {
@@ -311,6 +343,7 @@ mod tests {
                 max_runners: 20,
             },
             template_profile_ref: TemplateProfileRefDto::from("kubernetes-linux-x64".to_string()),
+            template_pool: None,
             template_inputs: serde_json::Map::new(),
         }
     }
@@ -364,6 +397,35 @@ mod tests {
         assert!(FleetKey::new("\nlinux-x64").is_err());
         assert!(FleetKey::new("linux-x64 ").is_err());
     }
+
+    #[test]
+    fn pool_requires_members_and_exclusive_template_reference() {
+        let mut spec = base_spec();
+        spec.template_pool = Some(TemplatePoolSpec {
+            members: Vec::new(),
+            failure_policy: PoolFailurePolicy::Backpressure,
+        });
+        spec.template_profile_ref = TemplateProfileRefDto::default();
+        assert_eq!(
+            validate_fleet_spec(&spec).unwrap_err().code,
+            ReasonCode::SpecInvalid
+        );
+        spec.template_pool = Some(TemplatePoolSpec {
+            members: vec![TemplatePoolMember {
+                key: "a".into(),
+                template_profile_ref: TemplateProfileRefDto::from("tpl".to_string()),
+                weight: 1,
+                template_inputs: serde_json::Map::new(),
+                max_runners: None,
+            }],
+            failure_policy: PoolFailurePolicy::Backpressure,
+        });
+        spec.template_profile_ref = TemplateProfileRefDto::from("legacy".to_string());
+        assert_eq!(
+            validate_fleet_spec(&spec).unwrap_err().code,
+            ReasonCode::SpecInvalid
+        );
+    }
 }
 
 /// Parameter object for appending a fleet revision; keeps call sites
@@ -375,6 +437,7 @@ pub struct FleetRevisionInsert {
     pub revision: i64,
     pub spec_json: String,
     pub template: Option<(String, i64, String, String)>,
+    pub template_pool: Vec<crate::template_pool::ResolvedTemplatePoolMember>,
     pub auth_desired: (String, i64),
     pub inputs_digest: String,
     pub actor: String,

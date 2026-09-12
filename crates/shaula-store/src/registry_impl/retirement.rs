@@ -1,6 +1,7 @@
 use super::{core_err, SqliteControlPlane};
 use crate::entities::{
     auth::github_auth_profiles as auth,
+    fleet::fleet_revision_pool_members,
     template::{profile_changes, template_profiles as template},
 };
 use sea_orm::{sea_query::Expr, ColumnTrait, EntityTrait, QueryFilter};
@@ -29,6 +30,34 @@ pub(super) async fn allows_references(
         let unchanged = previous.is_some_and(|p| p.auth_desired_profile_key == *key);
         if !unchanged
             && auth::Entity::find_by_id(key.clone())
+                .one(tx)
+                .await?
+                .is_some_and(|p| p.deletion_requested)
+        {
+            return Ok(false);
+        }
+    }
+    for member in &facts.template_pool {
+        let unchanged = if let Some(p) = previous {
+            fleet_revision_pool_members::Entity::find()
+                .filter(fleet_revision_pool_members::Column::FleetKey.eq(&facts.resource_key))
+                .filter(fleet_revision_pool_members::Column::FleetRevision.eq(p.revision))
+                .filter(
+                    fleet_revision_pool_members::Column::TemplateProfileKey
+                        .eq(&member.template_profile_key),
+                )
+                .filter(
+                    fleet_revision_pool_members::Column::TemplateRevision
+                        .eq(member.template_revision),
+                )
+                .one(tx)
+                .await?
+                .is_some()
+        } else {
+            false
+        };
+        if !unchanged
+            && template::Entity::find_by_id(member.template_profile_key.clone())
                 .one(tx)
                 .await?
                 .is_some_and(|p| p.deletion_requested)
