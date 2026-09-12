@@ -39,6 +39,7 @@ Web UI 的 Jobs 以已观测 GitHub workflow job 为主，关联 Runner Generati
 - [Profile HTTP Control-Plane Specification](0005-profile-http-control-plane.md)
 - [Rust Workspace Architecture Specification](0007-rust-workspace-architecture.md)
 - [Workflow Jobs and retained operation logs](0019-workflow-jobs-and-operation-logs.md)
+- [Weighted Template Pool](0029-weighted-template-pool.md)
 
 相关 Architecture Decision Records：
 
@@ -52,6 +53,7 @@ Web UI 的 Jobs 以已观测 GitHub workflow job 为主，关联 Runner Generati
 - [ADR-0008: Keep platform capabilities in Terraform Template Profiles](../ard/0008-keep-platform-capabilities-in-terraform-template-profiles.md)
 - [ADR-0009: Manage Template and GitHub Auth Profiles through HTTP and SQLite](../ard/0009-manage-profile-resources-through-http-and-sqlite.md)
 - [ADR-0010: Build a pure-Rust multi-crate daemon and use scaleset as an oracle](../ard/0010-build-a-pure-rust-multi-crate-daemon-and-use-scaleset-as-an-oracle.md)
+- [ADR-0036: Route one Scale Set through a weighted Template Pool](../ard/0036-weighted-template-pool.md)
 
 ADR-0008、ADR-0009、ADR-0010、ADR-0013 与其 worker/internal-HTTP 修订 ADR-0014 共同约束平台边界、Profile publication、credential storage、Auth rollout、HTTP exposure、mandatory OIDC、生产语言和 Scale Set protocol verification；本规范的核心模型遵循这些已接受决定。ADR-0013 supersedes ADR-0011。
 - [ADR-0013: Require OpenID Connect for all HTTP access](../ard/0013-require-openid-connect-for-all-http-access.md)
