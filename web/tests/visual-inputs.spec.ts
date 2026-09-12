@@ -194,7 +194,7 @@ test("Proxmox fleets can choose CPU cores and memory size as typed inputs", asyn
   await memory.selectOption({ label: "8192" });
   await acceptCreate(page, (body) => {
     const payload = JSON.parse(body);
-    expect(payload.template_profile_ref).toEqual({ key: "proxmox", revision: 3 });
+    expect(payload.template_profile_ref).toBe("proxmox");
     expect(payload.template_inputs).toEqual({ cpu_cores: 4, memory_mb: 8192 });
   });
 });
