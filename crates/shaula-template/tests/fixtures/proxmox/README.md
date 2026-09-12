@@ -1,6 +1,6 @@
 # Proxmox saved-plan admission fixtures
 
-Captured with Terraform 1.9.8 and the locked `indexyz/proxmox` 0.4.0 binary,
+Captured with Terraform 1.9.8 and the locked `indexyz/proxmox` 0.5.0 binary,
 using `templates/proxmox/tests/conformance.py --output-dir <temporary-directory>`
 against its local HTTPS mock PVE server. All inputs are synthetic.
 

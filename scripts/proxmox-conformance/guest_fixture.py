@@ -38,7 +38,7 @@ command_name=${0##*/}
 case "$command_name" in
   chmod|chown|udevadm|id) ;;
   blkid)
-    # Provider 0.4.0 emits uppercase CIDATA; label lookup is case-sensitive.
+    # Provider 0.5.0 emits uppercase CIDATA; label lookup is case-sensitive.
     test "$#" -eq 2 && test "$1" = -L && test "$2" = CIDATA
     test "${BLKID_STATUS:-0}" -eq 0 || exit "$BLKID_STATUS"
     printf '%s\\n' "$GUEST_ROOT/dev/sr0"

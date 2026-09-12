@@ -43,6 +43,11 @@
       "description": "Enabled, active storage supporting ISO uploads and visible on the cloned VM's node, default local. One credential-bearing NoCloud ISO is owned per Generation.",
       "sensitive": false
     },
+    "proxmox_full_clone": {
+      "type": "boolean",
+      "description": "Request a full clone instead of the default linked clone, default false. A linked clone shares the template's backing disks, so the template's disks must live on storage that Proxmox supports for linked clones; enable a full clone when the template storage does not allow them.",
+      "sensitive": false
+    },
     "proxmox_cloud_init_cmd": {
       "type": "string",
       "maxLength": 65536,

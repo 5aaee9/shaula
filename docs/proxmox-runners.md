@@ -1,6 +1,6 @@
 # Proxmox Runner
 
-内置 `proxmox` 模板通过 `indexyz/proxmox` 0.4.0 创建一个完整克隆 VM 和专属 NoCloud ISO。
+内置 `proxmox` 模板通过 `indexyz/proxmox` 0.5.0 创建一个链接克隆 VM 和专属 NoCloud ISO。
 模板随包启动同步到数据库，进入 **Templates → New template → Default template** 后选择
 `proxmox`；发布时配置平台 bindings，Fleet 选择发布后的 Template，无需 Fleet inputs。
 协议见 [spec 0022](specs/0022-proxmox-runner-template.md)。
@@ -33,6 +33,7 @@ NoCloud network-config 固定 DHCP IPv4。当前没有 bridge、VLAN 或静态�
 | `proxmox_template_name` | `GitHub-Runner` |
 | `proxmox_vmid_begin` | `100` |
 | `proxmox_iso_storage` | `local` |
+| `proxmox_full_clone` | `false`；链接克隆共享基础 VM 磁盘，其存储须支持链接克隆，不支持时设置 `true` |
 | `proxmox_cloud_init_cmd` | 空，不执行额外初始化 |
 
 可选初始化脚本以 root 执行，成功后运行固定 JIT bootstrap；失败则不启动 Listener。
@@ -54,4 +55,4 @@ provider 的每项 PVE task 等待上限为 10 分钟；大型 full clone 应先
 ISO、cloud-init 缓存、Terraform state 和 provider 临时目录可能保存 JIT；它们是凭据材料。
 guest 临时 JIT 文件清除不代表对拥有 root/sudo 的 workflow 提供隔离。
 
-上游接口与已知边界见 [provider NoCloud 指南](https://github.com/Indexyz/terraform-provider-proxmox/blob/v0.4.0/docs/guides/nocloud-runner-vm.md)。
+上游接口与已知边界见 [provider NoCloud 指南](https://github.com/Indexyz/terraform-provider-proxmox/blob/v0.5.0/docs/guides/nocloud-runner-vm.md)。

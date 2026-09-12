@@ -1,7 +1,7 @@
 # Proxmox template conformance
 
 Run from the repository root with Python 3.10+, PyYAML, OpenSSL, and Terraform
-1.9 or later. The real locked `indexyz/proxmox` 0.4.0 plugin is used. Terraform
+1.9 or later. The real locked `indexyz/proxmox` 0.5.0 plugin is used. Terraform
 initialization requires registry access unless `--plugin-dir` points to a
 local filesystem provider mirror containing that locked release.
 

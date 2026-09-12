@@ -56,12 +56,13 @@ fn bundled_proxmox_inputs_discover_defaults_without_exposing_platform_controls_t
     let variables = crate::variables::discover_variables(&source(), "artifact")?;
     assert!(variables.available);
     assert!(variables.parameters.is_empty());
-    assert_eq!(variables.bindings.len(), 7);
+    assert_eq!(variables.bindings.len(), 8);
     for (key, expected) in [
         ("proxmox_insecure", "true"),
         ("proxmox_template_name", "\"GitHub-Runner\""),
         ("proxmox_vmid_begin", "100"),
         ("proxmox_iso_storage", "\"local\""),
+        ("proxmox_full_clone", "false"),
         ("proxmox_cloud_init_cmd", "\"\""),
     ] {
         let field = variables

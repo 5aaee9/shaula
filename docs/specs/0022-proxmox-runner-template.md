@@ -13,7 +13,7 @@
 新增稳定的默认 Template Source `proxmox`。沿用数据库 archive、不可变 Profile Revision、
 Terraform `exec` 生命周期和变量发现；无需新增 Executor Driver、Rust Proxmox SDK 或宿主 SSH。
 一个 Generation 管理一个 `proxmox_qemu_vm`（`runner`）和一个 `proxmox_nocloud_iso`
-（`bootstrap`）。固定 provider `indexyz/proxmox` `0.4.0`，提交真实 dependency lock。
+（`bootstrap`）。固定 provider `indexyz/proxmox` `0.5.0`，提交真实 dependency lock。
 
 该 lock 必须覆盖实际 Terraform 执行端；当前 Linux 部署需要冻结经来源验证的
 `linux_amd64` provider checksum，包括其安装路径所需的 `h1:`，不能只在 Windows
@@ -38,6 +38,7 @@ worker fencing、state 和恢复；平台启动成功不等于 Runner 在线或 
 | `proxmox_template_name` | string | `GitHub-Runner` | 精确匹配的基础 VM template 名称 |
 | `proxmox_vmid_begin` | integer | `100` | provider `vm_id_start`，不是预先保留的 VMID |
 | `proxmox_iso_storage` | string | `local` | VM 所在节点可读写、支持 ISO 的 storage |
+| `proxmox_full_clone` | bool | `false` | `false` 为链接克隆，共享基础 VM 磁盘；存储不支持链接克隆时设 `true` |
 | `proxmox_cloud_init_cmd` | string | empty | 可选的 root 初始化脚本，在固定 JIT 启动前运行 |
 
 `proxmox_cloud_init_cmd` 是受信任的发布代码，不是凭据容器，不支持插入平台 token 或自行替换
@@ -68,12 +69,12 @@ runtime policy 和 binding commitment 绑定信任条件。这样的 evidence �
 ## 4. Create and bootstrap
 
 1. 用 `proxmox_qemu_vms` 精确筛选名称和 `template=true`；结果必须恰好一个，零个或多个拒绝。
-   在该 template 的节点执行 full clone；VMID 从 `proxmox_vmid_begin` 开始由 provider 申请。
+   在该 template 的节点执行 clone（默认链接克隆，`proxmox_full_clone=true` 时为 full clone）；VMID 从 `proxmox_vmid_begin` 开始由 provider 申请。
    竞争失败不能采用别人的 VM，也不能把 unknown outcome 当作安全重试。
 2. Generation 已持久化的 `generation_name` 派生 VM 名、ISO 文件名和 NoCloud `instance-id`，
    重试不能重新随机命名。ISO 的 user-data、meta-data 和 network-config 由 Terraform
    `templatefile` / `yamlencode` 生成；不引入另一个模板引擎。
-3. 先建立独占 ISO，再 full clone、配置 `ide2` CD-ROM（明确 `media=cdrom` 和 ISO volume），
+3. 先建立独占 ISO，再 clone、配置 `ide2` CD-ROM（明确 `media=cdrom` 和 ISO volume），
    开启 provider `nocloud_cdrom_slot=ide2` 校验后启动。该槽只能为空或可安全替换的原生
    PVE cloud-init 介质；其他 seed、占用槽或目标节点不可见的 ISO 拒绝。
 4. `start_on_create=true`、`stop_on_destroy=true`、`onboot=false`、`protection=false`。
@@ -112,7 +113,7 @@ runtime policy；启动同步进入数据库 source catalog，旧 archive/Revisi
 checksum 校验、运行时改写 lock 或重新 apply 原 Generation 绕过该错误。
 
 第一版使用直接到目标节点的 API origin 和该节点 ISO storage；多节点上传代理/共享存储
-必须独立验收。provider 0.4.0 的单项 PVE task 等待有 10 分钟上限；较大的 full clone、启动
+必须独立验收。provider 0.5.0 的单项 PVE task 等待有 10 分钟上限；较大的 full clone、启动
 延迟和 JIT 有效性须实测，不能用增大单个 HTTP timeout 宣称解决。
 
 ## 6. Acceptance
@@ -124,7 +125,7 @@ checksum 校验、运行时改写 lock 或重新 apply 原 Generation 绕过该�
   测试唯一/缺失/歧义 template、token 分割、
   DHCP、generation identity、两资源依赖、启动/销毁开关和 JIT 编码后的 cloud-init 内容。
   synthetic/mock 测试结果必须标明，不冒充真实 PVE。
-- 真实平台：从未注册基础 VM full clone，经 DHCP/cloud-init 在目标 repository 注册 JIT runner，
+- 真实平台：从未注册基础 VM clone（默认链接克隆），经 DHCP/cloud-init 在目标 repository 注册 JIT runner，
   完成一个 job，Busy 时不得强删，正常退役后 VM/ISO 和 GitHub runner 均清理。
   补充创建/启动失败恢复、并发 VMID、service 重启、token/seed 不泄漏和原始 Revision 恢复。
   未提供 PVE 环境时，明确保留这些待验收项，不给出生产 Ready 结论。

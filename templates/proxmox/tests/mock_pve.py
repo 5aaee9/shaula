@@ -128,7 +128,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply({"status": "stopped", "exitstatus": "OK"})
         if method == "POST" and path == "/nodes/pve-test/qemu/9000/clone":
             vmid = int(form["newid"][0])
-            assert vmid not in server.vms and form["full"] == ["1"]
+            assert vmid not in server.vms and form.get("full", ["0"]) == ["0"]
             server.vms[vmid] = {
                 "config": {
                     "name": form["name"][0],

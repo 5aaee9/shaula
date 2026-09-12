@@ -1,10 +1,12 @@
 # Proxmox runner runtime policy
 
-Each Generation owns exactly one full-cloned QEMU VM and one NoCloud seed ISO.
-Terraform provider `indexyz/proxmox` 0.4.0 owns their entire resource lifecycle.
+Each Generation owns exactly one cloned QEMU VM and one NoCloud seed ISO.
+Terraform provider `indexyz/proxmox` 0.5.0 owns their entire resource lifecycle.
 The provider finds exactly one visible template by its case-sensitive name,
 clones on that template's node, allocates a free VMID at or above the bound,
-attaches the seed to `ide2`, and starts the VM once. The VM inherits CPU,
+attaches the seed to `ide2`, and starts the VM once. The clone is a linked
+clone by default; the publisher may request a full clone, and a linked clone
+requires template disks on storage Proxmox supports for them. The VM inherits CPU,
 memory, root disks and its one Ethernet NIC. Its seed requests IPv4 DHCP for
 an `eth*` or `en*` interface; networking is not a publisher or Fleet option.
 Host-boot autostart and deletion protection are disabled. Refresh does not
@@ -52,6 +54,6 @@ storage; cross-node uploads require actually verified shared storage. ISO
 visibility checks fail closed before cloning when the target node cannot
 see the exact seed. Upload and clone outcomes lost before an accepted task
 identity require operator reconciliation, not blind retries or adoption.
-Provider task waits are bounded at ten minutes; large clones may require
+Provider task waits are bounded at ten minutes; large full clones may require
 manual recovery. Real guest DHCP, cloud-init, JIT registration, job execution,
 and cleanup must be accepted on the target Proxmox environment separately.

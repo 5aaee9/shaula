@@ -1,11 +1,11 @@
-# One Runner Generation owns one full clone and one dedicated NoCloud ISO.
+# One Runner Generation owns one clone and one dedicated NoCloud ISO.
 # The selected template VM, storage, network and node are shared publisher data.
 terraform {
   required_version = ">= 1.9, < 2.0"
   required_providers {
     proxmox = {
       source  = "indexyz/proxmox"
-      version = "0.4.0"
+      version = "0.5.0"
     }
   }
 }
@@ -76,7 +76,7 @@ resource "proxmox_qemu_vm" "runner" {
   clone = {
     source_node = local.source_node
     source_vmid = local.source_vm_id
-    full        = true
+    full        = var.shaula.bindings.proxmox_full_clone
   }
 
   # Keep inherited root disks, NICs, CPU and memory outside the managed map.
@@ -125,6 +125,7 @@ variable "shaula" {
       proxmox_template_name  = optional(string, "GitHub-Runner")
       proxmox_vmid_begin     = optional(number, 100)
       proxmox_iso_storage    = optional(string, "local")
+      proxmox_full_clone     = optional(bool, false)
       proxmox_cloud_init_cmd = optional(string, "")
     })
     parameters = object({})

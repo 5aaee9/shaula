@@ -43,7 +43,7 @@ def check_plan(plan, jit):
     iso = resources["proxmox_nocloud_iso.bootstrap"]
     vm = resources["proxmox_qemu_vm.runner"]
     assert vm["node"] == iso["node"] == "pve-test"
-    assert vm["clone"]["source_vmid"] == 9000 and vm["clone"]["full"]
+    assert vm["clone"]["source_vmid"] == 9000 and not vm["clone"]["full"]
     assert vm["vm_id_start"] == 100 and iso["storage"] == "local"
     assert (
         vm["start_on_create"]
