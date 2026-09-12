@@ -384,4 +384,15 @@ impl FleetRegistryPort for ControlPlane {
     ) -> CoreResult<Option<ChangeView>> {
         self.store.fleet_change_get(change_id).await
     }
+
+    async fn generation_finalize(
+        &self,
+        actor: &Actor,
+        generation_id: &str,
+        reason: &str,
+        idempotency_key: Option<String>,
+    ) -> CoreResult<Result<MutationAccepted, MutationError>> {
+        self.generation_finalize_impl(actor, generation_id, reason, idempotency_key)
+            .await
+    }
 }

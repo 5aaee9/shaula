@@ -8,9 +8,9 @@ use shaula_core::jobs::{GenerationsQuery, JobsQuery, JobsReadError};
 use shaula_core::operation_log::{InvocationQuery, LogQuery};
 use shaula_core::registry::Scope;
 
-use super::{require_scope, AppState};
+use super::{idempotency_header, require_scope, AppState};
 use crate::oidc::Authenticated;
-use crate::problem::problem;
+use crate::problem::{mutation_problem, problem};
 
 fn unavailable() -> Response {
     problem(
@@ -123,6 +123,50 @@ pub(super) async fn generation(
         Ok(Some(detail)) => private_json(detail),
         Ok(None) => missing(),
         Err(error) => read_error(error),
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub(super) struct GenerationFinalizeBody {
+    /// Operator's out-of-band verification statement (spec 0028 §5.3).
+    reason: String,
+}
+
+/// `POST /api/v1/generations/{id}/finalize` — operator disposition of a
+/// Quarantined generation (spec 0028): ledger-only transition to
+/// Destroyed once the operator verified the external resources are gone.
+/// No remote effect runs; the request is the attestation.
+pub(super) async fn generation_finalize(
+    State(state): State<AppState>,
+    auth: Authenticated,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+    Json(body): Json<GenerationFinalizeBody>,
+) -> Response {
+    // fleet.retire: the same privilege as decommission — never lower.
+    if let Err(response) = require_scope(&auth.actor, Scope::FleetRetire) {
+        return response;
+    }
+    let idempotency = match idempotency_header(&headers) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    match state
+        .fleets
+        .generation_finalize(&auth.actor, &id, &body.reason, idempotency)
+        .await
+    {
+        Ok(Ok(accepted)) => (
+            StatusCode::ACCEPTED,
+            [(
+                header::CONTENT_LOCATION,
+                format!("/api/v1/changes/{}", accepted.change.id),
+            )],
+            Json(accepted),
+        )
+            .into_response(),
+        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
+        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
     }
 }
 

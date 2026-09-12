@@ -49,6 +49,22 @@ impl ControlPlaneStore for MemoryStore {
     async fn generations_occupancy(&self, _fleet_key: &str) -> CoreResult<i64> {
         Ok(0)
     }
+    async fn generation_lookup(
+        &self,
+        _id: &str,
+    ) -> CoreResult<Option<shaula_core::registry::GenerationRecord>> {
+        Ok(None)
+    }
+    async fn commit_generation_finalize(
+        &self,
+        _generation_id: &str,
+        _actor: &str,
+        _reason: &str,
+        _idempotency: Option<shaula_core::registry::IdempotencyInsert>,
+        _now: i64,
+    ) -> CoreResult<Result<(), MutationError>> {
+        Ok(Err(MutationError::NotFound))
+    }
     async fn capacity_counters(&self, _fleet_key: &str) -> CoreResult<(i64, i64)> {
         Ok((0, 0))
     }

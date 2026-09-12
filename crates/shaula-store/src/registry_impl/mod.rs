@@ -69,6 +69,7 @@ mod commits_auth_policy;
 #[path = "commits_fleet.rs"]
 mod commits_fleet;
 mod commits_fleet_noop;
+mod commits_generation;
 mod commits_noop;
 mod retirement;
 

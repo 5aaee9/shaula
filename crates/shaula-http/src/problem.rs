@@ -67,6 +67,9 @@ pub fn mutation_problem(error: &MutationError) -> Problem {
             "ResourceInUse",
             format!("retirement blocked: {reason}"),
         ),
+        MutationError::Conflict { summary } => {
+            problem(StatusCode::CONFLICT, "Conflict", summary.clone())
+        }
         MutationError::TooManyRequests { retry_after_secs } => {
             let mut p = problem(
                 StatusCode::TOO_MANY_REQUESTS,

@@ -60,6 +60,17 @@ impl ControlPlaneStore for SqliteControlPlane {
             .map_err(core_err)?
             .map(fleet_revision_row))
     }
+    async fn generation_lookup(
+        &self,
+        id: &str,
+    ) -> CoreResult<Option<shaula_core::registry::GenerationRecord>> {
+        Ok(self
+            .store
+            .generation_get(id)
+            .await
+            .map_err(core_err)?
+            .map(super::lifecycle_support::map_generation))
+    }
     async fn generations_occupancy(&self, fleet_key: &str) -> CoreResult<i64> {
         self.generations_occupancy_impl(fleet_key).await
     }
@@ -326,6 +337,24 @@ impl ControlPlaneStore for SqliteControlPlane {
     ) -> CoreResult<Result<(), MutationError>> {
         self.commit_fleet_noop_impl(key, incarnation, revision, actor, idempotency, now)
             .await
+    }
+    async fn commit_generation_finalize(
+        &self,
+        generation_id: &str,
+        actor: &str,
+        reason: &str,
+        idempotency: Option<shaula_core::registry::IdempotencyInsert>,
+        now: i64,
+    ) -> CoreResult<Result<(), MutationError>> {
+        self.commit_generation_finalize_impl(
+            generation_id,
+            &shaula_core::auth::new_attempt_id(),
+            actor,
+            reason,
+            idempotency,
+            now,
+        )
+        .await
     }
     async fn commit_decommission(
         &self,

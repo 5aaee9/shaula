@@ -113,6 +113,10 @@ pub fn transition_allowed(from: GenerationState, to: GenerationState) -> bool {
         | (Retiring, Quarantined)
         | (DestroyPending, Quarantined)
         | (Destroying, Quarantined) => true,
+        // spec 0028: the only way out of Quarantined is the explicit
+        // operator finalize — a ledger-only termination after out-of-band
+        // verification that the external resources no longer exist.
+        (Quarantined, Destroyed) => true,
         _ => false,
     }
 }
@@ -184,6 +188,30 @@ mod tests {
             );
         }
         assert!(!transition_allowed(Destroyed, Quarantined));
+    }
+
+    #[test]
+    fn quarantined_finalizes_to_destroyed_only() {
+        // spec 0028: finalize is the sole exit from Quarantined; every
+        // other target stays illegal so finalize cannot masquerade as a
+        // generic kill switch.
+        assert!(transition_allowed(Quarantined, Destroyed));
+        for state in [
+            CreatePending,
+            Creating,
+            WaitingOnline,
+            Idle,
+            Busy,
+            Retiring,
+            DestroyPending,
+            Destroying,
+            Quarantined,
+        ] {
+            assert!(
+                !transition_allowed(Quarantined, state),
+                "Quarantined -> {state:?} must stay illegal"
+            );
+        }
     }
 
     #[test]

@@ -236,7 +236,7 @@ impl Store {
 
     // ---- Operations ----
 
-    async fn operation_insert_on<C: sea_orm::ConnectionTrait>(
+    pub(crate) async fn operation_insert_on<C: sea_orm::ConnectionTrait>(
         conn: &C,
         insert: shaula_core::registry::OperationInsert,
     ) -> StoreResult<()> {

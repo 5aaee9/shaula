@@ -248,6 +248,9 @@ pub enum MutationError {
     Gone { tombstone: String },
     /// 409 referenced resources block retirement; stays visibly blocked
     RetirementBlocked { reason: String },
+    /// 409 the durable state refuses this transition (e.g. spec 0028
+    /// finalize on a non-Quarantined generation)
+    Conflict { summary: String },
     /// 429 admission/backlog limit
     TooManyRequests { retry_after_secs: u64 },
 }
@@ -294,6 +297,18 @@ pub trait FleetRegistryPort: Send + Sync {
         actor: &Actor,
         change_id: &str,
     ) -> CoreResult<Option<ChangeView>>;
+
+    /// Operator finalization of a Quarantined generation (spec 0028):
+    /// ledger-only `Quarantined -> Destroyed` after the operator verified
+    /// out-of-band that the external resources no longer exist. `reason`
+    /// is the operator's bounded evidence statement persisted to audit.
+    async fn generation_finalize(
+        &self,
+        actor: &Actor,
+        generation_id: &str,
+        reason: &str,
+        idempotency_key: Option<String>,
+    ) -> CoreResult<Result<MutationAccepted, MutationError>>;
 }
 
 pub mod attestation_subject;

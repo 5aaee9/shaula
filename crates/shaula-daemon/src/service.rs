@@ -276,6 +276,9 @@ pub(crate) mod metrics;
 #[path = "service_fleet_ops.rs"]
 mod fleet_ops;
 
+#[path = "service_generation_finalize.rs"]
+mod generation_finalize;
+
 #[path = "service_follow_cascade.rs"]
 mod follow_cascade;
 

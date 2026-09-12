@@ -249,6 +249,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/v1/jobs/{id}", get(jobs::detail))
         .route("/api/v1/generations", get(jobs::generations))
         .route("/api/v1/generations/{id}", get(jobs::generation))
+        .route(
+            "/api/v1/generations/{id}/finalize",
+            axum::routing::post(jobs::generation_finalize),
+        )
         .route("/api/v1/generations/{id}/invocations", get(jobs::invocations))
         .route("/api/v1/invocations/{id}/logs", get(jobs::logs))
         .route("/api/v1/template-sources", get(template_library::sources))
