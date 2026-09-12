@@ -97,7 +97,7 @@ test("removed originals can be restored after switching both references", async 
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("same-key revision changes require a healthy list until the original pin is restored", async ({
+test("same-key revision changes remain saveable when the profile list refresh fails", async ({
   page,
 }) => {
   await mockApi(page);
@@ -120,10 +120,8 @@ test("same-key revision changes require a healthy list until the original pin is
   );
   await dialog.getByRole("button", { name: "Refresh Template profiles", exact: true }).click();
   await expect(dialog).toContainText("Latest list unavailable");
-  await expect(dialog.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
-  await dialog
-    .getByRole("button", { name: "Restore original template and inputs", exact: true })
-    .click();
-  await expect(dialog).toContainText("kubernetes-linux · Revision 3");
+  // The Fleet reference is a bare key and follows the latest Active revision;
+  // a failed profile-list refresh does not invalidate the already loaded
+  // contract or block unrelated Fleet edits.
   await expect(dialog.getByRole("button", { name: "Save changes", exact: true })).toBeEnabled();
 });
