@@ -194,6 +194,26 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
             .map_err(core_err)
     }
 
+    async fn generation_set_forgejo_runner(
+        &self,
+        id: &str,
+        runner_id: i64,
+        runner_uuid: &str,
+        now: i64,
+    ) -> CoreResult<()> {
+        self.store
+            .generation_set_forgejo_runner(id, runner_id, runner_uuid, now)
+            .await
+            .map_err(core_err)
+    }
+
+    async fn generation_forgejo_runner(&self, id: &str) -> CoreResult<Option<(i64, String)>> {
+        self.store
+            .generation_forgejo_runner(id)
+            .await
+            .map_err(core_err)
+    }
+
     async fn generation_set_jit_phase(&self, id: &str, phase: &str, now: i64) -> CoreResult<()> {
         self.store
             .generation_set_jit(id, phase, None, now)
@@ -227,56 +247,8 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
         saved_plan_path: &str,
         now: i64,
     ) -> CoreResult<()> {
-        // The fence and the durable record share ONE transaction: a
-        // DELETE/newer PUT that lands before the insert refuses it, so
-        // the check and the spawn-eligibility record can never diverge
-        // (F05; spec 0002 §8.334).
-        let tx = self.store.begin().await.map_err(core_err)?;
-        let kind = match provenance.intent {
-            shaula_core::plan::PlanIntent::Create => "Create",
-            shaula_core::plan::PlanIntent::Destroy => "Destroy",
-        };
-        let provenance_json = serde_json::to_string(provenance).map_err(|e| {
-            CoreError::new(
-                shaula_core::error::ReasonCode::Internal,
-                format!("apply provenance serialize failed: {e}"),
-            )
-        })?;
-        let insert = shaula_core::registry::OperationInsert {
-            id: provenance.attempt_id.clone(),
-            generation_id: provenance.generation_id.clone(),
-            kind: kind.to_string(),
-            state: "ApplyStarting".to_string(),
-            provenance_json: Some(provenance_json),
-            saved_plan_path: Some(saved_plan_path.to_string()),
-            saved_plan_digest: Some(provenance.saved_plan_digest.clone()),
-            now,
-        };
-        match self
-            .store
-            .operation_apply_starting_tx(&tx, insert)
+        self.record_apply_starting_impl(provenance, saved_plan_path, now)
             .await
-            .map_err(core_err)?
-        {
-            Ok(()) => {
-                tx.commit().await.map_err(|e| {
-                    CoreError::new(
-                        shaula_core::error::ReasonCode::StorageUnavailable,
-                        format!("apply-start transaction commit failed: {e}"),
-                    )
-                })?;
-                Ok(())
-            }
-            Err(summary) => {
-                // Fence refusal: drop the transaction (rollback) and
-                // surface a conflict the runtime classifies as "apply
-                // refused before spawn".
-                Err(CoreError::new(
-                    shaula_core::error::ReasonCode::OwnershipConflict,
-                    summary,
-                ))
-            }
-        }
     }
 
     async fn generation_state_identity(&self, id: &str) -> CoreResult<Option<(String, u64)>> {

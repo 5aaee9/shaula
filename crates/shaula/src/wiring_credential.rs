@@ -6,6 +6,10 @@ use shaula_core::registry::ControlPlaneStore;
 use shaula_core::secret::SecretString;
 use std::sync::Arc;
 
+#[path = "wiring_credential_forgejo.rs"]
+mod forgejo;
+pub(crate) use forgejo::build_client as build_forgejo_client;
+
 /// Loads the exact accepted credential for the ACTIVE auth revision
 /// (bytes never leave the store seam until this protected handoff).
 /// A v2 revision routes through the frozen Account Binding of the

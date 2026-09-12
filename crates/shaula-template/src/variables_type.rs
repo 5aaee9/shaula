@@ -71,6 +71,7 @@ fn key(key: &ObjectKey) -> CoreResult<&str> {
 pub(super) fn envelope(
     expr: &Expression,
     input_version: u32,
+    forgejo: bool,
 ) -> CoreResult<BTreeMap<String, Node>> {
     let fields = object(expr)?;
     let mut nodes = BTreeMap::new();
@@ -83,6 +84,7 @@ pub(super) fn envelope(
         let expected = match field {
             "contract_version" => Some("number"),
             "generation" => Some("any"),
+            "forgejo" if forgejo => Some("any"),
             "setup_info" if input_version == 2 => Some("any"),
             "jit_config" | "bindings_digest" => Some("string"),
             "bindings" | "parameters" => None,
@@ -104,7 +106,8 @@ pub(super) fn envelope(
             nodes.insert(field.to_owned(), node);
         }
     }
-    if names.len() != if input_version == 2 { 7 } else { 6 } {
+    let expected_count = 6 + usize::from(input_version == 2) + usize::from(forgejo);
+    if names.len() != expected_count {
         return Err(invalid(
             "shaula variable is missing a system envelope member",
         ));

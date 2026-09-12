@@ -222,6 +222,15 @@ impl Store {
 pub(crate) fn target_from_spec(spec: &str) -> StoreResult<String> {
     let spec: serde_json::Value =
         serde_json::from_str(spec).map_err(|e| StoreError::Corrupt(e.to_string()))?;
+    if spec["kind"] == "forgejo" {
+        let target = shaula_core::forgejo::ForgejoTarget {
+            instance_url: serde_json::from_value(spec["forgejo"]["instance_url"].clone())
+                .map_err(|e| StoreError::Corrupt(format!("Forgejo instance corrupt: {e}")))?,
+            scope: serde_json::from_value(spec["forgejo"]["scope"].clone())
+                .map_err(|e| StoreError::Corrupt(format!("Forgejo scope corrupt: {e}")))?,
+        };
+        return serde_json::to_string(&target).map_err(|e| StoreError::Corrupt(e.to_string()));
+    }
     let target: shaula_core::github::GitHubTarget =
         serde_json::from_value(spec["github"]["target"].clone())
             .map_err(|e| StoreError::Corrupt(format!("fleet target corrupt: {e}")))?;

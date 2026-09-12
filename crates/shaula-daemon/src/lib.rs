@@ -6,6 +6,7 @@ pub mod bootstrap;
 pub mod config;
 pub mod daemon;
 pub mod effect_gate;
+pub mod forgejo_supervisor;
 pub mod handoff;
 pub mod listener;
 pub mod service;

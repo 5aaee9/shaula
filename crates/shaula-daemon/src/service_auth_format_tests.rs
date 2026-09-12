@@ -18,6 +18,7 @@ fn payload() -> AuthProfilePut {
             TargetSelector::organization("Indexyz").unwrap(),
             TargetSelector::account_repositories(AccountKind::User, "5aaee9").unwrap(),
         ]),
+        forgejo_target: None,
     }
 }
 

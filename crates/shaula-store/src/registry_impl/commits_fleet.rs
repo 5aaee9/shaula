@@ -137,40 +137,44 @@ impl SqliteControlPlane {
                 .map_err(|e| core_err(crate::store::StoreError::from(e)))?
                 .map(|r| r.auth_desired_revision)
                 .unwrap_or(*_admission_revision);
-            self.store
-                .handoff_set_desired(&tx, &facts.resource_key, profile_key, resolved)
-                .await
-                .map_err(core_err)?;
-            // Desired Resolved Auth Context (spec 0011 §4.2): derived from
-            // the ACTIVE revision's frozen bindings in this same
-            // transaction. A structural denial (no selector, ambiguous
-            // installation) rolls the whole mutation back as a 422.
-            match self
-                .store
-                .fleet_auth_context_commit_tx(
-                    &tx,
-                    &facts.resource_key,
-                    profile_key,
-                    resolved,
-                    &facts.spec_json,
-                    facts.now,
-                )
-                .await
-            {
-                Ok(Ok(())) => {}
-                Ok(Err(reason)) => {
-                    let _ = tx.rollback().await;
-                    return Ok(Err(MutationError::Unprocessable {
-                        reason: if reason == "TargetNotAllowed" {
-                            shaula_core::error::ReasonCode::TargetNotAllowed
-                        } else {
-                            shaula_core::error::ReasonCode::AmbiguousInstallation
-                        },
-                        summary: "auth profile target policy does not cover the fleet target"
-                            .into(),
-                    }));
+            // Forgejo has no handoff or installation context. Its exact
+            // credential reference lives on the immutable Fleet revision.
+            let is_forgejo =
+                serde_json::from_str::<shaula_core::fleet::FleetSpec>(&facts.spec_json)
+                    .map(|spec| spec.kind == shaula_core::fleet::FleetProviderKind::Forgejo)
+                    .unwrap_or(false);
+            if !is_forgejo {
+                self.store
+                    .handoff_set_desired(&tx, &facts.resource_key, profile_key, resolved)
+                    .await
+                    .map_err(core_err)?;
+                match self
+                    .store
+                    .fleet_auth_context_commit_tx(
+                        &tx,
+                        &facts.resource_key,
+                        profile_key,
+                        resolved,
+                        &facts.spec_json,
+                        facts.now,
+                    )
+                    .await
+                {
+                    Ok(Ok(())) => {}
+                    Ok(Err(reason)) => {
+                        let _ = tx.rollback().await;
+                        return Ok(Err(MutationError::Unprocessable {
+                            reason: if reason == "TargetNotAllowed" {
+                                shaula_core::error::ReasonCode::TargetNotAllowed
+                            } else {
+                                shaula_core::error::ReasonCode::AmbiguousInstallation
+                            },
+                            summary: "auth profile target policy does not cover the fleet target"
+                                .into(),
+                        }));
+                    }
+                    Err(e) => return Err(core_err(e)),
                 }
-                Err(e) => return Err(core_err(e)),
             }
         }
         self.store
@@ -261,23 +265,33 @@ impl SqliteControlPlane {
             }
             return Err(core_err(e));
         }
-        if let Some((profile_key, revision)) = &facts.auth_desired {
+        let forgejo = fleet_revisions::Entity::find()
+            .filter(fleet_revisions::Column::FleetKey.eq(&facts.resource_key))
+            .order_by_desc(fleet_revisions::Column::Revision)
+            .one(&tx)
+            .await
+            .map_err(|e| core_err(e.into()))?
+            .and_then(|row| {
+                serde_json::from_str::<shaula_core::fleet::FleetSpec>(&row.spec_json).ok()
+            })
+            .is_some_and(|spec| spec.kind == shaula_core::fleet::FleetProviderKind::Forgejo);
+        if !forgejo {
+            if let Some((profile_key, revision)) = &facts.auth_desired {
+                self.store
+                    .handoff_set_desired(&tx, &facts.resource_key, profile_key, *revision)
+                    .await
+                    .map_err(core_err)?;
+            }
             self.store
-                .handoff_set_desired(&tx, &facts.resource_key, profile_key, *revision)
+                .fleet_auth_context_refresh_fence_tx(&tx, &facts.resource_key, facts.now)
+                .await
+                .map_err(core_err)?;
+            // GitHub handoff remains cleanup-only after DELETE.
+            self.store
+                .handoff_set_cleanup_only(&tx, &facts.resource_key)
                 .await
                 .map_err(core_err)?;
         }
-        self.store
-            .fleet_auth_context_refresh_fence_tx(&tx, &facts.resource_key, facts.now)
-            .await
-            .map_err(core_err)?;
-        // A decommissioning fleet's handoff becomes cleanup-only: auth
-        // rotations may still authorize cleanup, while session/acquisition
-        // and ordinary Create effects remain forbidden (spec 0002 section 8).
-        self.store
-            .handoff_set_cleanup_only(&tx, &facts.resource_key)
-            .await
-            .map_err(core_err)?;
         self.store
             .change_insert(
                 &tx,

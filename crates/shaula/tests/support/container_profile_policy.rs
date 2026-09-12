@@ -30,7 +30,7 @@ fn input() -> ShaulaInputEnvelope {
     ShaulaInputEnvelope::new(
         GenerationIdentity {
             fleet_key: "legacy-fleet".into(),
-            scale_set_id: 1,
+            scale_set_id: Some(1),
             id: "legacy-generation".into(),
             runner_name: "legacy-runner".into(),
             generation_name: "legacy-resource".into(),
@@ -98,6 +98,7 @@ async fn legacy_container_create_and_prepare_are_rejected_before_engine_spawn() 
             environment: Vec::new(),
             timeout: Duration::from_secs(1),
             apply_intent_sink: None,
+            forgejo_bootstrap: None,
         })
         .await;
     assert!(matches!(result, Err(error) if error == rejected));

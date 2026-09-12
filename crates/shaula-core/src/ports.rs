@@ -359,32 +359,12 @@ impl std::fmt::Debug for JitConfig {
     }
 }
 
-/// Effect that may or may not have happened remotely.
-#[derive(Debug, Clone)]
-pub enum EffectOutcome<T> {
-    Definite(T),
-    /// Transport-level uncertainty: the caller must classify by lookup,
-    /// never blind-retry.
-    Uncertain {
-        summary: String,
-    },
-}
+#[path = "ports/effect.rs"]
+mod effect;
+pub use effect::EffectOutcome;
 
-impl<T> EffectOutcome<T> {
-    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> EffectOutcome<U> {
-        match self {
-            EffectOutcome::Definite(value) => EffectOutcome::Definite(f(value)),
-            EffectOutcome::Uncertain { summary } => EffectOutcome::Uncertain { summary },
-        }
-    }
-
-    pub fn definite(self) -> Option<T> {
-        match self {
-            EffectOutcome::Definite(value) => Some(value),
-            EffectOutcome::Uncertain { .. } => None,
-        }
-    }
-}
+#[path = "ports/forgejo.rs"]
+pub mod forgejo;
 
 #[path = "ports/provenance.rs"]
 mod provenance;

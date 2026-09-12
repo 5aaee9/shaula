@@ -80,6 +80,13 @@ pub struct ProfileManifest {
     pub api_version: String,
     pub kind: String,
     pub platform: String,
+    /// Provider bootstrap contract. Legacy manifests default to GitHub so
+    /// existing Fleet behavior remains byte-for-byte compatible.
+    #[serde(
+        default = "default_runner_backend",
+        skip_serializing_if = "is_github_backend"
+    )]
+    pub runner_backend: String,
     pub runtime: ManifestRuntime,
     pub bindings_contract: String,
     pub schemas: ManifestSchemas,
@@ -161,6 +168,12 @@ impl ProfileManifest {
                 "unsupported manifest kind",
             ));
         }
+        if !matches!(self.runner_backend.as_str(), "github" | "forgejo") {
+            return Err(CoreError::new(
+                ReasonCode::TemplateInvalid,
+                "runner_backend must be github or forgejo",
+            ));
+        }
         if self.runtime.protocol != SUPPORTED_PROTOCOL {
             return Err(CoreError::new(
                 ReasonCode::TemplateInvalid,
@@ -233,6 +246,26 @@ impl ProfileManifest {
     pub fn platform(&self) -> TemplatePlatform {
         TemplatePlatform::from_manifest_value(&self.platform)
     }
+
+    /// Checks that the admitted profile declares the same provider as its
+    /// Fleet.  GitHub remains the default for all historical manifests.
+    pub fn validate_for_provider(
+        &self,
+        provider: crate::fleet::FleetProviderKind,
+    ) -> CoreResult<()> {
+        self.validate()?;
+        let expected = match provider {
+            crate::fleet::FleetProviderKind::Github => "github",
+            crate::fleet::FleetProviderKind::Forgejo => "forgejo",
+        };
+        if self.runner_backend != expected {
+            return Err(CoreError::new(
+                ReasonCode::TemplateInvalid,
+                format!("template runner_backend must be {expected}"),
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// The opaque, server-issued commitment binding envelopes to an exact
@@ -282,6 +315,14 @@ pub use container::CONTAINER_BOOTSTRAP_CONTRACT;
 #[path = "template_image.rs"]
 mod image;
 pub use image::{AWS_VM_IMAGE_CONTRACT, PROXMOX_VM_IMAGE_CONTRACT};
+
+fn default_runner_backend() -> String {
+    "github".into()
+}
+
+fn is_github_backend(value: &str) -> bool {
+    value == "github"
+}
 
 fn default_input_contract_version() -> u32 {
     1

@@ -208,6 +208,10 @@ _Avoid_: Durable event, source of truth
 Runner 不再承接新 job、等待安全注销并最终销毁 Runner Resource 的单向过程。
 _Avoid_: Update, shutdown
 
+**Runner Acquisition Fence**:
+针对一个精确 Runner 身份阻止后续 job 领取、同时保留已领取 job 执行权的清退保证；它必须涵盖已发出但结果尚未确认的领取。瞬时 idle 观测或停止进程不等于该保证。
+_Avoid_: Fleet Mutation Fence, Worker Claim, idle status, shutdown signal
+
 **Decommission**:
 一个 Fleet 永久停止新 acquisition/Create、安全清退全部已知 Runner 并留下 tombstone 的终态过程；期间只允许 non-acquiring cleanup Auth Handoff，v1 保留其空 GitHub Scale Set。
 _Avoid_: Force delete, record purge, daemon shutdown

@@ -130,10 +130,22 @@ impl FleetRegistryPort for ControlPlane {
             };
             let previous_spec: FleetSpec = serde_json::from_str(&previous.spec_json)
                 .map_err(|e| CoreError::new(ReasonCode::Internal, e.to_string()))?;
-            if previous_spec.github.target != spec.github.target
-                || previous_spec.github.scale_set_name != spec.github.scale_set_name
-                || previous_spec.github.runner_group != spec.github.runner_group
-            {
+            let identity_changed = match (previous_spec.kind, spec.kind) {
+                (
+                    shaula_core::fleet::FleetProviderKind::Github,
+                    shaula_core::fleet::FleetProviderKind::Github,
+                ) => {
+                    previous_spec.github.target != spec.github.target
+                        || previous_spec.github.scale_set_name != spec.github.scale_set_name
+                        || previous_spec.github.runner_group != spec.github.runner_group
+                }
+                (
+                    shaula_core::fleet::FleetProviderKind::Forgejo,
+                    shaula_core::fleet::FleetProviderKind::Forgejo,
+                ) => previous_spec.forgejo != spec.forgejo,
+                _ => true,
+            };
+            if identity_changed {
                 return Ok(Err(MutationError::IdentityConflict));
             }
             if template_referenced(&previous_spec) != template_referenced(&spec) {
@@ -144,7 +156,7 @@ impl FleetRegistryPort for ControlPlane {
                     }));
                 }
             }
-            if previous.auth_desired.0 != spec.github.auth_profile_ref {
+            if previous.auth_desired.0 != spec.auth_profile_ref() {
                 let occupancy = self.store.generations_occupancy(key).await?;
                 if occupancy > 0 {
                     return Ok(Err(MutationError::RetirementBlocked {

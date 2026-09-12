@@ -6,10 +6,14 @@ use shaula_core::{
 };
 use std::{path::Path, time::Duration};
 
+#[path = "runtime_bootstrap_docker_forgejo.rs"]
+mod forgejo;
+
 pub(super) async fn launch(
     request: &TemplateCreateRequest,
     envelope: &ShaulaResultEnvelope,
     image: &str,
+    backend: &str,
     setup: &[u8],
     temporary: Option<&Path>,
     timeout: Duration,
@@ -42,24 +46,33 @@ pub(super) async fn launch(
     let info = commands
         .json(&["container", "inspect", "--", &runner.id])
         .await?;
-    validate(single(&info)?, &runner.id, image_id, request)?;
+    if backend == "forgejo" {
+        forgejo::validate(single(&info)?, &runner.id, image_id, request)?;
+    } else {
+        validate(single(&info)?, &runner.id, image_id, request)?;
+    }
 
     // Diagnostics have their own failure boundary. JIT was frozen in the
     // stopped container by Terraform; an optional copy cannot bypass start.
-    if let Some(file) = temporary.and_then(|directory| protected_file(directory, setup, true).ok())
-    {
-        if let Some(path) = file.path().to_str() {
-            let destination = format!("{}:/home/runner/.setup_info", runner.id);
-            commands.optional(&["cp", "--", path, &destination]).await;
+    if backend == "forgejo" {
+        forgejo::launch(&commands, &runner.id, image_id, request, temporary).await?;
+    } else {
+        if let Some(file) =
+            temporary.and_then(|directory| protected_file(directory, setup, true).ok())
+        {
+            if let Some(path) = file.path().to_str() {
+                let destination = format!("{}:/home/runner/.setup_info", runner.id);
+                commands.optional(&["cp", "--", path, &destination]).await;
+            }
         }
+        let info = commands
+            .json(&["container", "inspect", "--", &runner.id])
+            .await?;
+        validate(single(&info)?, &runner.id, image_id, request)?;
+        commands
+            .run(&["container", "start", "--", &runner.id])
+            .await?;
     }
-    let info = commands
-        .json(&["container", "inspect", "--", &runner.id])
-        .await?;
-    validate(single(&info)?, &runner.id, image_id, request)?;
-    commands
-        .run(&["container", "start", "--", &runner.id])
-        .await?;
     Ok(())
 }
 

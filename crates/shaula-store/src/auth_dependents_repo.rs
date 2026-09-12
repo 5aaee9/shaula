@@ -1,7 +1,7 @@
 //! Coverage includes desired admission and every still-live execution target.
 use crate::entities::fleet::{fleet_revisions, fleets};
 use crate::store::{Store, StoreResult};
-use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder};
 use shaula_core::registry::AuthDependentTarget;
 
 impl Store {
@@ -14,12 +14,21 @@ impl Store {
         for fleet in fleets::Entity::find().all(tx).await? {
             let Some(latest) = fleet_revisions::Entity::find()
                 .filter(fleet_revisions::Column::FleetKey.eq(&fleet.key))
-                .filter(fleet_revisions::Column::Revision.eq(fleet.desired_revision))
+                .filter(fleet_revisions::Column::Revision.lte(fleet.desired_revision))
+                .order_by_desc(fleet_revisions::Column::Revision)
                 .one(tx)
                 .await?
             else {
                 continue;
             };
+            // Forgejo DELETE advances the head without a synthetic spec revision.
+            // Keep its scope/credential dependency until cleanup is complete.
+            if latest.revision != fleet.desired_revision
+                && !serde_json::from_str::<serde_json::Value>(&latest.spec_json)
+                    .is_ok_and(|spec| spec["kind"] == "forgejo")
+            {
+                continue;
+            }
             let mut targets = std::collections::BTreeMap::<String, AuthDependentTarget>::new();
             let base = |target_json: String| AuthDependentTarget {
                 fleet_key: fleet.key.clone(),

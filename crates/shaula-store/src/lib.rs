@@ -46,6 +46,10 @@ mod tests {
     mod auth_v2_context;
     mod auth_validation_results;
     mod fleet_convergence;
+    mod forgejo_auth_rotation;
+    mod forgejo_pool;
+    mod forgejo_pool_fakes;
+    mod forgejo_pool_support;
     mod listener_lifecycle;
     pub(crate) mod listener_messages;
     mod listener_recovery;

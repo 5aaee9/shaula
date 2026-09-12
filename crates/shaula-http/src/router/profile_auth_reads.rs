@@ -38,9 +38,7 @@ pub(crate) async fn auth_profile_impact(
     match state.profiles.auth_get(&auth.actor, &profile_key).await {
         Ok(Ok(view)) => axum::Json(serde_json::json!({
             "desiredRevision": view.desired_revision,
-            "liveFleets": view.live_fleets.iter().map(|fleet| serde_json::json!({
-                "fleetKey": fleet.fleet_key, "phase": fleet.phase, "target": fleet.target,
-            })).collect::<Vec<_>>(),
+            "liveFleets": view.live_fleets.iter().map(render_live_fleet).collect::<Vec<_>>(),
         }))
         .into_response(),
         Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
@@ -97,7 +95,15 @@ fn render_binding(
 fn auth_profile_body(view: &shaula_core::registry::AuthProfileView) -> serde_json::Value {
     use shaula_core::registry::AuthRevisionState;
     let render_state = |state: &AuthRevisionState| {
-        if state.schema_version == 2 && state.state != "Unsupported" {
+        if state.schema_version == 1 && state.state != "Unsupported" && state.forgejo.is_some() {
+            serde_json::json!({
+                "revision": state.revision,
+                "schema_version": state.schema_version,
+                "state": state.state,
+                "reason": state.reason,
+                "forgejo": state.forgejo,
+            })
+        } else if state.schema_version == 2 && state.state != "Unsupported" {
             serde_json::json!({
                 "revision": state.revision,
                 "schema_version": state.schema_version,
@@ -117,12 +123,19 @@ fn auth_profile_body(view: &shaula_core::registry::AuthProfileView) -> serde_jso
             })
         }
     };
-    let supported = view.schema_version == 2
-        && view.kind == Some(shaula_core::auth::AuthKind::GithubApp)
-        && view
-            .active
-            .as_ref()
-            .is_none_or(|active| active.schema_version == 2 && active.state != "Unsupported");
+    let format_supported = |schema_version, forgejo| match view.kind {
+        Some(shaula_core::auth::AuthKind::GithubApp) => schema_version == 2,
+        Some(shaula_core::auth::AuthKind::ForgejoToken) => schema_version == 1 && forgejo,
+        _ => false,
+    };
+    let head = view.desired.as_ref().or(view.active.as_ref());
+    let supported = format_supported(
+        view.schema_version,
+        head.is_some_and(|s| s.forgejo.is_some()),
+    ) && view.active.as_ref().is_none_or(|active| {
+        format_supported(active.schema_version, active.forgejo.is_some())
+            && active.state != "Unsupported"
+    });
     let mut body = serde_json::json!({
         "key": view.key,
         "incarnation": view.incarnation,
@@ -132,11 +145,9 @@ fn auth_profile_body(view: &shaula_core::registry::AuthProfileView) -> serde_jso
         "kind": view.kind.map(shaula_core::auth::AuthKind::as_str),
         "credential_present": view.credential_present,
         "schema_version": view.schema_version,
-        "liveFleets": view.live_fleets.iter().map(|fleet| serde_json::json!({
-            "fleetKey": fleet.fleet_key, "phase": fleet.phase, "target": fleet.target,
-        })).collect::<Vec<_>>(),
+        "liveFleets": view.live_fleets.iter().map(render_live_fleet).collect::<Vec<_>>(),
     });
-    if supported {
+    if supported && view.kind == Some(shaula_core::auth::AuthKind::GithubApp) {
         body["app_id"] = serde_json::json!(view.app_id);
     }
     if let Some(active) = &view.active {
@@ -147,6 +158,19 @@ fn auth_profile_body(view: &shaula_core::registry::AuthProfileView) -> serde_jso
     }
     body
 }
+fn render_live_fleet(fleet: &shaula_core::registry::AuthLiveFleet) -> serde_json::Value {
+    if let Some(target) = &fleet.forgejo_target {
+        serde_json::json!({
+            "fleetKey": fleet.fleet_key, "phase": fleet.phase,
+            "kind": "forgejo", "target": target,
+        })
+    } else {
+        serde_json::json!({
+            "fleetKey": fleet.fleet_key, "phase": fleet.phase, "target": fleet.target,
+        })
+    }
+}
+
 #[cfg(test)]
 #[path = "profile_auth_reads_tests.rs"]
 mod tests;

@@ -49,7 +49,13 @@ pub(in crate::runtime) fn admit_plan(
                 "docker_container",
                 "registry.terraform.io/kreuzwerker/docker",
             )?;
-            docker::admit(&runner, plan, &image, request)
+            docker::admit(
+                &runner,
+                plan,
+                &image,
+                request,
+                manifest.runner_backend.as_str(),
+            )
         }
         "kubernetes" if managed.len() == 2 => {
             let pod = managed
@@ -66,6 +72,7 @@ pub(in crate::runtime) fn admit_plan(
                 &Planned::new(secret, "kubernetes_secret_v1", provider)?,
                 &image,
                 request,
+                manifest.runner_backend.as_str(),
             )
         }
         _ => Err(rejected()),

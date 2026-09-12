@@ -47,6 +47,18 @@ fn platform_comes_only_from_manifest() {
 }
 
 #[test]
+fn manifest_provider_contract_is_explicit() {
+    let mut forgejo = manifest();
+    forgejo.runner_backend = "forgejo".into();
+    assert!(forgejo
+        .validate_for_provider(crate::fleet::FleetProviderKind::Forgejo)
+        .is_ok());
+    assert!(forgejo
+        .validate_for_provider(crate::fleet::FleetProviderKind::Github)
+        .is_err());
+}
+
+#[test]
 fn manifest_rejects_custom_engine() {
     let mut m = manifest();
     m.runtime.engine = "custom-exec".into();
@@ -91,7 +103,7 @@ fn tfvars_has_single_shaula_variable() {
     let env = ShaulaInputEnvelope::new(
         GenerationIdentity {
             fleet_key: "fleet-a".into(),
-            scale_set_id: 123,
+            scale_set_id: Some(123),
             id: "gen-1".into(),
             runner_name: "runner-1".into(),
             generation_name: "s0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -109,6 +121,37 @@ fn tfvars_has_single_shaula_variable() {
     );
     assert!(obj.contains_key("shaula"));
     assert_eq!(obj["shaula"]["generation"]["id"], "gen-1");
+}
+
+#[test]
+fn forgejo_input_contains_identity_but_never_registration_token() {
+    let mut manifest = manifest();
+    manifest.runner_backend = "forgejo".into();
+    manifest.container_bootstrap_contract = Some(CONTAINER_BOOTSTRAP_CONTRACT.into());
+    manifest.runner_image_digests = vec![format!(
+        "code.forgejo.org/forgejo/runner:13.1.0@sha256:{}",
+        "a".repeat(64)
+    )];
+    let mut input = ShaulaInputEnvelope::new(
+        GenerationIdentity {
+            fleet_key: "fleet-a".into(),
+            scale_set_id: None,
+            id: "gen-1".into(),
+            runner_name: "runner-1".into(),
+            generation_name: "generation".into(),
+        },
+        String::new(),
+        BindingsDigest("bd1_x".into()),
+    );
+    input.forgejo = Some(crate::forgejo::ForgejoBootstrapIdentity {
+        instance_url: "https://forgejo.example.test".into(),
+        uuid: "runner-uuid".into(),
+        labels: vec!["linux:host".into()],
+    });
+    input.validate_for_manifest(&manifest).unwrap();
+    let tfvars = input.to_tfvars().unwrap();
+    assert!(tfvars.contains("runner-uuid"));
+    assert!(!tfvars.contains("registration-token"));
 }
 
 #[test]

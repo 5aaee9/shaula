@@ -5,9 +5,13 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 
 use crate::entities::fleet::fleets;
-use crate::entities::lifecycle::{runner_generations, runner_operations};
+use crate::entities::lifecycle::{
+    forgejo_runner_identities, runner_generations, runner_operations,
+};
 use crate::store::{Store, StoreError, StoreResult};
 
+#[path = "lifecycle_forgejo.rs"]
+mod forgejo;
 #[path = "lifecycle_sessions.rs"]
 mod sessions;
 
@@ -136,6 +140,16 @@ impl Store {
             .one(&tx)
             .await?
             .ok_or_else(|| StoreError::Corrupt(format!("generation {id} missing")))?;
+        if github_runner_id.is_some()
+            && forgejo_runner_identities::Entity::find_by_id(id.to_string())
+                .one(&tx)
+                .await?
+                .is_some()
+        {
+            return Err(StoreError::Conflict {
+                resource: "generation already has a Forgejo runner identity".into(),
+            });
+        }
         if row
             .github_runner_id
             .zip(github_runner_id)

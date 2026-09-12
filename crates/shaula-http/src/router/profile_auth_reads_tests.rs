@@ -15,6 +15,7 @@ fn legacy() -> AuthRevisionState {
         app_id: None,
         target_policy: None,
         bindings: vec![],
+        forgejo: None,
     }
 }
 
@@ -109,4 +110,68 @@ fn v2_binding_health_needs_the_exact_account_and_installation_evidence() {
     assert_eq!(body["active"]["bindings"][0]["valid_until_ms"], 60_100);
     assert!(body.get("identity").is_none());
     assert!(body.get("target_allowlist").is_none());
+}
+
+#[test]
+fn forgejo_reads_expose_only_provider_metadata_and_validation() {
+    use shaula_core::{
+        forgejo::{ForgejoScope, ForgejoTarget},
+        registry::ForgejoAuthState,
+    };
+    let mut view = view();
+    view.kind = Some(AuthKind::ForgejoToken);
+    view.app_id = None;
+    let target = ForgejoTarget {
+        instance_url: "https://forgejo.test".into(),
+        scope: ForgejoScope::User,
+    };
+    let active = view.active.as_mut().unwrap();
+    active.forgejo = Some(ForgejoAuthState {
+        target: target.clone(),
+        validation: Some(shaula_core::ports::forgejo::ForgejoAuthProbe {
+            server_version: "16.0.4".into(),
+            principal_id: Some(42),
+            target_id: None,
+            checked_at_unix_ms: 10,
+            valid_until_unix_ms: 60_010,
+            runner_count: 1,
+        }),
+    });
+    let mut candidate = active.clone();
+    candidate.revision = 2;
+    candidate.state = "Rejected".into();
+    candidate.reason = Some("Unauthenticated".into());
+    candidate.forgejo.as_mut().unwrap().validation = None;
+    view.desired = Some(candidate);
+    view.desired_revision = 2;
+    view.live_fleets.push(shaula_core::registry::AuthLiveFleet {
+        fleet_key: "pool".into(),
+        phase: "Ready".into(),
+        target: None,
+        forgejo_target: Some(target),
+    });
+    let body = auth_profile_body(&view);
+    assert_eq!(body["status"], "Active");
+    assert_eq!(body["kind"], "forgejo_token");
+    assert_eq!(body["active"]["state"], "Active");
+    assert_eq!(body["active"]["forgejo"]["validation"]["principal_id"], 42);
+    assert_eq!(body["desired"]["state"], "Rejected");
+    assert_eq!(body["desired"]["reason"], "Unauthenticated");
+    assert!(body["desired"]["forgejo"]["validation"].is_null());
+    assert_eq!(body["liveFleets"][0]["kind"], "forgejo");
+    assert_eq!(
+        body["liveFleets"][0]["target"]["instance_url"],
+        "https://forgejo.test"
+    );
+    for field in [
+        "token",
+        "credential_bytes",
+        "app_id",
+        "bindings",
+        "target_policy",
+    ] {
+        assert!(body.get(field).is_none());
+        assert!(body["active"].get(field).is_none());
+        assert!(body["active"]["forgejo"].get(field).is_none());
+    }
 }

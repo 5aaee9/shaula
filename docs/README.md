@@ -15,6 +15,7 @@
 | 真实 Docker Runner 的创建、运行与清理验证 | [Docker 冒烟验证](docker-conformance.md) |
 | Proxmox 基础 VM、DHCP 与 cloud-init 配置 | [Proxmox Runner](proxmox-runners.md) |
 | 已实现范围、集成缺口与验收证据 | [实现状态](IMPLEMENTATION_STATUS.md) |
+| Forgejo Busy-safe drain 的源码证据、竞态与发布阻塞 | [Forgejo drain](forgejo-drain.md) |
 
 ## 设计与决策
 
@@ -80,7 +81,7 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 | D3 | 运行策略 | operation/recovery timeout、retry budget、reaper interval、worker/backend body/rate/backlog/concurrency 的最终默认值与硬上限；OIDC 已有具体值见部署说明，Operation Log/Setup Info 的默认值见 spec 0019，不重新标为待定 | 0001 §5 / 0009 / 0019 |
 | D4 | 持久格式，阻塞发布冻结 | `bindings_digest` 是否继续作为独立 commitment，以及 exact Revision/incarnation 绑定、编码和兼容迁移；本轮不新增 bd2/HMAC 格式，不重写旧记录 | 0004 §3 / 0005 §5 |
 | D5 | 协议验收 | Forgejo 凭据的 profile kind/schema、scope → token 类型与最小权限的 exact 映射，以及激活前验证读取的契约；不属于 GitHub authentication，也不作为其 fallback | 0026 §7 |
-| D6 | 运行策略 | Forgejo 轮询的规模边界与默认值：jobs/inventory 端点无分页且 labels 在服务端内存过滤，需要最终 interval/backoff/条数上限、idle deadline 与可支持的实例规模上限 | 0026 §3 / §4 |
+| D6 | 运行策略 | Forgejo 轮询的规模边界与默认值：jobs 无分页且 labels 在服务端内存过滤，inventory 按可变活动时间分页；需要最终 interval/backoff/条数上限、idle deadline 与可支持的实例规模上限 | 0026 §3 / §4 |
 | R1 | 发布配置与验收 | Rust toolchain/features、Terraform binary、provider locks/checksums、官方 Runner image/宿主 bootstrap CLI、runtime/trust policy 与 conformance suite 的 exact tuple | 0003 / 0004 / 0006 / 0007 |
 | R2 | 协议验收 | Go oracle 的 commit/module/checksum、获取方式和完整 differential suite；真实已注册 OIDC Provider 的 browser/API 验收 | 0007 §4 / 0009 §7 |
 | R3 | 平台验收 | Kubernetes CPU/memory/ephemeral-storage、安全上下文、seccomp/capabilities、namespace sharing/network policy 和所需 RBAC；host OS 的 worker/descendant fencing | 0003 §10 |

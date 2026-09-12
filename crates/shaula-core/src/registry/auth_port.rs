@@ -13,7 +13,7 @@ pub struct AuthRevisionState {
     pub state: String,
     pub reason: Option<String>,
     pub binding_health: Vec<AuthBindingHealth>,
-    /// Only 2 is supported; other stored formats are historical metadata.
+    /// Format version within the provider kind (GitHub App v2, Forgejo token v1).
     pub schema_version: i64,
     /// v2: the App id in the stored representation.
     pub app_id: Option<String>,
@@ -21,6 +21,16 @@ pub struct AuthRevisionState {
     pub target_policy: Option<crate::auth_policy::TargetPolicy>,
     /// v2: the frozen Account Bindings (empty until promotion).
     pub bindings: Vec<crate::auth_context::AccountBinding>,
+    /// Forgejo-only target and authentication observation, never GitHub bindings.
+    pub forgejo: Option<ForgejoAuthState>,
+}
+
+/// Non-secret Forgejo token revision metadata. A probe is historical validation
+/// evidence, not an assertion of current access after its validity window.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ForgejoAuthState {
+    pub target: crate::forgejo::ForgejoTarget,
+    pub validation: Option<crate::ports::forgejo::ForgejoAuthProbe>,
 }
 
 /// Current route health, separate from immutable revision bindings.
@@ -44,6 +54,8 @@ pub struct AuthLiveFleet {
     /// The fleet's GitHub target; None only if the stored spec is
     /// unreadable (never silently treated as covered).
     pub target: Option<crate::github::GitHubTarget>,
+    /// Present instead of `target` for a Forgejo Fleet.
+    pub forgejo_target: Option<crate::forgejo::ForgejoTarget>,
 }
 
 /// Non-secret Auth Profile summary; only `credential_present` metadata.
@@ -83,7 +95,7 @@ pub struct AuthRevisionRow {
     pub reason: Option<String>,
     pub kind: String,
     pub app_id: Option<String>,
-    /// Only 2 is executable; other stored formats are historical metadata.
+    /// Executable format versions are scoped by kind; legacy GitHub v1 is unsupported.
     pub schema_version: i64,
     /// Canonical TargetPolicy JSON for schema version 2.
     pub policy_json: Option<String>,

@@ -11,6 +11,7 @@ pub mod auth_policy;
 pub mod capacity;
 pub mod error;
 pub mod fleet;
+pub mod forgejo;
 pub mod github;
 pub mod jobs;
 pub mod lifecycle;

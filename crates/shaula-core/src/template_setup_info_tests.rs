@@ -6,7 +6,7 @@ fn input() -> ShaulaInputEnvelope {
     ShaulaInputEnvelope::new(
         GenerationIdentity {
             fleet_key: "fleet".into(),
-            scale_set_id: 1,
+            scale_set_id: Some(1),
             id: "generation".into(),
             runner_name: "runner".into(),
             generation_name: "resource".into(),

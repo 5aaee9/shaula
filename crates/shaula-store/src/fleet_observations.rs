@@ -5,7 +5,7 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use shaula_core::registry::{FleetObservation, FleetObservationPhase};
 
 use crate::entities::{
-    fleet::{fleet_changes, fleets},
+    fleet::{fleet_changes, fleet_revisions, fleets},
     lifecycle::fleet_sessions,
 };
 use crate::runtime_guards::session_active;
@@ -33,7 +33,19 @@ impl Store {
         if active_epoch != observation.session_epoch {
             return Ok(false);
         }
-        if observation.phase == FleetObservationPhase::Ready {
+        let forgejo = fleet_revisions::Entity::find()
+            .filter(fleet_revisions::Column::FleetKey.eq(key))
+            .filter(fleet_revisions::Column::Revision.eq(observation.guard.desired_revision))
+            .one(&tx)
+            .await?
+            .and_then(|row| {
+                serde_json::from_str::<shaula_core::fleet::FleetSpec>(&row.spec_json).ok()
+            })
+            .is_some_and(|spec| spec.kind == shaula_core::fleet::FleetProviderKind::Forgejo);
+        if forgejo && active_epoch.is_some() {
+            return Ok(false);
+        }
+        if observation.phase == FleetObservationPhase::Ready && !forgejo {
             let Some(epoch) = active_epoch else {
                 return Ok(false);
             };

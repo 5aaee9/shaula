@@ -74,6 +74,7 @@ pub(super) async fn launch(
                 request,
                 envelope,
                 &image,
+                manifest.runner_backend.as_str(),
                 &setup,
                 temporary.as_ref().map(|dir| dir.path()),
                 timeout,
@@ -85,6 +86,7 @@ pub(super) async fn launch(
                 request,
                 envelope,
                 &image,
+                manifest.runner_backend.as_str(),
                 &setup,
                 temporary.as_ref().ok_or_else(failed)?.path(),
                 timeout,
@@ -110,11 +112,22 @@ fn selected_image(
     }
     .ok_or_else(failed)?;
     let (repository, digest) = image.split_once("@sha256:").ok_or_else(failed)?;
-    if repository != "ghcr.io/actions/actions-runner"
-        && !repository
-            .strip_prefix("ghcr.io/actions/actions-runner:")
-            .is_some_and(|tag| !tag.is_empty() && !tag.contains('/'))
-    {
+    let official = match manifest.runner_backend.as_str() {
+        "github" => {
+            repository == "ghcr.io/actions/actions-runner"
+                || repository
+                    .strip_prefix("ghcr.io/actions/actions-runner:")
+                    .is_some_and(|tag| !tag.is_empty() && !tag.contains('/'))
+        }
+        "forgejo" => {
+            repository == "code.forgejo.org/forgejo/runner"
+                || repository
+                    .strip_prefix("code.forgejo.org/forgejo/runner:")
+                    .is_some_and(|tag| !tag.is_empty() && !tag.contains('/'))
+        }
+        _ => false,
+    };
+    if !official {
         return Err(failed());
     }
     if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
@@ -221,8 +234,10 @@ fn protected_file(
         .and_then(|()| file.as_file().sync_all())
         .map_err(|_| failed())?;
     // docker cp preserves mode and defaults destination ownership to root.
-    // Only sanitized diagnostics get world-readable mode; the parent directory
-    // is private. Credential-bearing Kubernetes patch files remain mode 0600.
+    // Docker copies require the non-root runner to read root-owned files.
+    // Mode 0444 stays behind a host-private (0700) directory and is exposed
+    // only inside this Generation's execution domain, never a host bind mount.
+    // Kubernetes patch files are not copied and remain mode 0600.
     #[cfg(unix)]
     if runner_readable {
         use std::os::unix::fs::PermissionsExt;

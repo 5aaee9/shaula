@@ -244,11 +244,64 @@ pub(crate) async fn auth_profile_put(
 }
 
 pub(crate) fn build_auth_payload(dto: AuthProfilePutDto) -> Result<AuthProfilePut, Response> {
+    if dto.kind == "forgejo_token" {
+        let (Some(instance_url), Some(scope), Some(token)) =
+            (dto.instance_url, dto.scope, dto.token)
+        else {
+            return Err(problem(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "SpecInvalid",
+                "forgejo_token requires instance_url, scope, and token",
+            )
+            .into_response());
+        };
+        if dto.app_id.is_some()
+            || dto.private_key.is_some()
+            || dto.target_policy.is_some()
+            || dto.schema_version.is_some()
+        {
+            return Err(problem(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "SpecInvalid",
+                "forgejo_token does not accept GitHub authentication fields",
+            )
+            .into_response());
+        }
+        let target = shaula_core::forgejo::ForgejoTarget {
+            instance_url,
+            scope,
+        };
+        if let Err(error) = target.validate() {
+            return Err(problem(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "SpecInvalid",
+                error.summary,
+            )
+            .into_response());
+        }
+        return Ok(AuthProfilePut {
+            kind: shaula_core::auth::AuthKind::ForgejoToken,
+            app_id: None,
+            secret: shaula_core::secret::SecretString::new(token),
+            schema_version: Some(1),
+            target_policy: None,
+            forgejo_target: Some(target),
+        });
+    }
+
     if dto.kind != "github_app" || dto.schema_version != Some(2) {
         return Err(problem(
             StatusCode::UNPROCESSABLE_ENTITY,
             "SpecInvalid",
-            "only github_app authentication with schema_version: 2 is supported",
+            "github_app requires schema_version: 2; forgejo_token requires its own target",
+        )
+        .into_response());
+    }
+    if dto.token.is_some() || dto.instance_url.is_some() || dto.scope.is_some() {
+        return Err(problem(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "SpecInvalid",
+            "Forgejo authentication fields are only valid for forgejo_token",
         )
         .into_response());
     }
@@ -266,6 +319,7 @@ pub(crate) fn build_auth_payload(dto: AuthProfilePutDto) -> Result<AuthProfilePu
         secret: shaula_core::secret::SecretString::new(private_key),
         schema_version: Some(2),
         target_policy: dto.target_policy,
+        forgejo_target: None,
     })
 }
 

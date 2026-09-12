@@ -226,6 +226,41 @@ impl SupervisorWiring {
         // the supervisor alongside the revision-driven rebuild (R10-01).
         for (key, revision, phase) in self.store.fleet_list(&actor).await? {
             live_keys.insert(key.clone());
+            let is_forgejo = self
+                .store
+                .fleet_revision_latest(&key)
+                .await?
+                .and_then(|row| {
+                    serde_json::from_str::<shaula_core::fleet::FleetSpec>(&row.spec_json)
+                        .ok()
+                        .map(|spec| spec.kind == shaula_core::fleet::FleetProviderKind::Forgejo)
+                })
+                .unwrap_or(false);
+            if is_forgejo {
+                match self.forgejo_supervisor_for(&key, revision).await {
+                    Ok(Some(supervisor)) => {
+                        if !self.tasks.contains(&key) {
+                            self.tasks.spawn(key, async move {
+                                let report = supervisor.tick().await?;
+                                if report.stale_demand || report.stale_inventory {
+                                    tracing::warn!(
+                                        waiting = report.waiting_jobs,
+                                        stale_demand = report.stale_demand,
+                                        stale_inventory = report.stale_inventory,
+                                        "Forgejo Pool observation is stale"
+                                    );
+                                }
+                                Ok(())
+                            });
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        tracing::warn!(fleet = %key, summary = %e.summary, "Forgejo Pool wiring failed")
+                    }
+                }
+                continue;
+            }
             match self.supervisor_for(&key, revision, &phase).await {
                 Ok(Some(supervisor)) => {
                     let listener_key = format!("listener/{key}");
@@ -277,5 +312,7 @@ pub(crate) mod wiring_tests;
 #[path = "wiring_http_tests.rs"]
 pub(crate) mod http_tests;
 
+#[path = "wiring_forgejo.rs"]
+mod forgejo;
 #[path = "wiring_supervisor.rs"]
 mod supervisor;

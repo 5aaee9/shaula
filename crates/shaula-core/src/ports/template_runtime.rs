@@ -25,6 +25,10 @@ pub struct TemplateCreateRequest {
     // ApplyStarting must be on disk before the child can start
     // (spec 0004 section 6: at-most-once).
     pub apply_intent_sink: Option<std::sync::Arc<dyn ApplyIntentSink>>,
+    /// Provider-specific protected bootstrap material. It is deliberately
+    /// outside [`ShaulaInputEnvelope`] so the token cannot enter tfvars,
+    /// Terraform variables, or operation-log projections.
+    pub forgejo_bootstrap: Option<crate::ports::forgejo::ForgejoBootstrapMaterial>,
 }
 // The executable is deliberately NOT caller-supplied: the runtime adapter
 // holds THE single engine authority (its configured binary), so "verify B,
@@ -151,6 +155,16 @@ pub trait TemplateRuntimePort: Send + Sync {
         _timeout: Duration,
     ) -> Result<(), TemplateOutcomeError> {
         Ok(())
+    }
+    /// Returns local evidence that a Forgejo runner resource is not holding
+    /// a task. The default is deliberately unknown: remote `idle` status
+    /// alone is not a sufficient deletion proof because Forgejo DELETE has
+    /// no busy protection.
+    async fn forgejo_template_evidence(
+        &self,
+        _generation_id: &str,
+    ) -> crate::ports::forgejo::ForgejoTemplateEvidence {
+        crate::ports::forgejo::ForgejoTemplateEvidence::Unknown
     }
     async fn create(
         &self,

@@ -22,7 +22,7 @@ pub(super) fn fixture(
     let mut input = ShaulaInputEnvelope::new(
         GenerationIdentity {
             fleet_key: "fleet".into(),
-            scale_set_id: 1,
+            scale_set_id: Some(1),
             id: "50a2dd2d-e48e-4b23-88de-b4bca9cf3b90".into(),
             runner_name: "runner".into(),
             generation_name: "generation".into(),
@@ -41,6 +41,7 @@ pub(super) fn fixture(
         environment: Vec::new(),
         timeout: Duration::from_secs(60),
         apply_intent_sink: None,
+        forgejo_bootstrap: None,
     };
     let plan = if platform == "docker" {
         docker(image, &request)

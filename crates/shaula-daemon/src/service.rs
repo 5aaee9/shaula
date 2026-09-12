@@ -155,35 +155,6 @@ impl ControlPlane {
         ))
     }
 
-    async fn assert_auth_target_allowed(
-        &self,
-        profile_key: &str,
-        spec: &FleetSpec,
-    ) -> CoreResult<()> {
-        let Some(revision) = self.store.auth_revision_active(profile_key).await? else {
-            return Err(CoreError::new(
-                ReasonCode::AccessVerificationFailed,
-                "auth credential missing",
-            ));
-        };
-        if revision.schema_version != 2 || revision.kind != "github_app" {
-            return Err(CoreError::new(
-                ReasonCode::AuthTargetDenied,
-                "unsupported authentication revision; publish a GitHub App v2 profile",
-            ));
-        }
-        let policy = revision
-            .target_policy()?
-            .ok_or_else(|| CoreError::new(ReasonCode::Internal, "active auth policy missing"))?;
-        if !policy.allows(&spec.github.target) {
-            return Err(CoreError::new(
-                ReasonCode::AuthTargetDenied,
-                "auth profile target policy does not cover the fleet target",
-            ));
-        }
-        Ok(())
-    }
-
     /// Canonical request hash for idempotency: method + resource + key +
     /// canonical body + precondition. The same formula must be used at
     /// lookup and at commit time.
@@ -230,6 +201,9 @@ impl ControlPlane {
         }
     }
 }
+
+#[path = "service_auth_target.rs"]
+mod auth_target;
 
 pub(crate) fn template_referenced(spec: &FleetSpec) -> String {
     // Key-only comparison: legacy exact pins normalize to their key on
@@ -321,6 +295,8 @@ mod profile_attestation;
 
 #[path = "service_auth.rs"]
 mod auth;
+#[path = "service_auth_forgejo.rs"]
+mod auth_forgejo;
 #[path = "service_auth_policy.rs"]
 mod auth_policy;
 #[path = "service_profile_conditions.rs"]

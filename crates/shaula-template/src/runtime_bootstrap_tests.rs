@@ -6,11 +6,11 @@ use shaula_core::template::{BindingsDigest, GenerationIdentity, ShaulaInputEnvel
 const IMAGE: &str = "ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4";
 const UID: &str = "ddbe9107-f968-414e-9446-5dabf9c27289";
 
-fn request() -> TemplateCreateRequest {
+pub(super) fn request() -> TemplateCreateRequest {
     let mut input = ShaulaInputEnvelope::new(
         GenerationIdentity {
             fleet_key: "fleet".into(),
-            scale_set_id: 1,
+            scale_set_id: Some(1),
             id: "50a2dd2d-e48e-4b23-88de-b4bca9cf3b90".into(),
             runner_name: "runner".into(),
             generation_name: "generation".into(),
@@ -29,10 +29,11 @@ fn request() -> TemplateCreateRequest {
         environment: Vec::new(),
         timeout: Duration::from_secs(60),
         apply_intent_sink: None,
+        forgejo_bootstrap: None,
     }
 }
 
-fn docker_fixture(request: &TemplateCreateRequest) -> Value {
+pub(super) fn docker_fixture(request: &TemplateCreateRequest) -> Value {
     let short: String = request.input.generation.id.chars().take(24).collect();
     json!({
         "Id": "container-id", "Image": "image-id",
@@ -47,7 +48,7 @@ fn docker_fixture(request: &TemplateCreateRequest) -> Value {
     })
 }
 
-fn kubernetes_fixture(request: &TemplateCreateRequest, kind: &str) -> Value {
+pub(super) fn kubernetes_fixture(request: &TemplateCreateRequest, kind: &str) -> Value {
     json!({
         "kind": kind, "apiVersion":"v1",
         "metadata": {"uid":UID,"resourceVersion":"125","name":"generation","namespace":"runners",

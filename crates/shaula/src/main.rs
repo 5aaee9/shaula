@@ -8,6 +8,7 @@ mod auth_worker;
 #[cfg(test)]
 #[path = "auth_worker_continuity_tests.rs"]
 pub(crate) mod auth_worker_continuity_tests;
+mod auth_worker_forgejo;
 #[cfg(test)]
 #[path = "auth_worker_mock.rs"]
 pub(crate) mod auth_worker_mock;

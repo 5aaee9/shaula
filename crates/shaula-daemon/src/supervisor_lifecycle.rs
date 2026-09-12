@@ -295,7 +295,7 @@ impl FleetSupervisor {
         let mut input = shaula_core::template::ShaulaInputEnvelope::new(
             shaula_core::template::GenerationIdentity {
                 fleet_key: self.config.fleet_key.clone(),
-                scale_set_id,
+                scale_set_id: Some(scale_set_id),
                 id: generation_id.clone(),
                 runner_name,
                 generation_name,
@@ -329,6 +329,7 @@ impl FleetSupervisor {
             environment: Vec::new(),
             timeout: self.config.operation_timeout,
             apply_intent_sink: Some(apply_intent.clone()),
+            forgejo_bootstrap: None,
         };
         match self.runtime.create(request).await {
             Ok(result) => {

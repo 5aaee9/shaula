@@ -5,6 +5,56 @@
 use shaula_core::registry::{MutationError, MutationFacts};
 
 impl super::SqliteControlPlane {
+    pub(super) async fn record_apply_starting_impl(
+        &self,
+        provenance: &shaula_core::ports::PlanProvenance,
+        saved_plan_path: &str,
+        now: i64,
+    ) -> shaula_core::error::CoreResult<()> {
+        use super::core_err;
+        use shaula_core::error::{CoreError, ReasonCode};
+        // The fence and durable record share one transaction; a stale Create
+        // cannot become spawn-eligible after a newer PUT or DELETE.
+        let tx = self.store.begin().await.map_err(core_err)?;
+        let kind = match provenance.intent {
+            shaula_core::plan::PlanIntent::Create => "Create",
+            shaula_core::plan::PlanIntent::Destroy => "Destroy",
+        };
+        let provenance_json = serde_json::to_string(provenance).map_err(|e| {
+            CoreError::new(
+                ReasonCode::Internal,
+                format!("apply provenance serialize failed: {e}"),
+            )
+        })?;
+        let insert = shaula_core::registry::OperationInsert {
+            id: provenance.attempt_id.clone(),
+            generation_id: provenance.generation_id.clone(),
+            kind: kind.to_string(),
+            state: "ApplyStarting".to_string(),
+            provenance_json: Some(provenance_json),
+            saved_plan_path: Some(saved_plan_path.to_string()),
+            saved_plan_digest: Some(provenance.saved_plan_digest.clone()),
+            now,
+        };
+        match self
+            .store
+            .operation_apply_starting_tx(&tx, insert)
+            .await
+            .map_err(core_err)?
+        {
+            Ok(()) => {
+                tx.commit().await.map_err(|e| {
+                    CoreError::new(
+                        ReasonCode::StorageUnavailable,
+                        format!("apply-start transaction commit failed: {e}"),
+                    )
+                })?;
+                Ok(())
+            }
+            Err(summary) => Err(CoreError::new(ReasonCode::OwnershipConflict, summary)),
+        }
+    }
+
     pub(super) async fn generations_occupancy_impl(
         &self,
         fleet_key: &str,

@@ -70,7 +70,7 @@ mod tests {
         let mut input = ShaulaInputEnvelope::new(
             GenerationIdentity {
                 fleet_key: "f".into(),
-                scale_set_id: 1,
+                scale_set_id: Some(1),
                 id: "g".into(),
                 runner_name: "r".into(),
                 generation_name: "generation".into(),

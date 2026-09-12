@@ -8,6 +8,61 @@ use shaula_core::auth_policy::{TargetPolicy, AUTH_POLICY_SCHEMA_VERSION};
 use shaula_core::error::ReasonCode;
 use shaula_core::registry::AuthProfilePut;
 
+/// Canonical non-secret publication body of a Forgejo token Candidate.
+#[derive(Debug, Clone)]
+pub(crate) struct ForgejoAuthPutFormat {
+    pub target: shaula_core::forgejo::ForgejoTarget,
+    pub target_json: String,
+}
+
+impl ForgejoAuthPutFormat {
+    pub(crate) fn parse(payload: &AuthProfilePut) -> Result<Self, (ReasonCode, String)> {
+        if payload.kind != shaula_core::auth::AuthKind::ForgejoToken {
+            return Err((
+                ReasonCode::SpecInvalid,
+                "forgejo_token authentication is required".into(),
+            ));
+        }
+        if payload.schema_version != Some(1) {
+            return Err((
+                ReasonCode::SpecInvalid,
+                "forgejo_token requires schema_version: 1".into(),
+            ));
+        }
+        let Some(target) = payload.forgejo_target.clone() else {
+            return Err((
+                ReasonCode::SpecInvalid,
+                "forgejo_token target is required".into(),
+            ));
+        };
+        target
+            .validate()
+            .map_err(|error| (error.code, error.summary))?;
+        if payload.app_id.is_some() || payload.target_policy.is_some() {
+            return Err((
+                ReasonCode::SpecInvalid,
+                "forgejo_token cannot carry GitHub identity or policy fields".into(),
+            ));
+        }
+        if payload.secret.expose().trim().is_empty() {
+            return Err((
+                ReasonCode::CredentialMalformed,
+                "Forgejo token must not be empty".into(),
+            ));
+        }
+        let target_json = serde_json::to_string(&target)
+            .map_err(|error| (ReasonCode::Internal, error.to_string()))?;
+        Ok(Self {
+            target,
+            target_json,
+        })
+    }
+
+    pub(crate) fn canonical_body(&self) -> String {
+        format!("forgejo_token|1|{}", self.target_json)
+    }
+}
+
 /// Canonical non-secret publication body of one Auth Candidate.
 #[derive(Debug, Clone)]
 pub(crate) struct AuthPutFormat {

@@ -81,7 +81,7 @@ exit /b 1
             input: ShaulaInputEnvelope::new(
                 GenerationIdentity {
                     fleet_key: "f1".into(),
-                    scale_set_id: 42,
+                    scale_set_id: Some(42),
                     id: "g1".into(),
                     runner_name: "runner".into(),
                     generation_name: "generation".into(),
@@ -94,6 +94,7 @@ exit /b 1
             environment: Vec::new(),
             timeout: std::time::Duration::from_secs(10),
             apply_intent_sink: None,
+            forgejo_bootstrap: None,
         })
         .await
         .unwrap();

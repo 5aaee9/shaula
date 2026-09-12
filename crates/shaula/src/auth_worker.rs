@@ -16,7 +16,7 @@ pub(crate) const DEFAULT_RETRY_BACKOFF_MS: i64 = 30_000;
 /// carries the ABSOLUTE retry deadline GitHub supplied so the wiring can
 /// defer the next attempt instead of polling every scan interval.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum WorkerFlow {
+pub(crate) enum WorkerFlow {
     /// Terminal for now: promoted, rejected, or nothing to validate.
     Done,
     /// Stay Pending; do not re-attempt before this deadline (unix ms).
@@ -39,6 +39,9 @@ pub(super) async fn validate(
     let Some(row) = store.auth_revision_get(&key, head.desired_revision).await? else {
         return Ok(WorkerFlow::Done);
     };
+    if row.schema_version == 1 && row.kind == "forgejo_token" {
+        return crate::auth_worker_forgejo::validate(&store, &clock, &key, &row).await;
+    }
     if row.schema_version != 2 || row.kind != "github_app" {
         return Err(CoreError::new(
             ReasonCode::CredentialMalformed,

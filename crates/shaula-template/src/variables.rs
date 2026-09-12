@@ -41,10 +41,14 @@ fn read_text(path: &Path, budget: &mut usize) -> CoreResult<String> {
 /// Legacy `type = any` is reported explicitly without invalidating its artifact.
 pub fn discover_variables(dir: &Path, digest: &str) -> CoreResult<TemplateVariables> {
     let manifest_path = dir.join("profile.yaml");
-    let input_version = if manifest_path.exists() {
-        crate::manifest::parse_manifest(&read_text(&manifest_path, &mut 0)?)?.input_contract_version
+    let (input_version, forgejo) = if manifest_path.exists() {
+        let manifest = crate::manifest::parse_manifest(&read_text(&manifest_path, &mut 0)?)?;
+        (
+            manifest.input_contract_version,
+            manifest.runner_backend == "forgejo",
+        )
     } else {
-        1
+        (1, false)
     };
     let mut paths = Vec::new();
     for entry in std::fs::read_dir(dir)
@@ -142,7 +146,7 @@ pub fn discover_variables(dir: &Path, digest: &str) -> CoreResult<TemplateVariab
         result.reason = Some("This template declares shaula as any; typed bindings and parameters are required to discover variables.".into());
         return Ok(result);
     }
-    let envelope = types::envelope(&expression, input_version)?;
+    let envelope = types::envelope(&expression, input_version, forgejo)?;
     for (name, output) in [
         ("bindings", &mut result.bindings),
         ("parameters", &mut result.parameters),
@@ -183,6 +187,9 @@ mod integrity_tests;
 #[path = "variables_guard_tests.rs"]
 mod guard_tests;
 
+#[cfg(test)]
+#[path = "variables_forgejo_tests.rs"]
+mod forgejo_tests;
 #[cfg(test)]
 #[path = "variables_setup_info_tests.rs"]
 mod setup_info_tests;

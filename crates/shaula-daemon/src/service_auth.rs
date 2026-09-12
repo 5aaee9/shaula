@@ -29,6 +29,20 @@ impl ControlPlane {
         if let Err(e) = shaula_core::auth::validate_profile_key_for_fleet_ref(key) {
             return Ok(Err(unprocessable(e.code, e.summary)));
         }
+        // Forgejo tokens have an independent target and lifecycle. Keep
+        // them out of the GitHub App policy/revision path entirely.
+        if payload.kind == shaula_core::auth::AuthKind::ForgejoToken {
+            return self
+                .auth_put_forgejo(
+                    actor,
+                    key,
+                    payload,
+                    if_none_match,
+                    if_match,
+                    idempotency_key,
+                )
+                .await;
+        }
         // Format detection FIRST (spec 0011 §6): schema version is an
         // explicit choice; the parse validates every per-format member.
         let format = match crate::service_auth_format::AuthPutFormat::parse(&payload) {

@@ -38,6 +38,7 @@ impl AuthProfileKey {
 pub enum AuthKind {
     GithubApp,
     Pat,
+    ForgejoToken,
 }
 
 impl AuthKind {
@@ -45,6 +46,7 @@ impl AuthKind {
         match self {
             AuthKind::GithubApp => "github_app",
             AuthKind::Pat => "pat",
+            AuthKind::ForgejoToken => "forgejo_token",
         }
     }
 }

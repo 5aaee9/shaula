@@ -7,14 +7,21 @@ use shaula_core::{
 };
 use std::{path::Path, time::Duration};
 
+#[path = "runtime_bootstrap_kubernetes_forgejo.rs"]
+mod forgejo;
+
 pub(super) async fn launch(
     request: &TemplateCreateRequest,
     envelope: &ShaulaResultEnvelope,
     image: &str,
+    backend: &str,
     setup: &[u8],
     temporary: &Path,
     timeout: Duration,
 ) -> Result<(), TemplateOutcomeError> {
+    if backend == "forgejo" {
+        return forgejo::launch(request, envelope, image, temporary, timeout).await;
+    }
     let namespace = binding(request, "namespace")?;
     let kubeconfig = binding(request, "kubeconfig")?;
     let name = &request.input.generation.generation_name;

@@ -1078,9 +1078,26 @@ web source was changed for this Nix increment. aarch64 native execution and a
 pushed GitHub workflow run have **not** been observed. None of these checks closes
 the real-Provider, GitHub, Runner Platform or worker-integration gates above.
 
-## Forgejo runner backend: adapter and CI E2E slice implemented (2026-09-11)
+## Forgejo runner backend: in-progress Pool implementation (2026-09-11)
 
-[Spec 0026](specs/0026-forgejo-runner-backend.md) and [ARD-0033](ard/0033-admit-forgejo-through-a-pool-backend-first.md) remain the governing draft/proposed contract. The new `shaula-forgejo` crate implements the provider-specific HTTP slice: explicit instance/organization/user/repository routes, bounded pagination, `visible=false` inventory reads, ephemeral registration, token-redacted diagnostics, safe removal classification, and conservative uncertain-registration classification that requires `ephemeral` plus Fleet-label evidence. `.github/workflows/forgejo-e2e.yml` starts Forgejo 16.0.4, creates a repository and workflow, registers a runner through the API, runs `forgejo-runner one-job` v13.1.0, verifies job success, and verifies the ephemeral runner disappears. Fleet provider storage, token profiles, template integration, UI, and the A1–A8 acceptance matrix remain open; this slice does not claim the full daemon lifecycle is shipped.
+[Spec 0026](specs/0026-forgejo-runner-backend.md) and [ARD-0033](ard/0033-admit-forgejo-through-a-pool-backend-first.md) remain draft/proposed. This is **not yet an A1–A8-complete runner backend**.
+
+Implemented and covered by local adapter/SQLite tests:
+
+- Provider-specific HTTP routes, bounded registration bodies/response/pagination handling, `null` jobs and undeclared labels, label-name filtering, and protected one-shot registration material. Missing/malformed or unexpected successful/server-error registration responses are uncertain, never authorization to repeat POST. Server releases below 15 and runner image version tags below 13 (or unverifiable/prerelease versions) are rejected; exact image-content conformance still belongs to R4.
+- A separate Pool driver with durable registration intents, Forgejo identity table, captured Fleet fences, restart classification, hard occupancy limits, inventory readiness/Busy transitions, and independent registration/resource cleanup. Exact-ID reads confirm absence; mutable paginated inventory alone cannot authorize destruction. Failed polls do not refresh the old demand timestamp.
+- Independent `forgejo_token` publication/probing and non-secret API read views, with separate active/candidate validation metadata. Rotation appends a Fleet revision rather than entering GitHub Auth Handoff. User-scoped tokens retain their verified principal ID; organization/repository scopes retain their numeric target ID across rotation and execution. Deleting Fleets retain their credential dependency until cleanup finishes.
+- Non-secret identity in Terraform input and provider-aware variable discovery; token delivery outside tfvars through the Docker/Kubernetes bootstrap boundary. The initial container contract admits explicit `:host` labels only. Docker-in-Docker and VM bootstrap are rejected, not silently guessed.
+
+Still open:
+
+- **Safe idle expiry/drain.** The runtime evidence hook defaults to `Unknown`; remote `idle` does not authorize DELETE. Occupied idle generations can consequently block scale-down, rotation and decommission. The pinned runner's [single-task poller](https://code.forgejo.org/forgejo/runner/src/commit/667c8d975b9255e7bf32164e012146f68f0022c6/internal/app/poll/single.go) shares cancellation with task execution; blindly signalling a runner is not a proven busy-safe drain. The owner chose the **full contract before release**, not a conservative preview. [Source evidence, the proposed acquisition-fence prerequisite and its acceptance matrix](forgejo-drain.md) record the release blocker; no upstream fence/drain implementation is present.
+- Uncertain registrations that have not declared labels are quarantined, because the spec's joint-label ownership proof cannot identify them yet. This retains occupancy rather than silently leaking/replacing them.
+- Bundled Forgejo templates, exact image tuple R4, platform conformance, Forgejo UI/jobs projection, exact scope/permission and image-content admission evidence, and A1–A8 real-platform evidence. The pinned [official image](https://code.forgejo.org/forgejo/runner/src/commit/667c8d975b9255e7bf32164e012146f68f0022c6/Dockerfile) uses `/data`, UID 1000 and `dumb-init`; bootstrap validators reflect those facts, but have not been validated against a live container in this increment.
+
+Latest local checks (2026-09-12) for this worktree: `cargo fmt`, `cargo clippy --workspace --all-targets`, and `cargo nextest run --manifest-path Cargo.toml --workspace test` pass (641 tests passed; 154 filtered/skipped). These are not real-platform acceptance evidence.
+
+The existing `.github/workflows/forgejo-e2e.yml` exercises Forgejo 16.0.4 with runner 13.1.0 using shell API calls. It is not an end-to-end test of the new Rust Pool driver, and was not rerun as live-platform evidence here.
 
 ## Known accepted limitations (per ADR)
 

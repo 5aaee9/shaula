@@ -10,7 +10,8 @@ use crate::template::{BindingsDigest, ManagedResourceRole, ProfileManifest, Setu
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GenerationIdentity {
     pub fleet_key: String,
-    pub scale_set_id: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale_set_id: Option<i64>,
     pub id: String,
     /// Display name registered at GitHub; short and human-scannable, NOT
     /// a platform resource name.
@@ -30,6 +31,8 @@ pub struct ShaulaInputEnvelope {
     pub generation: GenerationIdentity,
     /// Write-only value; serialized into the protected tfvars only.
     pub jit_config: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forgejo: Option<crate::forgejo::ForgejoBootstrapIdentity>,
     pub bindings_digest: BindingsDigest,
     #[serde(default)]
     pub bindings: serde_json::Map<String, serde_json::Value>,
@@ -45,6 +48,8 @@ struct InputWire {
     contract_version: u32,
     generation: GenerationIdentity,
     jit_config: String,
+    #[serde(default)]
+    forgejo: Option<crate::forgejo::ForgejoBootstrapIdentity>,
     bindings_digest: BindingsDigest,
     #[serde(default)]
     bindings: serde_json::Map<String, serde_json::Value>,
@@ -67,6 +72,7 @@ impl TryFrom<InputWire> for ShaulaInputEnvelope {
             contract_version: wire.contract_version,
             generation: wire.generation,
             jit_config: wire.jit_config,
+            forgejo: wire.forgejo,
             bindings_digest: wire.bindings_digest,
             bindings: wire.bindings,
             parameters: wire.parameters,
@@ -106,6 +112,7 @@ impl ShaulaInputEnvelope {
             contract_version: INPUT_CONTRACT_VERSION,
             generation,
             jit_config,
+            forgejo: None,
             bindings_digest,
             bindings: serde_json::Map::new(),
             parameters: serde_json::Map::new(),
@@ -147,6 +154,24 @@ impl ShaulaInputEnvelope {
                 ReasonCode::TemplateInvalid,
                 "input contract differs from manifest",
             ));
+        }
+        match manifest.runner_backend.as_str() {
+            "github" if self.forgejo.is_none() => {}
+            "forgejo"
+                if self.forgejo.is_some()
+                    && self.jit_config.is_empty()
+                    && self.generation.scale_set_id.is_none() =>
+            {
+                if let Some(identity) = &self.forgejo {
+                    manifest.validate_forgejo_targets(&identity.labels)?;
+                }
+            }
+            _ => {
+                return Err(CoreError::new(
+                    ReasonCode::TemplateInvalid,
+                    "input bootstrap identity differs from the runner backend",
+                ));
+            }
         }
         Ok(())
     }

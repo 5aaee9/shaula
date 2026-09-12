@@ -1,4 +1,7 @@
 use super::{rejected, Planned, TemplateCreateRequest, TemplateOutcomeError};
+
+#[path = "runtime_bootstrap_plan_kubernetes_forgejo.rs"]
+mod forgejo;
 use serde_json::json;
 
 pub(super) fn admit(
@@ -6,7 +9,11 @@ pub(super) fn admit(
     secret: &Planned<'_>,
     image: &str,
     request: &TemplateCreateRequest,
+    backend: &str,
 ) -> Result<(), TemplateOutcomeError> {
+    if backend == "forgejo" {
+        return forgejo::admit(pod, secret, image, request);
+    }
     let identity = &request.input.generation;
     let namespace = super::super::binding(request, "namespace").map_err(|_| rejected())?;
     for resource in [pod, secret] {

@@ -150,7 +150,7 @@ async fn scale_set_ownership_migration_failure_rolls_back_schema_and_retries() -
     assert_eq!(owned(&store).await?, Some(42));
     assert_eq!(
         scalar(&store, "SELECT COUNT(*) AS value FROM seaql_migrations").await?,
-        16
+        17
     );
     Ok(())
 }

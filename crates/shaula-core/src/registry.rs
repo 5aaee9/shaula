@@ -189,9 +189,10 @@ pub struct TemplateProfileUpdate {
     pub fleet_input_policy: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
-/// Submission payload for a GitHub Auth Candidate revision. Secret bytes
-/// are carried as [`crate::secret::SecretString`] and never logged.
-/// Only explicit schema version 2 and GitHub App policy are supported.
+/// Submission payload for a provider Auth Candidate. Secret bytes are
+/// carried as [`crate::secret::SecretString`] and never logged. GitHub App
+/// publications use schema version 2 and policy; Forgejo token publications
+/// use schema version 1 and a typed scoped target.
 #[derive(Clone)]
 pub struct AuthProfilePut {
     pub kind: AuthKind,
@@ -199,6 +200,10 @@ pub struct AuthProfilePut {
     pub secret: crate::secret::SecretString,
     pub schema_version: Option<i64>,
     pub target_policy: Option<Vec<crate::auth_policy::TargetSelector>>,
+    /// Provider-specific Forgejo target. GitHub publications leave this
+    /// absent; keeping it typed prevents Forgejo routing data from being
+    /// smuggled through GitHub policy fields.
+    pub forgejo_target: Option<crate::forgejo::ForgejoTarget>,
 }
 
 impl std::fmt::Debug for AuthProfilePut {
@@ -332,7 +337,7 @@ pub use auth_port::{
     AuthDependentTarget, AuthExecutionStore, AuthHandoffExpectation, AuthHandoffRow,
     AuthIdentityProof, AuthLiveFleet, AuthProfileView, AuthPromotion, AuthPromotionOutcome,
     AuthRepoProof, AuthRevisionRow, AuthRevisionState, AuthRouteObservation,
-    AuthValidationSnapshot, FleetAuthContextRow, FleetContextAck,
+    AuthValidationSnapshot, FleetAuthContextRow, FleetContextAck, ForgejoAuthState,
 };
 pub use lifecycle_port::{FleetHeadGuard, LifecycleStore};
 pub use lifecycle_port::{GenerationRecord, OperationRow, ScaleSetRow};

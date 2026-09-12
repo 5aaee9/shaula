@@ -109,6 +109,22 @@ impl Store {
                     V2Promotion::Restaged => (AuthPromotionOutcome::Restaged, None),
                 }
             }
+            ValidationResult::Accepted(promotion)
+                if candidate.schema_version == 1 && candidate.kind == "forgejo_token" =>
+            {
+                match self
+                    .auth_promote_forgejo(tx, &candidate, &profile, promotion, now)
+                    .await
+                {
+                    Ok(()) => (AuthPromotionOutcome::Promoted, None),
+                    Err(StoreError::PolicyDenied { reason }) => {
+                        self.auth_reject_candidate(tx, &candidate, Some(reason), &profile, now)
+                            .await?;
+                        (AuthPromotionOutcome::Rejected, Some(reason))
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
             ValidationResult::Accepted(_) => {
                 return Err(StoreError::PolicyDenied {
                     reason: "UnsupportedAuthFormat",
@@ -134,42 +150,18 @@ impl Store {
                 profile_changes::Column::UpdatedAt,
                 sea_orm::sea_query::Expr::value(now),
             )
-            .filter(profile_changes::Column::ResourceKind.eq("github_auth_profile"))
+            .filter(profile_changes::Column::ResourceKind.eq(
+                if candidate.kind == "forgejo_token" {
+                    "forgejo_auth_profile"
+                } else {
+                    "github_auth_profile"
+                },
+            ))
             .filter(profile_changes::Column::ProfileKey.eq(key))
             .filter(profile_changes::Column::Revision.eq(revision))
             .exec(tx)
             .await?;
         Ok(outcome)
-    }
-
-    /// Marks a Candidate Rejected; the prior active head stays untouched.
-    async fn auth_reject_candidate(
-        &self,
-        tx: &DatabaseTransaction,
-        candidate: &github_auth_profile_revisions::Model,
-        reason: Option<&str>,
-        profile: &github_auth_profiles::Model,
-        now: i64,
-    ) -> StoreResult<()> {
-        let rejected_status = if profile.active_revision.is_some() {
-            "Active"
-        } else {
-            "Rejected"
-        };
-        let mut candidate_updated: github_auth_profile_revisions::ActiveModel =
-            candidate.clone().into();
-        candidate_updated.state = Set("Rejected".to_string());
-        candidate_updated.reason = Set(reason.map(str::to_string));
-        github_auth_profile_revisions::Entity::update(candidate_updated)
-            .exec(tx)
-            .await?;
-        let mut updated: github_auth_profiles::ActiveModel = profile.clone().into();
-        updated.status = Set(rejected_status.to_string());
-        updated.updated_at = Set(now);
-        github_auth_profiles::Entity::update(updated)
-            .exec(tx)
-            .await?;
-        Ok(())
     }
 
     /// v2 promotion gates (spec 0011 §5.1), all in the caller's
@@ -325,16 +317,22 @@ impl Store {
             else {
                 continue;
             };
-            self.fleet_auth_context_commit_tx(
-                tx,
-                &fleet_key,
-                key,
-                active_revision,
-                &latest.spec_json,
-                now,
-            )
-            .await?
-            .map_err(|reason| StoreError::PolicyDenied { reason })?;
+            let is_forgejo =
+                serde_json::from_str::<shaula_core::fleet::FleetSpec>(&latest.spec_json)
+                    .map(|spec| spec.kind == shaula_core::fleet::FleetProviderKind::Forgejo)
+                    .unwrap_or(false);
+            if !is_forgejo {
+                self.fleet_auth_context_commit_tx(
+                    tx,
+                    &fleet_key,
+                    key,
+                    active_revision,
+                    &latest.spec_json,
+                    now,
+                )
+                .await?
+                .map_err(|reason| StoreError::PolicyDenied { reason })?;
+            }
         }
         Ok(())
     }
@@ -372,6 +370,11 @@ impl Store {
         Ok(())
     }
 }
+
+#[path = "auth_candidate_state.rs"]
+mod candidate_state;
+#[path = "auth_forgejo.rs"]
+mod forgejo;
 
 /// Classification of one v2 promotion attempt inside the transaction.
 enum V2Promotion {

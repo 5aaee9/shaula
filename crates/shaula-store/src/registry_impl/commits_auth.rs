@@ -64,7 +64,7 @@ impl SqliteControlPlane {
                 &tx,
                 shaula_core::registry::ProfileChangeInsert {
                     id: facts.change.id.clone(),
-                    resource_kind: "github_auth_profile".into(),
+                    resource_kind: facts.resource_kind.to_string(),
                     profile_key: facts.resource_key.clone(),
                     revision: Some(facts.revision),
                     kind: facts.change.kind.clone(),
@@ -77,7 +77,7 @@ impl SqliteControlPlane {
             .audit_append(
                 &tx,
                 shaula_core::registry::AuditAppend {
-                    resource_kind: "github_auth_profile".into(),
+                    resource_kind: facts.resource_kind.to_string(),
                     action: if base_revision.is_some() {
                         "policy_update"
                     } else {
@@ -98,7 +98,7 @@ impl SqliteControlPlane {
         self.store
             .outbox_enqueue(
                 &tx,
-                "github_auth_profile",
+                facts.resource_kind,
                 &facts.outbox_topic,
                 &facts.outbox_payload,
                 facts.now,

@@ -37,6 +37,21 @@ fn legacy_members_are_unknown_even_when_null_or_empty() {
 }
 
 #[test]
+fn forgejo_token_requires_and_preserves_scoped_target() {
+    let body = json!({
+        "kind": "forgejo_token",
+        "instance_url": "https://forgejo.example.test",
+        "scope": {"kind": "repository", "owner": "acme", "name": "repo"},
+        "token": "forgejo-secret"
+    });
+    let payload = build_auth_payload(serde_json::from_value(body).unwrap()).unwrap();
+    assert_eq!(payload.kind, shaula_core::auth::AuthKind::ForgejoToken);
+    assert_eq!(payload.schema_version, Some(1));
+    assert_eq!(payload.secret.expose(), "forgejo-secret");
+    assert!(payload.forgejo_target.is_some());
+}
+
+#[test]
 fn old_missing_and_unknown_formats_are_rejected() {
     for version in [json!(null), json!(1), json!(3)] {
         let mut body = request();

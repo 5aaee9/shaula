@@ -22,12 +22,15 @@ impl ControlPlane {
         let (effective, occupancy) = self.store.capacity_counters(key).await?;
         // Read the pinned capacity policy from the latest revision so the
         // status target uses the contract formula min(max, min+demand).
-        let capacity_policy = self
-            .store
-            .fleet_revision_latest(key)
-            .await?
-            .and_then(|r| serde_json::from_str::<FleetSpec>(&r.spec_json).ok())
-            .map(|spec| shaula_core::capacity::CapacityPolicy::from(spec.capacity));
+        let latest = self.store.fleet_revision_latest(key).await?;
+        let spec = latest
+            .as_ref()
+            .and_then(|r| serde_json::from_str::<FleetSpec>(&r.spec_json).ok());
+        let forgejo = spec
+            .as_ref()
+            .is_some_and(|spec| spec.kind == shaula_core::fleet::FleetProviderKind::Forgejo);
+        let capacity_policy =
+            spec.map(|spec| shaula_core::capacity::CapacityPolicy::from(spec.capacity));
 
         let assigned_demand = demand.unwrap_or(0);
         let capacity_target = match &capacity_policy {
@@ -69,19 +72,37 @@ impl ControlPlane {
                 observed_route,
             }
         });
-        let auth = handoff.map(|h| AuthRolloutSummary {
-            desired: h.desired.clone(),
-            observed: h.observed.clone(),
-            handoff_state: h.state,
-            context: auth_context,
-        });
+        let auth = if forgejo {
+            latest.map(|row| AuthRolloutSummary {
+                observed: (fleet.phase == "Ready"
+                    && fleet.observed_revision == fleet.desired_revision)
+                    .then(|| row.auth_desired.clone()),
+                desired: row.auth_desired,
+                handoff_state: "NotApplicable".into(),
+                context: None,
+            })
+        } else {
+            handoff.map(|h| AuthRolloutSummary {
+                desired: h.desired.clone(),
+                observed: h.observed.clone(),
+                handoff_state: h.state,
+                context: auth_context,
+            })
+        };
         let auth_observed_matches = auth
             .as_ref()
             .map(|a| a.observed == Some(a.desired.clone()))
             .unwrap_or(false);
         let auth_lag_reason = auth.as_ref().and_then(|a| {
             if a.observed != Some(a.desired.clone()) {
-                Some("AuthHandoffLag".to_string())
+                Some(
+                    if forgejo {
+                        "RunnerRebuildPending"
+                    } else {
+                        "AuthHandoffLag"
+                    }
+                    .to_string(),
+                )
             } else {
                 None
             }
@@ -291,6 +312,29 @@ impl ControlPlane {
             // document is equally corrupt — an empty schema is `{}`, not
             // whitespace (R5-04).
             let schema = self.store.artifact_parameter_schema(pin_artifact).await?;
+            if spec.kind == shaula_core::fleet::FleetProviderKind::Forgejo {
+                let Some(manifest_yaml) = self.store.artifact_manifest(pin_artifact).await? else {
+                    return Ok(Err(unprocessable(
+                        ReasonCode::TemplateInvalid,
+                        "Forgejo Fleet template manifest is missing",
+                    )));
+                };
+                let manifest: shaula_core::template::ProfileManifest =
+                    serde_yaml::from_str(&manifest_yaml).map_err(|error| {
+                        CoreError::new(
+                            ReasonCode::TemplateInvalid,
+                            format!("Forgejo Fleet template manifest is invalid: {error}"),
+                        )
+                    })?;
+                let labels = spec
+                    .forgejo
+                    .as_ref()
+                    .map(|section| section.labels.as_slice())
+                    .unwrap_or_default();
+                if let Err(error) = manifest.validate_forgejo_targets(labels) {
+                    return Ok(Err(unprocessable(error.code, error.summary)));
+                }
+            }
             if schema.trim().is_empty() {
                 return Err(CoreError::new(
                     ReasonCode::StorageUnavailable,
@@ -303,13 +347,14 @@ impl ControlPlane {
                 return Ok(Err(unprocessable(e.code, e.summary)));
             }
         }
+        let auth_profile_ref = spec.auth_profile_ref();
         if let Err(e) = self
-            .assert_auth_target_allowed(&spec.github.auth_profile_ref, spec)
+            .assert_auth_target_allowed(auth_profile_ref, spec)
             .await
         {
             return Ok(Err(unprocessable(e.code, e.summary)));
         }
-        let resolved_auth = match self.resolve_auth_ref(&spec.github.auth_profile_ref).await {
+        let resolved_auth = match self.resolve_auth_ref(auth_profile_ref).await {
             Ok(found) => found,
             Err(e) => return Ok(Err(unprocessable(e.code, e.summary))),
         };

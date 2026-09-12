@@ -68,6 +68,17 @@ pub trait LifecycleStore: super::ListenerMessageStore + Send + Sync {
         runner_id: i64,
         now: i64,
     ) -> CoreResult<()>;
+    /// Persists the exact Forgejo runner identity bound to a Generation.
+    /// Forgejo identities are kept separate from GitHub runner IDs because
+    /// the two provider namespaces have unrelated ownership semantics.
+    async fn generation_set_forgejo_runner(
+        &self,
+        id: &str,
+        runner_id: i64,
+        runner_uuid: &str,
+        now: i64,
+    ) -> CoreResult<()>;
+    async fn generation_forgejo_runner(&self, id: &str) -> CoreResult<Option<(i64, String)>>;
     /// Durable JIT-intent marker (R9-07, spec 0004 §6): records the JIT
     /// phase BEFORE the remote JIT request is issued, so a lost response
     /// leaves recovery evidence instead of an invisible half-effect.

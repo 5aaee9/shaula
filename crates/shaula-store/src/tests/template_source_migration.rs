@@ -162,7 +162,7 @@ async fn source_backfill_failure_rolls_back_schema_data_and_migration_history() 
             "SELECT COUNT(*) AS value FROM seaql_migrations"
         )
         .await?,
-        16
+        17
     );
     assert_eq!(
         fixture
