@@ -78,7 +78,7 @@ rustPlatform.buildRustPackage {
     runHook preCheck
     cargo clippy --offline --locked --workspace --all-targets -- -D warnings
     if cargo nextest run --offline --locked --manifest-path Cargo.toml --workspace \
-      --retries 2 >nextest-output.log 2>&1; then
+      --no-fail-fast --retries 2 >nextest-output.log 2>&1; then
       tail -n 40 nextest-output.log
     else
       status=$?

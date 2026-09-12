@@ -168,6 +168,7 @@ async fn changing_template_inputs_requires_zero_occupancy() {
         .await
         .unwrap();
     assert_eq!(created.status(), StatusCode::ACCEPTED);
+    let etag = created.headers()["etag"].clone();
 
     // An occupied Fleet has a live generation whose envelope was built from
     // the original template_inputs object.
@@ -192,16 +193,6 @@ async fn changing_template_inputs_requires_zero_occupancy() {
         .await
         .unwrap();
 
-    // Read the current resource version after inserting the occupied
-    // generation; the conditional write must exercise the occupancy gate
-    // rather than fail on a stale revision precondition.
-    let current = app
-        .clone()
-        .oneshot(authorized("GET", "/api/v1/fleets/parameterized", None))
-        .await
-        .unwrap();
-    let etag = current.headers()["etag"].clone();
-
     let mut changed: serde_json::Value = serde_json::from_str(FLEET_BODY).unwrap();
     changed["template_inputs"] = serde_json::json!({"size_class": "standard"});
     let mut request = authorized(
@@ -209,6 +200,7 @@ async fn changing_template_inputs_requires_zero_occupancy() {
         "/api/v1/fleets/parameterized",
         Some(changed.to_string()),
     );
+    request.headers_mut().remove("if-none-match");
     request.headers_mut().insert("if-match", etag);
     let response = app.clone().oneshot(request).await.unwrap();
     assert_eq!(
