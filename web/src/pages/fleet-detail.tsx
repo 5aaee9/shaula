@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/icon-tooltip";
 import { Empty, ErrorNotice, KeyValue, Loading, StatusBadge } from "@/components/status";
 import { RetireDialog } from "@/components/retire-dialog";
+import { FinalizeQuarantined } from "@/components/finalize-quarantined";
 import { SectionCards } from "@/components/section-cards";
 import { ChangeNotice } from "@/components/change-notice";
 export function FleetDetail({ scopes }: { scopes: string[] }) {
@@ -87,6 +88,15 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
               <Pencil />
               Edit fleet
             </Button>
+          )}
+          {scopes.includes("fleet.retire") && (
+            <FinalizeQuarantined
+              fleetKey={fleetKey}
+              onAccepted={() => {
+                void fleet.refetch();
+                void status.refetch();
+              }}
+            />
           )}
           <Tip label="Retire fleet">
             <Button
