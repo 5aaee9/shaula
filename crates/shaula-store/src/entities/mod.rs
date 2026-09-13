@@ -7,3 +7,4 @@ pub mod fleet;
 pub mod lifecycle;
 pub mod shared;
 pub mod template;
+pub mod template_pool;

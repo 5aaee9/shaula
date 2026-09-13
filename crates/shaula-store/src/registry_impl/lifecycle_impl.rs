@@ -46,7 +46,7 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
         {
             record = map_generation(existing);
             let inputs = if let Some(key) = record.pool_member_key.as_deref() {
-                fleet_revision_pool_members::Entity::find()
+                let inline = fleet_revision_pool_members::Entity::find()
                     .filter(fleet_revision_pool_members::Column::FleetKey.eq(&record.fleet_key))
                     .filter(
                         fleet_revision_pool_members::Column::FleetRevision
@@ -56,8 +56,15 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
                     .one(&tx)
                     .await
                     .map_err(|e| core_err(e.into()))?
-                    .and_then(|m| serde_json::from_str(&m.template_inputs_json).ok())
-                    .unwrap_or_default()
+                    .and_then(|m| serde_json::from_str(&m.template_inputs_json).ok());
+                super::lifecycle_pool_admit::replay_member_inputs(
+                    &tx,
+                    &record.fleet_key,
+                    record.fleet_revision,
+                    key,
+                    inline,
+                )
+                .await?
             } else {
                 serde_json::Map::new()
             };
@@ -67,12 +74,53 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
                 template_inputs: inputs,
             }));
         }
-        let members = fleet_revision_pool_members::Entity::find()
+        let inline_members = fleet_revision_pool_members::Entity::find()
             .filter(fleet_revision_pool_members::Column::FleetKey.eq(&record.fleet_key))
             .filter(fleet_revision_pool_members::Column::FleetRevision.eq(record.fleet_revision))
             .all(&tx)
             .await
             .map_err(|e| core_err(e.into()))?;
+        let inline_policy = crate::entities::fleet::fleet_revisions::Entity::find()
+            .filter(crate::entities::fleet::fleet_revisions::Column::FleetKey.eq(&record.fleet_key))
+            .filter(
+                crate::entities::fleet::fleet_revisions::Column::Revision.eq(record.fleet_revision),
+            )
+            .one(&tx)
+            .await
+            .map_err(|e| core_err(e.into()))?
+            .and_then(|row| {
+                serde_json::from_str::<shaula_core::fleet::FleetSpec>(&row.spec_json).ok()
+            })
+            .map(|spec| {
+                spec.template_pool
+                    .map(|pool| pool.failure_policy)
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+        // Routing source: shared-pool member rows when the fleet revision
+        // froze a pool reference, else the inline rows (spec 0037 §4).
+        let routing = super::lifecycle_pool_admit::load_routing(
+            &tx,
+            &record.fleet_key,
+            record.fleet_revision,
+            inline_members
+                .into_iter()
+                .map(|m| super::lifecycle_pool_admit::AdmitMember {
+                    member_key: m.member_key,
+                    template_profile_key: m.template_profile_key,
+                    template_revision: m.template_revision,
+                    template_artifact_digest: m.template_artifact_digest,
+                    template_attestation_id: m.template_attestation_id,
+                    template_inputs_json: m.template_inputs_json,
+                    inputs_digest: m.inputs_digest,
+                    weight: m.weight,
+                    max_runners: m.max_runners,
+                })
+                .collect(),
+            inline_policy,
+        )
+        .await?;
+        let members = routing.members;
         if members.is_empty() {
             tx.rollback().await.map_err(|e| core_err(e.into()))?;
             return Ok(None);
@@ -103,20 +151,27 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
                 }
             }
         }
-        let generations = runner_generations::Entity::find()
-            .filter(runner_generations::Column::FleetKey.eq(&record.fleet_key))
-            .all(&tx)
-            .await
-            .map_err(|e| core_err(e.into()))?;
+        // Pool-wide occupancy when the fleet routes through a shared pool:
+        // member caps count every fleet referencing that pool revision
+        // (spec 0037 §6); inline pools keep their fleet-local accounting.
+        let generations = if let Some(scope) = &routing.pool_scope {
+            super::lifecycle_pool_admit::pool_wide_generations(&tx, scope).await?
+        } else {
+            runner_generations::Entity::find()
+                .filter(runner_generations::Column::FleetKey.eq(&record.fleet_key))
+                .all(&tx)
+                .await
+                .map_err(|e| core_err(e.into()))?
+                .into_iter()
+                .filter(|g| g.state != "Destroyed")
+                .collect()
+        };
         let mut eligible = Vec::new();
         let mut member_at_capacity = false;
         for member in members {
             let used = generations
                 .iter()
-                .filter(|g| {
-                    g.state != "Destroyed"
-                        && g.pool_member_key.as_deref() == Some(member.member_key.as_str())
-                })
+                .filter(|g| g.pool_member_key.as_deref() == Some(member.member_key.as_str()))
                 .count() as i64;
             if member.max_runners.is_none_or(|cap| used < cap) {
                 eligible.push((member, used));
@@ -124,34 +179,18 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
                 member_at_capacity = true;
             }
         }
-        // Backpressure keeps the configured pool contract intact when any
-        // route is unavailable. Redistribute explicitly permits a fresh
-        // weighted draw over the currently eligible subset.
-        if member_at_capacity {
-            let policy = crate::entities::fleet::fleet_revisions::Entity::find()
-                .filter(
-                    crate::entities::fleet::fleet_revisions::Column::FleetKey.eq(&record.fleet_key),
-                )
-                .filter(
-                    crate::entities::fleet::fleet_revisions::Column::Revision
-                        .eq(record.fleet_revision),
-                )
-                .one(&tx)
-                .await
-                .map_err(|e| core_err(e.into()))?
-                .and_then(|row| {
-                    serde_json::from_str::<shaula_core::fleet::FleetSpec>(&row.spec_json).ok()
-                })
-                .map(|spec| {
-                    spec.template_pool
-                        .map(|pool| pool.failure_policy)
-                        .unwrap_or_default()
-                })
-                .unwrap_or_default();
-            if policy == shaula_core::template_pool::PoolFailurePolicy::Backpressure {
-                tx.rollback().await.map_err(|e| core_err(e.into()))?;
-                return Ok(None);
-            }
+        if routing.pool_scope.is_some() {
+            // Shared pools (spec 0037 §6): a capped member leaves the
+            // eligible draw set under BOTH policies; weights renormalize
+            // over the survivors, and only an empty eligible set
+            // backpressures.
+        } else if member_at_capacity
+            && routing.failure_policy == shaula_core::template_pool::PoolFailurePolicy::Backpressure
+        {
+            // Inline pools keep the spec 0029 contract: backpressure keeps
+            // the configured pool intact when any route is at capacity.
+            tx.rollback().await.map_err(|e| core_err(e.into()))?;
+            return Ok(None);
         }
         if eligible.is_empty() {
             tx.rollback().await.map_err(|e| core_err(e.into()))?;

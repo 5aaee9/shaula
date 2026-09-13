@@ -132,6 +132,7 @@ async fn auth_collection_propagates_a_profile_read_fault_after_successful_key_en
                 revision: 2,
                 spec_json: String::new(),
                 template_pool: Vec::new(),
+                template_pool_ref: None,
                 template: None,
                 auth_desired: None,
                 inputs_digest: String::new(),

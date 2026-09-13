@@ -74,6 +74,7 @@ async fn app(library: Arc<Library>) -> Router {
         auth_installation_link: None,
         fleets: service.clone(),
         profiles: service.clone(),
+        pools: service.clone(),
         health: service,
         oidc: common::oidc::oidc().await,
         body_limit: 64 << 20,

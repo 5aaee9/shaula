@@ -27,6 +27,7 @@ impl Harness {
             auth_installation_link: None,
             fleets: service.clone(),
             profiles: service.clone(),
+            pools: service.clone(),
             health: service,
             oidc: provider.oidc().await,
             body_limit: 1024 * 1024,

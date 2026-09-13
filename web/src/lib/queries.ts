@@ -7,6 +7,7 @@ import type {
   FleetStatus,
   FleetSummary,
   Session,
+  TemplatePoolSummary,
   TemplateSummary,
 } from "./types";
 
@@ -45,6 +46,16 @@ export function useTemplates(enabled = true) {
   return useQuery({
     queryKey: ["templates"],
     queryFn: ({ signal }) => api<{ profiles: TemplateSummary[] }>("/template-profiles", { signal }),
+    enabled,
+    refetchOnMount: "always",
+    refetchInterval: 10_000,
+  });
+}
+
+export function useTemplatePools(enabled = true) {
+  return useQuery({
+    queryKey: ["template-pools"],
+    queryFn: ({ signal }) => api<{ pools: TemplatePoolSummary[] }>("/template-pools", { signal }),
     enabled,
     refetchOnMount: "always",
     refetchInterval: 10_000,

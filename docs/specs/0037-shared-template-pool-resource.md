@@ -1,6 +1,6 @@
 # Shared Template Pool Resource
 
-- Status: Proposed.
+- Status: Implemented.
 - Decision: [ARD-0037](../ard/0037-shared-template-pool-resource.md).
 - Extends: [spec 0029](0029-weighted-template-pool.md),
   [spec 0023](0023-fleet-template-follow-latest.md), and

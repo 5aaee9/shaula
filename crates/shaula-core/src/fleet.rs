@@ -374,6 +374,7 @@ mod tests {
             },
             template_profile_ref: TemplateProfileRefDto::from("kubernetes-linux-x64".to_string()),
             template_pool: None,
+            template_pool_ref: None,
             template_inputs: serde_json::Map::new(),
         }
     }
@@ -468,6 +469,10 @@ pub struct FleetRevisionInsert {
     pub spec_json: String,
     pub template: Option<(String, i64, String, String)>,
     pub template_pool: Vec<crate::template_pool::ResolvedTemplatePoolMember>,
+    /// Shared-pool routing context (spec 0037 §4): (pool key, pool
+    /// revision) frozen at admission. When set, `template_pool` stays
+    /// empty — member rows live on the pool revision, not the fleet.
+    pub template_pool_ref: Option<crate::template_pool::FleetPoolRef>,
     pub auth_desired: (String, i64),
     pub inputs_digest: String,
     pub actor: String,

@@ -104,6 +104,7 @@ async fn build_app_with_store() -> (axum::Router, Arc<SqliteControlPlane>) {
         auth_installation_link: None,
         fleets: service.clone(),
         profiles: service.clone(),
+        pools: service.clone(),
         health: service,
         oidc: oidc::oidc().await,
         body_limit: 64 * 1024 * 1024,

@@ -154,7 +154,7 @@ pub fn request_hash_parts(parts: &[&[u8]]) -> String {
 /// the characters a canonical URI path identity segment may contain.
 /// One predicate owner, so profile, fleet and attestation keys can never
 /// drift into different identity rules.
-pub(crate) fn is_stable_identifier(value: &str) -> bool {
+pub fn is_stable_identifier(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
         && value

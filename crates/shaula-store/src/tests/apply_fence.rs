@@ -22,6 +22,7 @@ async fn apply_start_fence_distinguishes_create_from_destroy() {
                 spec_json: r#"{"key":"fence-fleet"}"#.into(),
                 template: None,
                 template_pool: Vec::new(),
+                template_pool_ref: None,
                 auth_desired: ("prod-app".into(), 1),
                 inputs_digest: "sha256:inputs".into(),
                 actor: "admin".into(),

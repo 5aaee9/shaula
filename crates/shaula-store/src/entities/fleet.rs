@@ -42,6 +42,10 @@ pub mod fleet_revisions {
         pub template_revision: Option<i64>,
         pub template_artifact_digest: Option<String>,
         pub template_attestation_id: Option<String>,
+        /// Shared-pool routing context (spec 0037 §4). NULL for inline
+        /// pools and single-template fleets.
+        pub template_pool_ref: Option<String>,
+        pub template_pool_revision: Option<i64>,
         pub auth_desired_profile_key: String,
         pub auth_desired_revision: i64,
         pub inputs_digest: String,

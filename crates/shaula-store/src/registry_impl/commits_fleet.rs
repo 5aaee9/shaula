@@ -71,6 +71,7 @@ impl SqliteControlPlane {
                     spec_json: facts.spec_json.clone(),
                     template: facts.template.clone(),
                     template_pool: facts.template_pool.clone(),
+                    template_pool_ref: facts.template_pool_ref.clone(),
                     auth_desired: facts.auth_desired.clone().unwrap_or_default(),
                     inputs_digest: facts.inputs_digest.clone(),
                     actor: facts.actor.clone(),
@@ -170,6 +171,26 @@ impl SqliteControlPlane {
                     let _ = tx.rollback().await;
                     return Ok(Err(MutationError::RetirementBlocked {
                         reason: "pool conversion requires zero resource occupancy".into(),
+                    }));
+                }
+            }
+            // A shared-pool routing change (spec 0037 §4/§5) — switching
+            // pools, or catching up to a newer revision of the same pool
+            // — re-routes every future draw, so it needs the same zero
+            // occupancy gate INSIDE the transaction: the admission-side
+            // (or cascade-side) check can race a Create that slips in
+            // before this commit takes the write lock (R9-04/R10-08).
+            let pool_ref_changed = previous.as_ref().is_some_and(|p| {
+                p.template_pool_ref.clone().zip(p.template_pool_revision) != facts.template_pool_ref
+            });
+            if pool_ref_changed {
+                let occupancy = fleet_replacement_occupancy_in_tx(&tx, &facts.resource_key)
+                    .await
+                    .map_err(core_err)?;
+                if occupancy > 0 {
+                    let _ = tx.rollback().await;
+                    return Ok(Err(MutationError::RetirementBlocked {
+                        reason: "template pool replacement requires zero resource occupancy".into(),
                     }));
                 }
             }

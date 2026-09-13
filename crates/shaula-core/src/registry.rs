@@ -67,6 +67,8 @@ pub struct FleetResource {
     /// Resolved admission facts; exact pin frozen at acceptance.
     pub resolved_template: Option<(String, i64, String, String)>,
     pub resolved_template_pool: Vec<crate::template_pool::ResolvedTemplatePoolMember>,
+    /// Shared-pool routing context frozen at admission (spec 0037 §4).
+    pub resolved_template_pool_ref: Option<crate::template_pool::FleetPoolRef>,
     pub resolved_auth: (String, i64),
     pub created_at: i64,
     pub updated_at: i64,
@@ -310,6 +312,57 @@ pub trait FleetRegistryPort: Send + Sync {
         reason: &str,
         idempotency_key: Option<String>,
     ) -> CoreResult<Result<MutationAccepted, MutationError>>;
+}
+
+/// Read model of one shared TemplatePool resource (spec 0037).
+#[derive(Debug, Clone)]
+pub struct TemplatePoolResource {
+    pub key: String,
+    pub spec: crate::template_pool::TemplatePoolSpec,
+    pub incarnation: String,
+    pub revision: i64,
+    /// Member rows resolved at the committed revision (exact Active pins).
+    pub resolved_members: Vec<crate::template_pool::ResolvedTemplatePoolMember>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// Shared TemplatePool registry port (spec 0037). Pools ride the template
+/// permission family: publish replaces, read lists, retire tombstones —
+/// the same scopes the template-profile endpoints already enforce.
+#[async_trait]
+pub trait TemplatePoolRegistryPort: Send + Sync {
+    async fn template_pool_put(
+        &self,
+        actor: &Actor,
+        key: &str,
+        spec: crate::template_pool::TemplatePoolSpec,
+        if_none_match: bool,
+        if_match: Option<(String, i64)>,
+        idempotency_key: Option<String>,
+    ) -> CoreResult<Result<MutationAccepted, MutationError>>;
+
+    async fn template_pool_get(
+        &self,
+        actor: &Actor,
+        key: &str,
+    ) -> CoreResult<Result<TemplatePoolResource, MutationError>>;
+
+    async fn template_pool_list(&self, actor: &Actor) -> CoreResult<Vec<(String, i64, String)>>;
+
+    async fn template_pool_delete(
+        &self,
+        actor: &Actor,
+        key: &str,
+        if_match: Option<(String, i64)>,
+        idempotency_key: Option<String>,
+    ) -> CoreResult<Result<MutationAccepted, MutationError>>;
+
+    async fn template_pool_change_get(
+        &self,
+        actor: &Actor,
+        change_id: &str,
+    ) -> CoreResult<Option<ChangeView>>;
 }
 
 pub mod attestation_subject;

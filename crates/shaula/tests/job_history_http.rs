@@ -138,6 +138,7 @@ async fn app() -> Result<Fixture, Box<dyn std::error::Error>> {
         auth_installation_link: None,
         fleets: service.clone(),
         profiles: service.clone(),
+        pools: service.clone(),
         health: service,
         oidc: oidc::oidc().await,
         body_limit: 1024,

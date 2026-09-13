@@ -85,6 +85,7 @@ async fn http_app(control_plane: &TestPlane) -> axum::Router {
         auth_installation_link: None,
         fleets: service.clone(),
         profiles: service.clone(),
+        pools: service.clone(),
         health: service,
         oidc: http_oidc::provider().oidc().await,
         body_limit: 64 * 1024 * 1024,
