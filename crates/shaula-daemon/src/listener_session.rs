@@ -89,6 +89,12 @@ impl FleetListener {
                 return Ok(None);
             }
             Err(failure) => {
+                tracing::warn!(
+                    fleet = %self.config.fleet_key,
+                    scale_set_id,
+                    summary = %failure.summary(),
+                    "broker session establishment failed"
+                );
                 self.failed(&failure).await;
                 return Ok(None);
             }
