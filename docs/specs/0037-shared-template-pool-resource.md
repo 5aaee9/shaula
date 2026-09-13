@@ -105,16 +105,30 @@ referencing Fleets; occupied Fleets catch up when they drain. There is no
 pool-global occupancy gate, because the pool itself owns no runners — the
 referencing Fleets do.
 
-## 6. Membership caps and failure policy under sharing
+## 6. Capacity ceilings and the eligible draw set
 
-- `member.max_runners` counts Generations **across all Fleets referencing the
-  same pool revision**. The cap is a property of the member's backend, not of
-  one Fleet's queue, so it is enforced pool-wide inside the same atomic
-  admission transaction that draws the member and inserts the Generation.
-- `failure_policy` (`backpressure`/`redistribute`) is evaluated per admitting
-  Fleet at draw time using that member's shared occupancy/health. A saturated
-  member pauses (backpressure) or is skipped (redistribute) identically for
-  every Fleet drawing from the pool revision.
+Capacity is bounded at two levels:
+
+- **Fleet `max_runners`** bounds the whole Fleet — the total Generations that
+  Fleet may run regardless of which member drew them.
+- **`member.max_runners`** bounds one member's Generations **across all Fleets
+  referencing the same pool revision**. The cap is a property of the member's
+  backend, not of one Fleet's queue, so it is enforced pool-wide inside the
+  same atomic admission transaction that draws the member and inserts the
+  Generation.
+
+A member at its `max_runners` is **excluded from the eligible draw set**: the
+weighted draw runs over members below their cap, with probabilities
+renormalized across the eligible set (`weight[i]/Σeligible weight`). Exclusion
+is observability-visible (the member's saturated state and the reduced eligible
+set are reported), never a silent weight rewrite. When **no** member is
+eligible — all at cap or unhealthy — admission backpressures: the Create is
+deferred until capacity or health clears, and no Generation is admitted.
+
+`failure_policy` governs *health/availability* failures, not cap exclusion:
+`backpressure` (default) pauses Creates while a drawn member is unhealthy;
+`redistribute` permits a redraw among the remaining eligible members. Cap
+exclusion applies under both policies.
 
 ## 7. Deletion and retention
 

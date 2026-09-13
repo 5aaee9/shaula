@@ -28,11 +28,14 @@ referencing Fleet re-mints to the current pool revision on its own
 zero-occupancy boundary — a two-stage, level-triggered cascade, not a global
 synchronous push. Occupied Fleets lag deliberately; a pool is never blocked by
 an occupied Fleet because the pool owns no runners. Second, caps:
-`member.max_runners` is a property of the member's backend, so it is enforced
-**pool-wide** — across all referencing Fleets' combined Generations — inside
-the same atomic transaction that draws the member and inserts the Generation.
-`failure_policy` is likewise evaluated per drawing Fleet against shared
-occupancy.
+capacity is bounded at two levels — a Fleet's `max_runners` bounds the whole
+Fleet, and `member.max_runners` bounds one member's Generations **pool-wide**
+across all referencing Fleets, enforced inside the same atomic transaction that
+draws the member and inserts the Generation. A member at cap is **excluded
+from the eligible draw set** with weights renormalized over the survivors; only
+when *no* member is eligible does admission backpressure. `failure_policy`
+(backpressure/redistribute) governs *health* failures, not cap exclusion, and
+is evaluated per drawing Fleet against shared occupancy.
 
 Alternatives considered and rejected:
 
