@@ -32,7 +32,7 @@
 | 已有 Fleet labels 更新与 owned Scale Set 收敛 | [spec 0002 §6.1](specs/0002-fleet-http-control-plane.md#61-mutable-scale-set-labels) / [ARD-0027](ard/0027-reconcile-labels-on-owned-scale-sets.md) |
 | Kubernetes / Docker Runner Resource 差异与外部验收 | [spec 0003](specs/0003-kubernetes-runner-resource.md) / [spec 0006](specs/0006-docker-runner-resource.md) |
 | Template materialization、inputs/outputs、Terraform plan policy | [spec 0004](specs/0004-template-profile-runtime.md) |
-| Profile publication、retirement、sensitive reads、attestation | [spec 0005](specs/0005-profile-http-control-plane.md) |
+| Profile publication、retirement、sensitive reads、attestation | [spec 0005](specs/0005-profile-http-control-plane.md)；非敏感 binding 读取投影与 Update 可编辑绑定见 [spec 0038](specs/0038-template-detail-and-editable-bindings.md) |
 | Rust crate ownership 与依赖方向 | [spec 0007](specs/0007-rust-workspace-architecture.md) |
 | UI 行为 | [spec 0008](specs/0008-embedded-web-ui.md) |
 | Workflow Jobs、Apply/Destroy 日志保留与 Setup Info 内容 | [spec 0019](specs/0019-workflow-jobs-and-operation-logs.md) / [ARD-0023](ard/0023-retain-operation-logs-and-present-workflow-jobs.md)；已有本地实现，真实平台验收边界见 implementation status |
@@ -40,7 +40,7 @@
 | Fleet Template inputs 可视化编辑 | [spec 0014](specs/0014-visual-template-inputs.md) / [ADR-0018](ard/0018-render-fleet-inputs-from-approved-template-options.md) |
 | Weighted Template Pool（单 Scale Set 多模板、加权 acquisition；Proposed） | [spec 0029](specs/0029-weighted-template-pool.md) / [ARD-0036](ard/0036-weighted-template-pool.md) |
 | 数据库模板库、默认文件导入与 Terraform 变量发现 | [spec 0015](specs/0015-template-library-and-variable-discovery.md) / [ARD-0019](ard/0019-store-template-sources-and-discover-terraform-variables.md) |
-| 内置模板同步与已发布模板 Update | [spec 0021](specs/0021-default-template-updates.md) / [ARD-0025](ard/0025-sync-default-templates-and-explicitly-update-published-revisions.md) |
+| 内置模板同步与已发布模板 Update | [spec 0021](specs/0021-default-template-updates.md) / [ARD-0025](ard/0025-sync-default-templates-and-explicitly-update-published-revisions.md)；Update 可编辑非敏感 binding 与 Template 详情页见 [spec 0038](specs/0038-template-detail-and-editable-bindings.md) / [ARD-0038](ard/0038-template-detail-page-and-editable-non-secret-bindings.md) |
 | Proxmox VM clone、NoCloud 和基础镜像信任 | [spec 0022](specs/0022-proxmox-runner-template.md) / [ARD-0026](ard/0026-provision-proxmox-runners-with-nocloud.md) |
 | AWS EC2、user-data cloud-init 与官方 Ubuntu AMI 信任 | [spec 0027](specs/0027-aws-runner-template.md) / [ARD-0034](ard/0034-provision-aws-runners-with-ec2-user-data.md)；Draft + `proposed`，尚未接受 |
 | Fleet 跟随最新 Active 模板 Revision（follow-only 引用与 level-triggered 级联升级） | [spec 0023](specs/0023-fleet-template-follow-latest.md) / [ARD-0028](ard/0028-follow-latest-active-template-revision.md) / [ARD-0029](ard/0029-drop-pinned-template-revisions.md) |
