@@ -1,7 +1,8 @@
 # Weighted Template Pool
 
 - Status: Accepted for implementation (2026-09-12); verification and provider acceptance are tracked separately.
-- Decision: [ARD-0036](../ard/0036-weighted-template-pool.md).
+- Superseded: for new Fleets by [spec 0037](0037-shared-template-pool-resource.md), which moves the pool to a shared `TemplatePool` resource (`template_pool_ref`) and makes members follow latest Active. The inline `template_pool` defined here remains valid for Fleets already admitted under it.
+- Decision: [ARD-0036](../ard/0036-weighted-template-pool.md), amended by [ARD-0037](../ard/0037-shared-template-pool-resource.md).
 - Extends: [spec 0001](0001-shaula-runner-scale-set.md), [spec 0002](0002-fleet-http-control-plane.md), and [spec 0004](0004-template-profile-runtime.md).
 
 ## 1. Problem and boundary

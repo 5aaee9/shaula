@@ -156,6 +156,8 @@ Template Profile 固定 executable artifact、engine、provider bindings、provi
 
 当 Fleet 使用 `template_pool` 时，提交体必须遵循 [spec 0029](0029-weighted-template-pool.md)：它与单模板 `template_profile_ref` 互斥，成员和权重属于同一个 Fleet desired revision。每个成员的 Profile reference、输入和 resolved activation provenance 都必须在 admission 时分别校验并持久化；成员替换或权重变更继续使用本节的 conditional replacement、zero-occupancy 和 in-flight-effect barriers。HTTP representation 可以返回有限成员状态和权重，但不得回显任何 Template credential。
 
+新 Fleet 改用共享 `template_pool_ref` 引用一个 [spec 0037](0037-shared-template-pool-resource.md) 的 TemplatePool 资源（同样与 `template_profile_ref` 互斥）；成员列表、权重和 follow-latest 解析由该 Pool 资源持有，Fleet revision 记录其引用的 `(pool_key, pool_revision)`。内联 `template_pool` 继续对已 admission 的 Fleet 有效。
+
 ### 4.2 Fleet Revision
 
 每次 effective desired mutation append immutable Fleet Revision 并原子推进 desired head。Revision 在一个 Fleet incarnation 内单调递增且不回退。Revision 固定：
