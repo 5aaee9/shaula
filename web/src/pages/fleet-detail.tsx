@@ -10,17 +10,16 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useState } from "react";
 import { ArrowLeft, Pencil, RefreshCw, Trash2 } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { useFleet, useFleetStatus } from "@/lib/queries";
 import { resourcePath } from "@/lib/api";
 import { targetName, type ChangeRef } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/icon-tooltip";
 import { Empty, ErrorNotice, KeyValue, Loading, StatusBadge } from "@/components/status";
-import { FleetForm } from "@/components/fleet-form";
 import { RetireDialog } from "@/components/retire-dialog";
-import { ChangeNotice } from "@/components/change-notice";
 import { SectionCards } from "@/components/section-cards";
+import { ChangeNotice } from "@/components/change-notice";
 export function FleetDetail({ scopes }: { scopes: string[] }) {
   const { key = "" } = useParams();
   return scopes.includes("fleet.read") ? (
@@ -32,9 +31,11 @@ export function FleetDetail({ scopes }: { scopes: string[] }) {
 function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] }) {
   const fleet = useFleet(fleetKey);
   const status = useFleetStatus(fleetKey);
-  const [edit, setEdit] = useState(false);
+  const location = useLocation();
   const [retire, setRetire] = useState(false);
-  const [change, setChange] = useState<ChangeRef | null>(null);
+  const [change, setChange] = useState<ChangeRef | null>(
+    () => (location.state as { change?: ChangeRef } | null)?.change || null,
+  );
   if (fleet.isPending) return <Loading />;
   if (fleet.error) return <ErrorNotice error={fleet.error} retry={() => void fleet.refetch()} />;
   const { data } = fleet.data;
@@ -74,13 +75,11 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
               <RefreshCw />
             </Button>
           </Tip>
-          <Button
-            variant="outline"
-            onClick={() => setEdit(true)}
-            disabled={!scopes.includes("fleet.write")}
-          >
-            <Pencil />
-            Edit fleet
+          <Button asChild variant="outline" disabled={!scopes.includes("fleet.write")}>
+            <Link to={`/fleets/${encodeURIComponent(fleetKey)}/edit`} role="button">
+              <Pencil />
+              Edit fleet
+            </Link>
           </Button>
           <Tip label="Retire fleet">
             <Button
@@ -95,8 +94,8 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
           </Tip>
         </div>
       </div>
-      <ChangeNotice change={change} />
       {status.error && <ErrorNotice error={status.error} retry={() => void status.refetch()} />}
+      <ChangeNotice change={change} />
       {status.data && (
         <>
           <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -279,14 +278,6 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
           </section>
         </TabsContent>
       </Tabs>
-      {edit && (
-        <FleetForm
-          resource={fleet.data}
-          scopes={scopes}
-          onClose={() => setEdit(false)}
-          onAccepted={setChange}
-        />
-      )}
       {retire && (
         <RetireDialog
           name={fleetKey}

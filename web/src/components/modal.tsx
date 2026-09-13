@@ -7,13 +7,25 @@ export function Modal({
   children,
   open,
   onOpenChange,
+  inline = false,
 }: {
   title: string;
   description?: string;
   children: ReactNode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  inline?: boolean;
 }) {
+  if (inline)
+    return (
+      <div
+        role="dialog"
+        aria-modal="false"
+        className="mx-auto w-full max-w-5xl rounded-lg border bg-card p-6 shadow-sm"
+      >
+        {children}
+      </div>
+    );
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent

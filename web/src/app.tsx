@@ -15,6 +15,7 @@ import { SiteHeader } from "@/components/site-header";
 import { ErrorNotice, Loading } from "@/components/status";
 import { FleetsPage } from "@/pages/fleets";
 import { FleetDetail } from "@/pages/fleet-detail";
+import { FleetManagePage } from "@/pages/fleet-manage";
 import { TemplatesPage } from "@/pages/templates";
 import { TemplatePublishPage } from "@/pages/template-publish";
 import { TemplateUpdatePage } from "@/pages/template-update";
@@ -90,11 +91,19 @@ export function App() {
               <Routes>
                 <Route path="/" element={<Navigate to="/fleets" replace />} />
                 <Route path="/fleets" element={<FleetsPage scopes={scopes} />} />
+                <Route
+                  path="/fleets/new"
+                  element={<FleetManagePage mode="create" scopes={scopes} />}
+                />
                 <Route path="/jobs" element={<JobsPage scopes={scopes} />} />
                 <Route path="/jobs/runners" element={<UnassignedRunners scopes={scopes} />} />
                 <Route path="/jobs/runners/:id" element={<RunnerDetail scopes={scopes} />} />
                 <Route path="/jobs/:id" element={<JobDetail scopes={scopes} />} />
                 <Route path="/fleets/:key" element={<FleetDetail scopes={scopes} />} />
+                <Route
+                  path="/fleets/:key/edit"
+                  element={<FleetManagePage mode="edit" scopes={scopes} />}
+                />
                 <Route path="/templates" element={<TemplatesPage scopes={scopes} />} />
                 <Route
                   path="/templates/:key/update"

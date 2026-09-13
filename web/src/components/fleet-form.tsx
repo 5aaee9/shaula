@@ -44,11 +44,13 @@ export function FleetForm({
   scopes,
   onClose,
   onAccepted,
+  page = false,
 }: {
   resource?: Resource<FleetResource>;
   scopes: string[];
   onClose: () => void;
   onAccepted: (change: ChangeRef) => void;
+  page?: boolean;
 }) {
   const [resource] = useState(currentResource);
   const client = useQueryClient();
@@ -151,6 +153,7 @@ export function FleetForm({
   return (
     <Modal
       open
+      inline={page}
       title={resource ? `Edit ${key}` : "Create fleet"}
       onOpenChange={(open) => {
         if (!open && !busy) onClose();

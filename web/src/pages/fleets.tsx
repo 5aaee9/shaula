@@ -10,7 +10,7 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { useState } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Boxes, CircleDot, ListFilter, Plus, RefreshCw, Search } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { api, resourcePath } from "@/lib/api";
 import { useFleets } from "@/lib/queries";
 import type { ChangeRef, FleetResource, FleetStatus } from "@/lib/types";
@@ -19,16 +19,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tip } from "@/components/icon-tooltip";
 import { Empty, ErrorNotice, Loading, StatusBadge } from "@/components/status";
-import { ChangeNotice } from "@/components/change-notice";
-import { FleetForm } from "@/components/fleet-form";
 import { SectionCards } from "@/components/section-cards";
+import { ChangeNotice } from "@/components/change-notice";
 export function FleetsPage({ scopes }: { scopes: string[] }) {
   const client = useQueryClient();
+  const location = useLocation();
   const fleets = useFleets(scopes.includes("fleet.read"));
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
-  const [create, setCreate] = useState(false);
-  const [change, setChange] = useState<ChangeRef | null>(null);
+  const [change] = useState<ChangeRef | null>(
+    () => (location.state as { change?: ChangeRef } | null)?.change || null,
+  );
   const summaries = fleets.data?.data.fleets || [];
   const resources = useQueries({
     queries: summaries.map(({ key }) => ({
@@ -74,9 +75,11 @@ export function FleetsPage({ scopes }: { scopes: string[] }) {
           <h1>Fleets</h1>
           <p>GitHub Actions runner capacity and reconciliation.</p>
         </div>
-        <Button onClick={() => setCreate(true)} disabled={!scopes.includes("fleet.write")}>
-          <Plus />
-          Create fleet
+        <Button asChild disabled={!scopes.includes("fleet.write")}>
+          <Link to="/fleets/new" role="button">
+            <Plus />
+            Create fleet
+          </Link>
         </Button>
       </div>
       <ChangeNotice change={change} />
@@ -154,9 +157,11 @@ export function FleetsPage({ scopes }: { scopes: string[] }) {
         ) : !rows.length ? (
           <Empty title="No fleets yet">
             {scopes.includes("fleet.write") && (
-              <Button variant="outline" onClick={() => setCreate(true)}>
-                <Plus />
-                Create fleet
+              <Button asChild variant="outline">
+                <Link to="/fleets/new" role="button">
+                  <Plus />
+                  Create fleet
+                </Link>
               </Button>
             )}
           </Empty>
@@ -279,9 +284,6 @@ export function FleetsPage({ scopes }: { scopes: string[] }) {
           </div>
         )}
       </section>
-      {create && (
-        <FleetForm scopes={scopes} onClose={() => setCreate(false)} onAccepted={setChange} />
-      )}
     </>
   );
 }
