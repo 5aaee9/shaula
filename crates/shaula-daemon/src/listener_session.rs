@@ -28,6 +28,10 @@ impl FleetListener {
             )
             .await?
         {
+            tracing::warn!(
+                fleet = %self.config.fleet_key,
+                "broker session establishment blocked: session not authorized"
+            );
             return Ok(None);
         }
         {
