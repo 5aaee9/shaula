@@ -77,13 +77,24 @@ how Fleet revisions carry resolved template pins under spec 0029.
 - `FleetSpec.template_pool_ref: string` names a TemplatePool. It is mutually
   exclusive with `template_profile_ref`; exactly one of the two is required.
   The inline `template_pool` object is rejected for new Fleets (§6).
-- A Fleet PUT that references a pool resolves the pool's **current revision**
-  and records `(pool_key, pool_revision)` on the committed Fleet revision. This
-  is the fleet's frozen routing context — the same role the resolved template
-  pin plays for single-template fleets.
-- Occupancy and ownership barriers are unchanged: changing which pool (or
+- A Fleet PUT that references a pool records `(pool_key, pool_revision)` on
+  the committed Fleet revision — the fleet's frozen routing context, the same
+  role the resolved template pin plays for single-template fleets. Which
+  revision is recorded depends on whether the reference changed:
+  - **First reference or a different pool key** resolves the pool's **current**
+    revision — a new or switched route picks up the latest eligible members.
+  - **An unchanged pool key retains the fleet's already-frozen revision.**
+    Catch-up to a newer pool revision is the cascade's deferred job (§5), not
+    PUT's: a PUT that changes only capacity (or any non-routing field) must
+    not re-freeze and must not require zero occupancy. This mirrors how an
+    unchanged `template_profile_ref` retains its pin — PUT is not an implicit
+    upgrade channel (spec 0023 §2).
+- Occupancy and ownership barriers are unchanged: changing **which** pool (or
   template) a Fleet references follows the existing zero-occupancy/replacement
-  gate.
+  gate. The gate's pool-vs-non-pool verdict is a property of the admitted
+  spec — a fleet is "a pool" when it declares an inline `template_pool` **or**
+  a `template_pool_ref` — never a count of hydrated member rows, so a shared
+  pool replacement is not misread as a non-pool→pool conversion.
 
 ## 5. Level-triggered cascade for shared pools
 
@@ -162,6 +173,9 @@ exclusion applies under both policies.
 - A member template's Active activation mints one new pool revision; each
   referencing Fleet catches up on its own zero-occupancy boundary, not
   simultaneously.
+- A capacity-only (non-routing) Fleet PUT on an occupied shared-pool Fleet is
+  accepted without draining and retains the fleet's frozen `pool_revision`;
+  catch-up still happens only on the cascade's zero-occupancy boundary.
 - Pool deletion is blocked while referenced; committed member rows stay
   resolvable for historical Generations.
 - New Fleet PUTs reject an inline `template_pool` and accept

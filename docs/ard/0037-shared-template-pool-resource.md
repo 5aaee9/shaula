@@ -62,6 +62,13 @@ Implications:
   member cap are counted across referencing Fleets.
 - A second cascade (template→pool→fleet) joins the existing template→fleet
   cascade, both occupancy-gated and level-triggered.
+- A Fleet PUT keeps the fleet's frozen `(pool_key, pool_revision)` when the
+  pool key is unchanged: catch-up is the cascade's job, so a non-routing
+  change (e.g. capacity) is admitted under occupancy and is never an implicit
+  upgrade. Only a first reference or a different pool key resolves the pool's
+  current revision. The replacement gate's pool verdict is taken from the
+  admitted spec (inline `template_pool` or `template_pool_ref`), not from the
+  hydrated member-row count.
 - Pool deletion is reference-checked; member rows are retained for historical
   Generations.
 
