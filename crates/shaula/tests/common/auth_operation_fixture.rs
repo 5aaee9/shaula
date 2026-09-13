@@ -110,6 +110,58 @@ pub struct Harness {
 
 impl Harness {
     pub async fn new() -> Self {
+        Self::with_fleet(FLEET_BODY).await
+    }
+
+    /// A fleet admitted against a shared `template_pool_ref` (spec 0037).
+    /// The pool is created first so the fleet revision freezes
+    /// `(pool_key, pool_revision)` instead of a direct template pin.
+    pub async fn new_with_pool() -> Self {
+        let harness = Self::build(None).await;
+        let pool = r#"{
+            "members": [
+                {"key":"only","template_profile_ref":"k8s-linux","weight":1,"template_inputs":{}}
+            ],
+            "failure_policy":"backpressure"
+        }"#;
+        assert_eq!(
+            harness
+                .app
+                .clone()
+                .oneshot(put_with_idempotency(
+                    "/api/v1/template-pools/builders",
+                    "pool-1",
+                    pool.into()
+                ))
+                .await
+                .unwrap()
+                .status(),
+            axum::http::StatusCode::ACCEPTED
+        );
+        let fleet = FLEET_BODY
+            .replace(r#""template_profile_ref": "k8s-linux","#, "")
+            .replace(
+                r#""template_inputs": {}"#,
+                r#""template_pool_ref": "builders""#,
+            );
+        assert_eq!(
+            harness
+                .app
+                .clone()
+                .oneshot(authorized("PUT", "/api/v1/fleets/f1", Some(fleet)))
+                .await
+                .unwrap()
+                .status(),
+            axum::http::StatusCode::ACCEPTED
+        );
+        harness
+    }
+
+    async fn with_fleet(fleet_body: &str) -> Self {
+        Self::build(Some(fleet_body)).await
+    }
+
+    async fn build(fleet_body: Option<&str>) -> Self {
         let (app, store, engine, root) = build_app_with_artifact_root().await;
         let digest = attestation_harness::seed_profile(&app, &store, "k8s-linux", true).await;
         let body = attest_body(
@@ -125,18 +177,20 @@ impl Harness {
                 .0,
             axum::http::StatusCode::CREATED
         );
-        assert_eq!(
-            app.clone()
-                .oneshot(authorized(
-                    "PUT",
-                    "/api/v1/fleets/f1",
-                    Some(FLEET_BODY.into())
-                ))
-                .await
-                .unwrap()
-                .status(),
-            axum::http::StatusCode::ACCEPTED
-        );
+        if let Some(fleet_body) = fleet_body {
+            assert_eq!(
+                app.clone()
+                    .oneshot(authorized(
+                        "PUT",
+                        "/api/v1/fleets/f1",
+                        Some(fleet_body.to_string())
+                    ))
+                    .await
+                    .unwrap()
+                    .status(),
+                axum::http::StatusCode::ACCEPTED
+            );
+        }
         Self {
             app,
             store,
