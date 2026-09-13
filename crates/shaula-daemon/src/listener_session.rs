@@ -12,10 +12,13 @@ impl FleetListener {
             .acquire_exclusive(&self.config.fleet_key)
             .await;
         let now = self.deps.clock.now_unix_ms();
-        if now < self.state.lock().await.retry_at {
+        let retry_at = self.state.lock().await.retry_at;
+        if now < retry_at {
+            tracing::debug!(fleet = %self.config.fleet_key, retry_at, now, "ensure_session deferred: backoff");
             return Ok(None);
         }
         if !self.clear_uncommitted_locked().await {
+            tracing::debug!(fleet = %self.config.fleet_key, "ensure_session deferred: uncommitted session not cleared");
             return Ok(None);
         }
         if !self
@@ -54,6 +57,7 @@ impl FleetListener {
             }
         }
         if !self.clear_session_locked(true).await? {
+            tracing::debug!(fleet = %self.config.fleet_key, "ensure_session deferred: prior session not cleared");
             return Ok(None);
         }
         if !self
@@ -66,6 +70,7 @@ impl FleetListener {
             )
             .await?
         {
+            tracing::debug!(fleet = %self.config.fleet_key, "ensure_session deferred: re-authorization failed");
             return Ok(None);
         }
         let expected_epoch = self

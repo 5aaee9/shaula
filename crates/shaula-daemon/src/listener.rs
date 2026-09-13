@@ -106,6 +106,7 @@ impl FleetListener {
     }
 
     async fn set_failure(&self, failure: &AccessFailure, epoch: Option<i64>) -> bool {
+        tracing::debug!(fleet = %self.config.fleet_key, epoch = ?epoch, summary = %failure.summary(), "listener session failure recorded");
         let mut state = self.state.lock().await;
         if epoch.is_some() && state.session.as_ref().map(|s| s.epoch) != epoch {
             return false;
