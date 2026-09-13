@@ -31,7 +31,21 @@ impl ScalesetClient {
                 crate::client::DEFAULT_REQUEST_TIMEOUT,
             )
             .await;
-        Self::expect_ok(response)
+        let response = match response {
+            Ok(response) => response,
+            Err(e) => return Err(e.to_access_failure()),
+        };
+        // A definite 4xx on a session DELETE means the broker no longer
+        // honours that session — an expired queue token or a dropped session
+        // row both surface as 400/401/404 rather than a usable handle. Report
+        // it as SessionExpired so the caller treats the local copy as already
+        // stopped and clears it instead of wedging on an un-deletable handle.
+        // A 5xx stays a real failure: the delete may not have committed, so
+        // the session is retained for recovery.
+        if matches!(response.status().as_u16(), 400 | 401 | 403 | 404) {
+            return Err(shaula_core::ports::AccessFailure::SessionExpired);
+        }
+        Self::expect_ok(Ok(response))
             .await
             .map(|_| ())
             .map_err(|e| e.to_access_failure())

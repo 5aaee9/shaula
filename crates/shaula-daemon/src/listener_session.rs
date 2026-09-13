@@ -210,6 +210,8 @@ impl FleetListener {
         {
             // Authenticated absent session is already stopped; permissions and
             // transport failures retain the session and its recovery evidence.
+            // A definite 4xx rejection (DeleteOutcome::Gone surfaced as
+            // SessionExpired) means the broker already dropped the session.
             if !matches!(failure, AccessFailure::SessionExpired) {
                 self.failed(&failure).await;
                 return Ok(false);
