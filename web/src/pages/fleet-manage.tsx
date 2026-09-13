@@ -17,6 +17,7 @@ export function FleetManagePage({ scopes, mode }: { scopes: string[]; mode: "cre
     queryKey: ["fleet", key],
     enabled: editing && !!key && canRead,
     queryFn: ({ signal }) => api<FleetResource>(resourcePath("fleets", key!), { signal }),
+    refetchInterval: 10_000,
   });
   const backTo = editing && key ? `/fleets/${encodeURIComponent(key)}` : "/fleets";
   function accepted(change: ChangeRef) {

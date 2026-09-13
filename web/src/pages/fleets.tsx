@@ -75,12 +75,19 @@ export function FleetsPage({ scopes }: { scopes: string[] }) {
           <h1>Fleets</h1>
           <p>GitHub Actions runner capacity and reconciliation.</p>
         </div>
-        <Button asChild disabled={!scopes.includes("fleet.write")}>
-          <Link to="/fleets/new" role="button">
+        {scopes.includes("fleet.write") ? (
+          <Button asChild>
+            <Link to="/fleets/new" role="button">
+              <Plus />
+              Create fleet
+            </Link>
+          </Button>
+        ) : (
+          <Button disabled>
             <Plus />
             Create fleet
-          </Link>
-        </Button>
+          </Button>
+        )}
       </div>
       <ChangeNotice change={change} />
       <SectionCards

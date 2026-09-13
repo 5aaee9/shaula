@@ -75,12 +75,19 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
               <RefreshCw />
             </Button>
           </Tip>
-          <Button asChild variant="outline" disabled={!scopes.includes("fleet.write")}>
-            <Link to={`/fleets/${encodeURIComponent(fleetKey)}/edit`} role="button">
+          {scopes.includes("fleet.write") ? (
+            <Button asChild variant="outline">
+              <Link to={`/fleets/${encodeURIComponent(fleetKey)}/edit`} role="button">
+                <Pencil />
+                Edit fleet
+              </Link>
+            </Button>
+          ) : (
+            <Button variant="outline" disabled>
               <Pencil />
               Edit fleet
-            </Link>
-          </Button>
+            </Button>
+          )}
           <Tip label="Retire fleet">
             <Button
               size="icon"

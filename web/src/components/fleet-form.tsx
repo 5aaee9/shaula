@@ -143,7 +143,7 @@ export function FleetForm({
       void client.invalidateQueries({ queryKey: ["fleets"] });
       void client.invalidateQueries({ queryKey: ["fleet", key] });
       void client.invalidateQueries({ queryKey: ["fleet-status", key] });
-      onClose();
+      if (!page) onClose();
     } catch (error) {
       setError(error);
     } finally {

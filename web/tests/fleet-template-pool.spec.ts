@@ -23,7 +23,7 @@ test("creates a weighted template pool with independent random draw semantics", 
     .selectOption("github-build");
   await dialog.getByLabel("Template placement").selectOption("pool");
   await dialog.getByLabel("Template profile").selectOption("kubernetes-linux");
-  await dialog.getByLabel("Weight").fill("20");
+  await dialog.getByRole("spinbutton", { name: "Weight" }).fill("20");
   await expect(dialog).toContainText("independently by weight");
   await dialog.getByRole("button", { name: "Create fleet", exact: true }).click();
   await expect
