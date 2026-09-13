@@ -330,9 +330,7 @@ test("published template detail actions fit a 390px viewport", async ({ page }) 
   await expect(update).toBeVisible();
   const bounds = await update.evaluate((button) => {
     const group = button.parentElement!;
-    const section = group
-      .closest(".page-heading")!
-      .getBoundingClientRect();
+    const section = group.closest(".page-heading")!.getBoundingClientRect();
     return {
       documentWidth: document.documentElement.scrollWidth,
       viewportWidth: window.innerWidth,

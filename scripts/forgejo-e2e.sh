@@ -84,7 +84,10 @@ for _ in $(seq 1 90); do
   # Both workflows dispatch on the same push; limit must cover every run or the
   # newest-first list can hide the match run behind the mismatch run.
   runs="$(json_api "$base_url/api/v1/repos/$forgejo_user/$repo/actions/runs?limit=50" || true)"
-  status="$(jq -r '[.workflow_runs[]? | select(.name == "shaula-forgejo-match")][0].status // empty' <<<"$runs")"
+  # Forgejo's workflow_runs expose the workflow FILENAME as .workflow_id and
+  # the commit message as .title — not the yaml `name:` field. Match on the
+  # workflow file so the run is found regardless of title.
+  status="$(jq -r '[.workflow_runs[]? | select(.workflow_id == "match.yaml")][0].status // empty' <<<"$runs")"
   case "$status" in
   success) break ;;
   failure | cancelled)
@@ -105,7 +108,7 @@ wait "$runner_pid"
 mismatch_status=""
 for _ in $(seq 1 30); do
   runs="$(json_api "$base_url/api/v1/repos/$forgejo_user/$repo/actions/runs?limit=50" || true)"
-  mismatch_status="$(jq -r '[.workflow_runs[]? | select(.name == "shaula-forgejo-mismatch")][0].status // empty' <<<"$runs")"
+  mismatch_status="$(jq -r '[.workflow_runs[]? | select(.workflow_id == "mismatch.yaml")][0].status // empty' <<<"$runs")"
   [[ -n $mismatch_status ]] && break
   sleep 1
 done
