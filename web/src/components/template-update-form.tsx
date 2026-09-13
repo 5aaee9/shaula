@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowUpFromLine, LoaderCircle } from "lucide-react";
 import { api, ApiError, MutationAttempt, resourcePath, type Resource } from "@/lib/api";
+import { inputEntries } from "@/lib/input-values";
 import { useTemplateVariables, type TemplateSource } from "@/lib/template-variables";
 import type { Accepted, ChangeRef, TemplateResource, TemplateRevision } from "@/lib/types";
+import { isSensitiveMarker } from "@/lib/types";
+import { initialUpdateBindings, TemplateUpdateBindings } from "./template-update-bindings";
 import { TemplateUpdatePolicy } from "./template-update-policy";
 import { ErrorNotice, Field, KeyValue, Loading } from "./status";
 import { Button } from "./ui/button";
@@ -46,6 +49,9 @@ export function TemplateUpdateForm({
         : undefined;
   });
   const [policy, setPolicy] = useState<string>();
+  const [bindings, setBindings] = useState<string>(() =>
+    initialUpdateBindings(snapshot.revision.bindings),
+  );
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -61,12 +67,36 @@ export function TemplateUpdateForm({
   const variables =
     discovery.variables?.artifactDigest === target?.artifactDigest ? discovery.variables : null;
   const platform = snapshot.revision.platform || snapshot.resource.data.platform;
+  const bindingsChanged = useMemo(() => {
+    // Compare the desired merged set against the base: a non-secret value that
+    // differs, or a sensitive field with a new (non-null) value, is a change.
+    let current: Map<string, string>;
+    try {
+      current = inputEntries(bindings);
+    } catch {
+      return true; // invalid JSON: allow submit so the server reports it
+    }
+    const base = snapshot.revision.bindings ?? {};
+    const keys = new Set([...Object.keys(base), ...current.keys()]);
+    for (const key of keys) {
+      const baseValue = base[key];
+      if (isSensitiveMarker(baseValue)) {
+        if (current.has(key)) return true; // a supplied secret replaces
+        continue;
+      }
+      const next = current.get(key);
+      const baseJson = JSON.stringify(baseValue === undefined ? null : baseValue);
+      if ((next ?? "null") !== baseJson) return true;
+    }
+    return false;
+  }, [bindings, snapshot.revision.bindings]);
   const upToDate =
     !!target &&
     target.artifactDigest === snapshot.revision.artifactDigest &&
     target.engineRef === snapshot.revision.engineRef &&
     target.key === sourceKey &&
-    policy === undefined;
+    policy === undefined &&
+    !bindingsChanged;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -80,10 +110,28 @@ export function TemplateUpdateForm({
         engine_ref: target.engineRef,
         source_key: target.key,
       });
-      const body =
-        policy === undefined
-          ? metadata
-          : `${metadata.slice(0, -1)},"fleet_input_policy":${policy}}`;
+      // Omit `bindings` entirely when nothing changed so the request replays
+      // the plain reuse-the-base identity (spec 0038: omission = reuse).
+      let body = metadata;
+      if (bindingsChanged) {
+        const current = inputEntries(bindings);
+        const base = snapshot.revision.bindings ?? {};
+        const out = new Map<string, string>();
+        const keys = new Set([...Object.keys(base), ...current.keys()]);
+        for (const key of keys) {
+          // Sensitive field: new value replaces, otherwise `null` = keep.
+          if (isSensitiveMarker(base[key])) {
+            out.set(key, current.has(key) ? current.get(key)! : "null");
+          } else if (current.has(key)) {
+            out.set(key, current.get(key)!);
+          } else {
+            out.set(key, "null");
+          }
+        }
+        const merged = `{${[...out].map(([k, v]) => `${JSON.stringify(k)}:${v}`).join(",")}}`;
+        body = `${body.slice(0, -1)},"bindings":${merged}}`;
+      }
+      if (policy !== undefined) body = `${body.slice(0, -1)},"fleet_input_policy":${policy}}`;
       const { data } = await api<Accepted>(path, {
         method: "POST",
         body,
@@ -204,19 +252,7 @@ export function TemplateUpdateForm({
           </section>
         </div>
 
-        <section
-          className="space-y-2 rounded-xl border bg-card p-5 sm:p-6"
-          aria-label="Retained bindings"
-        >
-          <h2>Bindings retained</h2>
-          <p className="text-sm text-muted-foreground">
-            Shaula reuses the bindings from revision r{snapshot.resource.data.desiredRevision} on
-            the server. Secret values are never loaded into this form.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            If the target requires different bindings, use New revision to configure them.
-          </p>
-        </section>
+        <TemplateUpdateBindings variables={variables} bindings={bindings} onChange={setBindings} />
 
         {target && (
           <>

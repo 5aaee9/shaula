@@ -48,13 +48,19 @@ test("published update reviews an explicit source and retains bindings and polic
   );
   await source.selectOption("docker");
   await expect(form.getByRole("button", { name: "Use declared options" })).toBeVisible();
-  await expect(form.getByRole("region", { name: "Retained bindings" })).toContainText(
-    "reuses the bindings from revision r3",
+  await expect(form.getByRole("region", { name: "Template bindings" })).toContainText(
+    "Secrets stay on the server",
   );
   await expect(form.getByRole("region", { name: "Fleet input policy", exact: true })).toContainText(
     "Retain the policy",
   );
-  await expect(form.getByLabel("Access token", { exact: true })).toHaveCount(0);
+  // The sensitive binding renders as a blank keep/replace control; its stored
+  // value is never sent to or displayed by the form.
+  const token = form.getByLabel("Access token", { exact: true });
+  await expect(token).toHaveValue("");
+  await expect(form.getByRole("region", { name: "Template bindings" })).toContainText(
+    "leave it blank to keep it",
+  );
   await expect(form).not.toContainText("never-display-this");
   expect(updates).toBe(0);
   await form.getByRole("button", { name: "Update", exact: true }).click();
@@ -309,9 +315,8 @@ for (const missing of ["template.publish", "template.read"]) {
       await expect(
         page.getByRole("button", { name: "Update custom-docker from default" }),
       ).toBeDisabled();
-      await expect(
-        page.getByRole("button", { name: "Update from default", exact: true }),
-      ).toBeDisabled();
+      await page.goto("/templates/custom-docker");
+      await expect(page.getByRole("button", { name: "Update", exact: true })).toBeDisabled();
     }
   });
 }
@@ -319,13 +324,15 @@ for (const missing of ["template.publish", "template.read"]) {
 test("published template detail actions fit a 390px viewport", async ({ page }) => {
   await mockTemplateUpdate(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/templates?key=custom-docker");
-  const update = page.getByRole("button", { name: "Update from default", exact: true });
+  await page.goto("/templates/custom-docker");
+  const update = page.getByRole("button", { name: "Update", exact: true });
   await update.scrollIntoViewIfNeeded();
   await expect(update).toBeVisible();
   const bounds = await update.evaluate((button) => {
     const group = button.parentElement!;
-    const section = group.closest("section")!.getBoundingClientRect();
+    const section = group
+      .closest(".page-heading")!
+      .getBoundingClientRect();
     return {
       documentWidth: document.documentElement.scrollWidth,
       viewportWidth: window.innerWidth,
@@ -354,9 +361,8 @@ for (const status of ["Retiring", "Retired"]) {
     await expect(
       page.getByRole("button", { name: "Update custom-docker from default" }),
     ).toBeDisabled();
-    await expect(
-      page.getByRole("button", { name: "Update from default", exact: true }),
-    ).toBeDisabled();
+    await page.goto("/templates/custom-docker");
+    await expect(page.getByRole("button", { name: "Update", exact: true })).toBeDisabled();
     await page.goto(updatePath);
     await expect(page.getByRole("alert")).toContainText(
       "retiring or retired template cannot be updated",

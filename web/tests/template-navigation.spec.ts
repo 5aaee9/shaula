@@ -41,7 +41,7 @@ test("revision pages support direct navigation and retain the publication precon
   page,
 }) => {
   await mockApi(page);
-  await page.goto("/templates?key=kubernetes-linux");
+  await page.goto("/templates/kubernetes-linux");
   await page.getByRole("button", { name: "New revision", exact: true }).click();
   await expect(page).toHaveURL(/\/templates\/kubernetes-linux\/revisions\/new$/);
   await page.reload();

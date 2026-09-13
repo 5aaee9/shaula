@@ -49,6 +49,7 @@ for (const operation of ["update", "publication"]) {
     ).toBeVisible();
     await expect(page.getByText("Change for custom-docker", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "View change", exact: true })).toHaveCount(0);
+    await page.goto("/templates/custom-docker");
     await expect(page.getByLabel("Template revision", { exact: true })).toHaveValue("3");
     await page.clock.fastForward(10_000);
     expect(changeReads).toBe(0);

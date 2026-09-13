@@ -152,6 +152,26 @@ export interface TemplateRevision {
   platform: string;
   state: string;
   reason: string | null;
+  /**
+   * Schema-driven projection (spec 0038): non-sensitive binding fields expose
+   * their verbatim value; sensitive fields expose only
+   * `{ sensitive: true, set: boolean }` — never the secret value.
+   */
+  bindings?: Record<string, unknown> | null;
+}
+
+/** A sensitive binding's presence-only marker on a revision read. */
+export interface SensitiveBindingMarker {
+  sensitive: true;
+  set: boolean;
+}
+
+export function isSensitiveMarker(value: unknown): value is SensitiveBindingMarker {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { sensitive?: unknown }).sensitive === true
+  );
 }
 export interface AuthResource extends TemplateSummary {
   kind: string | null;

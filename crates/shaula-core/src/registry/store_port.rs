@@ -215,6 +215,12 @@ pub trait ControlPlaneStore: crate::registry::AuthExecutionStore + Send + Sync {
     ) -> CoreResult<IdempotencyLookup>;
 
     async fn artifact_manifest(&self, digest: &str) -> CoreResult<Option<String>>;
+    /// The artifact's declared bindings schema document (JSON Schema) —
+    /// the per-field `sensitive` authority for the spec 0038 read
+    /// projection and Update merge. `Ok(None)` when the artifact is not
+    /// published (or its schema file is absent — callers fail closed to
+    /// all-sensitive); any other read failure is an `Err`.
+    async fn artifact_bindings_schema(&self, digest: &str) -> CoreResult<Option<String>>;
     /// The artifact's declared parameter schema (JSON Schema document) —
     /// the required/type/alias authority for Fleet inputs (spec 0002 §4.1,
     /// 0004 §3). A read failure is an Err (fail closed), never a silent
@@ -382,8 +388,9 @@ pub struct ProfileHead {
     pub status: String,
 }
 
-/// One immutable template revision row (bindings plaintext excluded from
-/// all read models).
+/// One immutable template revision row. `bindings_json` is the
+/// protected-memory seam for the schema-driven projection (spec 0038);
+/// it is never serialized into a response, log or audit record.
 #[derive(Debug, Clone)]
 pub struct TemplateRevisionRow {
     pub profile_key: String,
@@ -396,6 +403,7 @@ pub struct TemplateRevisionRow {
     pub state: String,
     pub reason: Option<String>,
     pub bindings_present: bool,
+    pub bindings_json: Option<String>,
     pub bindings_digest: Option<String>,
     pub fleet_input_policy_json: Option<String>,
 }

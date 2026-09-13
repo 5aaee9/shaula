@@ -17,12 +17,17 @@ struct UpdateDto {
     source_key: Option<String>,
     artifact_digest: String,
     engine_ref: String,
-    #[serde(default, deserialize_with = "explicit_policy")]
+    // Missing means inherit the base bindings verbatim. Explicit null is
+    // rejected (it is not an instruction to inherit); per-field nulls
+    // inside the object are keep-sentinels (spec 0038 §3).
+    #[serde(default, deserialize_with = "explicit_map")]
+    bindings: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(default, deserialize_with = "explicit_map")]
     fleet_input_policy: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 // Missing means inherit. Explicit null is not an instruction to inherit.
-fn explicit_policy<'de, D>(
+fn explicit_map<'de, D>(
     deserializer: D,
 ) -> Result<Option<serde_json::Map<String, serde_json::Value>>, D::Error>
 where
@@ -83,6 +88,7 @@ pub(super) async fn update(
                 source_key: dto.source_key,
                 artifact_digest: dto.artifact_digest,
                 engine_ref: dto.engine_ref,
+                bindings: dto.bindings,
                 fleet_input_policy: dto.fleet_input_policy,
             },
             Some(if_match),

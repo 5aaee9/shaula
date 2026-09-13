@@ -50,6 +50,14 @@ pub(crate) fn parameter_schema(artifact_root: &Path, digest: &str) -> CoreResult
         })
 }
 
+/// The artifact's declared bindings schema document — the per-field
+/// `sensitive` authority for the spec 0038 projection. `Ok(None)` when
+/// the artifact is not published or the schema file is absent (callers
+/// fail closed); a present-but-unreadable file is a storage error.
+pub(crate) fn bindings_schema(artifact_root: &Path, digest: &str) -> CoreResult<Option<String>> {
+    read_published(artifact_root, digest, "schemas/bindings.schema.json")
+}
+
 /// The three published entries every Template Candidate requires. The
 /// parameter schema document is mandatory so input admission can never
 /// degrade to "no schema".

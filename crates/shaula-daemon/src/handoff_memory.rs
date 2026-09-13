@@ -256,6 +256,9 @@ impl ControlPlaneStore for MemoryStore {
     async fn artifact_manifest(&self, _digest: &str) -> CoreResult<Option<String>> {
         Ok(None)
     }
+    async fn artifact_bindings_schema(&self, _digest: &str) -> CoreResult<Option<String>> {
+        Ok(None)
+    }
     async fn template_source_get(
         &self,
         _key: &str,

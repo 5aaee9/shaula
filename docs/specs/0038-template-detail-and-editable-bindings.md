@@ -1,6 +1,6 @@
 # Template Detail Page and Editable Non-Secret Bindings
 
-- Status: Proposed.
+- Status: Implemented.
 - Decision: [ARD-0038](../ard/0038-template-detail-page-and-editable-non-secret-bindings.md).
 - Amends: [spec 0005 §5.2](0005-profile-http-control-plane.md) read projection and
   [spec 0021 §4–§5](0021-default-template-updates.md) update; extends

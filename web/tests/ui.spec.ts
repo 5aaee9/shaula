@@ -152,7 +152,7 @@ test("read-only access hides mutations and authentication failure is explicit", 
 
 test("template and authentication profiles use real route contracts", async ({ page }) => {
   await mockApi(page);
-  await page.goto("/templates?key=kubernetes-linux");
+  await page.goto("/templates/kubernetes-linux");
   await expect(page.getByText("shaula.bindings.kubernetes/v1", { exact: true })).toBeVisible();
   await page.goto("/auth?key=github-build");
   await expect(page.getByText("4863460", { exact: true })).toBeVisible();

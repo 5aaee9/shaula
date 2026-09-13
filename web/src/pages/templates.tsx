@@ -7,32 +7,31 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Layers3, Plus, RefreshCw, Search, Trash2, Upload } from "lucide-react";
+import { Layers3, Plus, RefreshCw, Search } from "lucide-react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { api, resourcePath } from "@/lib/api";
 import { useTemplates } from "@/lib/queries";
-import type { ChangeRef, TemplateResource, TemplateRevision } from "@/lib/types";
+import type { ChangeRef } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tip } from "@/components/icon-tooltip";
-import { Empty, ErrorNotice, KeyValue, Loading, StatusBadge } from "@/components/status";
+import { Empty, ErrorNotice, Loading, StatusBadge } from "@/components/status";
 import { ChangeNotice } from "@/components/change-notice";
-import { RetireDialog } from "@/components/retire-dialog";
 import { TemplateLibrary } from "@/components/template-library";
 export function TemplatesPage({ scopes }: { scopes: string[] }) {
   const templates = useTemplates(scopes.includes("template.read"));
   const location = useLocation();
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
   const publication = location.state as { change?: ChangeRef | null; noOp?: boolean } | null;
-  const [change, setChange] = useState<ChangeRef | null>(publication?.change ?? null);
+  const [change] = useState<ChangeRef | null>(publication?.change ?? null);
   const key = params.get("key");
   const items =
     templates.data?.data.profiles.filter((item) =>
       item.key.toLowerCase().includes(search.toLowerCase()),
     ) || [];
+  // `key` is still honoured in the URL so a redirected detail view can mark
+  // its row, but the row no longer expands — the name links to the detail page.
   return (
     <>
       <div className="page-heading">
@@ -135,7 +134,7 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
                       <TableCell>
                         <button
                           className="resource-name text-left"
-                          onClick={() => setParams({ key: item.key })}
+                          onClick={() => navigate(`/templates/${encodeURIComponent(item.key)}`)}
                         >
                           <span className="resource-icon">
                             <Layers3 />
@@ -172,132 +171,8 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
               </Table>
             </div>
           )}
-          {key && (
-            <TemplateDetails key={key} profileKey={key} scopes={scopes} onAccepted={setChange} />
-          )}
         </>
       )}
     </>
-  );
-}
-function TemplateDetails({
-  profileKey,
-  scopes,
-  onAccepted,
-}: {
-  profileKey: string;
-  scopes: string[];
-  onAccepted: (change: ChangeRef) => void;
-}) {
-  const navigate = useNavigate();
-  const path = resourcePath("template-profiles", profileKey);
-  const query = useQuery({
-    queryKey: ["template", profileKey],
-    queryFn: ({ signal }) => api<TemplateResource>(path, { signal }),
-    refetchInterval: 10000,
-  });
-  const [selected, setSelected] = useState("");
-  const desired = query.data?.data.desiredRevision;
-  const revision = selected || (desired ? String(desired) : "");
-  const revisionQuery = useQuery({
-    queryKey: ["template-revision", profileKey, revision],
-    enabled: !!revision,
-    queryFn: ({ signal }) =>
-      api<TemplateRevision>(`${path}/revisions/${encodeURIComponent(revision)}`, { signal }),
-    refetchInterval: 10000,
-  });
-  const [retire, setRetire] = useState(false);
-  if (query.isPending) return <Loading />;
-  if (query.error) return <ErrorNotice error={query.error} retry={() => void query.refetch()} />;
-  const { data } = query.data;
-  return (
-    <section className="details-section">
-      <div className="section-heading">
-        <h2 className="break-all">{profileKey}</h2>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={
-              !scopes.includes("template.publish") || ["Retiring", "Retired"].includes(data.status)
-            }
-            onClick={() => navigate(`/templates/${encodeURIComponent(profileKey)}/update`)}
-          >
-            Update from default
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!scopes.includes("template.publish")}
-            onClick={() => navigate(`/templates/${encodeURIComponent(profileKey)}/revisions/new`)}
-          >
-            <Upload />
-            New revision
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            disabled={!scopes.includes("template.retire")}
-            aria-label="Retire template"
-            onClick={() => setRetire(true)}
-          >
-            <Trash2 />
-          </Button>
-        </div>
-      </div>
-      <dl className="details-grid">
-        <KeyValue label="Platform">{data.platform || "--"}</KeyValue>
-        <KeyValue label="Bindings contract">{data.bindingsContract || "--"}</KeyValue>
-        <KeyValue label="Bindings">{data.bindings_present ? "Configured" : "Absent"}</KeyValue>
-        <KeyValue label="Status">
-          <StatusBadge value={data.status} />
-        </KeyValue>
-      </dl>
-      {data.status === "Ready" && (
-        <p className="mt-4 text-sm text-muted-foreground" role="status">
-          Validation passed. Waiting for automatic activation.
-        </p>
-      )}
-      <div className="mt-6 flex items-center gap-3">
-        <h3 className="text-sm font-medium">Revision</h3>
-        <Input
-          className="w-24"
-          aria-label="Template revision"
-          type="number"
-          min={1}
-          step={1}
-          value={revision}
-          onChange={(event) => setSelected(event.target.value)}
-        />
-      </div>
-      {revisionQuery.error ? (
-        <ErrorNotice error={revisionQuery.error} />
-      ) : revisionQuery.data ? (
-        <dl className="details-grid mt-4">
-          <KeyValue label="Artifact digest">
-            <span className="mono text-xs">{revisionQuery.data.data.artifactDigest}</span>
-          </KeyValue>
-          <KeyValue label="Engine">{revisionQuery.data.data.engineRef}</KeyValue>
-          <KeyValue label="Revision status">
-            <StatusBadge value={revisionQuery.data.data.state} />
-          </KeyValue>
-          {revisionQuery.data.data.reason && (
-            <KeyValue label="Validation reason">{revisionQuery.data.data.reason}</KeyValue>
-          )}
-        </dl>
-      ) : (
-        <Loading />
-      )}
-      {retire && (
-        <RetireDialog
-          name={profileKey}
-          path={path}
-          etag={query.data.etag}
-          type="profile"
-          onClose={() => setRetire(false)}
-          onAccepted={onAccepted}
-        />
-      )}
-    </section>
   );
 }

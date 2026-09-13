@@ -361,6 +361,9 @@ impl ControlPlaneStore for SqliteControlPlane {
     async fn artifact_manifest(&self, digest: &str) -> CoreResult<Option<String>> {
         self.artifact_manifest_impl(digest).await
     }
+    async fn artifact_bindings_schema(&self, digest: &str) -> CoreResult<Option<String>> {
+        self.artifact_bindings_schema_impl(digest).await
+    }
     async fn artifact_parameter_schema(&self, digest: &str) -> CoreResult<String> {
         self.artifact_parameter_schema_impl(digest).await
     }

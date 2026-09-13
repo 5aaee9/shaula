@@ -238,6 +238,21 @@ impl ProfileRegistryPort for ControlPlane {
         let Some(row) = self.store.template_revision_get(key, revision).await? else {
             return Ok(Err(MutationError::NotFound));
         };
+        // Spec 0038 §2: project the stored bindings through the
+        // artifact's sensitivity schema. Unreadable/absent schema or
+        // stored-set fields unknown to it fail closed to presence
+        // markers — a read must never 500 or leak on a schema problem.
+        let bindings = match row.bindings_json.as_deref() {
+            Some(text) => {
+                let stored: serde_json::Map<String, serde_json::Value> = serde_json::from_str(text)
+                    .map_err(|_| {
+                        CoreError::new(ReasonCode::Internal, "stored template bindings are invalid")
+                    })?;
+                let schema = self.bindings_schema_view(&row.artifact_digest).await;
+                Some(serde_json::Value::Object(schema.project(&stored)))
+            }
+            None => None,
+        };
         Ok(Ok(TemplateRevisionView {
             profile_key: row.profile_key,
             revision: row.revision,
@@ -249,6 +264,7 @@ impl ProfileRegistryPort for ControlPlane {
             state: row.state,
             reason: row.reason,
             bindings_present: row.bindings_present,
+            bindings,
         }))
     }
 

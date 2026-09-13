@@ -188,6 +188,12 @@ pub struct TemplateProfileUpdate {
     pub source_key: Option<String>,
     pub artifact_digest: String,
     pub engine_ref: String,
+    /// None preserves the base revision's bindings verbatim; Some is a
+    /// complete desired set resolved per field against the base —
+    /// sensitive fields keep on omission or the `null` sentinel and
+    /// replace on a new value, non-sensitive fields replace on submission
+    /// (spec 0038 §3).
+    pub bindings: Option<serde_json::Map<String, serde_json::Value>>,
     /// None preserves the base revision's policy; Some replaces it in full.
     pub fleet_input_policy: Option<serde_json::Map<String, serde_json::Value>>,
 }
@@ -375,6 +381,9 @@ pub mod input_contract;
 #[path = "registry/template_library.rs"]
 pub mod template_library;
 pub use template_library::{TemplateSource, TemplateVariable, TemplateVariables};
+#[path = "registry/bindings_projection.rs"]
+pub mod bindings_projection;
+pub use bindings_projection::BindingsSchema;
 #[path = "registry/profile_port.rs"]
 pub mod profile_port;
 pub use input_contract::{

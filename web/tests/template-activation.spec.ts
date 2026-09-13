@@ -21,7 +21,7 @@ test("Ready automatically refreshes to Active and becomes selectable with its in
     }),
   );
   await mockContract(page, contract([field("image", ['"runner:approved"'], true)], "local-docker"));
-  await page.goto("/templates?key=local-docker");
+  await page.goto("/templates/local-docker");
   await expect(
     page.getByRole("status").filter({ hasText: "Waiting for automatic activation" }),
   ).toBeVisible();
@@ -30,6 +30,7 @@ test("Ready automatically refreshes to Active and becomes selectable with its in
   await expect(page.getByText("Waiting for automatic activation.", { exact: false })).toHaveCount(
     0,
   );
+  await page.goto("/templates");
   await expect(page.getByRole("row").filter({ hasText: "local-docker" })).toContainText("Active");
 
   await openCreate(page);
@@ -61,8 +62,9 @@ test("rejected revision shows the server reason while the previous Active remain
       },
     }),
   );
-  await page.goto("/templates?key=local-docker");
+  await page.goto("/templates/local-docker");
   await expect(page.getByText("DependencyLockInvalid", { exact: true })).toBeVisible();
+  await page.goto("/templates");
   const row = page.getByRole("row").filter({ hasText: "local-docker" });
   await expect(row).toContainText("r2");
   await expect(row).toContainText("r3");

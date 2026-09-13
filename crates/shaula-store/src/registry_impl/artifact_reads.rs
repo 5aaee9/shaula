@@ -12,6 +12,16 @@ impl SqliteControlPlane {
         artifacts::manifest(&self.artifact_root, digest)
     }
 
+    pub(super) async fn artifact_bindings_schema_impl(
+        &self,
+        digest: &str,
+    ) -> CoreResult<Option<String>> {
+        if !self.artifact_available(digest).await? {
+            return Ok(None);
+        }
+        artifacts::bindings_schema(&self.artifact_root, digest)
+    }
+
     pub(super) async fn artifact_parameter_schema_impl(&self, digest: &str) -> CoreResult<String> {
         self.ensure_artifact_cached(digest).await?;
         artifacts::parameter_schema(&self.artifact_root, digest)?.ok_or_else(|| {

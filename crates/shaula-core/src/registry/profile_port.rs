@@ -29,6 +29,11 @@ pub struct TemplateRevisionView {
     /// Bounded static-validation reason; never raw artifact or binding content.
     pub reason: Option<String>,
     pub bindings_present: bool,
+    /// The spec 0038 §2 schema-driven projection: non-sensitive values
+    /// verbatim plus `{"sensitive": true, "set": …}` presence markers.
+    /// `None` when the revision carries no bindings at all. Secret bytes
+    /// never appear here by construction.
+    pub bindings: Option<serde_json::Value>,
 }
 
 /// Read model of ONE immutable attestation (R10-05). The subject is the

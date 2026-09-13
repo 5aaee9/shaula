@@ -68,6 +68,9 @@ pub(crate) fn template_row(
         state: r.state,
         reason: crate::template_activation::public_validation_reason(r.reason),
         bindings_present: r.bindings_json.is_some(),
+        // Protected-memory seam: consumed only by the schema-driven
+        // projection (spec 0038), never serialized into a response.
+        bindings_json: r.bindings_json,
         bindings_digest: r.bindings_digest,
         fleet_input_policy_json: r.fleet_input_policy_json,
     }

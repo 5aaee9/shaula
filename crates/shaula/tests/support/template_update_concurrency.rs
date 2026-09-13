@@ -67,6 +67,7 @@ fn payload(fixture: &Fixture) -> TemplateProfileUpdate {
         source_key: None,
         artifact_digest: fixture.target_digest.clone(),
         engine_ref: "terraform".into(),
+        bindings: None,
         fleet_input_policy: None,
     }
 }

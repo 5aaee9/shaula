@@ -45,6 +45,12 @@ export async function mockTemplateUpdate(
         sourceKey: options.sourceKey ?? null,
         state: "Active",
         reason: null,
+        // spec 0038: non-secret values verbatim, secrets as presence markers.
+        bindings: {
+          docker_host: "unix:///var/run/docker.sock",
+          quota: 8,
+          token: { sensitive: true, set: true },
+        },
       },
     }),
   );

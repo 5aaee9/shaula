@@ -16,6 +16,7 @@ import { ErrorNotice, Loading } from "@/components/status";
 import { FleetsPage } from "@/pages/fleets";
 import { FleetDetail } from "@/pages/fleet-detail";
 import { FleetManagePage } from "@/pages/fleet-manage";
+import { TemplateDetailPage } from "@/pages/template-detail";
 import { TemplatesPage } from "@/pages/templates";
 import { PoolsPage } from "@/pages/pools";
 import { TemplatePublishPage } from "@/pages/template-publish";
@@ -119,6 +120,7 @@ export function App() {
                   path="/templates/:key/revisions/new"
                   element={<TemplatePublishPage key="revision" scopes={scopes} />}
                 />
+                <Route path="/templates/:key" element={<TemplateDetailPage scopes={scopes} />} />
                 <Route path="/auth" element={<AuthPage scopes={scopes} />} />
                 <Route
                   path="/auth/new"
