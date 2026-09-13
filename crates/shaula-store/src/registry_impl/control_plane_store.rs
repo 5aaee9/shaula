@@ -62,26 +62,55 @@ impl ControlPlaneStore for SqliteControlPlane {
             return Ok(None);
         };
         let mut mapped = fleet_revision_row(row.clone());
-        mapped.template_pool = self
-            .store
-            .fleet_revision_pool_members(key, row.revision)
-            .await
-            .map_err(core_err)?
-            .into_iter()
-            .filter_map(|m| {
-                Some(shaula_core::template_pool::ResolvedTemplatePoolMember {
-                    key: m.member_key,
-                    template_profile_key: m.template_profile_key,
-                    template_revision: m.template_revision,
-                    template_artifact_digest: m.template_artifact_digest,
-                    template_attestation_id: m.template_attestation_id,
-                    template_inputs: serde_json::from_str(&m.template_inputs_json).ok()?,
-                    inputs_digest: m.inputs_digest,
-                    weight: u32::try_from(m.weight).ok()?,
-                    max_runners: m.max_runners,
+        let pool_scope = row
+            .template_pool_ref
+            .clone()
+            .zip(row.template_pool_revision);
+        // Shared-pool fleets hydrate their members from the pool revision
+        // the fleet revision froze (spec 0037 §4); inline pools keep
+        // reading their own member rows.
+        let map_member = |m: crate::entities::template_pool::template_pool_members::Model| {
+            shaula_core::template_pool::ResolvedTemplatePoolMember {
+                key: m.member_key,
+                template_profile_key: m.template_profile_key,
+                template_revision: m.template_revision,
+                template_artifact_digest: m.template_artifact_digest,
+                template_attestation_id: m.template_attestation_id,
+                template_inputs: serde_json::from_str(&m.template_inputs_json).unwrap_or_default(),
+                inputs_digest: m.inputs_digest,
+                weight: u32::try_from(m.weight).unwrap_or_default(),
+                max_runners: m.max_runners,
+            }
+        };
+        mapped.template_pool = if let Some((pool_key, pool_revision)) = &pool_scope {
+            self.store
+                .template_pool_members(pool_key, *pool_revision)
+                .await
+                .map_err(core_err)?
+                .into_iter()
+                .map(map_member)
+                .collect()
+        } else {
+            self.store
+                .fleet_revision_pool_members(key, row.revision)
+                .await
+                .map_err(core_err)?
+                .into_iter()
+                .filter_map(|m| {
+                    Some(shaula_core::template_pool::ResolvedTemplatePoolMember {
+                        key: m.member_key,
+                        template_profile_key: m.template_profile_key,
+                        template_revision: m.template_revision,
+                        template_artifact_digest: m.template_artifact_digest,
+                        template_attestation_id: m.template_attestation_id,
+                        template_inputs: serde_json::from_str(&m.template_inputs_json).ok()?,
+                        inputs_digest: m.inputs_digest,
+                        weight: u32::try_from(m.weight).ok()?,
+                        max_runners: m.max_runners,
+                    })
                 })
-            })
-            .collect();
+                .collect()
+        };
         Ok(Some(mapped))
     }
     async fn generation_lookup(
@@ -441,5 +470,74 @@ impl ControlPlaneStore for SqliteControlPlane {
         now: i64,
     ) -> CoreResult<Result<AttestationCommit, MutationError>> {
         self.commit_attestation_impl(record, actor, now).await
+    }
+
+    async fn template_pool_get(
+        &self,
+        key: &str,
+    ) -> CoreResult<Option<shaula_core::template_pool::TemplatePoolHead>> {
+        Ok(self
+            .store
+            .template_pool_get(key)
+            .await
+            .map_err(core_err)?
+            .map(|p| shaula_core::template_pool::TemplatePoolHead {
+                key: p.key,
+                incarnation: p.incarnation,
+                desired_revision: p.desired_revision,
+                phase: p.phase,
+                deletion_marker: p.deletion_marker,
+                tombstone: p.tombstone,
+            }))
+    }
+
+    async fn template_pool_list(&self) -> CoreResult<Vec<(String, i64, String)>> {
+        Ok(self
+            .store
+            .template_pool_list()
+            .await
+            .map_err(core_err)?
+            .into_iter()
+            .map(|p| (p.key, p.desired_revision, p.incarnation))
+            .collect())
+    }
+
+    async fn template_pool_revision_latest(
+        &self,
+        key: &str,
+    ) -> CoreResult<Option<shaula_core::template_pool::TemplatePoolRevision>> {
+        self.template_pool_revision_row(key).await
+    }
+
+    async fn commit_template_pool_mutation(
+        &self,
+        facts: MutationFacts,
+    ) -> CoreResult<Result<(), MutationError>> {
+        self.commit_template_pool_mutation_impl(facts).await
+    }
+
+    async fn commit_template_pool_delete(
+        &self,
+        facts: MutationFacts,
+    ) -> CoreResult<Result<(), MutationError>> {
+        self.commit_template_pool_delete_impl(facts).await
+    }
+
+    async fn template_pool_change_get(&self, change_id: &str) -> CoreResult<Option<ChangeView>> {
+        Ok(self
+            .store
+            .profile_change_get(change_id)
+            .await
+            .map_err(core_err)?
+            .filter(|c| c.resource_kind == "template_pool")
+            .map(|c| ChangeView {
+                id: c.id,
+                resource_kind: "template_pool".to_string(),
+                resource_key: c.profile_key,
+                revision: c.revision.unwrap_or_default(),
+                kind: c.kind,
+                state: c.state,
+                reason: c.reason,
+            }))
     }
 }

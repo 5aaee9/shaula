@@ -17,6 +17,7 @@ import { FleetsPage } from "@/pages/fleets";
 import { FleetDetail } from "@/pages/fleet-detail";
 import { FleetManagePage } from "@/pages/fleet-manage";
 import { TemplatesPage } from "@/pages/templates";
+import { PoolsPage } from "@/pages/pools";
 import { TemplatePublishPage } from "@/pages/template-publish";
 import { TemplateUpdatePage } from "@/pages/template-update";
 import { AuthPage } from "@/pages/auth";
@@ -105,6 +106,7 @@ export function App() {
                   element={<FleetManagePage mode="edit" scopes={scopes} />}
                 />
                 <Route path="/templates" element={<TemplatesPage scopes={scopes} />} />
+                <Route path="/pools" element={<PoolsPage scopes={scopes} />} />
                 <Route
                   path="/templates/:key/update"
                   element={<TemplateUpdatePage scopes={scopes} />}

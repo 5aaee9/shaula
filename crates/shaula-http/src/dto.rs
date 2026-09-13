@@ -23,6 +23,8 @@ pub struct FleetSpecDto {
     pub template_profile_ref: TemplateProfileRefDto,
     #[serde(default)]
     pub template_pool: Option<TemplatePoolSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template_pool_ref: Option<String>,
     #[serde(default)]
     pub template_inputs: serde_json::Map<String, serde_json::Value>,
 }
@@ -36,6 +38,7 @@ impl FleetSpecDto {
             capacity: self.capacity,
             template_profile_ref: self.template_profile_ref,
             template_pool: self.template_pool,
+            template_pool_ref: self.template_pool_ref,
             template_inputs: self.template_inputs,
         }
     }

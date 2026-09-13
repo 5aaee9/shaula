@@ -89,6 +89,7 @@ async fn seed_fleet(store: &SqliteControlPlane, key: &str) {
             revision: 1,
             spec_json: spec.to_string(),
             template_pool: Vec::new(),
+            template_pool_ref: None,
             template: None,
             auth_desired: Some(("shared-github".into(), 1)),
             inputs_digest: "fixture".into(),

@@ -74,6 +74,7 @@ async fn seed_predecessor(control_plane: &Arc<SqliteControlPlane>, app_id: &str)
         revision: 1,
         spec_json: String::new(),
         template_pool: Vec::new(),
+        template_pool_ref: None,
         template: None,
         auth_desired: None,
         inputs_digest: String::new(),

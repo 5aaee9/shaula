@@ -22,6 +22,7 @@ mod listener_acquisitions;
 mod listener_messages;
 mod listener_observations;
 pub mod operation_logs;
+pub mod pool_repo;
 pub mod registry_impl;
 mod runtime_guards;
 pub mod scaleset_ownership_repo;

@@ -31,6 +31,7 @@ pub(crate) fn fleet_revision_row(
         template_artifact_digest: r.template_artifact_digest,
         template_attestation_id: r.template_attestation_id,
         template_pool,
+        template_pool_ref: r.template_pool_ref.clone().zip(r.template_pool_revision),
         auth_desired: (r.auth_desired_profile_key, r.auth_desired_revision),
         inputs_digest: r.inputs_digest,
         created_at: r.created_at,

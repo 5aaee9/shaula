@@ -99,6 +99,8 @@ impl Store {
             template_revision: Set(template_revision),
             template_artifact_digest: Set(artifact_digest),
             template_attestation_id: Set(attestation_id),
+            template_pool_ref: Set(insert.template_pool_ref.as_ref().map(|(k, _)| k.clone())),
+            template_pool_revision: Set(insert.template_pool_ref.as_ref().map(|(_, r)| *r)),
             auth_desired_profile_key: Set(auth_desired.0.clone()),
             auth_desired_revision: Set(auth_desired.1),
             inputs_digest: Set(insert.inputs_digest.clone()),

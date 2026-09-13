@@ -135,3 +135,32 @@ mod tests {
         assert_eq!(weighted_member_index(&[0, 0], 0), None);
     }
 }
+
+/// Desired-state head of one shared TemplatePool resource (spec 0037).
+#[derive(Debug, Clone)]
+pub struct TemplatePoolHead {
+    pub key: String,
+    pub incarnation: String,
+    pub desired_revision: i64,
+    pub phase: String,
+    pub deletion_marker: bool,
+    pub tombstone: bool,
+}
+
+/// One immutable shared-pool revision with its resolved members (spec
+/// 0037 §3): member `template_profile_ref` bare keys are resolved to the
+/// profiles' then-current Active revisions and frozen on these rows.
+#[derive(Debug, Clone)]
+pub struct TemplatePoolRevision {
+    pub pool_key: String,
+    pub revision: i64,
+    pub spec_json: String,
+    pub failure_policy: PoolFailurePolicy,
+    pub members: Vec<ResolvedTemplatePoolMember>,
+    pub actor: Option<String>,
+    pub created_at: i64,
+}
+
+/// The pool reference a fleet revision freezes at admission: the pool key
+/// plus the exact pool revision whose member rows route its generations.
+pub type FleetPoolRef = (String, i64);

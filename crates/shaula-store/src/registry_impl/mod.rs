@@ -71,13 +71,18 @@ mod commits_fleet;
 mod commits_fleet_noop;
 mod commits_generation;
 mod commits_noop;
+mod commits_pool;
 mod retirement;
 
 #[path = "mapping.rs"]
 mod mapping;
 
+#[path = "control_plane_pool.rs"]
+mod control_plane_pool;
 #[path = "lifecycle_impl.rs"]
 mod lifecycle_impl;
+#[path = "lifecycle_pool_admit.rs"]
+mod lifecycle_pool_admit;
 mod lifecycle_support;
 mod listener_messages;
 

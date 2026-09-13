@@ -236,6 +236,7 @@ impl ControlPlane {
             spec_json: "{}".to_string(),
             template: None,
             template_pool: Vec::new(),
+            template_pool_ref: None,
             auth_desired: None,
             inputs_digest: "decommission".to_string(),
             actor: actor.name.clone(),
@@ -276,6 +277,7 @@ impl ControlPlane {
             (
                 Option<(String, i64, String, String)>,
                 Vec<shaula_core::template_pool::ResolvedTemplatePoolMember>,
+                Option<shaula_core::template_pool::FleetPoolRef>,
                 AuthRevisionRef,
             ),
             MutationError,
@@ -315,7 +317,45 @@ impl ControlPlane {
         let inputs_unchanged = previous_spec
             .as_ref()
             .is_some_and(|ps| ps.template_inputs == spec.template_inputs);
-        let template = if spec.template_pool.is_some() {
+        // Spec 0037 §4: a shared-pool fleet freezes the pool's CURRENT
+        // revision on this fleet revision; member rows live on the pool and
+        // their input validation happened at pool admission. Catch-up to a
+        // newer pool revision is the cascade's deferred job, not PUT's.
+        let pool_ref = if let Some(pool_key) = spec
+            .template_pool_ref
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+        {
+            let Some(head) = self.store.template_pool_get(pool_key).await? else {
+                return Ok(Err(unprocessable(
+                    ReasonCode::TargetHiddenOrNotFound,
+                    "template pool not found",
+                )));
+            };
+            if head.tombstone || head.deletion_marker {
+                return Ok(Err(unprocessable(
+                    ReasonCode::SpecInvalid,
+                    "template pool is deleted",
+                )));
+            }
+            let Some(latest) = self.store.template_pool_revision_latest(pool_key).await? else {
+                return Ok(Err(unprocessable(
+                    ReasonCode::SpecInvalid,
+                    "template pool has no revision",
+                )));
+            };
+            if latest.members.is_empty() {
+                return Ok(Err(unprocessable(
+                    ReasonCode::SpecInvalid,
+                    "template pool revision has no members",
+                )));
+            }
+            Some((pool_key.to_string(), latest.revision))
+        } else {
+            None
+        };
+        let template = if spec.template_pool.is_some() || pool_ref.is_some() {
             None
         } else if reference_unchanged && inputs_unchanged {
             previous_pin.clone()
@@ -442,6 +482,6 @@ impl ControlPlane {
             Ok(found) => found,
             Err(e) => return Ok(Err(unprocessable(e.code, e.summary))),
         };
-        Ok(Ok((template, resolved_pool, resolved_auth)))
+        Ok(Ok((template, resolved_pool, pool_ref, resolved_auth)))
     }
 }

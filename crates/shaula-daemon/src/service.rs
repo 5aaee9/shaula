@@ -221,6 +221,8 @@ pub(crate) struct FleetMutationDraft {
     pub spec_json: String,
     pub template: Option<(String, i64, String, String)>,
     pub template_pool: Vec<shaula_core::template_pool::ResolvedTemplatePoolMember>,
+    /// Shared-pool routing context (spec 0037 §4); None for inline pools.
+    pub template_pool_ref: Option<shaula_core::template_pool::FleetPoolRef>,
     pub auth_desired: Option<(String, i64)>,
     pub inputs_digest: String,
     pub actor: String,
@@ -257,6 +259,7 @@ impl FleetMutationDraft {
             spec_json: self.spec_json,
             template: self.template,
             template_pool: self.template_pool,
+            template_pool_ref: self.template_pool_ref,
             auth_desired: self.auth_desired,
             inputs_digest: self.inputs_digest,
             actor: self.actor,
@@ -283,6 +286,9 @@ mod generation_finalize;
 
 #[path = "service_follow_cascade.rs"]
 mod follow_cascade;
+
+#[path = "service_pool_registry.rs"]
+mod pool_registry;
 
 #[path = "service_profile_registry.rs"]
 mod profile_registry;

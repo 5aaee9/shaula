@@ -28,6 +28,7 @@ async fn transaction_rejects_same_profile_revision_switch_with_occupancy() {
             revision: 2,
             spec_json: previous.spec_json,
             template_pool: Vec::new(),
+            template_pool_ref: None,
             template: Some(("k8s-linux".into(), 2, digest, "att-2".into())),
             auth_desired: Some(previous.auth_desired),
             inputs_digest: previous.inputs_digest,

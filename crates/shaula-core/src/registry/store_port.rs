@@ -24,6 +24,9 @@ pub struct MutationFacts {
     pub spec_json: String,
     pub template: Option<(String, i64, String, String)>,
     pub template_pool: Vec<crate::template_pool::ResolvedTemplatePoolMember>,
+    /// Shared-pool routing context frozen on fleet revisions (spec 0037
+    /// §4): (pool key, pool revision). Unused by template/auth commits.
+    pub template_pool_ref: Option<crate::template_pool::FleetPoolRef>,
     pub auth_desired: Option<(String, i64)>,
     pub inputs_digest: String,
     pub actor: String,
@@ -72,6 +75,50 @@ pub trait ControlPlaneStore: crate::registry::AuthExecutionStore + Send + Sync {
         key: &str,
         revision: i64,
     ) -> CoreResult<Option<TemplateRevisionRow>>;
+
+    // ---- Shared TemplatePool resources (spec 0037). Defaults keep the
+    // in-memory ControlPlaneStore test double source-compatible; the
+    // SQLite control plane implements the real ledger. ----
+
+    /// Desired-state head of one shared TemplatePool.
+    async fn template_pool_get(
+        &self,
+        _key: &str,
+    ) -> CoreResult<Option<crate::template_pool::TemplatePoolHead>> {
+        Ok(None)
+    }
+    /// Active (non-tombstoned) pools: (key, desired revision, incarnation).
+    async fn template_pool_list(&self) -> CoreResult<Vec<(String, i64, String)>> {
+        Ok(Vec::new())
+    }
+    /// Latest committed pool revision with its resolved member rows.
+    async fn template_pool_revision_latest(
+        &self,
+        _key: &str,
+    ) -> CoreResult<Option<crate::template_pool::TemplatePoolRevision>> {
+        Ok(None)
+    }
+    /// Commits a pool mutation atomically: head CAS + revision append +
+    /// immutable member rows (carried on `facts.template_pool`) +
+    /// change/audit/outbox/idempotency. A lost fence race surfaces as
+    /// `PreconditionFailed`.
+    async fn commit_template_pool_mutation(
+        &self,
+        _facts: MutationFacts,
+    ) -> CoreResult<Result<(), MutationError>> {
+        Ok(Err(MutationError::NotFound))
+    }
+    /// Tombstones a pool after the reference check: rejected while any
+    /// non-decommissioned fleet revision still references the pool.
+    async fn commit_template_pool_delete(
+        &self,
+        _facts: MutationFacts,
+    ) -> CoreResult<Result<(), MutationError>> {
+        Ok(Err(MutationError::NotFound))
+    }
+    async fn template_pool_change_get(&self, _change_id: &str) -> CoreResult<Option<ChangeView>> {
+        Ok(None)
+    }
 
     async fn auth_profile_get(&self, key: &str) -> CoreResult<Option<ProfileHead>>;
     async fn auth_profile_keys(&self) -> CoreResult<Vec<String>>;
@@ -312,6 +359,10 @@ pub struct FleetRevisionRow {
     pub template_artifact_digest: Option<String>,
     pub template_attestation_id: Option<String>,
     pub template_pool: Vec<crate::template_pool::ResolvedTemplatePoolMember>,
+    /// Shared-pool routing context frozen at admission (spec 0037 §4);
+    /// `template_pool` is hydrated from the pool revision members for
+    /// pool-referencing fleets.
+    pub template_pool_ref: Option<crate::template_pool::FleetPoolRef>,
     pub auth_desired: (String, i64),
     /// Digest of the admitted normalized template inputs, frozen at
     /// admission — the authority a generation's envelope must match.

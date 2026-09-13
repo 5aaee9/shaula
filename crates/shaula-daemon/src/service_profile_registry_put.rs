@@ -266,6 +266,7 @@ impl ControlPlane {
             spec_json: manifest_yaml.clone(),
             template: None,
             template_pool: Vec::new(),
+            template_pool_ref: None,
             auth_desired: None,
             inputs_digest: payload.artifact_digest.clone(),
             actor: actor.name.clone(),

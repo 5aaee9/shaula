@@ -116,6 +116,7 @@ impl Fixture {
         let app = shaula_http::router::build_router(shaula_http::router::AppState {
             fleets: service.clone(),
             profiles: service.clone(),
+            pools: service.clone(),
             health: service,
             oidc: oidc::provider().oidc().await,
             body_limit: 64 * 1024,

@@ -33,6 +33,8 @@ export interface FleetSpec {
   template_profile_ref?: string;
   template_inputs?: Record<string, unknown>;
   template_pool?: TemplatePoolSpec;
+  /** Spec 0037: bare key of a shared TemplatePool resource. */
+  template_pool_ref?: string;
 }
 export interface FleetResource {
   key: string;
@@ -113,6 +115,29 @@ export interface TemplateSummary {
   desiredRevision: number;
   activeRevision: number | null;
   status: string;
+}
+export interface TemplatePoolSummary {
+  key: string;
+  revision: number;
+  incarnation: string;
+}
+export interface TemplatePoolResource {
+  key: string;
+  spec: TemplatePoolSpec;
+  metadata: { incarnation: string; revision: number };
+  resolved: {
+    members: Array<{
+      key: string;
+      templateProfileKey: string;
+      templateRevision: number;
+      templateArtifactDigest: string;
+      templateAttestationId: string;
+      templateInputs: Record<string, unknown>;
+      inputsDigest: string;
+      weight: number;
+      maxRunners: number | null;
+    }>;
+  };
 }
 export interface TemplateResource extends TemplateSummary {
   platform: string | null;

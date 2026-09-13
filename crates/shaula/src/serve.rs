@@ -131,6 +131,7 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
         )),
         fleets: service.clone(),
         profiles: service.clone(),
+        pools: service.clone(),
         health: service.clone(),
         oidc,
         body_limit: bootstrap.artifact_body_limit,

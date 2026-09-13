@@ -233,7 +233,10 @@ pub(super) async fn retained_snapshot(store: &Store) -> TestResult<BTreeMap<Stri
         let mut columns = Vec::new();
         for row in rows {
             let name: String = row.try_get("", "name")?;
-            if name != "source_key" && name != "pool_member_key" {
+            if !matches!(
+                name.as_str(),
+                "source_key" | "pool_member_key" | "template_pool_ref" | "template_pool_revision"
+            ) {
                 columns.push(format!("quote(\"{}\")", name.replace('"', "\"\"")));
             }
         }

@@ -6,6 +6,7 @@ pub mod auth_installation_link;
 pub mod fleet_routes;
 mod input_contract;
 mod jobs;
+mod pool_routes;
 mod profile_auth_policy;
 pub mod profile_auth_reads;
 pub mod profile_reads;
@@ -22,6 +23,7 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use shaula_core::registry::{
     Actor, FleetRegistryPort, HealthPort, MutationAccepted, ProfileRegistryPort, Scope,
+    TemplatePoolRegistryPort,
 };
 use tracing::Instrument;
 
@@ -33,6 +35,7 @@ use crate::problem::problem;
 pub struct AppState {
     pub fleets: Arc<dyn FleetRegistryPort>,
     pub profiles: Arc<dyn ProfileRegistryPort>,
+    pub pools: Arc<dyn TemplatePoolRegistryPort>,
     pub health: Arc<dyn HealthPort>,
     /// Required initialized OIDC verifier and session boundary.
     pub oidc: Arc<Oidc>,
@@ -280,6 +283,20 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/fleets",
             get(fleet_routes::fleet_list),
+        )
+        .route(
+            "/api/v1/template-pools",
+            get(pool_routes::template_pool_list),
+        )
+        .route(
+            "/api/v1/template-pools/{poolKey}",
+            put(pool_routes::template_pool_put)
+                .get(pool_routes::template_pool_get)
+                .delete(pool_routes::template_pool_delete),
+        )
+        .route(
+            "/api/v1/template-pool-changes/{changeId}",
+            get(pool_routes::template_pool_change_get),
         )
         .route(
             "/api/v1/template-artifacts/{digest}",
