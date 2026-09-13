@@ -17,9 +17,12 @@ import { Modal } from "./modal";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { useFleetInputs } from "@/lib/use-fleet-inputs";
+import { useMemberContract } from "@/lib/use-member-inputs";
+import { inputEntries, inputsJson } from "@/lib/input-values";
 import { FleetTemplateInputs } from "./fleet-template-inputs";
 import { FleetTemplateSelection } from "./fleet-template-selection";
 import { ProfileSelector } from "./profile-selector";
+import { ApprovedValueSelect } from "./template-input-values";
 import { ErrorNotice, Field } from "./status";
 import { cn } from "cn";
 
@@ -338,6 +341,7 @@ export function FleetForm({
                 failurePolicy={failurePolicy}
                 setFailurePolicy={setFailurePolicy}
                 templates={templates}
+                canRead={editor.canRead}
               />
             )}
           </Stage>
@@ -464,14 +468,15 @@ function TemplatePoolEditor({
   failurePolicy,
   setFailurePolicy,
   templates,
+  canRead,
 }: {
   members: TemplatePoolMemberSpec[];
   setMembers: (members: TemplatePoolMemberSpec[]) => void;
   failurePolicy: "backpressure" | "redistribute";
   setFailurePolicy: (value: "backpressure" | "redistribute") => void;
   templates: ReturnType<typeof useTemplates>;
+  canRead: boolean;
 }) {
-  const available = templates.data?.data.profiles || [];
   const total = members.reduce((sum, member) => sum + Math.max(0, member.weight), 0);
   const shares = members.map((member) =>
     total > 0 && member.weight > 0 ? member.weight / total : 0,
@@ -510,7 +515,8 @@ function TemplatePoolEditor({
             member={member}
             tone={tone}
             share={share}
-            available={available}
+            templates={templates}
+            canRead={canRead}
             canRemove={members.length > 1}
             onChange={(next) => setMembers(members.map((m, i) => (i === index ? next : m)))}
             onRemove={() => setMembers(members.filter((_, i) => i !== index))}
@@ -556,7 +562,8 @@ function MemberRow({
   member,
   tone,
   share,
-  available,
+  templates,
+  canRead,
   canRemove,
   onChange,
   onRemove,
@@ -565,17 +572,13 @@ function MemberRow({
   member: TemplatePoolMemberSpec;
   tone: string;
   share: number;
-  available: ReturnType<typeof useTemplates>["data"] extends infer D
-    ? D extends { data: { profiles: infer P } }
-      ? P
-      : never
-    : never;
+  templates: ReturnType<typeof useTemplates>;
+  canRead: boolean;
   canRemove: boolean;
   onChange: (member: TemplatePoolMemberSpec) => void;
   onRemove: () => void;
 }) {
-  const [inputs, setInputs] = useState(() => JSON.stringify(member.template_inputs, null, 2));
-  const [inputsError, setInputsError] = useState<string | null>(null);
+  const available = templates.data?.data.profiles || [];
   const keyInvalid = member.key !== "" && !/^[a-z0-9][a-z0-9-]*$/.test(member.key);
   const weightInvalid =
     !Number.isInteger(member.weight) || member.weight < 1 || member.weight > 10000;
@@ -641,37 +644,12 @@ function MemberRow({
             ))}
           </NativeSelect>
         </Field>
-        <Field label="Template inputs (JSON)">
-          <textarea
-            className={cn(
-              "min-h-20 w-full rounded-md border bg-background p-2 font-mono text-sm",
-              inputsError && "border-destructive",
-            )}
-            value={inputs}
-            aria-invalid={!!inputsError || undefined}
-            onChange={(e) => {
-              const raw = e.target.value;
-              setInputs(raw);
-              try {
-                const parsed = JSON.parse(raw);
-                if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-                  onChange({ ...member, template_inputs: parsed });
-                  setInputsError(null);
-                } else {
-                  setInputsError("Inputs must be a JSON object.");
-                }
-              } catch {
-                setInputsError("Finish the JSON object — it isn't valid yet.");
-              }
-            }}
-          />
-        </Field>
-        {inputsError && (
-          <p role="alert" className="flex items-center gap-1.5 text-sm text-destructive">
-            <CircleAlert className="size-4 shrink-0" />
-            {inputsError}
-          </p>
-        )}
+        <MemberTemplateInputs
+          templateKey={member.template_profile_ref}
+          inputs={member.template_inputs}
+          canRead={canRead}
+          onChange={(inputs) => onChange({ ...member, template_inputs: inputs })}
+        />
         <Field label="Maximum runners (optional)">
           <Input
             type="number"
@@ -699,6 +677,87 @@ function MemberRow({
       >
         <Trash2 />
       </Button>
+    </div>
+  );
+}
+
+/**
+ * A pool member's template inputs, rendered with the same approved-value
+ * contract controls as the single-template path. The member's
+ * `template_inputs` Record stays owned by the parent form; this component
+ * resolves the Active revision's contract for the chosen template and edits
+ * values within it.
+ */
+function MemberTemplateInputs({
+  templateKey,
+  inputs,
+  canRead,
+  onChange,
+}: {
+  templateKey: string;
+  inputs: Record<string, unknown>;
+  canRead: boolean;
+  onChange: (inputs: Record<string, unknown>) => void;
+}) {
+  const { contract, loading, error } = useMemberContract(templateKey, canRead);
+  const values = inputEntries(JSON.stringify(inputs ?? {}));
+  const write = (entries: Map<string, string>) =>
+    onChange(JSON.parse(inputsJson(entries)) as Record<string, unknown>);
+  const update = (field: string, value?: string) => {
+    const next = new Map(values);
+    if (value === undefined) next.delete(field);
+    else next.set(field, value);
+    write(next);
+  };
+
+  if (!templateKey.trim()) {
+    return (
+      <p className="text-sm text-muted-foreground">Choose a template to configure its inputs.</p>
+    );
+  }
+  if (loading) {
+    return (
+      <p role="status" className="text-sm text-muted-foreground">
+        Loading template inputs…
+      </p>
+    );
+  }
+  if (error) {
+    return <ErrorNotice error={error} />;
+  }
+  if (!contract) return null;
+
+  if (contract.mode === "presets") {
+    return (
+      <ApprovedValueSelect
+        label="Input configuration"
+        description="Choose one complete approved configuration for this member."
+        required
+        options={contract.presets}
+        value={values.size ? inputsJson(values) : undefined}
+        onChange={(value) => write(inputEntries(value ?? "{}"))}
+      />
+    );
+  }
+  if (!contract.fields.length) {
+    return (
+      <p className="text-sm text-muted-foreground">This template needs no input configuration.</p>
+    );
+  }
+  return (
+    <div className="form-stack">
+      {contract.fields.map((field) => (
+        <ApprovedValueSelect
+          key={field.key}
+          label={field.label}
+          inputKey={field.key}
+          description={field.description}
+          required={field.required}
+          options={field.options}
+          value={values.get(field.key)}
+          onChange={(value) => update(field.key, value)}
+        />
+      ))}
     </div>
   );
 }
