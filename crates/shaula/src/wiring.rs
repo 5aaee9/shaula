@@ -275,7 +275,9 @@ impl SupervisorWiring {
                             .spawn(key, async move { supervisor.tick(now).await.map(|_| ()) });
                     }
                 }
-                Ok(None) => {}
+                Ok(None) => {
+                    tracing::debug!(fleet = %key, revision, phase = %phase, "fleet produced no supervisor; reconcile skipped")
+                }
                 Err(e) => tracing::warn!(fleet = %key, summary = %e.summary, "fleet wiring failed"),
             }
         }

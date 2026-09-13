@@ -97,6 +97,7 @@ impl FleetSupervisor {
             if head.as_ref().is_none_or(|head| {
                 head.tombstone || shaula_core::registry::FleetRuntimeGuard::from(head) != *guard
             }) {
+                tracing::debug!(fleet = %self.config.fleet_key, "reconcile skipped: runtime guard mismatch or tombstoned");
                 return Ok(report);
             }
         }
@@ -163,6 +164,7 @@ impl FleetSupervisor {
             .await?
             .and_then(|handoff| handoff.observed);
         if !self.execution_ready || observed.as_ref() != Some(&execution_ref) {
+            tracing::debug!(fleet = %self.config.fleet_key, execution_ready = self.execution_ready, observed_matches = observed.as_ref() == Some(&execution_ref), "reconcile blocked: execution context not ready");
             report.blocked = true;
             return Ok(report);
         }
@@ -215,6 +217,7 @@ impl FleetSupervisor {
             }
             let listener_reason = listener.reason().await;
             if !report.listener_ready || listener_reason.is_some() {
+                tracing::debug!(fleet = %self.config.fleet_key, listener_ready = report.listener_ready, reason = ?listener_reason, "reconcile blocked: listener not ready");
                 report.blocked = true;
                 report.reason = listener_reason;
                 return Ok(report);
