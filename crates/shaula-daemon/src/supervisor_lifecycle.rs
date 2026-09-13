@@ -92,8 +92,10 @@ impl FleetSupervisor {
             .map_err(|e| CoreError::new(ReasonCode::Internal, format!("spec invalid: {e}")))?;
         let mut parameters = spec.template_inputs;
         let (pin_profile, pin_revision, pin_artifact, pin_attestation) =
-            if spec.template_pool.is_some() {
-                // Pool admission selects and freezes the member atomically below.
+            if spec.template_pool.is_some() || spec.template_pool_ref.is_some() {
+                // Pool admission selects and freezes the member atomically
+                // below — for both the legacy inline pool and a shared
+                // `template_pool_ref` (spec 0037).
                 (String::new(), 0, String::new(), String::new())
             } else {
                 match (
@@ -158,7 +160,7 @@ impl FleetSupervisor {
             created_at: now,
             updated_at: now,
         };
-        let record = if spec.template_pool.is_some() {
+        let record = if spec.template_pool.is_some() || spec.template_pool_ref.is_some() {
             let guard = FleetRuntimeGuard::from(&head);
             let Some(admission) = self.store.generation_admit_pool(record, &guard).await? else {
                 // No eligible member or a concurrent revision/fence change.
