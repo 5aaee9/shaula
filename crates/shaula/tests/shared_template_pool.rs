@@ -33,6 +33,12 @@ fn fleet_body_with_pool_ref() -> String {
         )
 }
 
+/// A capacity-only edit of the pool-referencing fleet: identical except
+/// `max_runners` is bumped. Nothing about the template routing changes.
+fn fleet_body_with_pool_ref_bigger() -> String {
+    fleet_body_with_pool_ref().replace(r#""max_runners": 5"#, r#""max_runners": 10"#)
+}
+
 async fn pool_etag(app: &axum::Router, key: &str) -> String {
     let response = app
         .clone()
@@ -454,4 +460,138 @@ async fn cascade_re_resolves_the_pool_and_catches_fleets_up_when_drained() {
         fleet_revision.template_pool_ref,
         Some(("builders".to_string(), 3))
     );
+}
+
+/// Regression (spec 0037 §4/§5): a capacity-only PUT on a
+/// `template_pool_ref` fleet must NOT re-freeze to the pool's latest
+/// revision and demand zero occupancy. Catch-up is the cascade's
+/// deferred job; a fleet update that changes only capacity is accepted
+/// while jobs are running and retains the frozen pool routing pin.
+#[tokio::test]
+async fn capacity_only_put_keeps_frozen_pool_revision_under_occupancy() {
+    let (app, control_plane, _engine, service) = build_app_with_service().await;
+    seed_profile(&app, &control_plane, "k8s-linux", true).await;
+    assert_eq!(
+        app.clone()
+            .oneshot(put_with_idempotency(
+                "/api/v1/template-pools/builders",
+                "pool-1",
+                POOL_BODY.into(),
+            ))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(put_with_idempotency(
+                "/api/v1/fleets/pool-fleet",
+                "pool-fleet-1",
+                fleet_body_with_pool_ref(),
+            ))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::ACCEPTED
+    );
+
+    // Occupy the fleet so any "requires zero occupancy" gate would trip.
+    let now = 1_800_000_010_000i64;
+    let revision = control_plane
+        .fleet_revision_latest("pool-fleet")
+        .await
+        .unwrap()
+        .unwrap();
+    control_plane
+        .generation_insert(shaula_core::registry::GenerationRecord {
+            id: "gen-cap".into(),
+            fleet_key: "pool-fleet".into(),
+            runner_name: "runner-cap".into(),
+            generation_name: "cap".into(),
+            fleet_revision: 1,
+            pool_member_key: Some("primary".into()),
+            template_profile_key: "k8s-linux".into(),
+            template_revision: 1,
+            template_artifact_digest: "sha256:cap".into(),
+            attestation_id: "static-validation-v1:test".into(),
+            inputs_digest: revision.inputs_digest.clone(),
+            state: shaula_core::lifecycle::GenerationState::Idle,
+            github_runner_id: None,
+            workspace_path: "/tmp/unused".into(),
+            created_at: now,
+            updated_at: now,
+        })
+        .await
+        .unwrap();
+
+    // Mint pool revision 2 (a weight edit re-resolves the same Active
+    // pins). The fleet now lags behind the pool head.
+    let etag = pool_etag(&app, "builders").await;
+    let heavier = POOL_BODY.replace(r#""weight": 10,"#, r#""weight": 30,"#);
+    let mut replace = authorized("PUT", "/api/v1/template-pools/builders", Some(heavier));
+    replace.headers_mut().remove("if-none-match");
+    replace.headers_mut().insert(
+        "if-match",
+        axum::http::HeaderValue::from_str(&etag).unwrap(),
+    );
+    assert_eq!(
+        app.clone().oneshot(replace).await.unwrap().status(),
+        StatusCode::ACCEPTED
+    );
+
+    // A capacity-only fleet PUT is accepted WITHOUT draining and must
+    // keep the fleet's frozen pool revision 1 — it did not switch pools.
+    let fleet_etag = {
+        let response = app
+            .clone()
+            .oneshot(authorized("GET", "/api/v1/fleets/pool-fleet", None))
+            .await
+            .unwrap();
+        response
+            .headers()
+            .get("etag")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .trim_matches('"')
+            .to_string()
+    };
+    let mut update = authorized(
+        "PUT",
+        "/api/v1/fleets/pool-fleet",
+        Some(fleet_body_with_pool_ref_bigger()),
+    );
+    update.headers_mut().remove("if-none-match");
+    update.headers_mut().insert(
+        "if-match",
+        axum::http::HeaderValue::from_str(&fleet_etag).unwrap(),
+    );
+    update.headers_mut().insert(
+        "idempotency-key",
+        axum::http::HeaderValue::from_str("pool-fleet-2").unwrap(),
+    );
+    let response = app.clone().oneshot(update).await.unwrap();
+    let status = response.status();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(
+        status,
+        StatusCode::ACCEPTED,
+        "capacity-only PUT must not be drain-blocked: {}",
+        String::from_utf8_lossy(&body)
+    );
+    let fleet_revision = control_plane
+        .fleet_revision_latest("pool-fleet")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        fleet_revision.template_pool_ref,
+        Some(("builders".to_string(), 1)),
+        "capacity-only PUT retains the frozen pool revision"
+    );
+    // The cascade, not PUT, owns catch-up once the fleet drains.
+    let _ = service;
 }

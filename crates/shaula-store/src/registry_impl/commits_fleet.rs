@@ -134,7 +134,14 @@ impl SqliteControlPlane {
             } else {
                 Vec::new()
             };
-            let new_pool = !facts.template_pool.is_empty();
+            // `new_pool` mirrors `previous_is_pool`: it is an INLINE-pool
+            // verdict on the new spec, not a member-row count. A shared
+            // `template_pool_ref` fleet hydrates members into
+            // `facts.template_pool`, so a row count alone would read every
+            // shared-pool replacement as a non-pool -> pool conversion.
+            // Shared pools are governed by the `pool_ref_changed` gate
+            // below instead of the inline member diff.
+            let new_pool = facts.template_pool_ref.is_none() && !facts.template_pool.is_empty();
             let pool_changed = previous_is_pool
                 && (previous_pool_members.len() != facts.template_pool.len()
                     || previous_pool_members.iter().any(|row| {

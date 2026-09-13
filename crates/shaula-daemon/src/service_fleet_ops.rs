@@ -351,7 +351,21 @@ impl ControlPlane {
                     "template pool revision has no members",
                 )));
             }
-            Some((pool_key.to_string(), latest.revision))
+            // Spec 0037 §5: catching up to a newer revision of the SAME
+            // pool is the cascade's deferred job, not PUT's. Re-freezing
+            // to the latest revision here would read every capacity-only
+            // update as a routing change and trip the zero-occupancy gate
+            // (R9-04). Retain the fleet's frozen (key, revision) when the
+            // key is unchanged; only an actual pool switch re-freezes.
+            let frozen = previous_row
+                .as_ref()
+                .and_then(|row| row.template_pool_ref.clone());
+            match frozen {
+                Some((frozen_key, frozen_revision)) if frozen_key == pool_key => {
+                    Some((frozen_key, frozen_revision))
+                }
+                _ => Some((pool_key.to_string(), latest.revision)),
+            }
         } else {
             None
         };
