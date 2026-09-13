@@ -31,8 +31,14 @@ pub struct FleetSpec {
     pub capacity: CapacityPolicyDto,
     #[serde(default)]
     pub template_profile_ref: TemplateProfileRefDto,
+    /// Spec 0029 inline pool. Retained for fleets already admitted under it;
+    /// new fleets reference a shared pool via `template_pool_ref` instead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template_pool: Option<TemplatePoolSpec>,
+    /// Spec 0037: bare key of a shared TemplatePool resource. Mutually
+    /// exclusive with `template_profile_ref` and the inline `template_pool`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template_pool_ref: Option<String>,
     /// Bounded template inputs; schema-checked against the revision the new
     /// Fleet Revision resolves to (the profile's current Active when the
     /// inputs change, else the retained pin).
@@ -180,23 +186,47 @@ pub struct NormalizedFleet {
 
 /// Canonical validation shared by create, replace and decommission paths.
 pub fn validate_fleet_spec(spec: &FleetSpec) -> CoreResult<()> {
-    match (&spec.template_pool, spec.template_profile_ref.is_empty()) {
-        (Some(pool), true) => pool.validate()?,
-        (Some(_), false) => {
-            return Err(CoreError::new(
-                ReasonCode::SpecInvalid,
-                "template_profile_ref and template_pool are mutually exclusive",
-            ))
-        }
-        (None, true) => {
-            return Err(CoreError::new(
-                ReasonCode::SpecInvalid,
-                "one of template_profile_ref or template_pool is required",
-            ))
-        }
-        (None, false) => {}
+    // Exactly one template source: a profile ref, a shared pool ref, or the
+    // legacy inline pool. The three are mutually exclusive.
+    let pool_ref = spec
+        .template_pool_ref
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty());
+    let sources = [
+        !spec.template_profile_ref.is_empty(),
+        pool_ref.is_some(),
+        spec.template_pool.is_some(),
+    ]
+    .iter()
+    .filter(|present| **present)
+    .count();
+    if sources > 1 {
+        return Err(CoreError::new(
+            ReasonCode::SpecInvalid,
+            "template_profile_ref, template_pool_ref and template_pool are mutually exclusive",
+        ));
     }
-    if spec.template_pool.is_some() && !spec.template_inputs.is_empty() {
+    if sources == 0 {
+        return Err(CoreError::new(
+            ReasonCode::SpecInvalid,
+            "one of template_profile_ref, template_pool_ref or template_pool is required",
+        ));
+    }
+    if let Some(pool) = &spec.template_pool {
+        pool.validate()?;
+    }
+    if let Some(pool_ref) = pool_ref {
+        if pool_ref.len() > 128 {
+            return Err(CoreError::new(
+                ReasonCode::SpecInvalid,
+                "template_pool_ref must be a template pool key",
+            ));
+        }
+    }
+    if (spec.template_pool.is_some() || spec.template_pool_ref.is_some())
+        && !spec.template_inputs.is_empty()
+    {
         return Err(CoreError::new(
             ReasonCode::SpecInvalid,
             "template_inputs must be empty when template_pool is declared",
