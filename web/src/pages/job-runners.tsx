@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { OperationLogs } from "@/components/operation-logs";
+import { FinalizeRunner } from "@/components/finalize-runner";
 import {
   historyTime,
   useHistory,
@@ -146,7 +147,21 @@ export function RunnerDetail({ scopes }: { scopes: string[] }) {
               <h1>{generation.runner_name}</h1>
               <p>Runner generation and retained provisioning history.</p>
             </div>
+            {generation.state === "Quarantined" && scopes.includes("fleet.retire") && (
+              <FinalizeRunner
+                generationId={generation.id}
+                runnerName={generation.runner_name}
+                onAccepted={() => void detail.refetch()}
+              />
+            )}
           </div>
+          {generation.state === "Quarantined" && (
+            <p className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
+              This runner is quarantined: its destroy could not be verified, so the generation is
+              held until an operator confirms the external resources are gone. A quarantined runner
+              keeps the fleet's decommission open.
+            </p>
+          )}
           <section className="details-section">
             <h2>Runner</h2>
             <dl className="details-grid">
