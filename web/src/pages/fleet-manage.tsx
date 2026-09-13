@@ -34,11 +34,11 @@ export function FleetManagePage({ scopes, mode }: { scopes: string[]; mode: "cre
       </Link>
       <div className="page-heading">
         <div>
-          <h1>{editing ? `Edit fleet ${key}` : "Create fleet"}</h1>
+          <h1>{editing ? `Edit ${key}` : "New fleet"}</h1>
           <p>
             {editing
-              ? "Update fleet settings and template placement."
-              : "Configure a GitHub Actions runner fleet."}
+              ? "Update capacity, authentication, and template placement."
+              : "A fleet manages a GitHub Actions scale set — the runners a label can draw from."}
           </p>
         </div>
       </div>

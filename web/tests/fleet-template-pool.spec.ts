@@ -21,7 +21,7 @@ test("creates a weighted template pool with independent random draw semantics", 
   await dialog
     .getByLabel("GitHub authentication profile", { exact: true })
     .selectOption("github-build");
-  await dialog.getByLabel("Template placement").selectOption("pool");
+  await dialog.getByRole("radio", { name: "Weighted pool" }).click();
   await dialog.getByLabel("Template profile").selectOption("kubernetes-linux");
   await dialog.getByRole("spinbutton", { name: "Weight" }).fill("20");
   await expect(dialog).toContainText("independently by weight");

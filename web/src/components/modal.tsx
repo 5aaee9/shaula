@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { cn } from "cn";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
 
 export function Modal({
@@ -8,6 +9,7 @@ export function Modal({
   open,
   onOpenChange,
   inline = false,
+  className,
 }: {
   title: string;
   description?: string;
@@ -15,6 +17,7 @@ export function Modal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   inline?: boolean;
+  className?: string;
 }) {
   if (inline)
     return (
@@ -30,7 +33,7 @@ export function Modal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         {...(!description ? { "aria-describedby": undefined } : {})}
-        className="max-h-[90dvh] overflow-y-auto sm:max-w-xl"
+        className={cn("max-h-[90dvh] overflow-y-auto sm:max-w-xl", className)}
       >
         <DialogHeader>
           <DialogTitle className="pr-6 break-words">{title}</DialogTitle>
