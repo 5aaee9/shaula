@@ -14,6 +14,7 @@
 | 启用 GitHub Set up job 中的 apply 输出 | [Setup Info 模板](setup-info-templates.md) |
 | 真实 Docker Runner 的创建、运行与清理验证 | [Docker 冒烟验证](docker-conformance.md) |
 | Proxmox 基础 VM、DHCP 与 cloud-init 配置 | [Proxmox Runner](proxmox-runners.md) |
+| 腾讯云 CVM 与阿里云 ECS 模板配置、安全边界和验收 | [云主机 Runner](cloud-runners.md) |
 | 已实现范围、集成缺口与验收证据 | [实现状态](IMPLEMENTATION_STATUS.md) |
 | Forgejo Busy-safe drain 的源码证据、竞态与发布阻塞 | [Forgejo drain](forgejo-drain.md) |
 | Forgejo A1–A8 本地与真实平台验收矩阵 | [Forgejo A1–A8 evidence](evidence/forgejo-a1-a8-2026-09-12/README.md) |
@@ -64,7 +65,7 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 - Terraform state 通过 daemon 内部 HTTP backend 写入 SQLite；LOCK/UNLOCK、锁持有者校验和 state 写入是数据库事务契约，不以本地 `terraform.tfstate` 为主状态。
 - daemon 保管 GitHub 控制面凭据，worker 通过受授权控制通道请求 JIT、观察与安全删除；管理 HTTP 保持 OIDC，内部 worker/state HTTP 使用分权的 Generation/worker 专用凭据。
 - Runner Generation 不可变；Create 与 Destroy 是唯一基础设施 mutation，Busy-safe removal、原始 inputs/artifact、worker fencing 和故障时保留证据不因进程拆分而取消。
-- Kubernetes、Docker 与 Proxmox 是 bundled Template Platforms；GitHub authentication 只支持 schema 2 GitHub App、显式 TargetPolicy 和 Revision-scoped account bindings，不做运行时 credential fallback。PAT、旧 allowlist 和固定 installation publication 已按 spec 0018 停用。Forgejo 后端的 token 型 profile 是独立 kind，与 GitHub authentication 不共用 schema，也不构成 PAT 的复活（[spec 0026](specs/0026-forgejo-runner-backend.md)，Draft）。
+- Kubernetes、Docker、Proxmox、AWS、腾讯云与阿里云是 bundled Template Platforms；GitHub authentication 只支持 schema 2 GitHub App、显式 TargetPolicy 和 Revision-scoped account bindings，不做运行时 credential fallback。PAT、旧 allowlist 和固定 installation publication 已按 spec 0018 停用。Forgejo 后端的 token 型 profile 是独立 kind，与 GitHub authentication 不共用 schema，也不构成 PAT 的复活（[spec 0026](specs/0026-forgejo-runner-backend.md)，Draft）。
 - Fleet Decommission 保留空 Scale Set；Profile DELETE 是异步 retirement，不因正在使用而改成同步删除或 force delete。
 - Template 当前候选静态校验通过后自动激活，已有 Ready 在扫描时重新校验并激活；独立 `template.attest` 的 exact conformance 记录作为运行验证证据保留，不再控制激活，见 spec 0017。
 - 默认 Docker Runner 不挂载 host socket；JIT 同 Runner Execution Domain 的进程检查风险、Kubernetes name-based deletion 风险和同 OS identity IaC children 的 ambient host-admin 风险按相应 ARD 记录。

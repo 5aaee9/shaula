@@ -1,0 +1,17 @@
+[Unit]
+Description=Shaula ephemeral GitHub Actions Runner
+Wants=network-online.target
+After=network-online.target cloud-final.service
+ConditionPathExists=!/var/lib/shaula/started
+
+[Service]
+Type=simple
+User=root
+Group=root
+UMask=0077
+# The install directory does not exist until ExecStart bootstraps the runner.
+WorkingDirectory=/
+ExecStart=/usr/local/libexec/shaula-runner
+Restart=no
+KillMode=control-group
+TimeoutStopSec=120

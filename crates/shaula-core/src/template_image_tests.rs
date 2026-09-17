@@ -107,6 +107,58 @@ fn aws_ami_contract_binds_aws_platform_only() -> TestResult {
     Ok(())
 }
 
+fn public_cloud_vm_manifest(
+    platform: &str,
+    bindings_contract: &str,
+    image_contract: &str,
+) -> Result<ProfileManifest, Box<dyn std::error::Error>> {
+    let mut manifest = vm_manifest()?;
+    manifest.platform = platform.into();
+    manifest.bindings_contract = bindings_contract.into();
+    manifest.vm_image_contract = Some(image_contract.into());
+    Ok(manifest)
+}
+
+#[test]
+fn public_cloud_vm_contracts_are_platform_and_binding_specific() -> TestResult {
+    for (platform, bindings_contract, image_contract, expected) in [
+        (
+            "tencentcloud",
+            "shaula.bindings.tencentcloud/v1",
+            TENCENTCLOUD_VM_IMAGE_CONTRACT,
+            TemplatePlatform::TencentCloud,
+        ),
+        (
+            "alicloud",
+            "shaula.bindings.alicloud/v1",
+            ALICLOUD_VM_IMAGE_CONTRACT,
+            TemplatePlatform::AliCloud,
+        ),
+    ] {
+        let manifest = public_cloud_vm_manifest(platform, bindings_contract, image_contract)?;
+        manifest.validate_new_container_profile()?;
+        assert_eq!(manifest.platform(), expected);
+        assert_eq!(manifest.platform().metric_label(), platform);
+
+        let mut wrong_platform = manifest.clone();
+        wrong_platform.platform = "aws".into();
+        assert!(wrong_platform.validate().is_err(), "{platform}");
+
+        let mut wrong_bindings = manifest.clone();
+        wrong_bindings.bindings_contract = "shaula.bindings.aws/v1".into();
+        assert!(wrong_bindings.validate().is_err(), "{platform}");
+
+        let mut cross_wired = manifest.clone();
+        cross_wired.vm_image_contract = Some(AWS_VM_IMAGE_CONTRACT.into());
+        assert!(cross_wired.validate().is_err(), "{platform}");
+
+        let mut pinned = manifest;
+        pinned.runner_image_digests = container_manifest()?.runner_image_digests;
+        assert!(pinned.validate().is_err(), "{platform}");
+    }
+    Ok(())
+}
+
 #[test]
 fn existing_manifests_keep_nonempty_immutable_image_authority() -> TestResult {
     let legacy = container_manifest()?;

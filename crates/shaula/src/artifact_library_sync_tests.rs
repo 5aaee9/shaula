@@ -7,7 +7,14 @@ async fn bundled_catalog_imports_and_recovers_proxmox_render_sources_from_databa
     let defaults = temp.path().join("defaults");
     // Match the installed default catalog; repository-only setup-info helpers
     // are not template sources and are not installed by the package.
-    for key in ["docker", "kubernetes", "proxmox", "aws"] {
+    for key in [
+        "docker",
+        "kubernetes",
+        "proxmox",
+        "aws",
+        "tencentcloud",
+        "alicloud",
+    ] {
         let directory = defaults.join(key);
         std::fs::create_dir_all(&directory)?;
         let (bytes, _) = import::package(&bundled_templates.join(key))
@@ -27,9 +34,16 @@ async fn bundled_catalog_imports_and_recovers_proxmox_render_sources_from_databa
             .iter()
             .map(|source| source.key.as_str())
             .collect::<Vec<_>>(),
-        vec!["aws", "docker", "kubernetes", "proxmox"]
+        vec![
+            "alicloud",
+            "aws",
+            "docker",
+            "kubernetes",
+            "proxmox",
+            "tencentcloud",
+        ]
     );
-    assert_eq!(store.artifact_archive_digests().await?.len(), 4);
+    assert_eq!(store.artifact_archive_digests().await?.len(), 6);
     let proxmox = sources
         .iter()
         .find(|source| source.key == "proxmox")

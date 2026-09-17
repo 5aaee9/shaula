@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shaula Alibaba Cloud Profile bindings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "alicloud_region",
+    "alicloud_access_key_id",
+    "alicloud_access_key_secret",
+    "alicloud_image_id",
+    "alicloud_vswitch_id",
+    "alicloud_security_group_ids"
+  ],
+  "properties": {
+    "alicloud_region": {
+      "type": "string",
+      "pattern": "^[a-z]+(-[a-z0-9]+)+$",
+      "description": "Alibaba Cloud region, for example cn-hangzhou. Must contain the selected image and vSwitch.",
+      "sensitive": false
+    },
+    "alicloud_access_key_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "RAM AccessKey ID used only by the Terraform provider. Grant scoped ECS lifecycle, image/network describe, tagging and encrypted system disk permissions; never delivered to the guest.",
+      "sensitive": true
+    },
+    "alicloud_access_key_secret": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192,
+      "description": "RAM AccessKey secret paired with alicloud_access_key_id. Stored as a sensitive publisher binding, never placed in user-data or tags.",
+      "sensitive": true
+    },
+    "alicloud_image_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]+$",
+      "maxLength": 128,
+      "description": "Publisher-reviewed Ubuntu Server 22.04 LTS x86_64 image ID with systemd and an Alibaba Cloud cloud-init datasource supporting IMDSv2. Pin an image in the bound region; this ID is not a disk-content digest. ARM and Windows images are unsupported.",
+      "sensitive": false
+    },
+    "alicloud_vswitch_id": {
+      "type": "string",
+      "pattern": "^vsw-[a-z0-9]+$",
+      "description": "Existing vSwitch; determines the availability zone. With default zero public bandwidth it must provide NAT egress to GitHub releases, Actions endpoints and Ubuntu package repositories. Never created or destroyed by this template.",
+      "sensitive": false
+    },
+    "alicloud_security_group_ids": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^sg-[a-z0-9]+$" },
+      "minItems": 1,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "description": "Existing security groups in the vSwitch's VPC. Allow required outbound traffic; no inbound access is needed. The template creates no security group or rule.",
+      "sensitive": false
+    },
+    "alicloud_instance_type": {
+      "type": "string",
+      "pattern": "^ecs\\.[a-z0-9-]+\\.[a-z0-9]+$",
+      "description": "x86_64 ECS instance type, default ecs.g6.large. The vSwitch zone must support this type and encrypted cloud_essd system disks.",
+      "sensitive": false
+    },
+    "alicloud_system_disk_size": {
+      "type": "integer",
+      "enum": [40, 50, 100, 150, 200],
+      "description": "Encrypted cloud_essd system disk size in GiB, default 40; must accommodate the image. Released with the instance. Account KMS activation/authorization may be required.",
+      "sensitive": false
+    },
+    "alicloud_internet_max_bandwidth_out": {
+      "type": "integer",
+      "enum": [0, 1, 5, 10, 20, 50, 100],
+      "description": "Public outbound bandwidth in Mbps, default 0 (no public IP; requires NAT). Positive values allocate an instance public IP with PayByTraffic billing; no EIP is created.",
+      "sensitive": false
+    },
+    "alicloud_cloud_init_cmd": {
+      "type": "string",
+      "maxLength": 4096,
+      "description": "Optional trusted publisher Bash preparation body, run as root before runner installation without a JIT environment or template expansion. Never include credentials. Failure stops bootstrap. The template conservatively limits complete encoded user-data to 16 KiB.",
+      "sensitive": false
+    }
+  }
+}

@@ -16,6 +16,32 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Tencent Cloud and Alibaba Cloud runner templates (2026-09-17)
+
+The bundled catalog now includes `tencentcloud` and `alicloud`. Each Template
+creates exactly one pay-as-you-go CVM/ECS instance from a publisher-bound Ubuntu
+22.04 x86_64 image and existing network/security groups, delivers JIT through
+cloud-init, verifies the pinned GitHub Actions runner archive, and destroys the
+instance through the existing safe-removal lifecycle. Provider credentials remain
+publisher-only bindings and are absent from guest materials. Both VM-image
+contracts explicitly trust the bound image ID rather than claiming an OCI content
+pin. Platform metric labels, default-source synchronization and Nix packaging are
+wired for both stable source keys.
+
+Terraform 1.9.8 initialized the pinned `tencentcloudstack/tencentcloud` 1.83.31
+and `aliyun/alicloud` 1.292.0 providers, generated locks containing the Linux
+AMD64 `h1:` checksums, and validated both root modules without warnings. Local
+manifest, variable-discovery, credential-separation and publication regressions
+pass. Strict workspace Clippy and rustfmt passed; the unfiltered workspace run
+passed 837 tests with 2 platform skips, and the literal AGENTS filtered run passed
+662 tests with 177 skips. A clean path-based Nix package build passed its own
+checks and installed all six default source directories with complete cloud
+artifacts. These are static/local checks: no Tencent Cloud or Alibaba Cloud
+resource was created. Real image/cloud-init compatibility, KMS permissions, JIT/job
+execution, busy-safe removal and final instance/system-disk cleanup remain target-
+account acceptance gates. See [the operator guide](cloud-runners.md) and each
+artifact's `runtime-policy.md`; this increment does not claim production readiness.
+
 ## Job observations without a request identity (2026-09-09)
 
 The Ready observation after deploying `35cf06f` was temporary. The user reported

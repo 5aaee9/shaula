@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-//! Bundled Profile smoke tests: both shipped templates must pass the full
+//! Bundled Profile smoke tests: every shipped template must pass the full
 //! publication pipeline (package → digest → artifact store → manifest
 //! validation → managed shape contract).
 
@@ -106,6 +106,16 @@ fn aws_template_publishes_and_validates() {
 }
 
 #[test]
+fn tencentcloud_template_publishes_and_validates() {
+    smoke_test_template("tencentcloud", "tencentcloud");
+}
+
+#[test]
+fn alicloud_template_publishes_and_validates() {
+    smoke_test_template("alicloud", "alicloud");
+}
+
+#[test]
 fn bundled_templates_declare_distinct_contracts() {
     let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let read = |name: &str| {
@@ -121,18 +131,26 @@ fn bundled_templates_declare_distinct_contracts() {
     let docker = read("docker");
     let proxmox = read("proxmox");
     let aws = read("aws");
+    let tencentcloud = read("tencentcloud");
+    let alicloud = read("alicloud");
     assert!(k8s.contains("shaula.bindings.kubernetes/v1"));
     assert!(docker.contains("shaula.bindings.docker/v1"));
     assert!(proxmox.contains("shaula.bindings.proxmox/v1"));
     assert!(aws.contains("shaula.bindings.aws/v1"));
+    assert!(tencentcloud.contains("shaula.bindings.tencentcloud/v1"));
+    assert!(alicloud.contains("shaula.bindings.alicloud/v1"));
     assert!(k8s.contains("kubernetes_secret_v1") && k8s.contains("kubernetes_pod_v1"));
     assert!(docker.contains("docker_container"));
     assert!(proxmox.contains("proxmox_qemu_vm") && proxmox.contains("proxmox_nocloud_iso"));
     assert!(aws.contains("aws_instance"));
-    // VM platforms use the explicit operator-managed image contract; the
+    assert!(tencentcloud.contains("tencentcloud_instance"));
+    assert!(alicloud.contains("alicloud_instance"));
+    // VM platforms use explicit publisher-reviewed image contracts; the
     // container platforms keep immutable OCI digest pins instead.
     assert!(proxmox.contains("vm_image_contract: shaula.proxmox-template/v1"));
     assert!(aws.contains("vm_image_contract: shaula.aws-ami/v1"));
+    assert!(tencentcloud.contains("vm_image_contract: shaula.tencentcloud-image/v1"));
+    assert!(alicloud.contains("vm_image_contract: shaula.alicloud-image/v1"));
     assert!(!k8s.contains("vm_image_contract"));
     assert!(!docker.contains("vm_image_contract"));
 }

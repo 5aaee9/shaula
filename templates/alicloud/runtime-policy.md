@@ -1,0 +1,54 @@
+# Alibaba Cloud runner runtime policy
+
+Each Generation owns exactly one pay-as-you-go ECS instance. The pinned
+`aliyun/alicloud` provider owns creation and destruction. The publisher binds
+an existing Ubuntu Server 22.04 LTS x86_64 image with systemd and cloud-init
+supporting Alibaba Cloud IMDSv2, a vSwitch and security groups in its VPC.
+These shared resources are not managed or deleted. The explicit
+`shaula.alicloud-image/v1` contract trusts the publisher's image selection;
+an image ID is not a content digest and no immutable OCI image is claimed.
+Availability, quotas, image suitability and permissions need target validation.
+
+The instance uses PostPaid billing without spot interruption and an encrypted
+cloud_essd system disk released with the instance. Deletion protection is
+disabled. No data disk, SSH key, password, RAM role, EIP, network or inbound
+rule is created. Public bandwidth defaults to zero (no public IP), requiring
+publisher-provided NAT egress. Positive bandwidth allocates an instance public
+IP with PayByTraffic billing. The vSwitch zone/type must support the disk,
+and the account must authorize encryption through its KMS service. IMDSv2 is
+required; this restricts metadata requests but does not hide JIT from jobs.
+
+Cloud-init writes a root-owned 0600 JIT file, a preparation file, the fixed
+bootstrap and a systemd unit. User-data is base64 encoded exactly once for
+the provider; nested sensitive file content is encoded as data, never evaluated
+as shell or Terraform code. The template conservatively limits encoded
+user-data to 16 KiB, keeping decoded data below ECS's limit as well, including
+the JIT and optional preparation. Preparation is trusted publisher Bash code,
+receives no JIT environment, must not contain credentials, and failure prevents
+installation and registration. There are no Fleet parameters.
+
+Bootstrap installs download tools and the pinned GitHub Actions runner
+2.337.0 tarball, verifies its artifact-recorded SHA-256 before extraction,
+installs its runtime dependencies and runs the Listener as unprivileged user
+`runner`. Ubuntu repositories, GitHub release assets and Actions endpoints
+must be reachable. Server-driven runner updates may change the executed
+version. Bootstrap runs once after cloud-final; the unit is never enabled,
+has Restart=no and starts in an existing directory. A durable marker prevents
+reuse on reboot or after partial failure. Bootstrap restricts local cloud-init
+caches, reads and deletes the JIT file, then passes the official
+ACTIONS_RUNNER_INPUT_JITCONFIG environment input directly to Runner.Listener.
+There is no host-side Setup Info delivery for this VM contract.
+
+RAM credentials are provider-only, never guest data, tags or runner environment.
+Use a least-privilege RAM identity scoped to ECS lifecycle, image/network
+describe, tags and encrypted disk operations. User-data and metadata remain
+credential-grade for the instance lifetime. Guest processes with metadata
+access or root privileges may retrieve JIT. Cloud console output, Terraform
+inputs, plans, state and raw diagnostics also require privileged protection.
+
+Destruction follows Shaula's existing GitHub safe-removal gate and uses the
+frozen Terraform state/material, not a tag-based cleanup. Unknown outcomes
+retain state for recovery; running or stopped ECS status is not runner idleness.
+Static validation and mock plans do not prove real boot, registration, jobs,
+interruption recovery or instance/system-disk cleanup. Accept those separately
+on the target Alibaba Cloud environment before production use.

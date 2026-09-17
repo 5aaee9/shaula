@@ -1,0 +1,46 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+# Never enabled at boot; the durable marker also fails closed on any restart.
+chmod 0700 /var/lib/shaula
+mkdir /var/lib/shaula/started
+
+# Publisher preparation is data, not a Terraform template, and receives no JIT.
+/bin/bash -euo pipefail /var/lib/shaula/pre-start
+rm -- /var/lib/shaula/pre-start
+
+# Ubuntu cloud images must provide cloud-init and systemd. Install download
+# tools explicitly rather than assuming that a minimal image includes curl.
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y --no-install-recommends ca-certificates curl tar gzip
+
+# Artifact-pinned runner package; upgrades require a new Template Revision.
+RUNNER_VERSION=2.337.0
+RUNNER_SHA256=70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613
+RUNNER_URL="https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
+
+id runner >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin runner
+install -d -m 0755 -o runner -g runner /opt/actions-runner
+package=$(mktemp /var/lib/shaula/runner.XXXXXX.tar.gz)
+curl -fsSL --retry 3 --connect-timeout 15 --max-time 600 -o "$package" "$RUNNER_URL"
+echo "$RUNNER_SHA256  $package" | sha256sum --check --strict
+tar -xzf "$package" -C /opt/actions-runner
+rm -- "$package"
+/opt/actions-runner/bin/installdependencies.sh
+chown -R runner:runner /opt/actions-runner
+test -x /opt/actions-runner/bin/Runner.Listener
+
+# The scale-set JIT config uses the container-style absolute workFolder.
+install -d -m 0755 -o runner -g runner /_work
+
+# Restrict local caches; this does NOT remove user-data from cloud metadata,
+# nor does it isolate JIT from workflows capable of becoming root.
+chmod 0700 /var/lib/cloud /run/cloud-init
+ACTIONS_RUNNER_INPUT_JITCONFIG=$(cat -- /var/lib/shaula/jit-config)
+test -n "$ACTIONS_RUNNER_INPUT_JITCONFIG"
+rm -- /var/lib/shaula/jit-config
+export ACTIONS_RUNNER_INPUT_JITCONFIG
+cd /opt/actions-runner
+exec runuser -u runner -- /opt/actions-runner/bin/Runner.Listener run

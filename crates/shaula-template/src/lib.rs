@@ -19,4 +19,6 @@ mod operation_sanitize;
 #[cfg(test)]
 mod aws_tests;
 #[cfg(test)]
+mod cloud_tests;
+#[cfg(test)]
 mod proxmox_tests;

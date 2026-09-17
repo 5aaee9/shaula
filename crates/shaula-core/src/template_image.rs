@@ -4,6 +4,8 @@ use super::{CoreError, CoreResult, ProfileManifest, ReasonCode};
 
 pub const PROXMOX_VM_IMAGE_CONTRACT: &str = "shaula.proxmox-template/v1";
 pub const AWS_VM_IMAGE_CONTRACT: &str = "shaula.aws-ami/v1";
+pub const TENCENTCLOUD_VM_IMAGE_CONTRACT: &str = "shaula.tencentcloud-image/v1";
+pub const ALICLOUD_VM_IMAGE_CONTRACT: &str = "shaula.alicloud-image/v1";
 
 /// Each VM image contract binds exactly one platform and its bindings
 /// contract; unknown contracts or cross-platform reuse are rejected.
@@ -11,6 +13,8 @@ fn vm_image_contract_binding(contract: &str) -> Option<(&'static str, &'static s
     match contract {
         PROXMOX_VM_IMAGE_CONTRACT => Some(("proxmox", "shaula.bindings.proxmox/v1")),
         AWS_VM_IMAGE_CONTRACT => Some(("aws", "shaula.bindings.aws/v1")),
+        TENCENTCLOUD_VM_IMAGE_CONTRACT => Some(("tencentcloud", "shaula.bindings.tencentcloud/v1")),
+        ALICLOUD_VM_IMAGE_CONTRACT => Some(("alicloud", "shaula.bindings.alicloud/v1")),
         _ => None,
     }
 }

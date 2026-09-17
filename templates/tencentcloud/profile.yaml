@@ -1,0 +1,19 @@
+api_version: shaula.io/template-profile/v1
+kind: RunnerTemplateProfile
+platform: tencentcloud
+runtime:
+  protocol: terraform-cli/v1
+  engine: terraform
+  root_module: .
+  required_version: ">= 1.9, < 2.0"
+bindings_contract: shaula.bindings.tencentcloud/v1
+vm_image_contract: shaula.tencentcloud-image/v1
+schemas:
+  bindings: schemas/bindings.schema.json
+  parameters: schemas/parameters.schema.json
+managed_resource_shape:
+  - role: runner
+    terraform_type: tencentcloud_instance
+    exact_count: 1
+runner_image_digests: []
+runtime_policy_digest: sha256:83b4fa1665a505dfed0a8386cda1dc4982e5420df13ad225705ef6b746d880db

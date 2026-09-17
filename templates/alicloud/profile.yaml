@@ -1,0 +1,19 @@
+api_version: shaula.io/template-profile/v1
+kind: RunnerTemplateProfile
+platform: alicloud
+runtime:
+  protocol: terraform-cli/v1
+  engine: terraform
+  root_module: .
+  required_version: ">= 1.9, < 2.0"
+bindings_contract: shaula.bindings.alicloud/v1
+vm_image_contract: shaula.alicloud-image/v1
+schemas:
+  bindings: schemas/bindings.schema.json
+  parameters: schemas/parameters.schema.json
+managed_resource_shape:
+  - role: runner
+    terraform_type: alicloud_instance
+    exact_count: 1
+runner_image_digests: []
+runtime_policy_digest: sha256:4dd5ece8c35e2bf467641706456ae79e120d5abe53de3483767ba8bc1c586a6e

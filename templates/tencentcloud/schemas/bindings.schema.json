@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shaula Tencent Cloud Profile bindings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tencentcloud_region",
+    "tencentcloud_secret_id",
+    "tencentcloud_secret_key",
+    "tencentcloud_availability_zone",
+    "tencentcloud_image_id",
+    "tencentcloud_vpc_id",
+    "tencentcloud_subnet_id",
+    "tencentcloud_security_group_ids"
+  ],
+  "properties": {
+    "tencentcloud_region": {
+      "type": "string",
+      "pattern": "^[a-z]+(-[a-z0-9]+)+$",
+      "description": "Tencent Cloud region, for example ap-guangzhou. Must contain the selected image and VPC.",
+      "sensitive": false
+    },
+    "tencentcloud_secret_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "CAM SecretId used only by the Terraform provider. Grant scoped CVM lifecycle, image/network describe, tagging and encrypted system disk permissions; never delivered to the guest.",
+      "sensitive": true
+    },
+    "tencentcloud_secret_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192,
+      "description": "CAM SecretKey paired with tencentcloud_secret_id. Stored as a sensitive publisher binding, never placed in user-data or tags.",
+      "sensitive": true
+    },
+    "tencentcloud_availability_zone": {
+      "type": "string",
+      "pattern": "^[a-z]+(-[a-z0-9]+)+-[0-9]+$",
+      "description": "CVM availability zone, for example ap-guangzhou-6. Must match the subnet and support the selected instance type and encrypted CLOUD_SSD system disks.",
+      "sensitive": false
+    },
+    "tencentcloud_image_id": {
+      "type": "string",
+      "pattern": "^img-[a-z0-9]+$",
+      "description": "Publisher-reviewed Ubuntu Server 22.04 LTS x86_64 image ID with cloud-init and systemd. Pin an image available in the bound region; this ID is not a disk-content digest. ARM and Windows images are unsupported.",
+      "sensitive": false
+    },
+    "tencentcloud_vpc_id": {
+      "type": "string",
+      "pattern": "^vpc-[a-z0-9]+$",
+      "description": "Existing VPC; shared infrastructure is never created or destroyed by this template.",
+      "sensitive": false
+    },
+    "tencentcloud_subnet_id": {
+      "type": "string",
+      "pattern": "^subnet-[a-z0-9]+$",
+      "description": "Existing subnet in the selected VPC and availability zone. With default zero public bandwidth it must provide NAT egress to GitHub releases, Actions endpoints and Ubuntu package repositories.",
+      "sensitive": false
+    },
+    "tencentcloud_security_group_ids": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^sg-[a-z0-9]+$" },
+      "minItems": 1,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "description": "Existing security groups in priority order. Allow required outbound traffic; no inbound access is needed. The template creates no security group or rule.",
+      "sensitive": false
+    },
+    "tencentcloud_instance_type": {
+      "type": "string",
+      "pattern": "^[A-Z0-9]+\\.[A-Z0-9]+$",
+      "description": "x86_64 CVM instance type, default S5.MEDIUM4. Availability and quota must be verified in the target zone.",
+      "sensitive": false
+    },
+    "tencentcloud_system_disk_size": {
+      "type": "integer",
+      "enum": [50, 100, 150, 200],
+      "description": "Encrypted CLOUD_SSD system disk size in GiB, default 50; must accommodate the image. Released with the instance. Account KMS activation/authorization may be required.",
+      "sensitive": false
+    },
+    "tencentcloud_internet_max_bandwidth_out": {
+      "type": "integer",
+      "enum": [0, 1, 5, 10, 20, 50, 100],
+      "description": "Public outbound bandwidth in Mbps, default 0 (no public IP; requires NAT). Positive values allocate an instance public IP with traffic-based billing; no EIP is created.",
+      "sensitive": false
+    },
+    "tencentcloud_cloud_init_cmd": {
+      "type": "string",
+      "maxLength": 4096,
+      "description": "Optional trusted publisher Bash preparation body, run as root before runner installation without a JIT environment or template expansion. Never include credentials. Failure stops bootstrap. The complete encoded user-data must fit CVM's 16 KiB limit.",
+      "sensitive": false
+    }
+  }
+}

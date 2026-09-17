@@ -37,6 +37,8 @@ pub enum TemplatePlatform {
     Docker,
     Proxmox,
     Aws,
+    TencentCloud,
+    AliCloud,
     Other,
 }
 
@@ -48,6 +50,8 @@ impl TemplatePlatform {
             "docker" => TemplatePlatform::Docker,
             "proxmox" => TemplatePlatform::Proxmox,
             "aws" => TemplatePlatform::Aws,
+            "tencentcloud" => TemplatePlatform::TencentCloud,
+            "alicloud" => TemplatePlatform::AliCloud,
             _ => TemplatePlatform::Other,
         }
     }
@@ -58,6 +62,8 @@ impl TemplatePlatform {
             TemplatePlatform::Docker => "docker",
             TemplatePlatform::Proxmox => "proxmox",
             TemplatePlatform::Aws => "aws",
+            TemplatePlatform::TencentCloud => "tencentcloud",
+            TemplatePlatform::AliCloud => "alicloud",
             TemplatePlatform::Other => "other",
         }
     }
@@ -108,8 +114,8 @@ pub struct ProfileManifest {
     /// Explicit permission for the Runtime's fixed post-apply container bootstrap.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_bootstrap_contract: Option<String>,
-    /// Explicit trust in an operator-managed Proxmox base VM; this does not
-    /// claim an immutable image digest or authorize a Runtime bootstrap hook.
+    /// Explicit trust in a publisher-selected VM image; this does not claim
+    /// an immutable image digest or authorize a Runtime bootstrap hook.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vm_image_contract: Option<String>,
 }
@@ -314,7 +320,10 @@ pub use container::CONTAINER_BOOTSTRAP_CONTRACT;
 
 #[path = "template_image.rs"]
 mod image;
-pub use image::{AWS_VM_IMAGE_CONTRACT, PROXMOX_VM_IMAGE_CONTRACT};
+pub use image::{
+    ALICLOUD_VM_IMAGE_CONTRACT, AWS_VM_IMAGE_CONTRACT, PROXMOX_VM_IMAGE_CONTRACT,
+    TENCENTCLOUD_VM_IMAGE_CONTRACT,
+};
 
 fn default_runner_backend() -> String {
     "github".into()
