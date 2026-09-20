@@ -8,6 +8,7 @@ use crate::entities::lifecycle::runner_generations;
 use crate::entities::template_pool::{template_pool_members, template_pool_revisions};
 
 use super::core_err;
+use super::mapping::{pool_failure_policy, pool_member_weight, template_inputs_from_json};
 use shaula_core::error::CoreResult;
 use shaula_core::template_pool::{FleetPoolRef, PoolFailurePolicy};
 
@@ -18,9 +19,9 @@ pub(crate) struct AdmitMember {
     pub template_revision: i64,
     pub template_artifact_digest: String,
     pub template_attestation_id: String,
-    pub template_inputs_json: String,
+    pub template_inputs: serde_json::Map<String, serde_json::Value>,
     pub inputs_digest: String,
-    pub weight: i64,
+    pub weight: u32,
     pub max_runners: Option<i64>,
 }
 
@@ -72,32 +73,33 @@ pub(crate) async fn load_routing(
         .await
         .map_err(|e| core_err(e.into()))?
         .into_iter()
-        .map(|m| AdmitMember {
-            member_key: m.member_key,
-            template_profile_key: m.template_profile_key,
-            template_revision: m.template_revision,
-            template_artifact_digest: m.template_artifact_digest,
-            template_attestation_id: m.template_attestation_id,
-            template_inputs_json: m.template_inputs_json,
-            inputs_digest: m.inputs_digest,
-            weight: m.weight,
-            max_runners: m.max_runners,
+        .map(|m| {
+            Ok(AdmitMember {
+                member_key: m.member_key,
+                template_profile_key: m.template_profile_key,
+                template_revision: m.template_revision,
+                template_artifact_digest: m.template_artifact_digest,
+                template_attestation_id: m.template_attestation_id,
+                template_inputs: template_inputs_from_json(&m.template_inputs_json)
+                    .map_err(core_err)?,
+                inputs_digest: m.inputs_digest,
+                weight: pool_member_weight(m.weight).map_err(core_err)?,
+                max_runners: m.max_runners,
+            })
         })
-        .collect();
+        .collect::<CoreResult<Vec<_>>>()?;
     let failure_policy = template_pool_revisions::Entity::find()
         .filter(template_pool_revisions::Column::PoolKey.eq(&pool_key))
         .filter(template_pool_revisions::Column::Revision.eq(pool_revision))
         .one(tx)
         .await
         .map_err(|e| core_err(e.into()))?
-        .map(|row| {
-            if row.failure_policy == "redistribute" {
-                PoolFailurePolicy::Redistribute
-            } else {
-                PoolFailurePolicy::Backpressure
-            }
+        .ok_or_else(|| {
+            core_err(crate::store::StoreError::Corrupt(format!(
+                "shared template pool revision {pool_key}:{pool_revision} is missing"
+            )))
         })
-        .unwrap_or_default();
+        .and_then(|row| pool_failure_policy(&row.failure_policy).map_err(core_err))?;
     Ok(PoolRouting {
         members,
         failure_policy,
@@ -160,9 +162,15 @@ pub(crate) async fn replay_member_inputs(
             .await
             .map_err(|e| core_err(e.into()))?
         {
-            return Ok(serde_json::from_str(&member.template_inputs_json).unwrap_or_default());
+            return template_inputs_from_json(&member.template_inputs_json).map_err(core_err);
         }
-        return Ok(serde_json::Map::new());
+        return Err(core_err(crate::store::StoreError::Corrupt(format!(
+            "shared template pool member {pool_key}:{pool_revision}:{member_key} is missing"
+        ))));
     }
-    Ok(inline_inputs.unwrap_or_default())
+    inline_inputs.ok_or_else(|| {
+        core_err(crate::store::StoreError::Corrupt(format!(
+            "inline template pool member {member_key} is missing from fleet revision"
+        )))
+    })
 }

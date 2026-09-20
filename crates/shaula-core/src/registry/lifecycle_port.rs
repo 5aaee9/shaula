@@ -68,6 +68,19 @@ pub trait LifecycleStore: super::ListenerMessageStore + Send + Sync {
     async fn scale_set_upsert(&self, row: ScaleSetRow) -> CoreResult<()>;
 
     async fn generation_insert(&self, record: GenerationRecord) -> CoreResult<()>;
+    /// Inserts a generation only if its captured Fleet authority still
+    /// matches. Implementations that cannot perform the check atomically
+    /// fail closed rather than falling back to an unguarded insert.
+    async fn generation_insert_guarded(
+        &self,
+        _record: GenerationRecord,
+        _guard: &super::FleetRuntimeGuard,
+    ) -> CoreResult<bool> {
+        Err(crate::error::CoreError::new(
+            crate::error::ReasonCode::Internal,
+            "guarded generation insertion unavailable",
+        ))
+    }
     async fn generation_get(&self, id: &str) -> CoreResult<Option<GenerationRecord>>;
     async fn generations_for_fleet(&self, fleet_key: &str) -> CoreResult<Vec<GenerationRecord>>;
     async fn generation_advance(

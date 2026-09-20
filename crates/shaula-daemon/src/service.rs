@@ -28,6 +28,18 @@ pub(crate) fn request_hash(parts: &[&[u8]]) -> String {
     shaula_core::auth::request_hash_parts(parts)
 }
 
+pub(crate) fn sha256_digest(bytes: &[u8]) -> String {
+    format!("sha256:{}", hex::encode(Sha256::digest(bytes)))
+}
+
+pub(crate) fn template_inputs_digest(
+    inputs: &serde_json::Map<String, serde_json::Value>,
+) -> CoreResult<String> {
+    let canonical = serde_json::to_vec(inputs)
+        .map_err(|error| CoreError::new(ReasonCode::Internal, error.to_string()))?;
+    Ok(sha256_digest(&canonical))
+}
+
 /// The application service shared by HTTP and (future) CLI adapters.
 pub struct ControlPlane {
     store: Arc<dyn ControlPlaneStore>,
@@ -75,9 +87,7 @@ impl ControlPlane {
                 ),
             )
         })?;
-        let mut hasher = Sha256::new();
-        hasher.update(&bytes);
-        Ok(format!("sha256:{}", hex::encode(hasher.finalize())))
+        Ok(sha256_digest(&bytes))
     }
 
     pub fn set_ready(&self, ready: bool) {
@@ -101,9 +111,8 @@ impl ControlPlane {
         shaula_core::auth::new_attempt_id()
     }
 
-    fn inputs_digest(&self, spec: &FleetSpec) -> String {
-        let canonical = serde_json::to_vec(&spec.template_inputs).unwrap_or_default();
-        format!("sha256:{}", hex::encode(Sha256::digest(&canonical)))
+    fn inputs_digest(&self, spec: &FleetSpec) -> CoreResult<String> {
+        template_inputs_digest(&spec.template_inputs)
     }
 
     async fn resolve_template_ref(

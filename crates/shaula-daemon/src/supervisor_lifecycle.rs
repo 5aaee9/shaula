@@ -170,7 +170,17 @@ impl FleetSupervisor {
             parameters = admission.template_inputs;
             admission.generation
         } else {
-            self.store.generation_insert(record.clone()).await?;
+            let guard = FleetRuntimeGuard::from(&head);
+            if !self
+                .store
+                .generation_insert_guarded(record.clone(), &guard)
+                .await?
+            {
+                // The fleet changed after the snapshot but before the
+                // durable generation row could be created. Retry against
+                // the new head without leaving a stale generation behind.
+                return Ok(false);
+            }
             record
         };
         if record.state == shaula_core::lifecycle::GenerationState::CreatePending {

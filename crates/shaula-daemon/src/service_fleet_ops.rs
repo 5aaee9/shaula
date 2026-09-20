@@ -2,7 +2,6 @@
 //! impl to keep each file within the 400-line limit (AGENTS.md).
 
 use super::{unprocessable, AuthRevisionRef, ControlPlane};
-use sha2::Digest;
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::fleet::FleetSpec;
 use shaula_core::registry::{
@@ -465,12 +464,7 @@ impl ControlPlane {
                     {
                         return Ok(Err(unprocessable(e.code, e.summary)));
                     }
-                    let inputs_digest = format!(
-                        "sha256:{}",
-                        hex::encode(sha2::Sha256::digest(
-                            serde_json::to_vec(&member.template_inputs).unwrap_or_default()
-                        ))
-                    );
+                    let inputs_digest = super::template_inputs_digest(&member.template_inputs)?;
                     resolved_pool.push(shaula_core::template_pool::ResolvedTemplatePoolMember {
                         key: member.key.clone(),
                         template_profile_key: pin.0,

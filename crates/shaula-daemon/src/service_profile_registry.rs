@@ -290,15 +290,30 @@ impl ProfileRegistryPort for ControlPlane {
         else {
             return Ok(Err(MutationError::NotFound));
         };
+        let subject = serde_json::from_str(&row.subject_json).map_err(|error| {
+            CoreError::new(
+                ReasonCode::StorageCorrupt,
+                format!("stored attestation subject is invalid: {error}"),
+            )
+        })?;
+        let suite_name = row.suite_name.ok_or_else(|| {
+            CoreError::new(
+                ReasonCode::StorageCorrupt,
+                "stored attestation suite name is missing",
+            )
+        })?;
+        let suite_version = row.suite_version.ok_or_else(|| {
+            CoreError::new(
+                ReasonCode::StorageCorrupt,
+                "stored attestation suite version is missing",
+            )
+        })?;
         Ok(Ok(AttestationView {
             profile_key: row.profile_key,
             revision: row.revision,
-            subject: serde_json::from_str(&row.subject_json).unwrap_or(serde_json::Value::Null),
+            subject,
             result: row.result,
-            suite: (
-                row.suite_name.unwrap_or_default(),
-                row.suite_version.unwrap_or_default(),
-            ),
+            suite: (suite_name, suite_version),
             completed_at: row.completed_at,
             subject_verified: row.subject_verified,
         }))

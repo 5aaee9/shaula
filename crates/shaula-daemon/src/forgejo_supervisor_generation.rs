@@ -80,7 +80,15 @@ impl ForgejoPoolSupervisor {
             created_at: now,
             updated_at: now,
         };
-        self.lifecycle.generation_insert(record.clone()).await?;
+        if !self
+            .lifecycle
+            .generation_insert_guarded(record.clone(), &self.guard)
+            .await?
+        {
+            // The captured Fleet authority changed before the ledger insert;
+            // retry from the next reconciliation pass.
+            return Ok(false);
+        }
         self.lifecycle
             .generation_advance(&generation_id, GenerationState::Creating, now)
             .await?;

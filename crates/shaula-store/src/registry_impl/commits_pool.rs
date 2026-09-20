@@ -18,7 +18,12 @@ impl SqliteControlPlane {
         let failure_policy =
             serde_json::from_str::<shaula_core::template_pool::TemplatePoolSpec>(&facts.spec_json)
                 .map(|spec| spec.failure_policy)
-                .unwrap_or_default();
+                .map_err(|error| {
+                    core_err(crate::store::StoreError::Corrupt(format!(
+                        "template pool revision {} has invalid spec: {error}",
+                        facts.resource_key
+                    )))
+                })?;
         let failure_policy = match failure_policy {
             shaula_core::template_pool::PoolFailurePolicy::Backpressure => "backpressure",
             shaula_core::template_pool::PoolFailurePolicy::Redistribute => "redistribute",

@@ -16,7 +16,7 @@ impl ControlPlane {
         key: &str,
         publication: super::profile_update::TemplatePublication,
     ) -> CoreResult<Result<MutationAccepted, MutationError>> {
-        let canonical = publication.canonical();
+        let canonical = publication.canonical()?;
         let super::profile_update::TemplatePublication {
             payload,
             if_none_match,
@@ -44,7 +44,8 @@ impl ControlPlane {
         // engine, policy); bindings are compared in protected memory
         // against the stored immutable Revision (spec 0005 section 3).
         if let Some(idem) = &idempotency_key {
-            let submitted = serde_json::to_string(&payload.bindings).unwrap_or_default();
+            let submitted = serde_json::to_string(&payload.bindings)
+                .map_err(|error| CoreError::new(ReasonCode::Internal, error.to_string()))?;
             match self
                 .template_publication_replay(key, idem, &canonical, &submitted)
                 .await?

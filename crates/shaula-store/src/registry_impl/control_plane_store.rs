@@ -1,6 +1,7 @@
 use super::mapping::{
     auth_handoff_row, auth_profile_head, auth_row, fleet_change_row, fleet_head,
-    fleet_revision_row, profile_change_row, template_row, tpl_profile_head,
+    fleet_pool_member_row, fleet_revision_row, pool_member_row, profile_change_row, template_row,
+    tpl_profile_head,
 };
 use super::{core_err, SqliteControlPlane};
 use async_trait::async_trait;
@@ -69,47 +70,24 @@ impl ControlPlaneStore for SqliteControlPlane {
         // Shared-pool fleets hydrate their members from the pool revision
         // the fleet revision froze (spec 0037 §4); inline pools keep
         // reading their own member rows.
-        let map_member = |m: crate::entities::template_pool::template_pool_members::Model| {
-            shaula_core::template_pool::ResolvedTemplatePoolMember {
-                key: m.member_key,
-                template_profile_key: m.template_profile_key,
-                template_revision: m.template_revision,
-                template_artifact_digest: m.template_artifact_digest,
-                template_attestation_id: m.template_attestation_id,
-                template_inputs: serde_json::from_str(&m.template_inputs_json).unwrap_or_default(),
-                inputs_digest: m.inputs_digest,
-                weight: u32::try_from(m.weight).unwrap_or_default(),
-                max_runners: m.max_runners,
-            }
-        };
         mapped.template_pool = if let Some((pool_key, pool_revision)) = &pool_scope {
             self.store
                 .template_pool_members(pool_key, *pool_revision)
                 .await
                 .map_err(core_err)?
                 .into_iter()
-                .map(map_member)
-                .collect()
+                .map(pool_member_row)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(core_err)?
         } else {
             self.store
                 .fleet_revision_pool_members(key, row.revision)
                 .await
                 .map_err(core_err)?
                 .into_iter()
-                .filter_map(|m| {
-                    Some(shaula_core::template_pool::ResolvedTemplatePoolMember {
-                        key: m.member_key,
-                        template_profile_key: m.template_profile_key,
-                        template_revision: m.template_revision,
-                        template_artifact_digest: m.template_artifact_digest,
-                        template_attestation_id: m.template_attestation_id,
-                        template_inputs: serde_json::from_str(&m.template_inputs_json).ok()?,
-                        inputs_digest: m.inputs_digest,
-                        weight: u32::try_from(m.weight).ok()?,
-                        max_runners: m.max_runners,
-                    })
-                })
-                .collect()
+                .map(fleet_pool_member_row)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(core_err)?
         };
         Ok(Some(mapped))
     }
@@ -131,12 +109,13 @@ impl ControlPlaneStore for SqliteControlPlane {
         self.capacity_counters_impl(fleet_key).await
     }
     async fn handoff_get(&self, fleet_key: &str) -> CoreResult<Option<AuthHandoffRow>> {
-        Ok(self
-            .store
+        self.store
             .handoff_get(fleet_key)
             .await
             .map_err(core_err)?
-            .map(auth_handoff_row))
+            .map(auth_handoff_row)
+            .transpose()
+            .map_err(core_err)
     }
     async fn template_profile_get(&self, key: &str) -> CoreResult<Option<ProfileHead>> {
         Ok(self

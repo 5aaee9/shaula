@@ -5,7 +5,6 @@
 //! degrade to per-fleet WARNs and retry next tick; the scan loop itself
 //! never fails from one fleet's state.
 
-use sha2::Digest;
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::fleet::FleetSpec;
 use shaula_core::registry::{Actor, MutationError, Scope};
@@ -129,12 +128,7 @@ impl ControlPlane {
                 }
                 lagging = true;
             }
-            let inputs_digest = format!(
-                "sha256:{}",
-                hex::encode(sha2::Sha256::digest(
-                    serde_json::to_vec(&member.template_inputs).unwrap_or_default()
-                ))
-            );
+            let inputs_digest = super::template_inputs_digest(&member.template_inputs)?;
             members.push(shaula_core::template_pool::ResolvedTemplatePoolMember {
                 key: member.key.clone(),
                 template_profile_key: pin.0,
@@ -161,10 +155,7 @@ impl ControlPlane {
             state: "Pending".into(),
             reason: None,
         };
-        let inputs_digest = format!(
-            "sha256:{}",
-            hex::encode(sha2::Sha256::digest(latest.spec_json.as_bytes()))
-        );
+        let inputs_digest = super::sha256_digest(latest.spec_json.as_bytes());
         let facts = shaula_core::registry::MutationFacts {
             resource_kind: "template_pool",
             resource_key: key.to_string(),

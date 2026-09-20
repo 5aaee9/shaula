@@ -251,7 +251,7 @@ impl FleetRegistryPort for ControlPlane {
             }
         }
 
-        let normalized = normalize_fleet(&spec, self.inputs_digest(&spec))?;
+        let normalized = normalize_fleet(&spec, self.inputs_digest(&spec)?)?;
         let spec_json = serde_json::to_string(&spec)
             .map_err(|e| CoreError::new(ReasonCode::Internal, e.to_string()))?;
         let revision = existing

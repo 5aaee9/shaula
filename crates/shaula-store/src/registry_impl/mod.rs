@@ -9,7 +9,12 @@ use shaula_core::error::{CoreError, ReasonCode};
 use crate::store::Store;
 
 pub(crate) fn core_err(e: crate::store::StoreError) -> CoreError {
-    CoreError::new(ReasonCode::StorageUnavailable, e.to_string())
+    match e {
+        crate::store::StoreError::Corrupt(summary) => {
+            CoreError::new(ReasonCode::StorageCorrupt, summary)
+        }
+        error => CoreError::new(ReasonCode::StorageUnavailable, error.to_string()),
+    }
 }
 
 /// The concrete store facade handed to the daemon. `artifact_root` serves

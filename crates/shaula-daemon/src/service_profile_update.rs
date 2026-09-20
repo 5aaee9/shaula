@@ -19,26 +19,28 @@ pub(super) struct TemplatePublication {
 }
 
 impl TemplatePublication {
-    pub(super) fn canonical(&self) -> String {
-        self.update_identity.clone().unwrap_or_else(|| {
-            match &self.payload.source_key {
-                Some(source_key) => serde_json::json!({
-                    "operation": "template_profile_put",
-                    "source_key": source_key,
-                    "artifact_digest": self.payload.artifact_digest,
-                    "engine_ref": self.payload.engine_ref,
-                    "fleet_input_policy": self.payload.fleet_input_policy,
-                })
-                .to_string(),
-                // Existing absent-source requests keep their durable identity.
-                None => format!(
-                    "{}|{}|{}",
-                    self.payload.artifact_digest,
-                    self.payload.engine_ref,
-                    serde_json::to_string(&self.payload.fleet_input_policy).unwrap_or_default(),
-                ),
-            }
-        })
+    pub(super) fn canonical(&self) -> CoreResult<String> {
+        if let Some(identity) = &self.update_identity {
+            return Ok(identity.clone());
+        }
+        match &self.payload.source_key {
+            Some(source_key) => serde_json::to_string(&serde_json::json!({
+                "operation": "template_profile_put",
+                "source_key": source_key,
+                "artifact_digest": self.payload.artifact_digest,
+                "engine_ref": self.payload.engine_ref,
+                "fleet_input_policy": self.payload.fleet_input_policy,
+            }))
+            .map_err(|error| CoreError::new(ReasonCode::Internal, error.to_string())),
+            // Existing absent-source requests keep their durable identity.
+            None => Ok(format!(
+                "{}|{}|{}",
+                self.payload.artifact_digest,
+                self.payload.engine_ref,
+                serde_json::to_string(&self.payload.fleet_input_policy)
+                    .map_err(|error| CoreError::new(ReasonCode::Internal, error.to_string()))?
+            )),
+        }
     }
 }
 
@@ -143,7 +145,7 @@ impl ControlPlane {
         key: &str,
         publication: TemplatePublication,
     ) -> CoreResult<Result<MutationAccepted, MutationError>> {
-        let canonical = publication.canonical();
+        let canonical = publication.canonical()?;
         let idem = publication.idempotency_key.clone();
         let submitted = serde_json::to_string(&publication.payload.bindings)
             .map_err(|_| stored_configuration_error("template bindings could not be encoded"))?;

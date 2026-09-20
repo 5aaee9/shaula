@@ -65,6 +65,90 @@ async fn transaction_rejects_same_profile_revision_switch_with_occupancy() {
     assert!(store.fleet_change_get("replace").await.unwrap().is_none());
 }
 
+#[tokio::test]
+async fn guarded_generation_insert_rejects_a_stale_fleet_revision() {
+    use shaula_core::registry::{ChangeView, ControlPlaneStore, FleetRuntimeGuard, MutationFacts};
+
+    let (store, _, _, digest) = setup().await;
+    let head = store.fleet_get("f1").await.unwrap().unwrap();
+    let previous = store.fleet_revision_latest("f1").await.unwrap().unwrap();
+    let guard = FleetRuntimeGuard::from(&head);
+    let mut spec: serde_json::Value = serde_json::from_str(&previous.spec_json).unwrap();
+    spec["capacity"]["max_runners"] = serde_json::json!(10);
+    let template = (
+        previous.template_profile_key.clone().unwrap(),
+        previous.template_revision.unwrap(),
+        previous.template_artifact_digest.clone().unwrap(),
+        previous.template_attestation_id.clone().unwrap(),
+    );
+    assert!(matches!(
+        store
+            .commit_fleet_mutation(MutationFacts {
+                resource_kind: "fleet",
+                resource_key: "f1".into(),
+                incarnation: head.incarnation.clone(),
+                revision: 2,
+                spec_json: serde_json::to_string(&spec).unwrap(),
+                template_pool: previous.template_pool.clone(),
+                template_pool_ref: previous.template_pool_ref.clone(),
+                template: Some(template.clone()),
+                auth_desired: Some(previous.auth_desired.clone()),
+                inputs_digest: previous.inputs_digest.clone(),
+                actor: "ops".into(),
+                now: 20,
+                change: ChangeView {
+                    id: "stale-head".into(),
+                    resource_kind: "fleet".into(),
+                    resource_key: "f1".into(),
+                    revision: 2,
+                    kind: "Replace".into(),
+                    state: "Pending".into(),
+                    reason: None,
+                },
+                outbox_topic: "fleet.change".into(),
+                outbox_payload: "{}".into(),
+                idempotency: None,
+            })
+            .await
+            .unwrap(),
+        Ok(())
+    ));
+
+    let inserted = store
+        .generation_insert_guarded(
+            GenerationRecord {
+                id: "stale-generation".into(),
+                fleet_key: "f1".into(),
+                runner_name: "runner-stale".into(),
+                generation_name: "generation-stale".into(),
+                fleet_revision: 1,
+                template_profile_key: template.0,
+                pool_member_key: None,
+                template_revision: template.1,
+                template_artifact_digest: template.2,
+                attestation_id: template.3,
+                inputs_digest: previous.inputs_digest,
+                state: G::CreatePending,
+                github_runner_id: None,
+                workspace_path: "/tmp/stale-generation".into(),
+                created_at: 21,
+                updated_at: 21,
+            },
+            &guard,
+        )
+        .await
+        .unwrap();
+    assert!(!inserted);
+    assert!(store
+        .generation_get("stale-generation")
+        .await
+        .unwrap()
+        .is_none());
+
+    // Keep the fixture's template digest live in the test's setup path.
+    assert!(!digest.is_empty());
+}
+
 async fn setup() -> (
     Arc<shaula_store::registry_impl::SqliteControlPlane>,
     Arc<fakes::GitHub>,

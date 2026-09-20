@@ -10,7 +10,6 @@
 //! resolved unchanged is the only no-op shape (spec 0037 §3).
 
 use async_trait::async_trait;
-use sha2::Digest;
 
 use super::{unprocessable, ControlPlane};
 use shaula_core::auth::is_stable_identifier;
@@ -56,12 +55,7 @@ impl ControlPlane {
             {
                 return Ok(Err(unprocessable(e.code, e.summary)));
             }
-            let inputs_digest = format!(
-                "sha256:{}",
-                hex::encode(sha2::Sha256::digest(
-                    serde_json::to_vec(&member.template_inputs).unwrap_or_default()
-                ))
-            );
+            let inputs_digest = super::template_inputs_digest(&member.template_inputs)?;
             resolved.push(ResolvedTemplatePoolMember {
                 key: member.key.clone(),
                 template_profile_key: pin.0,
@@ -239,10 +233,7 @@ impl TemplatePoolRegistryPort for ControlPlane {
         };
         // A pool owns no runners, so its commits race only other pool PUTs;
         // no effect gate or occupancy barrier applies (spec 0037 §5).
-        let inputs_digest = format!(
-            "sha256:{}",
-            hex::encode(sha2::Sha256::digest(canonical_body.as_bytes()))
-        );
+        let inputs_digest = super::sha256_digest(canonical_body.as_bytes());
         let facts = MutationFacts {
             resource_kind: "template_pool",
             resource_key: key.to_string(),

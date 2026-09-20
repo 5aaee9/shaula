@@ -51,7 +51,7 @@ pub(crate) async fn template_artifact_put(
         Err(e)
             if matches!(
                 e.code,
-                ReasonCode::StorageUnavailable | ReasonCode::Internal
+                ReasonCode::StorageUnavailable | ReasonCode::StorageCorrupt | ReasonCode::Internal
             ) =>
         {
             problem(

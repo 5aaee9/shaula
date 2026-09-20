@@ -87,7 +87,14 @@ impl ControlPlane {
         .await
         {
             Ok(()) => true,
-            Err(e) if e.code == ReasonCode::StorageUnavailable => return Err(e),
+            Err(e)
+                if matches!(
+                    e.code,
+                    ReasonCode::StorageUnavailable | ReasonCode::StorageCorrupt
+                ) =>
+            {
+                return Err(e)
+            }
             Err(_) => false,
         };
 

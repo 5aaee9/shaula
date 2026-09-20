@@ -43,6 +43,7 @@ pub enum ReasonCode {
     QuotaExceeded,
     OccupiedNonZero,
     StorageUnavailable,
+    StorageCorrupt,
     Internal,
 }
 
@@ -85,6 +86,7 @@ impl ReasonCode {
             ReasonCode::QuotaExceeded => "QuotaExceeded",
             ReasonCode::OccupiedNonZero => "OccupiedNonZero",
             ReasonCode::StorageUnavailable => "StorageUnavailable",
+            ReasonCode::StorageCorrupt => "StorageCorrupt",
             ReasonCode::Internal => "Internal",
         }
     }

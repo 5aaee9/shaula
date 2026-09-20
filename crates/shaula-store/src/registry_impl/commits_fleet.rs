@@ -233,7 +233,12 @@ impl SqliteControlPlane {
                 .await
                 .map_err(|e| core_err(crate::store::StoreError::from(e)))?
                 .map(|r| r.auth_desired_revision)
-                .unwrap_or(*_admission_revision);
+                .ok_or_else(|| {
+                    core_err(crate::store::StoreError::Corrupt(format!(
+                        "fleet {} has no committed revision for auth handoff",
+                        facts.resource_key
+                    )))
+                })?;
             // Forgejo has no handoff or installation context. Its exact
             // credential reference lives on the immutable Fleet revision.
             let is_forgejo =

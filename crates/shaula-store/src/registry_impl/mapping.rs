@@ -3,6 +3,93 @@
 use shaula_core::registry::{
     AuthHandoffRow, AuthRevisionRow, ChangeView, FleetHead, ProfileHead, TemplateRevisionRow,
 };
+use shaula_core::template_pool::{PoolFailurePolicy, ResolvedTemplatePoolMember};
+
+use crate::store::{StoreError, StoreResult};
+
+pub(crate) fn template_inputs_from_json(
+    json: &str,
+) -> StoreResult<serde_json::Map<String, serde_json::Value>> {
+    serde_json::from_str(json).map_err(|error| {
+        StoreError::Corrupt(format!("template pool member inputs are invalid: {error}"))
+    })
+}
+
+pub(crate) fn pool_member_weight(weight: i64) -> StoreResult<u32> {
+    u32::try_from(weight).map_err(|_| {
+        StoreError::Corrupt(format!(
+            "template pool member weight is out of range: {weight}"
+        ))
+    })
+}
+
+pub(crate) fn pool_failure_policy(value: &str) -> StoreResult<PoolFailurePolicy> {
+    match value {
+        "backpressure" => Ok(PoolFailurePolicy::Backpressure),
+        "redistribute" => Ok(PoolFailurePolicy::Redistribute),
+        other => Err(StoreError::Corrupt(format!(
+            "template pool failure policy is invalid: {other}"
+        ))),
+    }
+}
+
+struct RawPoolMember {
+    member_key: String,
+    template_profile_key: String,
+    template_revision: i64,
+    template_artifact_digest: String,
+    template_attestation_id: String,
+    template_inputs_json: String,
+    inputs_digest: String,
+    weight: i64,
+    max_runners: Option<i64>,
+}
+
+fn resolved_pool_member(member: RawPoolMember) -> StoreResult<ResolvedTemplatePoolMember> {
+    Ok(ResolvedTemplatePoolMember {
+        key: member.member_key,
+        template_profile_key: member.template_profile_key,
+        template_revision: member.template_revision,
+        template_artifact_digest: member.template_artifact_digest,
+        template_attestation_id: member.template_attestation_id,
+        template_inputs: template_inputs_from_json(&member.template_inputs_json)?,
+        inputs_digest: member.inputs_digest,
+        weight: pool_member_weight(member.weight)?,
+        max_runners: member.max_runners,
+    })
+}
+
+pub(crate) fn pool_member_row(
+    m: crate::entities::template_pool::template_pool_members::Model,
+) -> StoreResult<ResolvedTemplatePoolMember> {
+    resolved_pool_member(RawPoolMember {
+        member_key: m.member_key,
+        template_profile_key: m.template_profile_key,
+        template_revision: m.template_revision,
+        template_artifact_digest: m.template_artifact_digest,
+        template_attestation_id: m.template_attestation_id,
+        template_inputs_json: m.template_inputs_json,
+        inputs_digest: m.inputs_digest,
+        weight: m.weight,
+        max_runners: m.max_runners,
+    })
+}
+
+pub(crate) fn fleet_pool_member_row(
+    m: crate::entities::fleet::fleet_revision_pool_members::Model,
+) -> StoreResult<ResolvedTemplatePoolMember> {
+    resolved_pool_member(RawPoolMember {
+        member_key: m.member_key,
+        template_profile_key: m.template_profile_key,
+        template_revision: m.template_revision,
+        template_artifact_digest: m.template_artifact_digest,
+        template_attestation_id: m.template_attestation_id,
+        template_inputs_json: m.template_inputs_json,
+        inputs_digest: m.inputs_digest,
+        weight: m.weight,
+        max_runners: m.max_runners,
+    })
+}
 
 pub(crate) fn fleet_head(f: crate::entities::fleet::fleets::Model) -> FleetHead {
     FleetHead {
@@ -104,18 +191,30 @@ pub(crate) fn auth_profile_head(
 
 pub(crate) fn auth_handoff_row(
     h: crate::entities::fleet::fleet_auth_handoffs::Model,
-) -> AuthHandoffRow {
-    AuthHandoffRow {
+) -> StoreResult<AuthHandoffRow> {
+    let observed = match (h.observed_profile_key, h.observed_revision) {
+        (Some(profile_key), Some(revision)) => Some((profile_key, revision)),
+        (Some(_), None) => {
+            return Err(StoreError::Corrupt(
+                "auth handoff has an observed profile without a revision".into(),
+            ))
+        }
+        (None, Some(_)) => {
+            return Err(StoreError::Corrupt(
+                "auth handoff has an observed revision without a profile".into(),
+            ))
+        }
+        (None, None) => None,
+    };
+    Ok(AuthHandoffRow {
         fleet_key: h.fleet_key,
         desired: (h.desired_profile_key, h.desired_revision),
-        observed: h
-            .observed_profile_key
-            .map(|k| (k, h.observed_revision.unwrap_or_default())),
+        observed,
         state: h.state,
         cleanup_only: h.cleanup_only,
         blocked_reason: h.reason.clone(),
         retry_at: h.next_retry_at,
-    }
+    })
 }
 
 pub(crate) fn fleet_change_row(c: crate::entities::fleet::fleet_changes::Model) -> ChangeView {
@@ -141,5 +240,44 @@ pub(crate) fn profile_change_row(
         kind: c.kind,
         state: c.state,
         reason: c.reason,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn persisted_pool_fields_reject_corrupt_values() {
+        assert!(matches!(
+            template_inputs_from_json("not-json"),
+            Err(StoreError::Corrupt(_))
+        ));
+        assert!(matches!(
+            pool_member_weight(-1),
+            Err(StoreError::Corrupt(_))
+        ));
+        assert!(matches!(
+            pool_failure_policy("unknown"),
+            Err(StoreError::Corrupt(_))
+        ));
+    }
+
+    #[test]
+    fn persisted_pool_fields_keep_valid_values() {
+        let inputs = template_inputs_from_json(r#"{"size":"standard"}"#);
+        assert_eq!(
+            inputs
+                .as_ref()
+                .ok()
+                .and_then(|value| value.get("size"))
+                .and_then(serde_json::Value::as_str),
+            Some("standard")
+        );
+        assert_eq!(pool_member_weight(7).ok(), Some(7));
+        assert_eq!(
+            pool_failure_policy("redistribute").ok(),
+            Some(PoolFailurePolicy::Redistribute)
+        );
     }
 }
