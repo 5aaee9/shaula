@@ -191,7 +191,7 @@ fn partial_projection_remains_visible_when_capture_has_a_gap(
 }
 
 #[test]
-fn docker_endpoint_cannot_select_remote_or_unauthenticated_transport() {
+fn docker_local_endpoint_check_rejects_remote_or_unauthenticated_transport() {
     assert!(docker::local_host("unix:///var/run/docker.sock"));
     assert!(docker::local_host("npipe:////./pipe/docker_engine"));
     for host in [

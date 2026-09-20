@@ -364,6 +364,13 @@ fn validate_node(schema: &Value, value: &Value, depth: usize) -> CoreResult<()> 
             return Err(invalid("template binding value matches multiple variants"));
         }
     }
+    if let Some(negated) = schema.get("not") {
+        if validate_node(negated, value, depth + 1).is_ok() {
+            return Err(invalid(
+                "template binding value matches a forbidden variant",
+            ));
+        }
+    }
     Ok(())
 }
 

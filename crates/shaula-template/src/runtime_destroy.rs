@@ -13,7 +13,7 @@ use super::{digest_of, exec_err, plan_err, state_err, TemplateRuntime};
 impl TemplateRuntime {
     pub(super) async fn destroy_flow(
         &self,
-        request: TemplateDestroyRequest,
+        mut request: TemplateDestroyRequest,
     ) -> Result<DestroyClassification, TemplateOutcomeError> {
         if self.http_backend.is_some() && request.apply_intent_sink.is_none() {
             return Err(state_err("destroy.authorization"));
@@ -37,7 +37,7 @@ impl TemplateRuntime {
             serde_json::from_slice(&input_now).map_err(|_| state_err("destroy.input_contract"))?;
         let input = serde_json::from_value(input.get("shaula").cloned().unwrap_or_default())
             .map_err(|_| state_err("destroy.input_contract"))?;
-        self.validate_input_contract(&request.artifact_dir, &input)?;
+        let manifest = self.validate_input_contract(&request.artifact_dir, &input)?;
         let workspace_now = self
             .workspace_digest(workspace)
             .map_err(|_| state_err("destroy.plan"))?;
@@ -85,6 +85,14 @@ impl TemplateRuntime {
         }
         if destroy_empty_state_short_circuit(&snapshot.managed) {
             return Ok(DestroyClassification::AlreadyEmpty);
+        }
+
+        // Reconstruct only after verifying the original protected input and
+        // state. Transient paths never become part of the retained provenance.
+        let ssh = crate::docker_connection::DockerSsh::prepare(&manifest, &input.bindings)
+            .map_err(|_| plan_err("destroy.plan"))?;
+        if let Some(ssh) = &ssh {
+            ssh.configure(&mut request.environment);
         }
 
         flow.plan(workspace, &request.environment, true)

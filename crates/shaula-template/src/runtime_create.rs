@@ -4,7 +4,7 @@ use super::*;
 impl TemplateRuntime {
     pub(super) async fn create_flow(
         &self,
-        request: TemplateCreateRequest,
+        mut request: TemplateCreateRequest,
     ) -> Result<TemplateCreateResult, TemplateOutcomeError> {
         let manifest = self.validate_input_contract(&request.artifact_dir, &request.input)?;
         manifest
@@ -54,6 +54,12 @@ impl TemplateRuntime {
 
         let input_digest = write_protected_input(workspace, &request.input)
             .map_err(|_| state_err("create.plan"))?;
+
+        let ssh = crate::docker_connection::DockerSsh::prepare(&manifest, &request.input.bindings)
+            .map_err(|_| plan_err("create.plan"))?;
+        if let Some(ssh) = &ssh {
+            ssh.configure(&mut request.environment);
+        }
 
         flow.plan(workspace, &request.environment, false)
             .await

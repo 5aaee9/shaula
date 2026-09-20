@@ -6,6 +6,28 @@ shares the Docker host administrator trust domain. Runner containers cannot
 access that socket or receive GitHub App keys, installation tokens, provider
 credentials, or Shaula management credentials.
 
+Administrator-owned bindings may instead select `ssh://username@host:port`.
+The remote account's Docker access has the same host-admin trust implications.
+SSH requires a password or a complete private key (optionally passphrase-protected),
+never both. Terraform and the fixed Docker bootstrap share invocation-scoped
+OpenSSH helpers under the existing process-tree fence. Credentials are not
+placed in argv or environment values and never enter a container; temporary
+files are private (0700 directory / 0600 files on Unix) and removed on ordinary
+completion, failure or cancellation. Abrupt host/process death can leave private
+temporary files; the service temporary directory remains credential-grade.
+Destroy reconstructs authentication from the original protected input, not an
+expired temporary path. The immutable Revision, inputs, plan and state remain
+credential-grade. OpenSSH must be installed on the Shaula host and Docker CLI
+must be available without sudo on the SSH target.
+
+Host key verification is mandatory. Operators supply verified `ssh_known_hosts`
+entries or provision the service user's known_hosts before use. Unknown or
+changed keys fail closed. Ambient SSH config, agent identities/forwarding and
+connection multiplexing are disabled. The fixed helper supplies no arbitrary
+SSH options or remote command bindings; only Docker's dial-stdio is used.
+Plaintext TCP endpoints remain forbidden. Direct Terraform invocation does not
+prepare these helpers and is not the supported SSH execution path.
+
 Each Generation owns one container using the unmodified official image from
 `ghcr.io/actions/actions-runner`, pinned by immutable digest. Derived images,
 custom image builds, injected bootstrap programs, and container-side Setup Info

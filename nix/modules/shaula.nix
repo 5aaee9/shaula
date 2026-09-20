@@ -25,6 +25,7 @@ let
       pkgs.coreutils
       pkgs.jq
       pkgs.docker-client
+      pkgs.openssh
       pkgs.kubectl
     ];
     text = ''

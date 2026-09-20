@@ -1,4 +1,5 @@
 use super::{binding, failed, protected_file, resource, Commands, LISTENER};
+pub(super) use crate::docker_connection::local_host;
 use serde_json::Value;
 use shaula_core::{
     ports::{TemplateCreateRequest, TemplateOutcomeError},
@@ -25,19 +26,25 @@ pub(super) async fn launch(
         .map(|_| binding(request, "docker_host"))
         .transpose()?
         .unwrap_or("unix:///var/run/docker.sock");
-    if !local_host(host) {
+    if !local_host(host) && !crate::docker_connection::ssh_host(host) {
         return Err(failed());
     }
     let runner = resource(envelope, "runner")?;
     if runner.id.len() != 64 || !runner.id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(failed());
     }
-    let commands = Commands::new(
+    let mut commands = Commands::new(
         "docker",
         &request.workspace_path,
         vec!["--host".into(), host.into()],
         timeout,
     )?;
+    if crate::docker_connection::ssh_host(host) {
+        commands = commands.with_environment(
+            crate::docker_connection::bootstrap_environment(&request.environment)
+                .map_err(|_| failed())?,
+        );
+    }
     let image_info = commands.json(&["image", "inspect", "--", image]).await?;
     let image_id = single(&image_info)?
         .get("Id")
@@ -74,13 +81,6 @@ pub(super) async fn launch(
             .await?;
     }
     Ok(())
-}
-
-pub(super) fn local_host(host: &str) -> bool {
-    host.starts_with("unix:///")
-        || host.strip_prefix("npipe:////./pipe/").is_some_and(|name| {
-            !name.is_empty() && !name.contains(['/', '\\', ':']) && name != "." && name != ".."
-        })
 }
 
 fn single(value: &Value) -> Result<&Value, TemplateOutcomeError> {

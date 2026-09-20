@@ -20,8 +20,9 @@ terraform {
 }
 
 provider "docker" {
-  # Trusted Profile binding; never a Fleet input. Plaintext TCP is
-  # rejected by the bindings schema.
+  # Trusted Profile binding; never a Fleet input. Shaula supplies the same
+  # invocation-scoped SSH authentication to this provider and Docker bootstrap.
+  # Passwords and private keys are never passed as provider SSH options.
   host = var.shaula.bindings.docker_host
 }
 
@@ -74,8 +75,8 @@ resource "docker_container" "runner" {
 
   lifecycle {
     precondition {
-      condition     = !startswith(var.shaula.bindings.docker_host, "tcp://")
-      error_message = "Plaintext TCP Docker endpoints are rejected by the v1 contract."
+      condition     = can(regex("^(unix|npipe|ssh)://", var.shaula.bindings.docker_host))
+      error_message = "Docker endpoints must use a local socket or authenticated SSH; plaintext TCP is rejected."
     }
   }
 }
@@ -105,8 +106,12 @@ variable "shaula" {
     jit_config       = string
     bindings_digest  = string
     bindings = object({
-      docker_host   = optional(string, "unix:///var/run/docker.sock")
-      registry_auth = optional(string)
+      docker_host                = optional(string, "unix:///var/run/docker.sock")
+      registry_auth              = optional(string)
+      ssh_password               = optional(string)
+      ssh_private_key            = optional(string)
+      ssh_private_key_passphrase = optional(string)
+      ssh_known_hosts            = optional(string)
     })
     parameters = object({
       runner_image = optional(string, "ghcr.io/actions/actions-runner:2.337.0")

@@ -74,6 +74,9 @@ enum Command {
 
 #[tokio::main]
 async fn main() {
+    if let Some(code) = shaula_template::ssh_helper::dispatch() {
+        std::process::exit(code);
+    }
     // The engine fence supervisor (R7-06/R9-09) re-executes THIS binary
     // with a hidden internal marker. It must never reach the CLI parser
     // and must never log: its stdio belongs to the engine invocation.

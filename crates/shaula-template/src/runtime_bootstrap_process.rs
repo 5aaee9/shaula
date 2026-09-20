@@ -9,6 +9,7 @@ pub(super) struct Commands<'a> {
     executable: PathBuf,
     workspace: &'a Path,
     prefix: Vec<String>,
+    environment: Vec<(String, String)>,
     deadline: Instant,
 }
 
@@ -23,8 +24,14 @@ impl<'a> Commands<'a> {
             executable: resolve(executable)?,
             workspace,
             prefix,
+            environment: Vec::new(),
             deadline: Instant::now() + timeout,
         })
+    }
+
+    pub(super) fn with_environment(mut self, environment: Vec<(String, String)>) -> Self {
+        self.environment = environment;
+        self
     }
 
     pub(super) async fn run(&self, args: &[&str]) -> Result<String, TemplateOutcomeError> {
@@ -52,9 +59,13 @@ impl<'a> Commands<'a> {
         }
         let mut arguments = self.prefix.clone();
         arguments.extend(args.iter().map(|value| (*value).to_string()));
-        let mut command =
-            crate::engine::build_engine_command(&self.executable, self.workspace, &arguments, &[])
-                .map_err(|_| failed())?;
+        let mut command = crate::engine::build_engine_command(
+            &self.executable,
+            self.workspace,
+            &arguments,
+            &self.environment,
+        )
+        .map_err(|_| failed())?;
         let output = crate::engine::engine_process::spawn_fenced_logged(
             &mut command,
             timeout.min(limit),

@@ -3,7 +3,7 @@
 - Status: Draft
 - Date: 2026-09-04
 - Template path: `templates/docker`
-- Runtime provider: Terraform Docker provider through a local Unix socket
+- Runtime provider: Terraform Docker provider through a local socket or authenticated SSH
 
 This document specializes the provider-neutral [Template Profile Runtime Specification](0004-template-profile-runtime.md) for Docker. [Spec 0020](0020-official-container-runner-bootstrap.md) adds one fixed host-side bootstrap capability inside Template Runtime: inspect the exact newly created stopped container, deliver Setup Info, then start it. Fleet/core remain provider-neutral; no Docker event controller or general platform mutation interface is added.
 
@@ -11,7 +11,7 @@ Worker/state ownership follows [spec 0010](0010-lifecycle-worker-and-http-state-
 
 ## 1. Outcome
 
-Each Runner Generation is realized by one `docker_container` managed by the pinned Docker Terraform provider. Terraform runs as a child of the local Generation-specific `shaula job` worker and connects to an already-running Docker Engine through an approved Unix socket. Its target state ownership is the daemon's database HTTP backend; the current daemon-owned local-state composition remains recorded in implementation status. Docker names the Runner Resource platform, not an Executor Driver or native API; Target remains GitHub scope terminology.
+Each Runner Generation is realized by one `docker_container` managed by the pinned Docker Terraform provider. Terraform runs as a child of the local Generation-specific `shaula job` worker and connects to an already-running Docker Engine through an approved local socket or authenticated SSH endpoint. Its target state ownership is the daemon's database HTTP backend; the current daemon-owned local-state composition remains recorded in implementation status. Docker names the Runner Resource platform, not an Executor Driver or native API; Target remains GitHub scope terminology.
 
 ```mermaid
 flowchart LR
@@ -47,7 +47,11 @@ The v1 bundled Profile connects to `unix:///var/run/docker.sock`. The Terraform 
 
 Possession of the Docker daemon socket is effectively host-administrative. Every IaC child sharing the daemon's operating-system identity inherits ambient ability to open that socket, even when its own Profile bindings omit it. Shaula, every such IaC child, Template publication, the artifact store and Runner Workspaces therefore share one host-admin trust domain；per-Profile environment scoping is not an isolation boundary. The socket must be restricted to the dedicated Shaula identity or an equally narrow group.
 
-Plaintext unauthenticated TCP access is outside v1. A later remote-Docker Profile requires a separately accepted transport and credential design. The bundled default Runner container never mounts `docker.sock`; whether to ship an additional explicitly high-trust Runner-socket Profile and whether to isolate IaC children with separate operating-system identities or a sandbox remain open decisions.
+Plaintext unauthenticated TCP access remains outside v1. The bundled Profile also accepts administrator-owned `ssh://username@host:port` bindings (port defaults to 22), with exactly one write-only `ssh_password` or `ssh_private_key` and an optional `ssh_private_key_passphrase`. Verified `ssh_known_hosts` entries may be supplied; otherwise the service identity's known_hosts is used. Unknown or changed host keys fail closed. Ambient SSH config, agents/forwarding and multiplexed sessions are disabled. The remote Docker user must have permission to run Docker without sudo and has the same host-admin trust implications as local socket access.
+
+The Runtime prepares invocation-private OpenSSH helpers shared by Terraform and fixed bootstrap, under the existing process-tree fence. Passwords/passphrases use askpass; private keys use protected temporary files. No credential bytes enter argv/environment or the Runner. Transient paths stay outside frozen workspace material and are reconstructed from verified original inputs for Destroy. Files are removed on normal completion/failure/cancellation; crash residue stays inside the host credential boundary. Host OpenSSH is required in addition to Docker CLI. See the [binding examples](../../templates/docker/README.md) and [runtime policy](../../templates/docker/runtime-policy.md). Local-engine conformance evidence does not establish remote SSH conformance.
+
+The bundled default Runner container never mounts `docker.sock`; whether to ship an additional explicitly high-trust Runner-socket Profile and whether to isolate IaC children with separate operating-system identities or a sandbox remain open decisions.
 
 ## 4. Official Runner JIT and Setup Info handoff
 
@@ -86,7 +90,7 @@ Generic Day 0 spans cover artifact validation/materialization, `init`, Create pl
 
 Template failures expose only `TemplatePlanFailed` or `TemplateExecutionFailed` plus a bounded phase. Provider strings are sanitized diagnostics, never reason values or API contracts.
 
-The fixed bootstrap requires the host Docker CLI and approved socket; external conformance may use additional read-only Docker diagnostics. Neither path exposes a general Docker API through the Fleet/core interface.
+The fixed bootstrap requires the host Docker CLI and approved local socket or the same authenticated SSH transport used by Terraform; external conformance may use additional read-only Docker diagnostics. Neither path exposes a general Docker API through the Fleet/core interface.
 
 ## 8. Failure behavior
 

@@ -8,10 +8,37 @@
     "docker_host": {
       "type": "string",
       "anyOf": [
-        {"format": "uri", "pattern": "^unix://"},
-        {"format": "uri", "pattern": "^npipe://"}
+        {"format": "uri", "pattern": "^unix://", "sensitive": false},
+        {"format": "uri", "pattern": "^npipe://", "sensitive": false},
+        {"format": "uri", "pattern": "^ssh://[a-zA-Z0-9_][a-zA-Z0-9_.-]*@([a-zA-Z0-9][a-zA-Z0-9.-]*|\\[[0-9a-fA-F:]+\\])(:[0-9]{1,5})?$", "sensitive": false}
       ],
-      "description": "Local Docker Engine endpoint, default unix:///var/run/docker.sock. Possession is a host-admin capability shared by all same-identity IaC children (accepted v1 trust domain). Plaintext TCP is rejected. Never a Fleet input.",
+      "description": "Docker Engine endpoint: local unix/npipe socket or ssh://username@host:port (port defaults to 22). SSH requires exactly one of ssh_password or ssh_private_key. The remote user must be able to run docker without sudo. Plaintext TCP is rejected. Host-admin capability; never a Fleet input.",
+      "sensitive": false
+    },
+    "ssh_password": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\r\\n\\u0000]+$",
+      "description": "SSH login password. Mutually exclusive with ssh_private_key. Write-only secret; never passed to the Runner or placed in process arguments.",
+      "sensitive": true
+    },
+    "ssh_private_key": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Complete OpenSSH/PEM private key content, not a filename. Mutually exclusive with ssh_password. Written to a private temporary file for this invocation and removed afterwards.",
+      "sensitive": true
+    },
+    "ssh_private_key_passphrase": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\r\\n\\u0000]+$",
+      "description": "Optional passphrase for an encrypted ssh_private_key. Omit for an unencrypted key. Write-only secret.",
+      "sensitive": true
+    },
+    "ssh_known_hosts": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Verified OpenSSH known_hosts entries for the SSH target. For a non-default port use [host]:port. If omitted, the Shaula service user's existing known_hosts is used. Unknown or changed host keys are rejected; verify fingerprints out of band before supplying entries.",
       "sensitive": false
     },
     "registry_auth": {
@@ -20,5 +47,27 @@
       "description": "Optional private-registry credential for image pull. Schema-sensitive: write-only plaintext stored in the immutable SQLite Revision; never enters the Runner Execution Domain.",
       "sensitive": true
     }
-  }
+  },
+  "anyOf": [
+    {
+      "properties": {"docker_host": {"pattern": "^(unix|npipe)://", "sensitive": false}},
+      "not": {"anyOf": [
+        {"required": ["ssh_password"]},
+        {"required": ["ssh_private_key"]},
+        {"required": ["ssh_private_key_passphrase"]},
+        {"required": ["ssh_known_hosts"]}
+      ]}
+    },
+    {
+      "properties": {"docker_host": {"pattern": "^ssh://", "sensitive": false}},
+      "oneOf": [
+        {"required": ["ssh_password"]},
+        {"required": ["ssh_private_key"]}
+      ],
+      "anyOf": [
+        {"not": {"required": ["ssh_private_key_passphrase"]}},
+        {"required": ["ssh_private_key"]}
+      ]
+    }
+  ]
 }
