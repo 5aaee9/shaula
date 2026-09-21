@@ -1,0 +1,47 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+# Claim this seed once, including failed/partial boots. Never restart a Runner.
+chmod 0700 /var/lib/shaula
+mkdir /var/lib/shaula/started
+/bin/bash -euo pipefail /var/lib/shaula/pre-start
+rm -- /var/lib/shaula/pre-start
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y --no-install-recommends ca-certificates curl python3 git
+test "$(uname -m)" = x86_64
+id runner >/dev/null 2>&1 || useradd --create-home --user-group --shell /bin/bash runner
+test "$(id -u runner)" -ne 0
+install -d -m 0755 /opt/forgejo-runner
+RUNNER_VERSION=13.1.0
+RUNNER_SHA256=29dae21e93f0eab5cdf3564008d44603c74770b41a4f4f1aceed172c774bc376
+curl --fail --location --retry 3 --connect-timeout 10 --max-time 300 \
+  "https://code.forgejo.org/forgejo/runner/releases/download/v$RUNNER_VERSION/forgejo-runner-$RUNNER_VERSION-linux-amd64" \
+  --output /opt/forgejo-runner/download
+printf '%s  %s\n' "$RUNNER_SHA256" /opt/forgejo-runner/download | sha256sum --check --status
+install -m 0755 /opt/forgejo-runner/download /opt/forgejo-runner/forgejo-runner
+rm -- /opt/forgejo-runner/download
+
+# Restrict guest caches; remote user-data and Terraform state remain secrets.
+chmod 0700 /var/lib/cloud /run/cloud-init
+install -d -o runner -g runner -m 0700 /run/shaula-forgejo /home/runner/forgejo-work
+install -o runner -g runner -m 0600 /var/lib/shaula/forgejo-token /run/shaula-forgejo/token
+install -o runner -g runner -m 0600 /var/lib/shaula/forgejo-identity /run/shaula-forgejo/identity
+rm -- /var/lib/shaula/forgejo-token /var/lib/shaula/forgejo-identity
+cd /home/runner/forgejo-work
+
+# JSON is data, never shell syntax. The token itself is neither argv nor env.
+# Shaula already registered this identity with ephemeral=true; do not register again.
+exec runuser -u runner -- python3 - <<'PY'
+import json, os
+with open('/run/shaula-forgejo/identity') as stream:
+    identity = json.load(stream)
+binary = '/opt/forgejo-runner/forgejo-runner'
+args = [binary, 'one-job', '--url', identity['instance_url'], '--uuid', identity['uuid'],
+        '--token-url', 'file:///run/shaula-forgejo/token']
+for label in identity['labels']:
+    args.extend(['--label', label])
+os.execv(binary, args + ['--wait'])
+PY

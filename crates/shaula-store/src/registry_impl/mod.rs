@@ -90,6 +90,7 @@ mod lifecycle_impl;
 mod lifecycle_pool_admit;
 mod lifecycle_support;
 mod listener_messages;
+mod runner_lifetime;
 
 #[path = "scan.rs"]
 mod scan;

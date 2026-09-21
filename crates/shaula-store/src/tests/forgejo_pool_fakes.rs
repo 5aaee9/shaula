@@ -13,6 +13,7 @@ pub(super) struct Forgejo {
     pub deletes: AtomicU64,
     pub fail_jobs: AtomicBool,
     pub fail_inventory: AtomicBool,
+    pub fail_delete: AtomicBool,
     pub uncertain: AtomicBool,
 }
 #[async_trait]
@@ -81,6 +82,9 @@ impl ForgejoPoolPort for Forgejo {
     }
     async fn delete_runner(&self, id: u64) -> Result<ForgejoRemovalOutcome, AccessFailure> {
         self.deletes.fetch_add(1, Ordering::SeqCst);
+        if self.fail_delete.load(Ordering::SeqCst) {
+            return Err(failure());
+        }
         self.runners
             .lock()
             .map_err(|_| failure())?
@@ -116,6 +120,7 @@ pub(super) struct Runtime {
     pub destroys: AtomicU64,
     pub idle_proof: AtomicBool,
     pub fail_prepare: AtomicBool,
+    pub fail_destroy: AtomicBool,
 }
 #[async_trait]
 impl TemplateRuntimePort for Runtime {
@@ -140,11 +145,30 @@ impl TemplateRuntimePort for Runtime {
             .forgejo_bootstrap
             .as_ref()
             .ok_or_else(|| runtime_error("missing token"))?;
-        assert!(!request
+        let manifest: shaula_core::template::ProfileManifest = serde_yaml::from_str(
+            &std::fs::read_to_string(request.artifact_dir.join("profile.yaml"))
+                .map_err(|_| runtime_error("manifest"))?,
+        )
+        .map_err(|_| runtime_error("manifest"))?;
+        request
             .input
-            .to_tfvars()
-            .map_err(|_| runtime_error("input"))?
-            .contains(material.token()));
+            .validate_for_manifest(&manifest)
+            .map_err(|_| runtime_error("contract"))?;
+        let vm = manifest.forgejo_vm_bootstrap_contract.is_some();
+        assert_eq!(
+            request
+                .input
+                .to_tfvars()
+                .map_err(|_| runtime_error("input"))?
+                .contains(material.token()),
+            vm
+        );
+        assert_eq!(request.input.forgejo, Some(material.identity()));
+        assert_eq!(
+            request.input.forgejo_vm,
+            vm.then(|| shaula_core::template::ForgejoVmBootstrap::from_registration(material))
+        );
+        assert!(request.input.jit_config.is_empty());
         assert!(request.input.generation.scale_set_id.is_none());
         let provenance = provenance(&request.input.generation.id);
         let sink = request
@@ -156,11 +180,13 @@ impl TemplateRuntimePort for Runtime {
             .await
             .map_err(|_| runtime_error("fence"))?;
         drop(claim);
-        let claim = sink
-            .authorize_bootstrap(&provenance)
-            .await
-            .map_err(|_| runtime_error("bootstrap"))?;
-        drop(claim);
+        if !vm {
+            let claim = sink
+                .authorize_bootstrap(&provenance)
+                .await
+                .map_err(|_| runtime_error("bootstrap"))?;
+            drop(claim);
+        }
         Ok(TemplateCreateResult {
             result_envelope: shaula_core::template::ShaulaResultEnvelope {
                 contract_version: 1,
@@ -179,6 +205,20 @@ impl TemplateRuntimePort for Runtime {
     ) -> Result<DestroyClassification, TemplateOutcomeError> {
         self.destroys.fetch_add(1, Ordering::SeqCst);
         assert_eq!(request.original_state.lineage, "lineage");
+        let mut provenance = request.original_provenance;
+        provenance.intent = shaula_core::plan::PlanIntent::Destroy;
+        provenance.attempt_id = shaula_core::auth::new_attempt_id();
+        let sink = request
+            .apply_intent_sink
+            .ok_or_else(|| runtime_error("sink"))?;
+        drop(
+            sink.persist_apply_starting(&provenance)
+                .await
+                .map_err(|_| runtime_error("fence"))?,
+        );
+        if self.fail_destroy.load(Ordering::SeqCst) {
+            return Err(runtime_error("destroy"));
+        }
         Ok(DestroyClassification::Applied)
     }
     async fn forgejo_template_evidence(&self, _: &str) -> ForgejoTemplateEvidence {

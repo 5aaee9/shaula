@@ -95,6 +95,7 @@ in
             scopes = [ "fleet.read" "template.read" ];
           }];
           execution.operation_timeout_secs = 1800;
+          runner.max_lifetime_secs = 7200; # Hard cap, including running jobs
         }
       '';
       description = ''

@@ -31,7 +31,13 @@ impl SensitiveValues {
         let mut values = Self::default();
         // All input bindings/parameters are treated conservatively as sensitive.
         if let Some(input) = value.get("shaula").or(Some(value)) {
-            for key in ["jit_config", "bindings", "parameters", "setup_info"] {
+            for key in [
+                "jit_config",
+                "bindings",
+                "parameters",
+                "setup_info",
+                "forgejo_vm",
+            ] {
                 if let Some(value) = input.get(key) {
                     values.collect(value, 0);
                 }
@@ -209,6 +215,29 @@ mod diagnostic_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn vm_cloud_init_token_is_redacted_on_create_and_retained_destroy_input(
+    ) -> Result<(), serde_json::Error> {
+        let token = "vm-secret-\"quoted\"-canary";
+        let input = serde_json::json!({"forgejo_vm":{"token":token}});
+        // Create passes the envelope; Destroy reloads the protected tfvars document.
+        for input in [input.clone(), serde_json::json!({"shaula":input})] {
+            let values = SensitiveValues::from_input(&input, &[]);
+            let mut sanitizer = Sanitizer::new(std::sync::Arc::new(values));
+            for secret in [
+                token.into(),
+                STANDARD.encode(token),
+                hex::encode(token),
+                serde_json::to_string(token)?.trim_matches('"').to_string(),
+            ] {
+                let record = format!("Error: provider echoed {secret}\n");
+                let output = sanitizer.feed(record.as_bytes());
+                assert_eq!(output[0].0, "Error: provider echoed [REDACTED]\n");
+            }
+        }
+        Ok(())
+    }
+
     #[test]
     fn split_secret_and_unsafe_provider_dump_are_never_released() {
         let values = SensitiveValues::from_input(&serde_json::json!({"jit_config":"abcdef"}), &[]);

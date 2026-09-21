@@ -50,7 +50,7 @@ fn bundled_aws_inputs_discover_defaults_without_exposing_platform_controls_to_fl
     let variables = crate::variables::discover_variables(&source(), "artifact")?;
     assert!(variables.available);
     assert!(variables.parameters.is_empty());
-    assert_eq!(variables.bindings.len(), 9);
+    assert_eq!(variables.bindings.len(), 10);
     for (key, expected) in [
         (
             "aws_ami_name",

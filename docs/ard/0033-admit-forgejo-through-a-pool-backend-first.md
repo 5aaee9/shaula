@@ -72,6 +72,14 @@ Shaula 的当前契约把 `github.com` 写进产品边界（spec 0001 §3 明确
 - 凭据模型新增 token 型 profile kind，与 spec 0018 的"仅 GitHub App"不冲突但必须显式区分：
   Forgejo token 不是 PAT 的复活，不得作为 GitHub 凭据形态回到系统里。
 
+## 2026-09-21：统一硬超时补充
+
+操作者另行授权 GitHub / Forgejo 共用 Runner 最大存活时间，默认成功创建后 2h，允许中断正在运行的任务。
+这项保险策略由 [spec 0001 §5.3](../specs/0001-shaula-runner-scale-set.md#53-runner-最大存活时间) 拥有，
+不是 Forgejo provider 扩展改变 GitHub 协议，也不是 Busy-safe drain 已解决。
+非等待 `one-job` 的领取响应丢失实验未通过安全回收验证，生产保留 `--wait`，不增加领取代理。
+实际交付与验收边界仍见 [实现状态](../IMPLEMENTATION_STATUS.md)。
+
 ## Rollout
 
 1. spec 0026 接受（本 ARD 从 `proposed` 转 `accepted`）与 D5/D6/R4 的冻结项确定。

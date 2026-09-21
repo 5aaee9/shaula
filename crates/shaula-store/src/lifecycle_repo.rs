@@ -74,6 +74,9 @@ impl Store {
             workspace_path: Set(workspace_path.to_string()),
             shaula_result_json: Set(None),
             shaula_result_digest: Set(None),
+            provisioned_at: Set(None),
+            expiry_requested_at: Set(None),
+            resources_destroyed_at: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -183,17 +186,21 @@ impl Store {
         digest: &str,
         now: i64,
     ) -> StoreResult<()> {
-        let row = self
-            .generation_get(id)
+        let tx = self.begin().await?;
+        let row = runner_generations::Entity::find_by_id(id.to_owned())
+            .one(&tx)
             .await?
             .ok_or_else(|| StoreError::Corrupt(format!("generation {id} missing")))?;
+        let provisioned_at = row.provisioned_at.unwrap_or(now);
         let mut updated: runner_generations::ActiveModel = row.into();
         updated.shaula_result_json = Set(Some(result_json.to_string()));
         updated.shaula_result_digest = Set(Some(digest.to_string()));
+        updated.provisioned_at = Set(Some(provisioned_at));
         updated.updated_at = Set(now);
         runner_generations::Entity::update(updated)
-            .exec(self.connection())
+            .exec(&tx)
             .await?;
+        tx.commit().await?;
         Ok(())
     }
 

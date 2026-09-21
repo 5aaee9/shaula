@@ -29,7 +29,9 @@ Plaintext TCP endpoints remain forbidden. Direct Terraform invocation does not
 prepare these helpers and is not the supported SSH execution path.
 
 Each Generation owns one container using the unmodified official image from
-`ghcr.io/actions/actions-runner`, pinned by immutable digest. Derived images,
+`ghcr.io/actions/actions-runner` or `code.forgejo.org/forgejo/runner`, pinned by
+immutable digest. The publisher's `runner_backend` binding selects GitHub
+(default) or Forgejo on this same Docker template and is frozen per Revision. Derived images,
 custom image builds, injected bootstrap programs, and container-side Setup Info
 fetching or processing are forbidden. The image is preloaded shared data.
 The container runs as the image's non-root runner user with a 4 GiB memory
@@ -37,7 +39,7 @@ limit and CPU set `0-1`. It does not restart or auto-remove, and has no host
 mounts, privileged mode, host namespaces, added devices, or added capabilities.
 
 Terraform creates the container with `start=false` and `must_run=false`.
-After apply completes, Shaula validates the returned container identity and
+For GitHub, after apply completes, Shaula validates the returned container identity and
 Generation labels, prepares the bounded sanitized `.setup_info` JSON outside
 the container, copies it to `/home/runner/.setup_info`, and starts the container.
 Setup Info preparation or delivery failure degrades to unavailable diagnostics;
@@ -45,7 +47,7 @@ it does not prevent the required start attempt. Startup and identity failures
 remain lifecycle failures. Terraform continues to own resource creation and
 destruction; the bootstrap contract permits only this fixed post-apply handoff.
 
-The container command is `/home/runner/bin/Runner.Listener run`. Its native
+The GitHub container command is `/home/runner/bin/Runner.Listener run`. Its native
 `ACTIONS_RUNNER_INPUT_JITCONFIG` environment input is the only JIT transport.
 The official Listener captures and removes that input from the ordinary
 environment before running workflow processes. No credential appears in argv.
@@ -57,7 +59,21 @@ zeroization: workflow code in the same Runner Execution Domain may inspect
 Listener memory or its initial environment. Host administrators can inspect
 the Docker configuration, including the original JIT input.
 
-Operators must preload the exact official image before executing the Template.
+For Forgejo, Shaula verifies the stopped container and its anonymous `/data`
+volume, copies the protected token to `/data/.forgejo-token`, and starts the
+container. The official `dumb-init` entrypoint executes `/bin/forgejo-runner
+one-job` with a `file://` token URL, the frozen instance URL/UUID/`:host` labels,
+and `--wait`. A fixed nonsecret `SHAULA_RUNNER_BACKEND=forgejo` environment
+marker keeps Docker's planned environment known for strict admission; unknown
+values are not accepted. Token bytes never enter Terraform, argv or environment. The token
+file and process memory remain inside the trusted Runner Execution Domain;
+this is not isolation from workflow code. No Docker socket or DinD is allowed.
+The container never restarts; Terraform Destroy removes its anonymous volume
+(`remove_volumes=true`). Exit/idle alone does not prove a task was unassigned.
+Normal recycling retains the backend's ownership and safe-removal gates; the
+shared hard lifetime is a separate, explicitly task-interrupting safeguard.
+
+Operators must preload the selected backend's exact official image before executing the Template.
 Changing image, bootstrap contract, bindings, engine, provider lock, or this
 policy requires renewed exact-tuple validation; a smoke report is not an
 activation attestation. Retained Generations keep their original artifact and

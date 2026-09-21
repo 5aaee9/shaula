@@ -5,6 +5,12 @@
   "additionalProperties": false,
   "required": ["proxmox_host", "proxmox_token"],
   "properties": {
+    "runner_backend": {
+      "type": "string",
+      "enum": ["github", "forgejo"],
+      "description": "Runner backend for this Template Revision, default github. Forgejo delivers a single ephemeral Runner token through the protected NoCloud ISO and Terraform state; never a management token.",
+      "sensitive": false
+    },
     "proxmox_host": {
       "type": "string",
       "format": "uri",
@@ -29,7 +35,7 @@
       "minLength": 1,
       "maxLength": 255,
       "pattern": "\\S",
-      "description": "Exact, case-sensitive name of one visible template VM, default GitHub-Runner. The trusted image must contain a clean cloud-init installation, systemd, a runner user, and /opt/actions-runner with its dependencies.",
+      "description": "Exact name of one visible trusted template VM, default GitHub-Runner. GitHub needs clean cloud-init, systemd, a runner user and /opt/actions-runner with dependencies. Forgejo needs Ubuntu 22.04 x86_64, clean cloud-init and systemd; bootstrap installs the pinned Runner. No pre-enabled Runner services or privileged runner user.",
       "sensitive": false
     },
     "proxmox_vmid_begin": {

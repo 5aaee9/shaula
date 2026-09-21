@@ -1,6 +1,8 @@
 api_version: shaula.io/template-profile/v1
 kind: RunnerTemplateProfile
 platform: aws
+runner_backends: [github, forgejo]
+forgejo_vm_bootstrap_contract: shaula.forgejo-vm-cloud-init/v1
 runtime:
   protocol: terraform-cli/v1
   engine: terraform
@@ -16,4 +18,4 @@ managed_resource_shape:
     terraform_type: aws_instance
     exact_count: 1
 runner_image_digests: []
-runtime_policy_digest: sha256:bcf49fcb915aff5f3303f8736d31934099d9bf03d432f7c6269d95715b521d3c
+runtime_policy_digest: sha256:9515f4865c125aee8ad58004ee6d514bc4fefdddbb904805e37dae73a9c3dcb6

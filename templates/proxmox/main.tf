@@ -23,6 +23,7 @@ data "proxmox_qemu_vms" "template" {
 }
 
 locals {
+  forgejo = var.shaula.bindings.runner_backend == "forgejo"
   # A normal destroy refresh still validates required configuration fields.
   # Keep them syntactically valid if the source template disappeared; the
   # exact-one precondition prevents these sentinels from creating anything,
@@ -42,11 +43,13 @@ resource "proxmox_nocloud_iso" "bootstrap" {
     instance-id    = local.generation_name
     local-hostname = local.generation_name
   })
-  user_data = templatefile("${path.module}/user-data.tftpl", {
+  user_data = templatefile("${path.module}/${local.forgejo ? "user-data-forgejo" : "user-data"}.tftpl", {
     jit_config = var.shaula.jit_config
+    forgejo    = var.shaula.forgejo
+    forgejo_vm = var.shaula.forgejo_vm
     pre_start  = var.shaula.bindings.proxmox_cloud_init_cmd
-    bootstrap  = file("${path.module}/bootstrap.tftpl")
-    service    = file("${path.module}/runner-service.tftpl")
+    bootstrap  = file("${path.module}/${local.forgejo ? "bootstrap-forgejo" : "bootstrap"}.tftpl")
+    service    = file("${path.module}/${local.forgejo ? "runner-service-forgejo" : "runner-service"}.tftpl")
   })
   # A clean Linux template supplies one Ethernet NIC (eth* or en*). Its
   # bridge/MAC/model are inherited. No Proxmox ipconfig or Fleet override.
@@ -82,8 +85,8 @@ resource "proxmox_qemu_vm" "runner" {
   # Keep inherited root disks and NICs outside the managed map. CPU and memory
   # are Fleet parameters so each Fleet can choose an approved VM size.
   # The provider refuses a foreign disk/ISO or a second inherited seed.
-  cores             = var.shaula.parameters.cpu_cores
-  memory            = var.shaula.parameters.memory_mb
+  cores              = var.shaula.parameters.cpu_cores
+  memory             = var.shaula.parameters.memory_mb
   nocloud_cdrom_slot = "ide2"
   disk = {
     ide2 = {
@@ -120,8 +123,11 @@ variable "shaula" {
     contract_version = number
     generation       = any
     jit_config       = string
+    forgejo          = optional(any)
+    forgejo_vm       = optional(any)
     bindings_digest  = string
     bindings = object({
+      runner_backend         = optional(string, "github")
       proxmox_host           = string
       proxmox_token          = string
       proxmox_insecure       = optional(bool, true)

@@ -22,6 +22,8 @@ pub struct BootstrapConfig {
     #[serde(default)]
     pub execution: ExecutionConfig,
     #[serde(default)]
+    pub runner: RunnerConfig,
+    #[serde(default)]
     pub observability: ObservabilityConfig,
     #[serde(default)]
     pub operation_logs: shaula_core::operation_log::LogConfig,
@@ -120,6 +122,21 @@ impl Default for LimitsConfig {
         Self {
             max_active_fleets: default_max_fleets(),
             max_pending_changes: default_max_pending(),
+        }
+    }
+}
+
+/// Process-wide insurance against overlong runners, for both GitHub and Forgejo.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct RunnerConfig {
+    pub max_lifetime_secs: u64,
+}
+
+impl Default for RunnerConfig {
+    fn default() -> Self {
+        Self {
+            max_lifetime_secs: shaula_core::runner_lifetime::DEFAULT_MAX_LIFETIME.as_secs(),
         }
     }
 }

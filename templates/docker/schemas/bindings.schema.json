@@ -5,6 +5,12 @@
   "additionalProperties": false,
   "required": ["docker_host"],
   "properties": {
+    "runner_backend": {
+      "type": "string",
+      "enum": ["github", "forgejo"],
+      "description": "Runner backend, fixed when publishing this Template Revision. Defaults to GitHub. Must match the Fleet provider; never a Fleet input.",
+      "sensitive": false
+    },
     "docker_host": {
       "type": "string",
       "anyOf": [

@@ -1,6 +1,7 @@
 api_version: shaula.io/template-profile/v1
 kind: RunnerTemplateProfile
 platform: docker
+runner_backends: [github, forgejo]
 runtime:
   protocol: terraform-cli/v1
   engine: terraform
@@ -18,4 +19,5 @@ managed_resource_shape:
     exact_count: 1
 runner_image_digests:
   - ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4
-runtime_policy_digest: sha256:e717abcf7e3800513055e438a02321a1397c3b1000c6752998e210191fc31ae7
+  - code.forgejo.org/forgejo/runner:13.1.0@sha256:c4af85fd9f0dd03788676a534781a87c71aa2c6a37737143e017eb94d4312952
+runtime_policy_digest: sha256:63215fec8174c41d6bf93c27844dc0b69335a9c743e6ddd6367c906dbf33c494

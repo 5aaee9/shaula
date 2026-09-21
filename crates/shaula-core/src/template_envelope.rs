@@ -33,6 +33,8 @@ pub struct ShaulaInputEnvelope {
     pub jit_config: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forgejo: Option<crate::forgejo::ForgejoBootstrapIdentity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forgejo_vm: Option<super::ForgejoVmBootstrap>,
     pub bindings_digest: BindingsDigest,
     #[serde(default)]
     pub bindings: serde_json::Map<String, serde_json::Value>,
@@ -50,6 +52,8 @@ struct InputWire {
     jit_config: String,
     #[serde(default)]
     forgejo: Option<crate::forgejo::ForgejoBootstrapIdentity>,
+    #[serde(default)]
+    forgejo_vm: Option<super::ForgejoVmBootstrap>,
     bindings_digest: BindingsDigest,
     #[serde(default)]
     bindings: serde_json::Map<String, serde_json::Value>,
@@ -73,6 +77,7 @@ impl TryFrom<InputWire> for ShaulaInputEnvelope {
             generation: wire.generation,
             jit_config: wire.jit_config,
             forgejo: wire.forgejo,
+            forgejo_vm: wire.forgejo_vm,
             bindings_digest: wire.bindings_digest,
             bindings: wire.bindings,
             parameters: wire.parameters,
@@ -113,6 +118,7 @@ impl ShaulaInputEnvelope {
             generation,
             jit_config,
             forgejo: None,
+            forgejo_vm: None,
             bindings_digest,
             bindings: serde_json::Map::new(),
             parameters: serde_json::Map::new(),
@@ -136,6 +142,16 @@ impl ShaulaInputEnvelope {
     }
 
     pub fn validate(&self) -> CoreResult<()> {
+        if self.forgejo_vm.is_some()
+            && (self.forgejo.is_none()
+                || !self.jit_config.is_empty()
+                || self.generation.scale_set_id.is_some())
+        {
+            return Err(CoreError::new(
+                ReasonCode::TemplateInvalid,
+                "VM bootstrap credentials require an exclusive Forgejo identity",
+            ));
+        }
         match (self.contract_version, &self.setup_info) {
             (1, None) => Ok(()),
             (2, Some(descriptor)) => descriptor.validate_for_generation(&self.generation.id),
@@ -155,12 +171,14 @@ impl ShaulaInputEnvelope {
                 "input contract differs from manifest",
             ));
         }
-        match manifest.runner_backend.as_str() {
-            "github" if self.forgejo.is_none() => {}
+        match manifest.runner_backend_for_bindings(&self.bindings)? {
+            "github" if self.forgejo.is_none() && self.forgejo_vm.is_none() => {}
             "forgejo"
                 if self.forgejo.is_some()
                     && self.jit_config.is_empty()
-                    && self.generation.scale_set_id.is_none() =>
+                    && self.generation.scale_set_id.is_none()
+                    && self.forgejo_vm.is_some()
+                        == manifest.forgejo_vm_bootstrap_contract.is_some() =>
             {
                 if let Some(identity) = &self.forgejo {
                     manifest.validate_forgejo_targets(&identity.labels)?;

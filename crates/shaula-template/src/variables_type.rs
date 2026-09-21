@@ -67,11 +67,19 @@ fn key(key: &ObjectKey) -> CoreResult<&str> {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ForgejoMember {
+    Absent,
+    Required,
+    Optional,
+    OptionalVm,
+}
+
 /// Only bindings and parameters are publisher-defined; v2 adds system-owned setup_info.
 pub(super) fn envelope(
     expr: &Expression,
     input_version: u32,
-    forgejo: bool,
+    forgejo: ForgejoMember,
 ) -> CoreResult<BTreeMap<String, Node>> {
     let fields = object(expr)?;
     let mut nodes = BTreeMap::new();
@@ -84,13 +92,28 @@ pub(super) fn envelope(
         let expected = match field {
             "contract_version" => Some("number"),
             "generation" => Some("any"),
-            "forgejo" if forgejo => Some("any"),
+            "forgejo" if forgejo != ForgejoMember::Absent => Some("any"),
+            "forgejo_vm" if forgejo == ForgejoMember::OptionalVm => Some("any"),
             "setup_info" if input_version == 2 => Some("any"),
             "jit_config" | "bindings_digest" => Some("string"),
             "bindings" | "parameters" => None,
             _ => return Err(invalid("shaula variable declares an unknown system member")),
         };
         if let Some(expected) = expected {
+            let expr = if matches!(field, "forgejo" | "forgejo_vm")
+                && matches!(forgejo, ForgejoMember::Optional | ForgejoMember::OptionalVm)
+            {
+                match call(expr, "optional") {
+                    Some([inner]) => inner,
+                    _ => {
+                        return Err(invalid(
+                            "selectable backend requires optional(any) bootstrap members",
+                        ))
+                    }
+                }
+            } else {
+                expr
+            };
             if !matches!(expr, Expression::Variable(value) if value.as_str() == expected) {
                 return Err(invalid(
                     "shaula variable changes a protected system member type",
@@ -106,7 +129,10 @@ pub(super) fn envelope(
             nodes.insert(field.to_owned(), node);
         }
     }
-    let expected_count = 6 + usize::from(input_version == 2) + usize::from(forgejo);
+    let expected_count = 6
+        + usize::from(input_version == 2)
+        + usize::from(forgejo != ForgejoMember::Absent)
+        + usize::from(forgejo == ForgejoMember::OptionalVm);
     if names.len() != expected_count {
         return Err(invalid(
             "shaula variable is missing a system envelope member",

@@ -45,7 +45,7 @@ fn bundled_variables_are_discovered_from_terraform_defaults() -> TestResult {
     assert_eq!(docker.parameters.len(), 1);
     assert_eq!(
         docker.parameters[0].default_value_json.as_deref(),
-        Some("\"ghcr.io/actions/actions-runner:2.337.0\"")
+        Some("\"auto\"")
     );
     let socket = docker
         .bindings
@@ -75,7 +75,25 @@ fn bundled_variables_are_discovered_from_terraform_defaults() -> TestResult {
         kubernetes.parameters[1].default_value_json.as_deref(),
         Some("\"2Gi\"")
     );
-    assert!(kubernetes.bindings.iter().all(|field| field.required));
+    assert!(kubernetes
+        .bindings
+        .iter()
+        .filter(|field| field.key != "runner_backend")
+        .all(|field| field.required));
+    for projection in [&docker, &kubernetes] {
+        let backend = projection
+            .bindings
+            .iter()
+            .find(|field| field.key == "runner_backend")
+            .ok_or("backend missing")?;
+        assert!(!backend.required && !backend.sensitive);
+        assert_eq!(backend.default_value_json.as_deref(), Some("\"github\""));
+        assert_eq!(backend.options.len(), 2);
+        assert!(!projection
+            .parameters
+            .iter()
+            .any(|field| field.key == "runner_backend"));
+    }
     Ok(())
 }
 

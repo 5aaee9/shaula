@@ -133,10 +133,8 @@ fn validate_pod(
 
 fn patch(secret: &Value, request: &TemplateCreateRequest) -> Result<Value, TemplateOutcomeError> {
     let material = request.forgejo_bootstrap.as_ref().ok_or_else(failed)?;
-    if (!secret["data"].is_null()
-        && secret["data"]
-            .as_object()
-            .is_none_or(|data| !data.is_empty()))
+    let marker = json!({"runner_backend":STANDARD.encode("forgejo")});
+    if (!secret["data"].is_null() && secret["data"] != json!({}) && secret["data"] != marker)
         || secret.to_string().contains(material.token())
         || (!secret["immutable"].is_null() && secret["immutable"] != false)
         || secret["type"] != "Opaque"

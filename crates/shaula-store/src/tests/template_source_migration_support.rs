@@ -233,9 +233,17 @@ pub(super) async fn retained_snapshot(store: &Store) -> TestResult<BTreeMap<Stri
         let mut columns = Vec::new();
         for row in rows {
             let name: String = row.try_get("", "name")?;
+            // Compare historical columns only. New migration checkpoints have
+            // their own backfill assertions (runner_lifetime_migration).
             if !matches!(
                 name.as_str(),
-                "source_key" | "pool_member_key" | "template_pool_ref" | "template_pool_revision"
+                "source_key"
+                    | "pool_member_key"
+                    | "template_pool_ref"
+                    | "template_pool_revision"
+                    | "provisioned_at"
+                    | "expiry_requested_at"
+                    | "resources_destroyed_at"
             ) {
                 columns.push(format!("quote(\"{}\")", name.replace('"', "\"\"")));
             }

@@ -12,7 +12,7 @@
 
 本规范**不**拥有：Template 输入与发布（[spec 0004](0004-template-profile-runtime.md)）、容器 bootstrap 的 GitHub 契约（[spec 0020](0020-official-container-runner-bootstrap.md)）、Jobs 日志内容与保留（[spec 0019](0019-workflow-jobs-and-operation-logs.md)）、GitHub App 认证（[spec 0011](0011-multi-account-github-authentication.md) / [spec 0018](0018-github-app-only-authentication.md)）、crate ownership 与依赖方向（[spec 0007](0007-rust-workspace-architecture.md)）。
 
-本规范 MUST NOT 改变既有 GitHub Fleet 的任何行为：无 provider 判别式时，一切语义与现状逐字一致。Forgejo 语义 MUST NOT 注入 `GitHubAccessPort` 或 `shaula-scaleset`；两者的 wire 类型与失败分类保持 GitHub 专用。
+本规范的 provider 扩展 MUST NOT 改变既有 GitHub Fleet 行为。独立的跨后端 Runner 硬超时策略由 [spec 0001 §5.3](0001-shaula-runner-scale-set.md#53-runner-最大存活时间) 统一定义，不属于 Forgejo 专用语义。Forgejo 语义 MUST NOT 注入 `GitHubAccessPort` 或 `shaula-scaleset`；两者的 wire 类型与失败分类保持 GitHub 专用。
 
 ## 2. Provider 维度
 
@@ -67,16 +67,21 @@ Create 顺序：
 
 ## 5. Runner Bootstrap Material 与模板
 
+- backend 是现有 Template 的发布选项，不是新的 TemplatePlatform / source kind。Docker / Kubernetes 及显式接纳下述 VM bootstrap 契约的 manifest 可声明 `runner_backends: [github, forgejo]` 能力，publisher 用 `bindings.runner_backend` 选择，默认 GitHub，固定在不可变 Revision；Fleet 参数 MUST NOT 覆盖。旧的单 `runner_backend` manifest 保持原有固定语义。
+- Fleet admission / Create MUST 验证 Revision 的 backend 与 Fleet kind 一致；follow 遇到不一致时保留旧 pin。`runner_image: auto` 按该选择解析官方 digest，显式跨 backend alias MUST 拒绝。VM 模板在没有 Forgejo bootstrap 契约前 MUST NOT 广告这个选项。
+
 - Runner Bootstrap Material 是 provider 专用的一次性身份材料。GitHub 侧仍为 JIT config，字段与语义不变；Forgejo 侧为 `{instance_url, uuid, token, labels[]}`。spec 0004 的 `bindings_digest` 语义、envelope `shaula_result` 与本规范无关，不触发 D4。
-- token MUST 以受保护文件（Secret / 平台等价物）投递，只被 runner 经 `--token-url file:…` 读取。token MUST NOT 出现于 Terraform 变量、命令行 argv、资源 metadata、Setup Info、Operation Log 或任何日志投影。
-- 镜像准入从"仅 `ghcr.io/actions/actions-runner`"扩展为"按 bootstrap kind 对应的官方镜像族"：Forgejo 族 MUST 使用官方 forgejo-runner 镜像并固定**内容 digest**，禁止自建或重打包镜像；exact registry / version / digest tuple 归 R4。
-- labels 的 backend target 决定执行方式（`host` 直接执行、`docker://` 需要容器运行时）。Docker / Kubernetes / Proxmox 三个平台的默认组合 MUST 在模板内显式声明并分别验收：选择容器后端时，模板 MUST 声明容器运行时与挂载风险；MUST NOT 假定与 GitHub 官方 runner"步骤直接跑在 runner 内"相同的模型。
+- token MUST 以受保护文件（Secret / 平台等价物）投递，只被 runner 经 `--token-url file:…` 读取。token MUST NOT 出现于命令行 argv、环境、资源 tags/labels、Setup Info、Operation Log 或任何日志投影。Docker / Kubernetes 仍由 host 在 apply 后投递，MUST NOT 进入 Terraform 输入。
+- **VM 显式例外**：Proxmox / AWS / TencentCloud / AliCloud 的 v1 VM-image manifest 可声明 `forgejo_vm_bootstrap_contract: shaula.forgejo-vm-cloud-init/v1`，允许系统字段 `shaula.forgejo_vm.token` 进入受保护 tfvars、plan/state 和 cloud-init user-data / NoCloud ISO。它 MUST 仅为 Shaula 预注册得到的单 Runner token，MUST NOT 是 management/registration scope token；GitHub 和容器输入 MUST 拒绝此字段。选择该发布选项即接纳与 VM JIT 相同的凭据存储边界，base64 / sensitive 不代表加密。来宾以 root 0600 文件接收，转入非 root Runner 私有运行目录；不在来宾二次注册，不重放一次性 seed。该例外不授权 post-apply Runtime hook 或 Setup Info。
+- 容器镜像准入从"仅 `ghcr.io/actions/actions-runner`"扩展为"按 bootstrap kind 对应的官方镜像族"：Forgejo 容器族 MUST 使用官方 forgejo-runner 镜像并固定**内容 digest**，禁止自建或重打包镜像。上述 VM 则继承各平台 VM-image 信任契约，下载官方 native Runner，并用 artifact 内固定版本和 SHA-256 验证；不宣称 OCI 镜像 pin。exact registry / version / digest tuple 归 R4。
+- labels 的 backend target 决定执行方式（`host` 直接执行、`docker://` 需要容器运行时）。Docker / Kubernetes / Proxmox / AWS / TencentCloud / AliCloud 的默认组合 MUST 在模板内显式声明并分别验收：选择容器后端时，模板 MUST 声明容器运行时与挂载风险；MUST NOT 假定与 GitHub 官方 runner"步骤直接跑在 runner 内"相同的模型。
 - 引导材料属于 credential-grade：与 spec 0020 相同的"同 Runner Execution Domain 可读、控制面凭据永不进入"边界继续适用。
 
 ## 6. 关联等级与 Busy-safe removal
 
 - 本切片 MUST NOT 产生 `Verified` 的 job ↔ Generation 关联。Forgejo 的公开 API 不暴露 task → runner，因此除"按 handle 定向"（本切片明确不做）外，任何关联只能是 `Unverified` 或 `Ambiguous`。API 与 UI MUST 呈现该等级，MUST NOT 复用 GitHub 的 assignment 文案，MUST NOT 把未验证关联呈现为"执行该 job 的 Runner"。
-- `DELETE runner` 没有运行保护，因此 Busy 判定 MUST NOT 依赖远端拒绝。Destroy 前必须由本地证据分类：
+- 以下是未触发 [统一硬超时](0001-shaula-runner-scale-set.md#53-runner-最大存活时间) 的普通清退规则。硬超时允许中断任务，先销毁已证明归属的资源再清理精确注册；它不能作为 idle-safe 证据，也不取消所有权校验。
+- `DELETE runner` 没有运行保护，因此 Busy 判定 MUST NOT 依赖远端拒绝。普通 Destroy 前必须由本地证据分类：
   - **已从 inventory 消失**（服务端在任务结束后删除）→ 安全，继续 Destroy。
   - **仍存在且 `idle`，且模板侧进程/资源证据表明未持有任务** → 允许先 `DELETE` 注册再 Destroy；删除返回 404/不存在视为已收敛。
   - **`active`、状态未知或证据矛盾** → MUST 保守延迟并记为 Busy，MUST NOT 删除注册、MUST NOT 销毁资源。
@@ -111,8 +116,8 @@ Create 顺序：
 
 - **A1 闭环**：真实 Forgejo ≥ 15 + admin token：预注册 ephemeral → runner 以 uuid/token 启动 → Declare 后 inventory 显示 `idle` → 派发一个匹配 job → 任务完成后 runner 记录消失。
 - **A2 labels 匹配**：声明 labels 必须全部包含在 job `runs-on` 中；不匹配的 job 不被取走（用两组不同 `runs-on` 的 job 验证）。
-- **A3 需求快照**：`waiting` 变化正确驱动容量；`running` 变化不误增需求；轮询全部失败时保留旧快照且不产生销毁。
-- **A4 Busy-safe**：对 `active` runner 发起 Destroy → 记为 Busy 并延迟，注册与资源都保留；对 `idle` 且无任务证据的 runner → 正常收敛。
+- **A3 需求快照**：`waiting` 变化正确驱动容量；`running` 变化不误增需求；轮询全部失败时保留旧快照且不授权普通缩容；独立硬超时不依赖需求新鲜度。
+- **A4 Busy-safe**：未到统一硬超时时，对 `active` runner 发起普通 Destroy → 记为 Busy 并延迟，注册与资源都保留；对 `idle` 且无任务证据的 runner → 正常收敛。
 - **A5 注册 Uncertain**：注入响应丢失，三类分类（命中 / 缺失 / 歧义）分别按 §6 收敛。
 - **A6 关联等级**：Jobs 视图与 API 只显示 `Unverified`/`Ambiguous`，无任何 `Verified` 关联产生。
 - **A7 泄漏扫描**：argv、Terraform 变量、资源 metadata、Setup Info、Operation Log 与普通日志中都不含 token。

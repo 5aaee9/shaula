@@ -79,7 +79,7 @@ fn bundled_proxmox_inputs_discover_fleet_hardware_options_and_binding_defaults()
             "{key} options"
         );
     }
-    assert_eq!(variables.bindings.len(), 8);
+    assert_eq!(variables.bindings.len(), 9);
     for (key, expected) in [
         ("proxmox_insecure", "true"),
         ("proxmox_template_name", "\"GitHub-Runner\""),

@@ -45,10 +45,18 @@ pub fn discover_variables(dir: &Path, digest: &str) -> CoreResult<TemplateVariab
         let manifest = crate::manifest::parse_manifest(&read_text(&manifest_path, &mut 0)?)?;
         (
             manifest.input_contract_version,
-            manifest.runner_backend == "forgejo",
+            if manifest.forgejo_vm_bootstrap_contract.is_some() {
+                types::ForgejoMember::OptionalVm
+            } else if !manifest.runner_backends.is_empty() {
+                types::ForgejoMember::Optional
+            } else if manifest.runner_backend == "forgejo" {
+                types::ForgejoMember::Required
+            } else {
+                types::ForgejoMember::Absent
+            },
         )
     } else {
-        (1, false)
+        (1, types::ForgejoMember::Absent)
     };
     let mut paths = Vec::new();
     for entry in std::fs::read_dir(dir)

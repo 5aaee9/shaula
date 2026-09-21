@@ -4,6 +4,21 @@ The default target is `unix:///var/run/docker.sock`. To use Docker on a remote
 host, publish a new Template Revision with the following **bindings** (not Fleet
 inputs). The existing bindings JSON editor accepts these fields.
 
+## Runner backend
+
+Publish this same template with `"runner_backend": "forgejo"` in **bindings**
+to use Forgejo, or omit it / choose `"github"` for GitHub. For example:
+
+```json
+{"docker_host":"unix:///var/run/docker.sock","runner_backend":"forgejo"}
+```
+
+The choice is frozen in the Template Revision, not a Fleet input. The Fleet's
+provider must match. `runner_image` defaults to `auto`, selecting that backend's
+pinned official image; explicit aliases from the other backend are rejected.
+Use separate published Profiles from this same source if both are needed.
+See [Forgejo templates](../../docs/forgejo-templates.md) for scope and bootstrap.
+
 ## SSH password
 
 ```json

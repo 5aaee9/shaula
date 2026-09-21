@@ -17,11 +17,14 @@ provider "tencentcloud" {
 }
 
 locals {
-  user_data = base64encode(templatefile("${path.module}/user-data.tftpl", {
+  forgejo = var.shaula.bindings.runner_backend == "forgejo"
+  user_data = base64encode(templatefile("${path.module}/${local.forgejo ? "user-data-forgejo" : "user-data"}.tftpl", {
     jit_config = var.shaula.jit_config
+    forgejo    = var.shaula.forgejo
+    forgejo_vm = var.shaula.forgejo_vm
     pre_start  = var.shaula.bindings.tencentcloud_cloud_init_cmd
-    bootstrap  = file("${path.module}/bootstrap.tftpl")
-    service    = file("${path.module}/runner-service.tftpl")
+    bootstrap  = file("${path.module}/${local.forgejo ? "bootstrap-forgejo" : "bootstrap"}.tftpl")
+    service    = file("${path.module}/${local.forgejo ? "runner-service-forgejo" : "runner-service"}.tftpl")
   }))
 }
 
@@ -86,8 +89,11 @@ variable "shaula" {
     contract_version = number
     generation       = any
     jit_config       = string
+    forgejo          = optional(any)
+    forgejo_vm       = optional(any)
     bindings_digest  = string
     bindings = object({
+      runner_backend                          = optional(string, "github")
       tencentcloud_region                     = string
       tencentcloud_secret_id                  = string
       tencentcloud_secret_key                 = string

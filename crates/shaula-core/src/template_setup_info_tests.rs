@@ -80,6 +80,7 @@ fn manifest_requires_exact_input_and_setup_contract_pair() -> TestResult {
     // This fixture exercises the retained descriptor contract, independent of
     // the new official-container capability's intentionally separate version.
     manifest.container_bootstrap_contract = None;
+    manifest.runner_backends.clear();
     let original = serde_json::to_value(&manifest)?;
     assert!(original.get("input_contract_version").is_none());
     input().validate_for_manifest(&manifest)?;

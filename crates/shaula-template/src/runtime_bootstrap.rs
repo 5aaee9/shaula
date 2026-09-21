@@ -48,6 +48,9 @@ pub(super) async fn launch(
         .and_then(|text| crate::manifest::parse_manifest(&text).ok())
         .ok_or_else(failed)?;
     let image = selected_image(&manifest, request)?;
+    let backend = manifest
+        .runner_backend_for_bindings(&request.input.bindings)
+        .map_err(|_| failed())?;
     // Crash residue must not alter the immutable workspace material digest.
     let temporary = private_directory().ok();
     let projection = match &runtime.operation_log_reader {
@@ -74,7 +77,7 @@ pub(super) async fn launch(
                 request,
                 envelope,
                 &image,
-                manifest.runner_backend.as_str(),
+                backend,
                 &setup,
                 temporary.as_ref().map(|dir| dir.path()),
                 timeout,
@@ -86,7 +89,7 @@ pub(super) async fn launch(
                 request,
                 envelope,
                 &image,
-                manifest.runner_backend.as_str(),
+                backend,
                 &setup,
                 temporary.as_ref().ok_or_else(failed)?.path(),
                 timeout,
@@ -101,39 +104,13 @@ fn selected_image(
     manifest: &ProfileManifest,
     request: &TemplateCreateRequest,
 ) -> Result<String, TemplateOutcomeError> {
-    let requested = request.input.parameters.get("runner_image");
-    let image = match requested {
-        Some(serde_json::Value::String(alias)) => manifest
-            .runner_image_digests
-            .iter()
-            .find(|image| image.split('@').next() == Some(alias)),
-        None if manifest.runner_image_digests.len() == 1 => manifest.runner_image_digests.first(),
-        _ => None,
-    }
-    .ok_or_else(failed)?;
-    let (repository, digest) = image.split_once("@sha256:").ok_or_else(failed)?;
-    let official = match manifest.runner_backend.as_str() {
-        "github" => {
-            repository == "ghcr.io/actions/actions-runner"
-                || repository
-                    .strip_prefix("ghcr.io/actions/actions-runner:")
-                    .is_some_and(|tag| !tag.is_empty() && !tag.contains('/'))
-        }
-        "forgejo" => {
-            repository == "code.forgejo.org/forgejo/runner"
-                || repository
-                    .strip_prefix("code.forgejo.org/forgejo/runner:")
-                    .is_some_and(|tag| !tag.is_empty() && !tag.contains('/'))
-        }
-        _ => false,
-    };
-    if !official {
-        return Err(failed());
-    }
-    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(failed());
-    }
-    Ok(image.clone())
+    request
+        .input
+        .validate_for_manifest(manifest)
+        .map_err(|_| failed())?;
+    manifest
+        .selected_runner_image(&request.input.bindings, &request.input.parameters)
+        .map_err(|_| failed())
 }
 
 fn resource<'a>(

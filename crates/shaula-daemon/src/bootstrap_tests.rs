@@ -44,6 +44,40 @@ fn valid_bootstrap_freezes_absolute_engine_path() {
 }
 
 #[test]
+fn runner_lifetime_defaults_and_overrides_are_validated() {
+    assert_eq!(
+        ValidatedBootstrap::validate(base_config())
+            .unwrap()
+            .runner_max_lifetime,
+        Duration::from_secs(7200)
+    );
+    let empty: crate::config::RunnerConfig = serde_yaml::from_str("{}").unwrap();
+    assert_eq!(empty.max_lifetime_secs, 7200);
+    let mut config = base_config();
+    config.runner = serde_yaml::from_str("max_lifetime_secs: 3600").unwrap();
+    assert_eq!(
+        ValidatedBootstrap::validate(config)
+            .unwrap()
+            .runner_max_lifetime,
+        Duration::from_secs(3600)
+    );
+    for invalid in [0, u64::MAX] {
+        let mut config = base_config();
+        config.runner.max_lifetime_secs = invalid;
+        assert!(ValidatedBootstrap::validate(config)
+            .unwrap_err()
+            .contains("runner.max_lifetime_secs"));
+    }
+    for invalid in [
+        "max_lifetime_secs: -1",
+        "max_lifetime_secs: 2h",
+        "max_lifetime_sec: 5",
+    ] {
+        assert!(serde_yaml::from_str::<crate::config::RunnerConfig>(invalid).is_err());
+    }
+}
+
+#[test]
 fn unresolvable_engine_fails_bootstrap() {
     let mut config = base_config();
     config.execution.engines.terraform.executable = "definitely-not-on-path-xyz".to_string();

@@ -24,9 +24,13 @@ pub(super) fn admit(
     }
     secret.exact("/immutable", &json!(false))?;
     secret.exact("/type", &json!("Opaque"))?;
-    // An empty Secret is an intentional start gate: the pod cannot obtain its
-    // required token until the host-owned post-apply patch succeeds.
-    secret.exact("/data", &json!({}))?;
+    // The required token key is absent. Kubernetes 2.33.0 treats an empty
+    // data map as computed; the bundled template uses a fixed nonsecret
+    // marker instead. Known empty maps from retained templates remain safe.
+    let data = secret.known("/data")?;
+    if data != &json!({}) && data != &json!({"runner_backend":"forgejo"}) {
+        return Err(rejected());
+    }
     secret.empty("/binary_data")?;
 
     pod.exact("/target_state", &json!(["Pending"]))?;
@@ -45,7 +49,11 @@ pub(super) fn admit(
     pod.one(&format!("{runner}/security_context"))?;
     let security = format!("{runner}/security_context/0");
     pod.exact(&format!("{security}/run_as_non_root"), &json!(true))?;
-    pod.exact(&format!("{security}/run_as_user"), &json!(1000))?;
+    // Terraform provider schema uses a string; the Kubernetes API uses an integer.
+    let user = pod.known(&format!("{security}/run_as_user"))?;
+    if user != &json!("1000") && user != &json!(1000) {
+        return Err(rejected());
+    }
     pod.exact(
         &format!("{security}/allow_privilege_escalation"),
         &json!(false),

@@ -40,6 +40,15 @@ impl ForgejoPoolSupervisor {
             if !resumable && !idle && !retiring_revision {
                 continue;
             }
+            if self
+                .lifecycle
+                .generation_lifetime(&generation.id)
+                .await?
+                .expiry_requested_at
+                .is_some()
+            {
+                continue; // Do not bypass pending deregistration after a hard timeout.
+            }
             let _permit =
                 self.destroy_limit.acquire().await.map_err(|_| {
                     CoreError::new(ReasonCode::Internal, "destroy scheduler stopped")

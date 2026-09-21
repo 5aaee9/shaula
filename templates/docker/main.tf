@@ -5,9 +5,9 @@
 # restarts or auto-removes, and the default Profile never mounts
 # /var/run/docker.sock into the Runner.
 #
-# Use the unmodified official GitHub Runner image pinned in profile.yaml.
-# Shaula owns the post-apply bootstrap: write the prepared .setup_info file
-# into the stopped container, then start its official Listener directly.
+# The publisher selects GitHub (default) or Forgejo on this same template.
+# Shaula bootstraps the stopped official container after apply: GitHub Setup
+# Info or the Forgejo token file, then starts the corresponding one-job runner.
 
 terraform {
   required_version = ">= 1.9, < 2.0"
@@ -27,8 +27,15 @@ provider "docker" {
 }
 
 locals {
-  runner_images = { for image in yamldecode(file("${path.module}/profile.yaml")).runner_image_digests : split("@", image)[0] => image }
-  runner_image  = local.runner_images[var.shaula.parameters.runner_image]
+  forgejo       = var.shaula.bindings.runner_backend == "forgejo"
+  image_prefix  = local.forgejo ? "code.forgejo.org/forgejo/runner:" : "ghcr.io/actions/actions-runner:"
+  runner_images = { for image in yamldecode(file("${path.module}/profile.yaml")).runner_image_digests : split("@", image)[0] => image if startswith(image, local.image_prefix) }
+  runner_image  = var.shaula.parameters.runner_image == "auto" ? one(values(local.runner_images)) : local.runner_images[var.shaula.parameters.runner_image]
+  forgejo_args = local.forgejo ? concat(
+    ["one-job", "--url", var.shaula.forgejo.instance_url, "--uuid", var.shaula.forgejo.uuid, "--token-url", "file:///data/.forgejo-token"],
+    flatten([for label in var.shaula.forgejo.labels : ["--label", label]]),
+    ["--wait"]
+  ) : []
   # Deterministic container name derived from the already-persisted
   # Generation identity; never randomized per attempt.
   container_name = "shaula-${var.shaula.generation.fleet_key}-${substr(var.shaula.generation.id, 0, 24)}"
@@ -66,8 +73,15 @@ resource "docker_container" "runner" {
   # GitHub's Listener captures and removes this supported input variable
   # before workflow execution. Docker metadata and Terraform state remain
   # credential-grade; no JIT value is placed in argv or a shell script.
-  command = ["/home/runner/bin/Runner.Listener", "run"]
-  env     = ["ACTIONS_RUNNER_INPUT_JITCONFIG=${var.shaula.jit_config}"]
+  command        = local.forgejo ? concat(["/bin/forgejo-runner"], local.forgejo_args) : ["/home/runner/bin/Runner.Listener", "run"]
+  entrypoint     = local.forgejo ? ["/usr/bin/dumb-init"] : null
+  working_dir    = local.forgejo ? "/data" : null
+  remove_volumes = true
+  # A fixed nonsecret marker avoids Docker 3.0.2 treating an empty env set
+  # as computed/unknown in the saved plan. Unknown launch controls fail closed.
+  env = local.forgejo ? ["SHAULA_RUNNER_BACKEND=forgejo"] : ["ACTIONS_RUNNER_INPUT_JITCONFIG=${var.shaula.jit_config}"]
+  # Forgejo's token is copied into the official image's anonymous /data
+  # volume by Shaula, never Terraform. Destroy removes that volume too.
 
   # Do not start during apply: its completed, sanitized log projection is
   # prepared outside the container before Shaula releases this start gate.
@@ -104,8 +118,10 @@ variable "shaula" {
     contract_version = number
     generation       = any
     jit_config       = string
+    forgejo          = optional(any)
     bindings_digest  = string
     bindings = object({
+      runner_backend             = optional(string, "github")
       docker_host                = optional(string, "unix:///var/run/docker.sock")
       registry_auth              = optional(string)
       ssh_password               = optional(string)
@@ -114,7 +130,7 @@ variable "shaula" {
       ssh_known_hosts            = optional(string)
     })
     parameters = object({
-      runner_image = optional(string, "ghcr.io/actions/actions-runner:2.337.0")
+      runner_image = optional(string, "auto")
     })
   })
   sensitive = true

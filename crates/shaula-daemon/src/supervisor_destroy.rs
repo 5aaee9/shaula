@@ -61,6 +61,15 @@ impl FleetSupervisor {
             if !resumable_destroy && !cleanup_due && excess <= 0 {
                 continue;
             }
+            if self
+                .store
+                .generation_lifetime(&generation.id)
+                .await?
+                .expiry_requested_at
+                .is_some()
+            {
+                continue; // The resource-first hard timeout path owns both cleanup checkpoints.
+            }
             let mut state = generation.state;
             let _permit =
                 self.limits.destroy.acquire().await.map_err(|_| {

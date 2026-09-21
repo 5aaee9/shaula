@@ -1,0 +1,130 @@
+{
+  "experiment": "official non-waiting one-job; not Shaula Pool/Terraform conformance",
+  "checked_at": "2026-09-21T08:51:58.454Z",
+  "engine": "podman",
+  "images": [
+    {
+      "image": "codeberg.org/forgejo/forgejo:16.0.4",
+      "id": "98bca3bd438f45ad75fe4bc936bc0e375eef4014d0d71e892dfa4f41f1e80926",
+      "repo_digests": [
+        "codeberg.org/forgejo/forgejo@sha256:a3e33d03e771d3e58b27de5573c3a25dc4f670583a6724c1878a6d0bbecf3556",
+        "codeberg.org/forgejo/forgejo@sha256:d11261f3634f6257f4dd946bffa7215beb144e24debb7f9f5cbccb4823f13b1a"
+      ]
+    },
+    {
+      "image": "code.forgejo.org/forgejo/runner:13.1.0",
+      "id": "b59f6f3b93979bc004695570e7c921f9956fac5f7d903900734db70ef9131cdb",
+      "repo_digests": [
+        "code.forgejo.org/forgejo/runner@sha256:96af81b1b0cd928f3f135fb8dc021d47cff868c151a4fd28af971e892990ee7a",
+        "code.forgejo.org/forgejo/runner@sha256:c4af85fd9f0dd03788676a534781a87c71aa2c6a37737143e017eb94d4312952"
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "case": "no-task",
+      "wait": false,
+      "exit_code": 2,
+      "elapsed_ms": 520,
+      "busy_preserved_until_natural_exit": false,
+      "task_executed": false,
+      "workflow_conclusion": null,
+      "remote_registration_after_exit": "idle",
+      "jobs_after_exit": [],
+      "fault": null,
+      "reclamation": "removed using controlled empty-queue knowledge (not production proof)"
+    },
+    {
+      "case": "task-completes",
+      "wait": false,
+      "exit_code": 0,
+      "elapsed_ms": 3531,
+      "busy_preserved_until_natural_exit": true,
+      "task_executed": true,
+      "workflow_conclusion": "success",
+      "remote_registration_after_exit": "absent",
+      "jobs_after_exit": [],
+      "fault": null,
+      "reclamation": "stopped container removed after exact registration absence"
+    },
+    {
+      "case": "task-fails",
+      "wait": false,
+      "exit_code": 0,
+      "elapsed_ms": 3583,
+      "busy_preserved_until_natural_exit": true,
+      "task_executed": true,
+      "workflow_conclusion": "failure",
+      "remote_registration_after_exit": "absent",
+      "jobs_after_exit": [],
+      "fault": null,
+      "reclamation": "stopped container removed after exact registration absence"
+    },
+    {
+      "case": "fetch-unavailable",
+      "wait": false,
+      "exit_code": 2,
+      "elapsed_ms": 320,
+      "busy_preserved_until_natural_exit": false,
+      "task_executed": false,
+      "workflow_conclusion": null,
+      "remote_registration_after_exit": "idle",
+      "jobs_after_exit": [
+        {
+          "status": "waiting",
+          "has_task_id": false
+        }
+      ],
+      "fault": {
+        "fetches": 1,
+        "forwardedFetches": 0,
+        "droppedResponses": 0,
+        "upstreamStatus": null
+      },
+      "reclamation": "not authorized; registration and container retained until fixture teardown"
+    },
+    {
+      "case": "assignment-response-lost",
+      "wait": false,
+      "exit_code": 2,
+      "elapsed_ms": 336,
+      "busy_preserved_until_natural_exit": false,
+      "task_executed": false,
+      "workflow_conclusion": null,
+      "remote_registration_after_exit": "idle",
+      "jobs_after_exit": [
+        {
+          "status": "running",
+          "has_task_id": true
+        }
+      ],
+      "fault": {
+        "fetches": 1,
+        "forwardedFetches": 1,
+        "droppedResponses": 1,
+        "upstreamStatus": 200
+      },
+      "reclamation": "not authorized; registration and container retained until fixture teardown"
+    },
+    {
+      "case": "wait-recovery-control",
+      "wait": true,
+      "exit_code": 0,
+      "elapsed_ms": 5509,
+      "busy_preserved_until_natural_exit": true,
+      "task_executed": true,
+      "workflow_conclusion": "success",
+      "remote_registration_after_exit": "absent",
+      "jobs_after_exit": [],
+      "fault": {
+        "fetches": 2,
+        "forwardedFetches": 2,
+        "droppedResponses": 1,
+        "upstreamStatus": 200
+      },
+      "reclamation": "stopped container removed after exact registration absence"
+    }
+  ],
+  "fixture_resources_removed": true,
+  "production_bootstrap_changed": false
+}

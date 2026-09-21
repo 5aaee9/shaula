@@ -51,6 +51,7 @@ pub struct ForgejoPoolSupervisor {
     work_root: std::path::PathBuf,
     artifact_root: std::path::PathBuf,
     operation_timeout: std::time::Duration,
+    runner_max_lifetime: std::time::Duration,
     setup_info_issuer: Option<Arc<dyn shaula_core::setup_info::SetupInfoIssuer>>,
 }
 
@@ -105,11 +106,19 @@ impl ForgejoPoolSupervisor {
             work_root: deps.work_root,
             artifact_root: deps.artifact_root,
             operation_timeout: deps.operation_timeout,
+            runner_max_lifetime: shaula_core::runner_lifetime::DEFAULT_MAX_LIFETIME,
             setup_info_issuer: deps.setup_info_issuer,
         })
     }
 
-    /// Poll failures never replace the durable demand or authorize scale-down.
+    #[must_use]
+    pub fn with_runner_max_lifetime(mut self, limit: std::time::Duration) -> Self {
+        self.runner_max_lifetime = limit;
+        self
+    }
+
+    /// Poll failures never replace demand or authorize ordinary scale-down.
+    /// Explicit hard lifetime expiry is independent of polling freshness.
     pub async fn tick(&self) -> CoreResult<ForgejoReconcileReport> {
         let _tick = self.tick_lock.lock().await;
         let now = self.clock.now_unix_ms();
@@ -122,7 +131,9 @@ impl ForgejoPoolSupervisor {
             });
         };
         let deleting = head.deletion_marker;
+        let expired = self.expire_runners(now).await?;
         let mut report = self.observe_demand(deleting, now).await?;
+        report.destroyed = expired;
         let runners = match self.forgejo.list_runners().await {
             Ok(runners) => runners,
             Err(failure) => {
@@ -138,7 +149,7 @@ impl ForgejoPoolSupervisor {
         self.reconcile_generation_readiness(&runners, now).await?;
         if !report.stale_demand {
             // Never use a pre-Create inventory to clean up a new registration.
-            report.destroyed = self.destroy_excess(report.target, now).await?;
+            report.destroyed += self.destroy_excess(report.target, now).await?;
             if !deleting && report.unknown_runners == 0 {
                 let (effective, occupancy) = self.store.capacity_counters(&self.fleet_key).await?;
                 let creates = create_count(self.capacity, report.target, effective, occupancy);
@@ -208,6 +219,8 @@ fn access_reason(failure: &AccessFailure) -> ReasonCode {
 
 #[path = "forgejo_supervisor_destroy.rs"]
 mod destroy;
+#[path = "forgejo_supervisor_expiry.rs"]
+mod expiry;
 #[path = "forgejo_supervisor_generation.rs"]
 mod generation;
 #[path = "forgejo_supervisor_observation.rs"]

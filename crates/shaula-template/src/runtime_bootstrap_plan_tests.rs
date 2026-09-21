@@ -3,6 +3,8 @@ use serde_json::json;
 #[path = "runtime_bootstrap_plan_fixture.rs"]
 mod fixture;
 use fixture::{fixture, TestResult};
+#[path = "runtime_bootstrap_plan_backend_tests.rs"]
+mod backend;
 
 #[test]
 fn real_provider_defaults_and_computed_identity_fields_are_accepted() -> TestResult {

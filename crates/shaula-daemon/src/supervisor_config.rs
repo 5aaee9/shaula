@@ -1,6 +1,28 @@
 use super::*;
 
 impl FleetSupervisor {
+    pub(crate) async fn upsert_ownership(
+        &self,
+        scale_set_id: Option<i64>,
+        state: &str,
+        attempt_id: Option<String>,
+        now: i64,
+    ) -> CoreResult<()> {
+        self.store
+            .scale_set_upsert(shaula_core::registry::ScaleSetRow {
+                fleet_key: self.config.fleet_key.clone(),
+                scale_set_id,
+                owned_scale_set_id: None,
+                name: self.identity.scale_set_name.clone(),
+                runner_group: self.identity.runner_group.clone(),
+                fingerprint: fingerprint(&self.identity),
+                state: state.to_string(),
+                attempt_id,
+                now,
+            })
+            .await
+    }
+
     /// Constructor dependencies. The generation's template pin and inputs
     pub fn new(
         deps: FleetSupervisorDeps,
@@ -15,6 +37,7 @@ impl FleetSupervisor {
             limits,
         } = deps;
         Self {
+            runner_max_lifetime: shaula_core::runner_lifetime::DEFAULT_MAX_LIFETIME,
             clock: None,
             limits,
             store,
@@ -31,6 +54,12 @@ impl FleetSupervisor {
             listener: None,
             setup_info_issuer: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_runner_max_lifetime(mut self, limit: std::time::Duration) -> Self {
+        self.runner_max_lifetime = limit;
+        self
     }
 
     #[must_use]

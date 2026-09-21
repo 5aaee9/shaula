@@ -5,6 +5,12 @@
   "additionalProperties": false,
   "required": ["namespace", "kubeconfig"],
   "properties": {
+    "runner_backend": {
+      "type": "string",
+      "enum": ["github", "forgejo"],
+      "description": "Runner backend, fixed when publishing this Template Revision. Defaults to GitHub. Must match the Fleet provider; never a Fleet input.",
+      "sensitive": false
+    },
     "namespace": {
       "type": "string",
       "minLength": 1,

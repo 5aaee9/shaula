@@ -24,6 +24,7 @@ pub struct ValidatedBootstrap {
     pub create_concurrency: usize,
     pub destroy_concurrency: usize,
     pub operation_timeout: Duration,
+    pub runner_max_lifetime: Duration,
     pub terraform_executable: PathBuf,
     pub service_name: String,
     pub otlp_endpoint: Option<String>,
@@ -50,6 +51,7 @@ impl std::fmt::Debug for ValidatedBootstrap {
             .field("create_concurrency", &self.create_concurrency)
             .field("destroy_concurrency", &self.destroy_concurrency)
             .field("operation_timeout", &self.operation_timeout)
+            .field("runner_max_lifetime", &self.runner_max_lifetime)
             .field("terraform_executable", &self.terraform_executable)
             .field("service_name", &self.service_name)
             .field("operation_logs", &self.operation_logs)
@@ -202,6 +204,13 @@ impl ValidatedBootstrap {
             return Err("body limits must be positive".to_string());
         }
 
+        if config.runner.max_lifetime_secs == 0
+            || config.runner.max_lifetime_secs > (i64::MAX / 1000) as u64
+        {
+            return Err(
+                "runner.max_lifetime_secs must be positive and fit a millisecond timestamp".into(),
+            );
+        }
         if config.execution.create_concurrency == 0 || config.execution.destroy_concurrency == 0 {
             return Err("concurrency values must be positive".to_string());
         }
@@ -240,6 +249,7 @@ impl ValidatedBootstrap {
             create_concurrency: config.execution.create_concurrency,
             destroy_concurrency: config.execution.destroy_concurrency,
             operation_timeout: Duration::from_secs(config.execution.operation_timeout_secs),
+            runner_max_lifetime: Duration::from_secs(config.runner.max_lifetime_secs),
             terraform_executable,
             service_name: config.observability.service_name,
             otlp_endpoint: config.observability.otlp.endpoint,

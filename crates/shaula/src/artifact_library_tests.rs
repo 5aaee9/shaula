@@ -82,6 +82,7 @@ async fn legacy_container_upload_is_rejected_but_original_archive_still_recovers
     let mut manifest: shaula_core::template::ProfileManifest =
         serde_yaml::from_str(&std::fs::read_to_string(&path)?)?;
     manifest.container_bootstrap_contract = None;
+    manifest.runner_backends.clear();
     manifest.runner_image_digests = vec![format!(
         "registry.test/custom:old@sha256:{}",
         "a".repeat(64)

@@ -57,6 +57,7 @@ pub struct ReconcileReport {
 }
 
 pub struct FleetSupervisor {
+    runner_max_lifetime: std::time::Duration,
     clock: Option<Arc<dyn shaula_core::ports::Clock>>,
     limits: LifecycleLimits,
     store: Arc<dyn LifecycleStore>,
@@ -101,6 +102,10 @@ impl FleetSupervisor {
                 return Ok(report);
             }
         }
+
+        // Hard lifetime is independent of demand, listener health and auth handoff.
+        // It destroys only resources proved by this generation's original pins.
+        report.destroyed = self.expire_runners(now).await?;
 
         // 1. Auth handoff: read-only classification then acknowledge.
         let bound_scale_set_id = self
@@ -173,7 +178,7 @@ impl FleetSupervisor {
             if let Some(listener) = &self.listener {
                 listener.stop().await?;
             }
-            report.destroyed = self.retire_excess(i64::MAX, now).await?;
+            report.destroyed += self.retire_excess(i64::MAX, now).await?;
             report.quarantined = self.quarantine_stale_cleanup(now).await?;
             // Completion predicate (spec 0002 §4.4): every owned
             // Generation terminal (Destroyed). A still-Retiring or
@@ -267,7 +272,7 @@ impl FleetSupervisor {
         );
 
         let excess = (effective - current_target).max(0);
-        report.destroyed = self.retire_excess(excess, now).await?;
+        report.destroyed += self.retire_excess(excess, now).await?;
 
         // Start the whole deficit together. Each operation acquires the
         // shared create semaphore inside `create_one_generation`, so this
@@ -291,53 +296,6 @@ impl FleetSupervisor {
 
         Ok(report)
     }
-
-    /// Promotes CleanupRequired generations with no proven side effect to
-    /// Quarantined after the cleanup deadline, keeping occupancy.
-    async fn quarantine_stale_cleanup(&self, now: i64) -> CoreResult<u32> {
-        let mut quarantined = 0u32;
-        let generations = self
-            .store
-            .generations_for_fleet(&self.config.fleet_key)
-            .await?;
-        for generation in generations {
-            if generation.state != shaula_core::lifecycle::GenerationState::CleanupRequired {
-                continue;
-            }
-            // CleanupRequired stays at least one full tick before
-            // quarantining, giving a live cleanup attempt time to finish.
-            if now - generation.updated_at < 60_000 {
-                continue;
-            }
-            self.store
-                .generation_advance(
-                    &generation.id,
-                    shaula_core::lifecycle::GenerationState::Quarantined,
-                    now,
-                )
-                .await?;
-            quarantined += 1;
-        }
-        Ok(quarantined)
-    }
-
-    async fn capacity_counters(&self) -> CoreResult<(i64, i64)> {
-        let generations = self
-            .store
-            .generations_for_fleet(&self.config.fleet_key)
-            .await?;
-        let mut effective = 0i64;
-        let mut occupancy = 0i64;
-        for generation in &generations {
-            if generation.state.counts_effective() {
-                effective += 1;
-            }
-            if generation.state.counts_occupancy() {
-                occupancy += 1;
-            }
-        }
-        Ok((effective, occupancy))
-    }
 }
 
 pub(crate) fn fingerprint(identity: &shaula_core::github::ScaleSetIdentity) -> String {
@@ -353,6 +311,8 @@ mod labels_impl;
 #[path = "supervisor_ownership.rs"]
 mod ownership_impl;
 
+#[path = "supervisor_cleanup.rs"]
+mod cleanup_impl;
 #[path = "supervisor_health.rs"]
 mod health_impl;
 
@@ -368,6 +328,8 @@ pub use readiness_impl::READINESS_TIMEOUT_MS;
 
 #[path = "supervisor_destroy.rs"]
 mod destroy_impl;
+#[path = "supervisor_expiry.rs"]
+mod expiry_impl;
 
 impl std::fmt::Debug for FleetSupervisorConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -9,6 +9,37 @@ use shaula_core::{
 use std::sync::atomic::Ordering;
 
 #[tokio::test]
+async fn vm_templates_deliver_single_runner_tokens_and_reclaim_completed_ephemerals() -> TestResult
+{
+    for platform in ["proxmox", "aws", "tencentcloud", "alicloud"] {
+        let fixture = Fixture::with_template(0, 1, platform).await?;
+        fixture.forgejo.waiting.store(1, Ordering::SeqCst);
+        assert_eq!(fixture.supervisor().await?.tick().await?.created, 1);
+        assert_eq!(fixture.generation().await?.state, G::WaitingOnline);
+        fixture.declare("idle")?;
+        fixture.supervisor().await?.tick().await?;
+        fixture.declare("active")?;
+        fixture.forgejo.waiting.store(0, Ordering::SeqCst);
+        fixture.supervisor().await?.tick().await?;
+        assert_eq!(fixture.generation().await?.state, G::Busy);
+        fixture
+            .forgejo
+            .runners
+            .lock()
+            .map_err(|_| "poisoned")?
+            .clear();
+        assert_eq!(fixture.supervisor().await?.tick().await?.destroyed, 1);
+        assert_eq!(fixture.generation().await?.state, G::Destroyed);
+        assert_eq!(fixture.runtime.creates.load(Ordering::SeqCst), 1);
+        assert_eq!(fixture.runtime.destroys.load(Ordering::SeqCst), 1);
+        assert_eq!(fixture.forgejo.posts.load(Ordering::SeqCst), 1);
+        assert_eq!(fixture.forgejo.deletes.load(Ordering::SeqCst), 0);
+        assert_eq!(fixture.store.generations_occupancy("fleet").await?, 0);
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn new_registration_is_not_destroyed_by_its_pre_create_inventory() -> TestResult {
     let fixture = Fixture::new(1, 1).await?;
     let report = fixture.supervisor().await?.tick().await?;
@@ -22,6 +53,24 @@ async fn new_registration_is_not_destroyed_by_its_pre_create_inventory() -> Test
         .operations_open_for_generation(&fixture.generation().await?.id)
         .await?
         .is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn published_github_binding_is_rejected_before_forgejo_registration() -> TestResult {
+    let fixture = Fixture::new(1, 1).await?;
+    fixture
+        .store
+        .store()
+        .connection()
+        .execute_unprepared(
+            "UPDATE template_profile_revisions SET bindings_json='{\"runner_backend\":\"github\"}'",
+        )
+        .await?;
+    assert!(fixture.supervisor().await?.tick().await.is_err());
+    assert_eq!(fixture.forgejo.posts.load(Ordering::SeqCst), 0);
+    assert_eq!(fixture.runtime.creates.load(Ordering::SeqCst), 0);
+    assert_eq!(fixture.generation().await?.state, G::CleanupRequired);
     Ok(())
 }
 

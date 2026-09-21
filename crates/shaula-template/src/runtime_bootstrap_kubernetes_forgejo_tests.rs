@@ -42,6 +42,13 @@ fn pending_pod_gate_is_nonroot_single_use_and_has_no_extra_mounts() -> TestResul
     let payload = patch(&secret, &request).map_err(|_| "empty gate refused")?;
     assert_eq!(payload[2]["value"]["token"], STANDARD.encode("one-shot"));
     assert_eq!(payload[3]["value"], true);
+    secret["data"] = json!({"runner_backend":STANDARD.encode("forgejo")});
+    assert!(patch(&secret, &request).is_ok());
+    secret["data"]["token"] = json!(STANDARD.encode("prepopulated"));
+    assert!(patch(&secret, &request).is_err());
+    secret["data"] = json!({"runner_backend":STANDARD.encode("github")});
+    assert!(patch(&secret, &request).is_err());
+    secret["data"] = json!({});
     secret["immutable"] = json!(true);
     assert!(patch(&secret, &request).is_err());
     Ok(())

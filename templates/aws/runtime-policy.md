@@ -1,5 +1,9 @@
 # AWS runner runtime policy
 
+`bindings.runner_backend` selects `github` (default) or `forgejo` for this
+immutable Template Revision, never a Fleet parameter. JIT/Listener details
+below describe GitHub; the Forgejo cloud-init contract is specified separately.
+
 Each Generation owns exactly one EC2 instance. Terraform provider
 `hashicorp/aws` (locked version in `.terraform.lock.hcl`) owns its entire
 resource lifecycle. The provider resolves the Canonical Ubuntu AMI through an
@@ -62,3 +66,35 @@ or an unavailable default subnet are platform errors surfaced through the
 apply log, not Shaula cancellations. Real instance boot, cloud-init, runner
 download and verification, JIT registration, job execution and cleanup must
 be accepted on the target AWS environment separately.
+
+## Forgejo cloud-init contract
+
+`shaula.forgejo-vm-cloud-init/v1` explicitly permits `shaula.forgejo_vm.token`
+in protected Terraform input and cloud-init. Shaula first registers exactly
+one ephemeral Runner, then supplies its UUID/URL/labels and per-Runner token;
+no Forgejo management token or cloud-provider credential enters the guest.
+The pinned official `forgejo-runner-13.1.0-linux-amd64` binary is downloaded
+from the Forgejo release and verified with artifact-pinned SHA-256
+`29dae21e93f0eab5cdf3564008d44603c74770b41a4f4f1aceed172c774bc376`.
+There is no guest registration command, custom Runner build or latest lookup.
+
+The root-owned bootstrap claims the one-use marker before preparation, protects
+cloud-init caches, copies the private token into `/run/shaula-forgejo/token`
+(0600 inside a runner-owned 0700 directory), and removes the initial handoff.
+The service is not enabled on reboot, has Restart=no and NoNewPrivileges=true;
+it drops to a non-root runner user. JSON identity is read as data, never shell
+syntax. The fixed command is `one-job --wait --token-url file:...`; the token
+is not argv/environment. Only explicit `:host` labels are admitted, meaning
+this disposable VM. Workflow tools beyond git (such as Node) require reviewed
+image/preparation provisioning. Ubuntu packages, the Forgejo release endpoint
+and the selected instance must be reachable.
+
+Ephemeral is enforced by Forgejo: at most one job, not automatic EC2 deletion.
+Shaula destroys owned resources after exact registration absence, or at the
+shared hard lifetime (default 7200 seconds after Create succeeds, even Busy).
+A live idle registration alone is not safe-drain proof. Failed bootstrap never
+replays this seed; retained registration/resources are reconciled conservatively.
+Terraform inputs/plans/state and EC2 user-data/IMDS still contain the Runner
+token; base64 and sensitive flags are not encryption or job isolation. Only
+this disposable Runner token may cross that boundary. No Setup Info delivery
+is added. Real Forgejo job/VM cleanup acceptance remains deployment-specific.

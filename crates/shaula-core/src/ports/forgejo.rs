@@ -10,9 +10,9 @@ use crate::secret::SecretString;
 
 use super::{AccessFailure, EffectOutcome};
 
-/// One-shot Forgejo registration material. The token never belongs in the
-/// Terraform input envelope; template runtimes consume it only through a
-/// protected bootstrap file/Secret.
+/// One-shot Forgejo registration material. Containers receive the token only
+/// through a protected host-side file/Secret. The explicit VM cloud-init contract
+/// permits a protected Terraform input copy containing this Runner token only.
 #[derive(Clone, PartialEq, Eq)]
 pub struct ForgejoBootstrapMaterial {
     pub instance_url: String,

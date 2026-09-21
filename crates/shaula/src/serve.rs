@@ -105,6 +105,7 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
             )),
         },
     )
+    .with_runner_max_lifetime(bootstrap.runner_max_lifetime)
     .with_setup_info_issuer(diagnostics.issuer.clone());
     let (shutdown_tx, wiring_shutdown) = tokio::sync::watch::channel(false);
     let diagnostics_task = tokio::spawn(diagnostics.run(shutdown_tx.subscribe()));

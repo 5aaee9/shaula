@@ -11,7 +11,9 @@ use crate::error::CoreResult;
 /// namespaced so identical message/job suffixes across Fleets can never
 /// cross-dedupe, cross-wake or cross-recover.
 #[async_trait]
-pub trait LifecycleStore: super::ListenerMessageStore + Send + Sync {
+pub trait LifecycleStore:
+    super::ListenerMessageStore + crate::runner_lifetime::RunnerLifetimeStore + Send + Sync
+{
     /// Admit a generation against a weighted template pool. Stores that do
     /// not implement pools fail explicitly so callers cannot silently fall
     /// back to a single template.

@@ -4,17 +4,18 @@ use super::{CoreError, CoreResult, ProfileManifest, ReasonCode};
 pub const CONTAINER_BOOTSTRAP_CONTRACT: &str = "shaula.container-bootstrap/v1";
 
 impl ProfileManifest {
-    /// The first Forgejo container contract supports host execution inside the
-    /// runner container, not access to an external Docker daemon or VM bootstrap.
+    /// Forgejo executes on the isolated generation host (container or VM).
+    /// Docker socket access and container backend targets need a separate contract.
     pub fn validate_forgejo_targets(&self, labels: &[String]) -> CoreResult<()> {
         self.validate_for_provider(crate::fleet::FleetProviderKind::Forgejo)?;
         crate::forgejo::validate_labels(labels)?;
-        if !matches!(self.platform.as_str(), "docker" | "kubernetes")
-            || self.container_bootstrap_contract.as_deref() != Some(CONTAINER_BOOTSTRAP_CONTRACT)
-            || labels.iter().any(|label| !label.ends_with(":host"))
-        {
+        let container = matches!(self.platform.as_str(), "docker" | "kubernetes")
+            && self.container_bootstrap_contract.as_deref() == Some(CONTAINER_BOOTSTRAP_CONTRACT);
+        let vm = self.forgejo_vm_bootstrap_contract.as_deref()
+            == Some(super::FORGEJO_VM_BOOTSTRAP_CONTRACT);
+        if (!container && !vm) || labels.iter().any(|label| !label.ends_with(":host")) {
             return Err(CoreError::new(ReasonCode::TemplateInvalid,
-                "Forgejo container bootstrap requires explicit :host labels; Docker-in-Docker and VM targets are not admitted"));
+                "Forgejo bootstrap requires an admitted container/VM contract and explicit :host labels"));
         }
         Ok(())
     }
@@ -47,10 +48,11 @@ impl ProfileManifest {
             || self.bindings_contract != binding
             || self.input_contract_version != 1
             || self.setup_info_contract.is_some()
-            || self
-                .runner_image_digests
-                .iter()
-                .any(|image| !official_runner_image(&self.runner_backend, image))
+            || self.runner_image_digests.iter().any(|image| {
+                !["github", "forgejo"].iter().any(|backend| {
+                    self.supports_runner_backend(backend) && official_runner_image(backend, image)
+                })
+            })
         {
             return Err(CoreError::new(
                 ReasonCode::TemplateInvalid,
@@ -61,18 +63,29 @@ impl ProfileManifest {
     }
 }
 
-fn official_runner_image(backend: &str, image: &str) -> bool {
+pub(super) fn official_runner_image(backend: &str, image: &str) -> bool {
+    let Some((repository, digest)) = image.split_once("@sha256:") else {
+        return false;
+    };
+    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return false;
+    }
     match backend {
         "github" => {
-            image.starts_with("ghcr.io/actions/actions-runner:")
-                || image.starts_with("ghcr.io/actions/actions-runner@sha256:")
+            repository == "ghcr.io/actions/actions-runner"
+                || repository
+                    .strip_prefix("ghcr.io/actions/actions-runner:")
+                    .is_some_and(|tag| {
+                        !tag.is_empty()
+                            && !tag.contains('/')
+                            && !tag.chars().any(char::is_whitespace)
+                    })
         }
-        // The general image contract checks the digest. A versionless digest
-        // does not establish one-job support until an exact R4 tuple is admitted.
-        "forgejo" => image
+        // A versionless digest does not establish one-job support until an
+        // exact R4 tuple is admitted.
+        "forgejo" => repository
             .strip_prefix("code.forgejo.org/forgejo/runner:")
-            .and_then(|reference| reference.split_once("@sha256:"))
-            .is_some_and(|(version, _)| crate::forgejo::supports_runner_version(version)),
+            .is_some_and(crate::forgejo::supports_runner_version),
         _ => false,
     }
 }
@@ -87,6 +100,7 @@ mod tests {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../templates/docker/profile.yaml");
         let mut manifest: ProfileManifest = serde_yaml::from_str(&std::fs::read_to_string(path)?)?;
+        manifest.runner_backends.clear();
         manifest.container_bootstrap_contract = Some(CONTAINER_BOOTSTRAP_CONTRACT.into());
         manifest.runner_image_digests = vec![format!(
             "ghcr.io/actions/actions-runner:2.337.0@sha256:{}",
@@ -114,6 +128,7 @@ mod tests {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../templates/docker/profile.yaml");
         let mut manifest: ProfileManifest = serde_yaml::from_str(&std::fs::read_to_string(path)?)?;
+        manifest.runner_backends.clear();
         manifest.runner_backend = "forgejo".into();
         for tag in [":12.7.0", ":13.0.0-rc1", ":latest", ""] {
             manifest.runner_image_digests = vec![format!(
@@ -135,6 +150,10 @@ mod tests {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../templates/docker/profile.yaml");
         let mut manifest: ProfileManifest = serde_yaml::from_str(&std::fs::read_to_string(path)?)?;
+        manifest.runner_backends.clear();
+        manifest
+            .runner_image_digests
+            .retain(|image| official_runner_image("github", image));
         manifest.validate_new_container_profile()?;
         manifest.container_bootstrap_contract = None;
         manifest.runner_image_digests = vec![format!(

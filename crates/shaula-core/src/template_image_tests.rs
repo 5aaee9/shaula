@@ -11,6 +11,7 @@ fn container_manifest() -> Result<ProfileManifest, Box<dyn std::error::Error>> {
 
 fn vm_manifest() -> Result<ProfileManifest, Box<dyn std::error::Error>> {
     let mut manifest = container_manifest()?;
+    manifest.runner_backends.clear();
     manifest.platform = "proxmox".into();
     manifest.bindings_contract = "shaula.bindings.proxmox/v1".into();
     manifest.container_bootstrap_contract = None;

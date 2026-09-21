@@ -21,6 +21,7 @@ pub mod operation_log;
 pub mod plan;
 pub mod ports;
 pub mod registry;
+pub mod runner_lifetime;
 pub mod secret;
 pub mod setup_info;
 pub mod state_backend;

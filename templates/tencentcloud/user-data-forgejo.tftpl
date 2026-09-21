@@ -1,0 +1,43 @@
+#cloud-config
+${yamlencode({
+  write_files = [
+    {
+      path        = "/var/lib/shaula/forgejo-token"
+      owner       = "root:root"
+      permissions = "0600"
+      encoding    = "b64"
+      content     = base64encode(forgejo_vm.token)
+    },
+    {
+      path        = "/var/lib/shaula/forgejo-identity"
+      owner       = "root:root"
+      permissions = "0600"
+      encoding    = "b64"
+      content     = base64encode(jsonencode(forgejo))
+    },
+    {
+      path        = "/var/lib/shaula/pre-start"
+      owner       = "root:root"
+      permissions = "0600"
+      encoding    = "b64"
+      content     = base64encode(pre_start)
+    },
+    {
+      path        = "/usr/local/libexec/shaula-runner"
+      owner       = "root:root"
+      permissions = "0700"
+      encoding    = "b64"
+      content     = base64encode(bootstrap)
+    },
+    {
+      path        = "/etc/systemd/system/shaula-runner.service"
+      owner       = "root:root"
+      permissions = "0644"
+      content     = service
+    }
+  ]
+  runcmd = [
+    ["systemctl", "daemon-reload"],
+    ["systemctl", "start", "--no-block", "shaula-runner.service"]
+  ]
+})}

@@ -23,7 +23,12 @@ pub(super) fn admit(
     runner.exact("/entrypoint", &json!(["/usr/bin/dumb-init"]))?;
     runner.exact("/working_dir", &json!("/data"))?;
     runner.exact("/remove_volumes", &json!(true))?;
-    runner.exact("/env", &json!([]))?;
+    // Docker 3.0.2 makes an empty env set computed. Keep a fixed, nonsecret
+    // value so the saved plan proves the input instead of admitting unknowns.
+    let env = runner.known("/env")?;
+    if env != &json!([]) && env != &json!(["SHAULA_RUNNER_BACKEND=forgejo"]) {
+        return Err(rejected());
+    }
     for pointer in [
         "/upload",
         "/mounts",

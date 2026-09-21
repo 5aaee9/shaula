@@ -16,6 +16,116 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Forgejo selection on existing VM templates (2026-09-21)
+
+Proxmox, AWS, TencentCloud and AliCloud now expose the same immutable publisher
+`bindings.runner_backend` choice as Docker/Kubernetes, defaulting to GitHub.
+No new TemplatePlatform/source kind or acquisition proxy is introduced.
+`shaula.forgejo-vm-cloud-init/v1` explicitly admits only the pre-registered
+**per-Runner** token in protected `shaula.forgejo_vm.token` and cloud-init;
+GitHub/container envelopes reject this field. The supervisor already registers
+with server-enforced `ephemeral: true`; guests never register a second time.
+Management/provider credentials remain outside guest materials. See
+[VM setup and credential boundaries](forgejo-templates.md).
+
+VM bootstrap pins the official native Forgejo Runner 13.1.0 amd64 release and
+its SHA-256, validates the download, consumes a durable one-start marker and
+launches `one-job --wait` as non-root with a private token file, not argv/env.
+The systemd unit has no boot enablement, Restart=no and NoNewPrivileges=true.
+Proxmox also requires root-only, unmounted CIDATA before launch. Existing VM
+GitHub bootstrap files and resource ownership shapes are unchanged. Forgejo
+completion still requires exact registration evidence before resource cleanup;
+never-assigned/overlong Runners are covered by the shared 7200-second hard
+lifetime. Ephemeral does not delete the VM or erase Terraform/user-data copies.
+
+Verification: rustfmt and strict workspace/all-target Clippy pass. Required
+`cargo nextest run --manifest-path Cargo.toml --workspace test` passes 698 tests
+(186 filtered/skipped, 4 threads); the final unfiltered run passes 882 tests
+(2 platform skips, 2 threads, no-fail-fast). New regressions cover VM-only token
+serialization/redaction/admission, backend discovery and all four VM lifecycle
+fixtures through exact ephemeral completion and resource reclaim. All changed
+Rust modules remain within 400 lines; all six runtime policy digests match.
+
+Terraform 1.9.8 readonly locked init/validate passes for Proxmox 0.5.1, AWS 5.67.0,
+TencentCloud 1.83.31 and AliCloud 1.292.0 (Tencent registry checksum download
+initially returned HTTP 504; unchanged retry succeeded). The reproducible
+`scripts/template-backends/vm.mjs` evaluates the actual user-data expressions
+without provider/resource blocks: all eight platform/backend renders pass,
+plus 19 guest fixture cases with real Bash/Python, checksums, file modes and
+replay/failure gates. OS identity, downloads/packages and block devices are
+explicit test substitutes, not real cloud-init/systemd or cloud acceptance.
+
+An initial full 4-thread run hit the previously observed shared OIDC discovery
+`Provider` error in `follow_cascade::changed_inputs_validate_against_the_active_revision_schema`.
+The exact isolated test and final full run pass without OIDC code changes;
+this is recorded as a test-stability risk, not a proven OIDC fix. No real cloud
+resources were created. Target-environment Forgejo boot/job/VM-disk-ISO cleanup,
+Fleet UI/Jobs integration and ordinary idle-safe drain remain separate gates.
+
+## Backend selection on existing container templates (2026-09-21)
+
+Docker and Kubernetes now advertise `runner_backends: [github, forgejo]` on the
+same bundled sources/platforms. The publisher selects `bindings.runner_backend`
+(default GitHub), frozen in the Template Revision; Fleet parameters cannot
+switch it. `runner_image: auto` selects the corresponding official pin. The
+Forgejo 13.1.0 OCI index is pinned to
+`sha256:c4af85fd9f0dd03788676a534781a87c71aa2c6a37737143e017eb94d4312952`
+(its registry index lists linux amd64 and arm64). Publication, Fleet admission,
+single/shared-pool follow and both Create paths check the selected backend;
+mismatches do not mint JIT/register a runner or silently move a Fleet's pin.
+Historical single-backend manifests keep their original meaning. See
+[publication examples and limits](forgejo-templates.md).
+
+The templates select the existing official GitHub or Forgejo `one-job --wait`
+bootstrap. Real Terraform 1.9.8 plans exposed provider representation details
+not covered by the original hand-built fixtures: Docker 3.0.2's empty env and
+Kubernetes 2.33.0's empty Secret data become unknown, and the Kubernetes UID
+field is a string. Fixed nonsecret backend markers keep launch gates known;
+unknown controls and prepopulated token keys remain rejected. No proxy or
+new VM bootstrap was added.
+
+Verification: strict workspace/all-target Clippy, rustfmt, Terraform fmt,
+readonly locked init/validate, and all four saved-plan admission checks pass.
+`scripts/template-backends/plan.mjs` reproduces the plans using real providers
+against read-only local API fixtures, without apply or real resources. Targeted
+Rust checks pass 268 tests. Final nextest passes 690 `test`-filtered tests
+(186 filtered/skipped), and 874 unfiltered workspace tests (2 platform skips),
+with 4 test threads and the saved-plan oracles enabled for the full run. An
+initial 8-thread run hit an existing OIDC fixture discovery `Provider` error;
+that exact test passed in isolation and both final runs passed without OIDC
+code changes. All changed Rust modules stay within 400 lines.
+
+These are local contract/plan tests, not real Forgejo + Rust Pool + Terraform
+end-to-end or Kubernetes cluster acceptance. Forgejo Fleet UI/Jobs projection,
+busy-safe idle drain and the remaining A1–A8 gates remain open.
+
+## Shared Runner hard lifetime (2026-09-21)
+
+GitHub and Forgejo now share the server bootstrap setting
+`runner.max_lifetime_secs` (default 7200). It counts from successful Create,
+not job start or allocation, and intentionally terminates running jobs at
+expiry. `m0020_runner_lifetime` persists the success timestamp, expiry intent
+and resource-destruction checkpoint. Hard cleanup destroys original pinned
+resources first, then retries exact-authority remote deregistration; GitHub
+`JobStillRunning` cannot indefinitely keep the resource alive. Occupancy is
+released only after both parts complete. Demand/inventory outages and handoff
+readiness do not gate hard cleanup on an already constructed supervisor;
+missing ownership still fails closed. See [configuration and upgrade risks](runner-lifetime.md).
+
+Local SQLite/port tests cover deadline boundaries, Busy expiry, policy overrides,
+slow Create completion, restart/resume with a longer policy, API/Destroy failures,
+registration conflicts, missing ownership, stale Fleet fences and migration.
+Verification: `cargo fmt --all -- --check` and strict workspace/all-target Clippy
+pass. The AGENTS `test`-filtered nextest run passes 679 tests (184 filtered/skipped);
+the unfiltered workspace run passes 861 tests (2 platform skips), both with 8 test
+threads. Existing migration snapshots/counts were updated for schema 20, and a
+new failure-injection test verifies atomic migration rollback/retry. One OIDC
+fixture discovery failed during the first unconstrained run; its isolated retry
+and both final workspace runs pass without OIDC code changes.
+
+This does not prove real-platform hard-timeout acceptance or close Forgejo A1–A8.
+Production Forgejo retains official `one-job --wait`; no acquisition proxy is added.
+
 ## Tencent Cloud and Alibaba Cloud runner templates (2026-09-17)
 
 The bundled catalog now includes `tencentcloud` and `alicloud`. Each Template
@@ -1121,13 +1231,15 @@ Implemented and covered by local adapter/SQLite tests:
 
 Still open:
 
-- **Safe idle expiry/drain.** The runtime evidence hook defaults to `Unknown`; remote `idle` does not authorize DELETE. Occupied idle generations can consequently block scale-down, rotation and decommission. The pinned runner's [single-task poller](https://code.forgejo.org/forgejo/runner/src/commit/667c8d975b9255e7bf32164e012146f68f0022c6/internal/app/poll/single.go) shares cancellation with task execution; blindly signalling a runner is not a proven busy-safe drain. The owner chose the **full contract before release**, not a conservative preview. [Source evidence, the proposed acquisition-fence prerequisite and its acceptance matrix](forgejo-drain.md) record the release blocker; no upstream fence/drain implementation is present.
+- **Safe idle expiry/drain.** The runtime evidence hook defaults to `Unknown`; remote `idle` does not authorize DELETE. Occupied idle generations can consequently block scale-down, rotation and decommission. The pinned runner's [single-task poller](https://code.forgejo.org/forgejo/runner/src/commit/667c8d975b9255e7bf32164e012146f68f0022c6/internal/app/poll/single.go) shares cancellation with task execution; blindly signalling a runner is not a proven busy-safe drain. The full-contract release gate remains unclosed. The non-waiting experiment below did not prove safe cleanup. The separately authorized [shared hard lifetime](runner-lifetime.md) bounds normal idle/Busy retention by permitting task interruption at expiry; it is not busy-safe drain and leaves ownership failures quarantined. [Source evidence, the proposed acquisition-fence prerequisite and its acceptance matrix](forgejo-drain.md) record the release blocker; no upstream fence/drain implementation is present.
 - Uncertain registrations that have not declared labels are quarantined, because the spec's joint-label ownership proof cannot identify them yet. This retains occupancy rather than silently leaking/replacing them.
-- Bundled Forgejo templates, exact image tuple R4, platform conformance, Forgejo UI/jobs projection, exact scope/permission and image-content admission evidence, and A1–A8 real-platform evidence. The pinned [official image](https://code.forgejo.org/forgejo/runner/src/commit/667c8d975b9255e7bf32164e012146f68f0022c6/Dockerfile) uses `/data`, UID 1000 and `dumb-init`; bootstrap validators reflect those facts, but have not been validated against a live container in this increment.
+- R4 image-content/platform conformance, Forgejo UI/jobs projection, exact scope/permission evidence, and A1–A8 real-platform evidence. The existing bundled Docker/Kubernetes sources now have a Forgejo publication option (2026-09-21 increment above), rather than new template kinds. The pinned [official image](https://code.forgejo.org/forgejo/runner/src/commit/667c8d975b9255e7bf32164e012146f68f0022c6/Dockerfile) uses `/data`, UID 1000 and `dumb-init`; bootstrap validators reflect those facts, but have not been validated against a live container in this increment.
 
-Latest local checks (2026-09-12) for this worktree: `cargo fmt --all -- --check`, targeted strict Clippy for the changed Rust packages, and the full unfiltered `cargo nextest run --manifest-path Cargo.toml --workspace --no-fail-fast --status-level fail --final-status-level fail` pass (803 tests passed; 2 skipped). The workspace-wide Clippy invocation remains blocked by the Windows Vite native dependency (`UNLOADABLE_DEPENDENCY`) and `spawn EPERM` while building `shaula-http`; this is an environment blocker, not a Rust diagnostic. These checks are not real-platform acceptance evidence.
+Historical local checks (2026-09-12), superseded by the 2026-09-21 workspace checks above: `cargo fmt --all -- --check`, targeted strict Clippy for the changed Rust packages, and the full unfiltered `cargo nextest run --manifest-path Cargo.toml --workspace --no-fail-fast --status-level fail --final-status-level fail` pass (803 tests passed; 2 skipped). The workspace-wide Clippy invocation remains blocked by the Windows Vite native dependency (`UNLOADABLE_DEPENDENCY`) and `spawn EPERM` while building `shaula-http`; this is an environment blocker, not a Rust diagnostic. These checks are not real-platform acceptance evidence.
 
 The existing `.github/workflows/forgejo-e2e.yml` exercises Forgejo 16.0.4 with runner 13.1.0 using shell API calls. Run [34694263009](https://github.com/5aaee9/shaula/actions/runs/34694263009) passed registration, a matching job, and ephemeral disappearance, but it is not an end-to-end test of the new Rust Pool driver and does not provide the full A1–A8 evidence. The per-item local/real evidence split is recorded in [the A1–A8 matrix](evidence/forgejo-a1-a8-2026-09-12/README.md).
+
+**2026-09-21 non-waiting protocol experiment:** [six real official-image cases](evidence/forgejo-one-job-2026-09-21/README.md) verify nominal success/failure cleanup and reproduce the counterexample: a lost assignment response produces runner exit 2 and inventory `idle` while the job is already `running`. The `--wait` control recovers and completes. The reusable harness removes its disposable containers/volumes; it does not exercise the Rust Pool/Terraform path. Production retains `--wait`; no production proxy was added. The later shared hard-lifetime policy above is an explicit Busy-safe exception, not a consequence of exit status or idle inventory.
 
 ## Known accepted limitations (per ADR)
 

@@ -56,6 +56,7 @@ data "aws_ami" "ubuntu" {
 }
 
 locals {
+  forgejo         = var.shaula.bindings.runner_backend == "forgejo"
   generation_name = var.shaula.generation.generation_name
   security_groups = length(var.shaula.bindings.aws_security_group_ids) > 0 ? var.shaula.bindings.aws_security_group_ids : null
   subnet          = var.shaula.bindings.aws_subnet_id != "" ? var.shaula.bindings.aws_subnet_id : null
@@ -69,11 +70,13 @@ resource "aws_instance" "runner" {
   vpc_security_group_ids      = local.security_groups
   associate_public_ip_address = local.subnet == null ? true : null
 
-  user_data = templatefile("${path.module}/user-data.tftpl", {
+  user_data = templatefile("${path.module}/${local.forgejo ? "user-data-forgejo" : "user-data"}.tftpl", {
     jit_config = var.shaula.jit_config
+    forgejo    = var.shaula.forgejo
+    forgejo_vm = var.shaula.forgejo_vm
     pre_start  = var.shaula.bindings.aws_cloud_init_cmd
-    bootstrap  = file("${path.module}/bootstrap.tftpl")
-    service    = file("${path.module}/runner-service.tftpl")
+    bootstrap  = file("${path.module}/${local.forgejo ? "bootstrap-forgejo" : "bootstrap"}.tftpl")
+    service    = file("${path.module}/${local.forgejo ? "runner-service-forgejo" : "runner-service"}.tftpl")
   })
   # Guard against accidental in-place user-data replacement semantics: a new
   # Generation is always a new instance, never a reboot of a consumed seed.
@@ -133,8 +136,11 @@ variable "shaula" {
     contract_version = number
     generation       = any
     jit_config       = string
+    forgejo          = optional(any)
+    forgejo_vm       = optional(any)
     bindings_digest  = string
     bindings = object({
+      runner_backend         = optional(string, "github")
       aws_region             = string
       aws_access_key_id      = string
       aws_secret_access_key  = string

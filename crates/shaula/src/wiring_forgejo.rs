@@ -58,30 +58,33 @@ impl SupervisorWiring {
         else {
             return Ok(None);
         };
-        Ok(Some(Arc::new(ForgejoPoolSupervisor::new(
-            key,
-            section,
-            spec.capacity.into(),
-            ForgejoPoolSupervisorDeps {
-                guard: FleetRuntimeGuard::from(&head),
-                auth: (profile, auth_revision),
-                gates: self.gates.clone(),
-                store: self.store.clone(),
-                lifecycle: self.lifecycle.clone(),
-                forgejo,
-                clock: self.clock.clone(),
-                runtime: self.runtime.clone(),
-                apply_intent_sink: Arc::new(LedgerApplyIntentSink {
-                    store: self.lifecycle.clone(),
+        Ok(Some(Arc::new(
+            ForgejoPoolSupervisor::new(
+                key,
+                section,
+                spec.capacity.into(),
+                ForgejoPoolSupervisorDeps {
+                    guard: FleetRuntimeGuard::from(&head),
+                    auth: (profile, auth_revision),
                     gates: self.gates.clone(),
-                }),
-                create_limit: self.limits.create.clone(),
-                destroy_limit: self.limits.destroy.clone(),
-                work_root: self.work_root.clone(),
-                artifact_root: self.artifact_root.clone(),
-                operation_timeout: self.operation_timeout,
-                setup_info_issuer: self.setup_info_issuer.clone(),
-            },
-        )?)))
+                    store: self.store.clone(),
+                    lifecycle: self.lifecycle.clone(),
+                    forgejo,
+                    clock: self.clock.clone(),
+                    runtime: self.runtime.clone(),
+                    apply_intent_sink: Arc::new(LedgerApplyIntentSink {
+                        store: self.lifecycle.clone(),
+                        gates: self.gates.clone(),
+                    }),
+                    create_limit: self.limits.create.clone(),
+                    destroy_limit: self.limits.destroy.clone(),
+                    work_root: self.work_root.clone(),
+                    artifact_root: self.artifact_root.clone(),
+                    operation_timeout: self.operation_timeout,
+                    setup_info_issuer: self.setup_info_issuer.clone(),
+                },
+            )?
+            .with_runner_max_lifetime(self.runner_max_lifetime),
+        )))
     }
 }

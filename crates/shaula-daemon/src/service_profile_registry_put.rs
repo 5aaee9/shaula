@@ -205,7 +205,15 @@ impl ControlPlane {
 
         // Old immutable revisions remain readable and replayable, but a new
         // revision cannot opt out of the current official-container policy.
-        if let Err(error) = manifest.validate_new_container_profile() {
+        if let Err(error) = manifest.validate_new_container_profile().and_then(|()| {
+            let bindings = payload.bindings.as_object().ok_or_else(|| {
+                CoreError::new(
+                    ReasonCode::TemplateInvalid,
+                    "template bindings must be an object",
+                )
+            })?;
+            manifest.runner_backend_for_bindings(bindings).map(|_| ())
+        }) {
             return Ok(Err(unprocessable(error.code, error.summary)));
         }
         let now = self.now_ms();

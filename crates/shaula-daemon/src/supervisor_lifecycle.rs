@@ -4,7 +4,7 @@
 
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::ports::TemplateCreateRequest;
-use shaula_core::registry::{FleetRuntimeGuard, GenerationRecord, ScaleSetRow};
+use shaula_core::registry::{FleetRuntimeGuard, GenerationRecord};
 use shaula_observability::{MetricOperation, MetricResult, TelemetryHandle};
 
 use super::{fingerprint, FleetSupervisor};
@@ -18,30 +18,10 @@ fn record_iac(result: MetricResult) {
 mod operations;
 #[path = "supervisor_setup_info.rs"]
 mod setup_info;
+#[path = "supervisor_template.rs"]
+mod template;
 
 impl FleetSupervisor {
-    pub(crate) async fn upsert_ownership(
-        &self,
-        scale_set_id: Option<i64>,
-        state: &str,
-        attempt_id: Option<String>,
-        now: i64,
-    ) -> CoreResult<()> {
-        self.store
-            .scale_set_upsert(ScaleSetRow {
-                fleet_key: self.config.fleet_key.clone(),
-                scale_set_id,
-                owned_scale_set_id: None,
-                name: self.identity.scale_set_name.clone(),
-                runner_group: self.identity.runner_group.clone(),
-                fingerprint: fingerprint(&self.identity),
-                state: state.to_string(),
-                attempt_id,
-                now,
-            })
-            .await
-    }
-
     /// Creates one runner generation: durable identity, then JIT (once), then
     /// apply (once) then WaitingOnline. The Create claim re-validates the
     /// fleet deletion marker before any external effect (0002 section 8).
@@ -258,19 +238,11 @@ impl FleetSupervisor {
             .await
             .map_err(|_| CoreError::new(ReasonCode::Internal, "workspace prepare failed"))?;
 
-        // Managed resource shape from the admitted artifact manifest,
-        // read from the content-addressed artifact root.
-        let manifest_path = artifact_dir.join("profile.yaml");
-        let manifest: shaula_core::template::ProfileManifest =
-            std::fs::read_to_string(&manifest_path)
-                .ok()
-                .and_then(|m| {
-                    serde_yaml::from_str::<shaula_core::template::ProfileManifest>(&m).ok()
-                })
-                .filter(|m: &shaula_core::template::ProfileManifest| m.validate().is_ok())
-                .ok_or_else(|| {
-                    CoreError::new(ReasonCode::TemplateInvalid, "admitted manifest unreadable")
-                })?;
+        // The backend selection and images belong to the exact protected
+        // Template Revision. Check them before minting any remote JIT.
+        let (manifest, bindings, bindings_digest) = self
+            .template_material(&artifact_dir, &record, &parameters)
+            .await?;
         let managed_shape = manifest.managed_resource_shape.clone();
 
         // Durable JIT intent BEFORE the remote JIT request (R9-07/R10-09,
@@ -314,17 +286,6 @@ impl FleetSupervisor {
         // SAME admitted Fleet Revision snapshot that populated the ledger
         // record — never a `latest` re-read after a remote effect
         // (spec 0001 §10.2.3, 0004 §6.1).
-        let (bindings_json, bindings_digest) = self
-            .handoff
-            .template_protected_bindings(&record.template_profile_key, record.template_revision)
-            .await?
-            .ok_or_else(|| {
-                CoreError::new(ReasonCode::TemplateInvalid, "admitted bindings missing")
-            })?;
-        let bindings: serde_json::Map<String, serde_json::Value> =
-            serde_json::from_str(&bindings_json).map_err(|e| {
-                CoreError::new(ReasonCode::Internal, format!("bindings invalid: {e}"))
-            })?;
         let mut input = shaula_core::template::ShaulaInputEnvelope::new(
             shaula_core::template::GenerationIdentity {
                 fleet_key: self.config.fleet_key.clone(),
@@ -366,6 +327,8 @@ impl FleetSupervisor {
         };
         match self.runtime.create(request).await {
             Ok(result) => {
+                // Start the hard lifetime at successful Create, not at tick/allocation.
+                let now = self.clock.as_ref().map_or(now, |clock| clock.now_unix_ms());
                 record_iac(MetricResult::Ok);
                 // Persist the result envelope TOGETHER WITH the REAL
                 // post-apply state identity: this is the ownership proof

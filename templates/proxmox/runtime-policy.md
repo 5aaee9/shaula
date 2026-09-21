@@ -1,7 +1,11 @@
 # Proxmox runner runtime policy
 
+`bindings.runner_backend` selects `github` (default) or `forgejo` for this
+immutable Template Revision, never a Fleet parameter. JIT/Listener details
+below describe GitHub; the Forgejo cloud-init contract is specified separately.
+
 Each Generation owns exactly one cloned QEMU VM and one NoCloud seed ISO.
-Terraform provider `indexyz/proxmox` 0.5.0 owns their entire resource lifecycle.
+Terraform provider `indexyz/proxmox` 0.5.1 owns their entire resource lifecycle.
 The provider finds exactly one visible template by its case-sensitive name,
 clones on that template's node, allocates a free VMID at or above the bound,
 attaches the seed to `ide2`, and starts the VM once. The clone is a linked
@@ -58,3 +62,37 @@ identity require operator reconciliation, not blind retries or adoption.
 Provider task waits are bounded at ten minutes; large full clones may require
 manual recovery. Real guest DHCP, cloud-init, JIT registration, job execution,
 and cleanup must be accepted on the target Proxmox environment separately.
+
+## Forgejo cloud-init contract
+
+`shaula.forgejo-vm-cloud-init/v1` explicitly permits `shaula.forgejo_vm.token`
+in protected Terraform input and the NoCloud ISO. Shaula first registers one
+ephemeral Runner and supplies its UUID/URL/labels and per-Runner token, never
+the Forgejo management credential. The clean base image must be Ubuntu 22.04
+x86_64 with cloud-init/systemd, util-linux and udev; it need not contain GitHub
+Runner. No pre-enabled Runner services, privileged runner user, old cloud-init
+state or Shaula marker are allowed. Bootstrap installs the official native
+`forgejo-runner-13.1.0-linux-amd64`, pinned to SHA-256
+`29dae21e93f0eab5cdf3564008d44603c74770b41a4f4f1aceed172c774bc376`.
+No guest registration, custom Runner build or latest lookup is used.
+
+The root bootstrap claims the one-use marker before preparation, protects
+cloud-init caches, requires the exact CIDATA seed to be root-only and unmounted,
+and copies the token into `/run/shaula-forgejo/token` (0600 inside a runner-owned
+0700 directory). Failures stop launch. The initial handoff is removed. The
+service has Restart=no, NoNewPrivileges=true and no boot enablement; it drops
+to non-root runner. Identity JSON is data, never shell. `one-job --wait` reads
+`--token-url file:...`, never a token in argv/environment. Only explicit `:host`
+labels are admitted, meaning this disposable VM. Workflow tools beyond git
+(such as Node) require reviewed image/preparation provisioning. Ubuntu packages,
+Forgejo release assets and the selected instance need outbound reachability.
+
+Forgejo ephemeral mode limits this registration to one job; it does not remove
+the VM or seed. Shaula destroys both after exact registration absence, or the
+shared hard lifetime (default 7200 seconds after Create succeeds, even Busy).
+A live idle registration alone is not safe-drain proof. Failed bootstrap never
+replays the seed. The remote ISO, Terraform inputs/plans/state and guest caches
+remain credential-grade; permissions/base64 are not encryption or hypervisor
+isolation. Management/provider credentials never enter guest materials. No
+Setup Info is added; real Forgejo boot/job/VM-and-ISO cleanup needs separate
+acceptance on the target Proxmox deployment.

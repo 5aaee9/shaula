@@ -32,6 +32,7 @@ pub struct SupervisorWiring {
     work_root: PathBuf,
     artifact_root: PathBuf,
     operation_timeout: Duration,
+    runner_max_lifetime: Duration,
     /// Cached supervisors keyed by (fleet, phase, desired revision, auth
     /// revision): a credential rotation, fleet replacement or phase
     /// change rebuilds the client.
@@ -71,12 +72,19 @@ impl SupervisorWiring {
             work_root,
             artifact_root,
             operation_timeout,
+            runner_max_lifetime: shaula_core::runner_lifetime::DEFAULT_MAX_LIFETIME,
             cache: HashMap::new(),
             listeners: HashMap::new(),
             tasks: crate::fleet_tasks::FleetTasks::default(),
             auth_worker_deferred_until: Arc::default(),
             auth_worker_endpoints: crate::auth_worker_probe::WorkerEndpoints::production(),
         }
+    }
+
+    #[must_use]
+    pub fn with_runner_max_lifetime(mut self, limit: Duration) -> Self {
+        self.runner_max_lifetime = limit;
+        self
     }
 
     pub fn with_setup_info_issuer(

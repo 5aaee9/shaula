@@ -7,8 +7,9 @@ Shaula 是一个自托管的 GitHub Actions Runner Scale Set 容量控制器。�
 ## 功能
 
 - **按需扩缩容**：为每个 Fleet（一组独立管理的 Runner）设置容量上下限，根据 GitHub 分配的任务调整 Runner 数量。
+- **Runner 硬超时**：GitHub / Forgejo 共用最大存活时间，默认成功创建后 2 小时强制回收，包括正在执行任务的 Runner；可在服务端配置，见 [超时与风险说明](docs/runner-lifetime.md)。
 - **多 Fleet 管理**：一个服务管理多个组织或仓库的 Scale Set，各自选择 GitHub 认证、基础设施模板和容量策略。
-- **Terraform 模板**：提供 Docker、Kubernetes、Proxmox、AWS、腾讯云（tencentcloud）和阿里云（alicloud）模板来源，支持导入自定义模板、发布固定版本，并在 UI 中配置 Runner 参数。
+- **Terraform 模板**：提供 Docker、Kubernetes、Proxmox、AWS、腾讯云（tencentcloud）和阿里云（alicloud）模板来源，支持导入自定义模板、发布固定版本，并在 UI 中配置 Runner 参数。六种模板发布时均可通过 [backend 选项](docs/forgejo-templates.md) 选择 GitHub（默认）或 Forgejo，无需新模板种类。
 - **Jobs 视图**：按 workflow job 展示已观测的状态，关联执行它的 Runner，查看创建和清理进度。
 - **保留执行日志**：按执行尝试保存 apply / destroy 日志，Runner 销毁后仍可在保留期内排查问题；可选将脱敏后的 apply 输出交付到 GitHub 的 **Set up job** 日志。
 - **集中认证与权限**：通过 GitHub App 管理 GitHub 连接，使用 OIDC 登录 Web UI，并分别控制管理操作和日志读取权限。

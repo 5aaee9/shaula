@@ -1,6 +1,8 @@
 api_version: shaula.io/template-profile/v1
 kind: RunnerTemplateProfile
 platform: alicloud
+runner_backends: [github, forgejo]
+forgejo_vm_bootstrap_contract: shaula.forgejo-vm-cloud-init/v1
 runtime:
   protocol: terraform-cli/v1
   engine: terraform
@@ -16,4 +18,4 @@ managed_resource_shape:
     terraform_type: alicloud_instance
     exact_count: 1
 runner_image_digests: []
-runtime_policy_digest: sha256:4dd5ece8c35e2bf467641706456ae79e120d5abe53de3483767ba8bc1c586a6e
+runtime_policy_digest: sha256:6e0b9d6c563a97f54c988dc1df2e7de5ce33eec1bdea7b3cd407c4fbcd220d0f

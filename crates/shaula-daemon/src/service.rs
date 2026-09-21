@@ -287,8 +287,12 @@ mod fleet_registry;
 #[path = "service_metrics.rs"]
 pub(crate) mod metrics;
 
+#[path = "service_fleet_materials.rs"]
+mod fleet_materials;
 #[path = "service_fleet_ops.rs"]
 mod fleet_ops;
+#[path = "service_template_backend.rs"]
+mod template_backend;
 
 #[path = "service_generation_finalize.rs"]
 mod generation_finalize;

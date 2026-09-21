@@ -26,7 +26,7 @@ const CASES: [CloudCase; 2] = [
         platform: TemplatePlatform::TencentCloud,
         image_contract: TENCENTCLOUD_VM_IMAGE_CONTRACT,
         resource_type: "tencentcloud_instance",
-        binding_count: 12,
+        binding_count: 13,
         required_credentials: &["tencentcloud_secret_id", "tencentcloud_secret_key"],
         defaults: &[
             ("tencentcloud_instance_type", "\"S5.MEDIUM4\""),
@@ -40,7 +40,7 @@ const CASES: [CloudCase; 2] = [
         platform: TemplatePlatform::AliCloud,
         image_contract: ALICLOUD_VM_IMAGE_CONTRACT,
         resource_type: "alicloud_instance",
-        binding_count: 10,
+        binding_count: 11,
         required_credentials: &["alicloud_access_key_id", "alicloud_access_key_secret"],
         defaults: &[
             ("alicloud_instance_type", "\"ecs.g6.large\""),

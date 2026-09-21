@@ -26,6 +26,9 @@ pub mod runner_generations {
         pub workspace_path: String,
         pub shaula_result_json: Option<String>,
         pub shaula_result_digest: Option<String>,
+        pub provisioned_at: Option<i64>,
+        pub expiry_requested_at: Option<i64>,
+        pub resources_destroyed_at: Option<i64>,
         pub created_at: i64,
         pub updated_at: i64,
     }

@@ -1,6 +1,8 @@
 api_version: shaula.io/template-profile/v1
 kind: RunnerTemplateProfile
 platform: tencentcloud
+runner_backends: [github, forgejo]
+forgejo_vm_bootstrap_contract: shaula.forgejo-vm-cloud-init/v1
 runtime:
   protocol: terraform-cli/v1
   engine: terraform
@@ -16,4 +18,4 @@ managed_resource_shape:
     terraform_type: tencentcloud_instance
     exact_count: 1
 runner_image_digests: []
-runtime_policy_digest: sha256:83b4fa1665a505dfed0a8386cda1dc4982e5420df13ad225705ef6b746d880db
+runtime_policy_digest: sha256:07dd3b1b6e7e95718b6ece95f19174a9b6bda39815ecdf2338be59f5e166f2e1

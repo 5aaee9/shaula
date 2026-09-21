@@ -5,6 +5,12 @@
   "additionalProperties": false,
   "required": ["aws_region", "aws_access_key_id", "aws_secret_access_key"],
   "properties": {
+    "runner_backend": {
+      "type": "string",
+      "enum": ["github", "forgejo"],
+      "description": "Runner backend for this Template Revision, default github. Forgejo delivers a single ephemeral Runner token through protected cloud-init/user-data and Terraform state; never a management token.",
+      "sensitive": false
+    },
     "aws_region": {
       "type": "string",
       "pattern": "^[a-z]{2}(-[a-z]+)+-[0-9]$",

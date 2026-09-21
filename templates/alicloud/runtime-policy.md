@@ -1,5 +1,9 @@
 # Alibaba Cloud runner runtime policy
 
+`bindings.runner_backend` selects `github` (default) or `forgejo` for this
+immutable Template Revision, never a Fleet parameter. JIT/Listener details
+below describe GitHub; the Forgejo cloud-init contract is specified separately.
+
 Each Generation owns exactly one pay-as-you-go ECS instance. The pinned
 `aliyun/alicloud` provider owns creation and destruction. The publisher binds
 an existing Ubuntu Server 22.04 LTS x86_64 image with systemd and cloud-init
@@ -52,3 +56,32 @@ retain state for recovery; running or stopped ECS status is not runner idleness.
 Static validation and mock plans do not prove real boot, registration, jobs,
 interruption recovery or instance/system-disk cleanup. Accept those separately
 on the target Alibaba Cloud environment before production use.
+
+## Forgejo cloud-init contract
+
+`shaula.forgejo-vm-cloud-init/v1` explicitly permits `shaula.forgejo_vm.token`
+in protected Terraform input and cloud-init. Shaula pre-registers exactly one
+ephemeral Runner; only its token and UUID/URL/labels reach the VM, never Forgejo
+management/RAM credentials. The official native `forgejo-runner-13.1.0-linux-amd64`
+release is fixed to SHA-256
+`29dae21e93f0eab5cdf3564008d44603c74770b41a4f4f1aceed172c774bc376`.
+There is no guest registration, custom Runner build or latest resolution.
+Ubuntu packages, Forgejo release assets and the selected instance need egress.
+
+Bootstrap claims the durable one-use marker before preparation, verifies the
+binary, restricts cloud-init caches, and copies the token to the runner-owned
+0700 `/run/shaula-forgejo` directory as a 0600 file, removing the initial handoff.
+JSON identity is data, never shell code. The service has Restart=no,
+NoNewPrivileges=true and no boot enablement, dropping to a non-root runner.
+`one-job --wait` reads `--token-url file:...`, not argv/environment credentials.
+Only explicit `:host` labels are admitted (this disposable VM); tools beyond git,
+such as Node, need publisher provisioning. Encoded user-data including the token
+must still fit the 16 KiB bound. No Setup Info delivery is added.
+
+Forgejo enforces at most one job but does not delete the ECS instance. Shaula
+destroys original owned resources after exact registration absence, or the shared
+hard lifetime (default 7200 seconds after successful Create, even Busy). Idle
+alone is not safe-drain proof. Failures never restart this seed. Terraform input,
+plans/state and ECS user-data/IMDS can retain the per-Runner token; sensitive
+flags/base64 and IMDSv2 are not encryption or job isolation. Real Forgejo job and
+ECS/disk cleanup acceptance is still required on the target deployment.

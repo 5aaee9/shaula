@@ -24,6 +24,9 @@ pub(in crate::runtime) fn admit_plan(
         return Ok(());
     }
     let image = selected_image(manifest, request).map_err(|_| rejected())?;
+    let backend = manifest
+        .runner_backend_for_bindings(&request.input.bindings)
+        .map_err(|_| rejected())?;
     let changes = plan["resource_changes"].as_array().ok_or_else(rejected)?;
     let managed: Vec<_> = changes
         .iter()
@@ -49,13 +52,7 @@ pub(in crate::runtime) fn admit_plan(
                 "docker_container",
                 "registry.terraform.io/kreuzwerker/docker",
             )?;
-            docker::admit(
-                &runner,
-                plan,
-                &image,
-                request,
-                manifest.runner_backend.as_str(),
-            )
+            docker::admit(&runner, plan, &image, request, backend)
         }
         "kubernetes" if managed.len() == 2 => {
             let pod = managed
@@ -72,7 +69,7 @@ pub(in crate::runtime) fn admit_plan(
                 &Planned::new(secret, "kubernetes_secret_v1", provider)?,
                 &image,
                 request,
-                manifest.runner_backend.as_str(),
+                backend,
             )
         }
         _ => Err(rejected()),

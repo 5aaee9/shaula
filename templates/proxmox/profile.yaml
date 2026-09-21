@@ -1,6 +1,8 @@
 api_version: shaula.io/template-profile/v1
 kind: RunnerTemplateProfile
 platform: proxmox
+runner_backends: [github, forgejo]
+forgejo_vm_bootstrap_contract: shaula.forgejo-vm-cloud-init/v1
 runtime:
   protocol: terraform-cli/v1
   engine: terraform
@@ -19,4 +21,4 @@ managed_resource_shape:
     terraform_type: proxmox_qemu_vm
     exact_count: 1
 runner_image_digests: []
-runtime_policy_digest: sha256:4509051b4115b1da174db6db4d5c36c1e219d4c379d3e304db1030f020443daf
+runtime_policy_digest: sha256:c02e5bb86554619d30ab11e9418b44275f9da6e60699e6ec05f932bccc5e26e2

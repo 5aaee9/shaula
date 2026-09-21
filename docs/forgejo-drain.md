@@ -1,9 +1,14 @@
 # Forgejo busy-safe drain: release blocker
 
-Status: **unresolved**, 2026-09-12. The owner selected the full spec 0026 contract,
-not a conservative-preview release. This note records source evidence and a
-proposed prerequisite; it does not claim an implemented or accepted upstream
-extension. [Implementation status](IMPLEMENTATION_STATUS.md#forgejo-runner-backend-in-progress-pool-implementation-2026-09-11)
+Status: **unresolved for busy-safe active idle drain**, updated 2026-09-21.
+The non-waiting official `one-job` experiment below did not prove safe cleanup
+and does not authorize a production bootstrap change or acquisition proxy.
+The operator subsequently authorized a separate, shared GitHub/Forgejo
+[hard Runner lifetime](runner-lifetime.md), default 2h, which intentionally
+permits terminating running jobs. That implemented insurance policy is not a
+busy-safe drain protocol and does not close the full spec 0026 acceptance gate.
+This note records protocol evidence and a proposed upstream prerequisite.
+[Implementation status](IMPLEMENTATION_STATUS.md#forgejo-runner-backend-in-progress-pool-implementation-2026-09-11)
 remains authoritative for delivery progress.
 
 ## Why the current protocol cannot authorize idle expiry
@@ -40,6 +45,25 @@ Repeating step 1, sleeping for a grace period, checking Pod readiness, parsing
 logs, pausing a container, or blocking new network connections does not close
 the in-flight assignment race. Replacing labels via Declare is also not a
 transactional fence against an already authorized FetchTask.
+
+## Non-waiting alternative: real experiment (2026-09-21)
+
+The [isolated official-image experiment](evidence/forgejo-one-job-2026-09-21/README.md)
+verified Forgejo 16.0.4 + runner 13.1.0 without `--wait`. Both successful and
+failed tasks end with runner exit 0, ephemeral registration disappearance and
+subsequent container removal. An empty queue instead produces exit 2 and leaves
+the registration present.
+
+However, after a real server-side assignment followed by response loss, the
+runner also exits 2, its registration still reports **idle**, and Forgejo lists
+the job as **running with a task ID**. Thus even `exited + idle` does not prove
+safe registration removal. A `--wait` control recovers the same lost-response
+scenario and completes the task. See the retained report and reproducible
+fault-injection harness for the separate observations.
+
+This is a protocol experiment, not Shaula Pool/Terraform or Kubernetes
+conformance. Production retains `--wait` and the conservative evidence hook;
+no production task proxy was introduced.
 
 ## Proposed prerequisite: an upstream Runner Acquisition Fence
 

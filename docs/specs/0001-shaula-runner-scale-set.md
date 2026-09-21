@@ -228,6 +228,9 @@ execution:
     terraform:
       executable: terraform
 
+runner:
+  max_lifetime_secs: 7200 # GitHub / Forgejo 共用硬上限，允许中断任务
+
 observability:
   service_name: shaula
   # Optional OTLP/HTTP (http/json) collector base URL. Export is
@@ -243,6 +246,23 @@ Bootstrap MUST NOT 包含任何 Fleet、Template Profile、GitHub Auth Profile �
 Bootstrap、filesystem roots、HTTP safety policy、engine executable/install policy、limits 和 telemetry 必须在 API ready 前静态验证。任何路径必须解析在批准 root 内，并拒绝 traversal、symlink/junction/reparse escape 和 Workspace aliasing。
 
 Terraform 是 v1 必需 engine。OpenTofu 只有通过 section 12 的兼容性门槛后才可被声明支持；否则在 Profile validation 阶段 fail closed，而不产生外部副作用。
+
+### 5.3 Runner 最大存活时间
+
+操作者确认的跨 GitHub / Forgejo 保险策略：bootstrap `runner.max_lifetime_secs` 默认 **7200 秒**，
+必须是可表示为 i64 毫秒的正整数；省略时仍启用默认值。它从资源成功 Create 的持久化时间开始，
+不是空闲计时或 job 执行计时，也不同于 `execution.operation_timeout_secs`。配置随服务重启加载。
+
+到期 MUST 记录独立的硬超时意图，允许中断 Busy / 尚在领取中的任务，先通过原始模板材料与
+state/provenance 证明销毁资源，再重试清理精确身份的远端注册。GitHub `JobStillRunning` 不得
+阻挡资源侧硬超时；但远端注册尚未收敛时不得标记 `Destroyed`、释放 occupancy 或误报成功。
+成功创建时间与两步清理进度 MUST 持久化，重启不重置起点，调大配置不撤销已提交的回收意图。
+
+这是本文及引用本文的 **Busy-safe removal 的显式例外**，不是安全 idle drain。普通缩容、替换、
+Decommission 在未到期时仍遵守原保护。所有权、artifact/bindings pin、state 校验、fencing 和
+Quarantined 人工处置边界不变；需求或库存不新鲜不能单独撤销已到期的硬超时意图。
+到期由周期性 reconcile 检查，停机、调度/操作耗时与外部故障可能延后执行，不承诺精确墙钟删除。
+升级历史数据的保守起点及操作风险见 [运维说明](../runner-lifetime.md)。
 
 ## 6. Managed resources and revisions
 
@@ -361,7 +381,7 @@ Persist-before-ACK 消除了“本地提交尚未完成却主动确认”的窗�
 
 最终收敛保证是有条件的：desired state 必须最终稳定；当前 Auth/Scale Set ownership 必须可证明；GitHub、filesystem 和 IaC engine 必须最终返回 authoritative 结果；listener 必须最终取得新的 current-statistics snapshot；旧 child 必须可终止或 fence；scheduler/reaper 必须继续获得运行机会；且 Fleet 不处于 Quarantine、`ScaleSetMissingWithResources`、missing-state 或其他 safety block。
 
-满足这些条件时，重复 reconcile 最终达到固定点：在安全清退后 Resource Occupancy 不超过当前 max（显式缩容可暂时低于既有 Occupancy），Effective Capacity 匹配最新 target，已完成/多余资源通过安全 removal 后 Destroy，GitHub 已知 Busy 的 Runner 不被故意销毁。事件丢失只会推迟这一过程，不是唯一授权。条件不满足时 Shaula 优先停止副作用、持久化并告警 bounded Condition，且 MUST NOT 误报 `Converged=True`；不承诺固定 wall-clock SLO 或完整 job history。
+满足这些条件时，重复 reconcile 最终达到固定点：在安全清退后 Resource Occupancy 不超过当前 max（显式缩容可暂时低于既有 Occupancy），Effective Capacity 匹配最新 target，已完成/多余资源通过安全 removal 后 Destroy，未达到 §5.3 硬超时的 GitHub 已知 Busy Runner 不被故意销毁。事件丢失只会推迟这一过程，不是唯一授权。条件不满足时 Shaula 优先停止副作用、持久化并告警 bounded Condition，且 MUST NOT 误报 `Converged=True`；不承诺固定 wall-clock SLO 或完整 job history。
 
 ## 9. Capacity and fair scheduling
 
@@ -390,7 +410,7 @@ createCount[fleet] = min(
 错误——不得取消已越过效果边界（JIT 已 mint / apply 已跑）的兄弟；下一 tick
 从账本 level-triggered 地重算容量，不盲目重发。
 
-scale-down 优先选择 observed Idle；由于 Completed 可能丢失，stale Busy observation 不能永久阻塞候选检查，但 GitHub removal 的 `JobStillRunning` 仍是 Destroy 前的 authoritative safety gate。Retirement 一旦开始即单调前进；需求回升会在 occupancy 允许时新建 Generation，而不 Update 或恢复旧 Generation。
+scale-down 优先选择 observed Idle；由于 Completed 可能丢失，stale Busy observation 不能永久阻塞候选检查，但普通清退中 GitHub removal 的 `JobStillRunning` 仍是 Destroy 前的 authoritative safety gate；§5.3 硬超时例外。Retirement 一旦开始即单调前进；需求回升会在 occupancy 允许时新建 Generation，而不 Update 或恢复旧 Generation。
 
 Worker lifetime 与活跃 Terraform command budgets 分开；等待 GitHub 的 worker 不占用 Create/Destroy command slot。两种命令保留独立预算及跨 Fleet 公平性，同 Workspace 至多一个 active command。Create-start 和 Decommission 的 side-effect handover 由 spec 0010 约束，事务不跨等待/IPC/网络/子进程。下调 max 可暂时低于既有 Occupancy/Busy；此时不准新增 Generation，只安全清退，不强杀 Busy。
 
@@ -490,7 +510,7 @@ GitHub mutation 与可能启动的基础设施 mutation 均受 durable identity/
 Worker fencing、database state CAS、emergency state、Workspace 重建、backup 和旧 local-state migration 的唯一契约在 [spec 0010 §6–7](0010-lifecycle-worker-and-http-state-backend.md)。
 
 - JIT uncertainty 仍按 §10.2 的 stable-name/remove/fresh-Generation 规则处理。
-- GitHub known Busy 的既有 Runner 跨 worker/daemon restart 保留，通过 inventory 和 safety gate 重新观察。
+- 未达到 §5.3 硬超时的 GitHub known Busy Runner 跨 worker/daemon restart 保留，通过 inventory 和 safety gate 重新观察。
 - Auth desired/observed 不同恢复 normal 或 cleanup-only Handoff；失败不 fallback。
 - `ScaleSetMissingWithResources` 不因 worker 重启解除，继续阻止 rebind/acquisition/absent-based Destroy。
 - 只读 diagnosis 不能 apply/import/repair；Quarantine 不 silently forget，也不属于自动收敛承诺。

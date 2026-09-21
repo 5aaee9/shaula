@@ -14,6 +14,12 @@
     "tencentcloud_security_group_ids"
   ],
   "properties": {
+    "runner_backend": {
+      "type": "string",
+      "enum": ["github", "forgejo"],
+      "description": "Runner backend for this Template Revision, default github. Forgejo delivers a single ephemeral Runner token through protected cloud-init/user-data and Terraform state; never a management token.",
+      "sensitive": false
+    },
     "tencentcloud_region": {
       "type": "string",
       "pattern": "^[a-z]+(-[a-z0-9]+)+$",

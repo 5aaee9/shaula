@@ -93,7 +93,9 @@ impl ForgejoPoolSupervisor {
             .generation_advance(&generation_id, GenerationState::Creating, now)
             .await?;
         drop(gate);
-        let prepared = self.prepare_generation(&record).await;
+        let prepared = self
+            .prepare_generation(&record, &spec.template_inputs)
+            .await;
         let (artifact_dir, manifest, bindings, bindings_digest) = match prepared {
             Ok(prepared) => prepared,
             Err(error) => return cleanup_error(self, &generation_id, now, error).await,
@@ -117,6 +119,10 @@ impl ForgejoPoolSupervisor {
         );
         input.bindings = bindings;
         input.forgejo = Some(bootstrap.identity());
+        if manifest.forgejo_vm_bootstrap_contract.is_some() {
+            input.forgejo_vm =
+                Some(shaula_core::template::ForgejoVmBootstrap::from_registration(&bootstrap));
+        }
         input.parameters = spec.template_inputs;
         if manifest.input_contract_version == 2 {
             let descriptor = match self.setup_info_issuer.as_deref() {
@@ -188,6 +194,7 @@ impl ForgejoPoolSupervisor {
     async fn prepare_generation(
         &self,
         record: &GenerationRecord,
+        parameters: &serde_json::Map<String, serde_json::Value>,
     ) -> CoreResult<(
         std::path::PathBuf,
         shaula_core::template::ProfileManifest,
@@ -222,6 +229,10 @@ impl ForgejoPoolSupervisor {
         let bindings = serde_json::from_str(&bindings_json).map_err(|_| {
             CoreError::new(ReasonCode::TemplateInvalid, "admitted bindings invalid")
         })?;
+        manifest.validate_bindings_for_provider(&bindings, FleetProviderKind::Forgejo)?;
+        if manifest.container_bootstrap_contract.is_some() {
+            manifest.selected_runner_image(&bindings, parameters)?;
+        }
         let workspace = std::path::Path::new(&record.workspace_path);
         tokio::fs::create_dir_all(workspace).await.map_err(|_| {
             CoreError::new(ReasonCode::Internal, "Forgejo workspace creation failed")

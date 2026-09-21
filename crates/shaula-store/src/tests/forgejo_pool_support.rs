@@ -35,6 +35,9 @@ pub(super) struct Fixture {
 }
 impl Fixture {
     pub async fn new(min: i64, max: i64) -> TestResult<Self> {
+        Self::with_template(min, max, "docker").await
+    }
+    pub async fn with_template(min: i64, max: i64, platform: &str) -> TestResult<Self> {
         let directory = tempfile::tempdir()?;
         let db = Store::open(&directory.path().join("state.db")).await?;
         db.migrate().await?;
@@ -59,16 +62,13 @@ impl Fixture {
             [spec_json.into(),digest.clone().into()])).await?;
         db.connection().execute(Statement::from_sql_and_values(DatabaseBackend::Sqlite,
             "INSERT INTO template_profile_revisions (profile_key,revision,artifact_digest,engine_ref,bindings_json,bindings_digest,state,created_at)
-            VALUES ('profile',1,?,'terraform','{}','bindings','Active',1)", [digest.clone().into()])).await?;
+            VALUES ('profile',1,?,'terraform','{\"runner_backend\":\"forgejo\"}','bindings','Active',1)", [digest.clone().into()])).await?;
         let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../templates/docker/profile.yaml");
-        let mut manifest: shaula_core::template::ProfileManifest =
+            .join("../../templates")
+            .join(platform)
+            .join("profile.yaml");
+        let manifest: shaula_core::template::ProfileManifest =
             serde_yaml::from_str(&std::fs::read_to_string(source)?)?;
-        manifest.runner_backend = "forgejo".into();
-        manifest.runner_image_digests = vec![format!(
-            "code.forgejo.org/forgejo/runner:13.1.0@sha256:{}",
-            "b".repeat(64)
-        )];
         let artifact_root = directory.path().join("artifacts");
         let artifact = shaula_core::artifact_layout::artifact_dir(&artifact_root, &digest)
             .ok_or("bad digest")?;

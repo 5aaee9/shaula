@@ -8,10 +8,12 @@ fn manifest_v2_requires_setup_info_and_v1_rejects_its_extra_field() -> TestResul
         .join("../../templates/docker/profile.yaml");
     // Exercise retained v1/v2 descriptor contracts independently of the new
     // host bootstrap capability, which deliberately cannot be combined with v2.
-    let v1 = std::fs::read_to_string(bundled)?.replace(
-        "container_bootstrap_contract: shaula.container-bootstrap/v1\n",
-        "",
-    );
+    let v1 = std::fs::read_to_string(bundled)?
+        .replace(
+            "container_bootstrap_contract: shaula.container-bootstrap/v1\n",
+            "",
+        )
+        .replace("runner_backends: [github, forgejo]\n", "");
     std::fs::write(
         directory.path().join("profile.yaml"),
         format!("{v1}\ninput_contract_version: 2\nsetup_info_contract: shaula.setup-info/v1\n"),

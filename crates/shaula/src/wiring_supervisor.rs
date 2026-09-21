@@ -300,6 +300,7 @@ impl SupervisorWiring {
                 },
                 identity,
             )
+            .with_runner_max_lifetime(self.runner_max_lifetime)
             .with_handoff_github(handoff_github)
             .with_setup_info_issuer(self.setup_info_issuer.clone())
             .with_clock(self.clock.clone())

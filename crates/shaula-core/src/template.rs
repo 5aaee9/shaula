@@ -93,6 +93,10 @@ pub struct ProfileManifest {
         skip_serializing_if = "is_github_backend"
     )]
     pub runner_backend: String,
+    /// Opt-in publisher choice via bindings.runner_backend, defaulting to GitHub.
+    /// Empty preserves the historical single-backend contract above.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runner_backends: Vec<String>,
     pub runtime: ManifestRuntime,
     pub bindings_contract: String,
     pub schemas: ManifestSchemas,
@@ -118,6 +122,9 @@ pub struct ProfileManifest {
     /// an immutable image digest or authorize a Runtime bootstrap hook.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vm_image_contract: Option<String>,
+    /// VM-only cloud-init delivery of the ephemeral Runner token (not an API/admin token).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forgejo_vm_bootstrap_contract: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -149,6 +156,8 @@ impl ProfileManifest {
     /// Static structural validation; platform identity stays an opaque
     /// string mapped through [`TemplatePlatform::from_manifest_value`].
     pub fn validate(&self) -> CoreResult<()> {
+        self.validate_runner_backends()?;
+        self.validate_forgejo_vm_bootstrap()?;
         self.validate_container_bootstrap()?;
         match (
             self.input_contract_version,
@@ -172,12 +181,6 @@ impl ProfileManifest {
             return Err(CoreError::new(
                 ReasonCode::TemplateInvalid,
                 "unsupported manifest kind",
-            ));
-        }
-        if !matches!(self.runner_backend.as_str(), "github" | "forgejo") {
-            return Err(CoreError::new(
-                ReasonCode::TemplateInvalid,
-                "runner_backend must be github or forgejo",
             ));
         }
         if self.runtime.protocol != SUPPORTED_PROTOCOL {
@@ -252,26 +255,6 @@ impl ProfileManifest {
     pub fn platform(&self) -> TemplatePlatform {
         TemplatePlatform::from_manifest_value(&self.platform)
     }
-
-    /// Checks that the admitted profile declares the same provider as its
-    /// Fleet.  GitHub remains the default for all historical manifests.
-    pub fn validate_for_provider(
-        &self,
-        provider: crate::fleet::FleetProviderKind,
-    ) -> CoreResult<()> {
-        self.validate()?;
-        let expected = match provider {
-            crate::fleet::FleetProviderKind::Github => "github",
-            crate::fleet::FleetProviderKind::Forgejo => "forgejo",
-        };
-        if self.runner_backend != expected {
-            return Err(CoreError::new(
-                ReasonCode::TemplateInvalid,
-                format!("template runner_backend must be {expected}"),
-            ));
-        }
-        Ok(())
-    }
 }
 
 /// The opaque, server-issued commitment binding envelopes to an exact
@@ -314,6 +297,11 @@ pub use envelope::{
 mod setup_info;
 pub use setup_info::{SetupInfoDescriptor, SETUP_INFO_CONTRACT};
 
+#[path = "template_backend.rs"]
+mod backend;
+#[path = "template_forgejo_vm.rs"]
+mod forgejo_vm;
+pub use forgejo_vm::{ForgejoVmBootstrap, FORGEJO_VM_BOOTSTRAP_CONTRACT};
 #[path = "template_container.rs"]
 mod container;
 pub use container::CONTAINER_BOOTSTRAP_CONTRACT;
