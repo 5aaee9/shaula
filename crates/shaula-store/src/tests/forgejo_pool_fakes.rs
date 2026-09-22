@@ -8,6 +8,7 @@ use std::sync::{
 #[derive(Default)]
 pub(super) struct Forgejo {
     pub runners: Mutex<Vec<ForgejoRunnerRef>>,
+    pub jobs: Mutex<Option<Vec<ForgejoJob>>>,
     pub waiting: AtomicU64,
     pub posts: AtomicU64,
     pub deletes: AtomicU64,
@@ -66,9 +67,12 @@ impl ForgejoPoolPort for Forgejo {
         if self.fail_jobs.load(Ordering::SeqCst) {
             return Err(failure());
         }
+        if let Some(jobs) = self.jobs.lock().map_err(|_| failure())?.as_ref() {
+            return Ok(jobs.clone());
+        }
         Ok((0..self.waiting.load(Ordering::SeqCst))
             .map(|id| ForgejoJob {
-                id,
+                id: id.saturating_add(1),
                 handle: id.to_string(),
                 attempt: 1,
                 status: "waiting".into(),

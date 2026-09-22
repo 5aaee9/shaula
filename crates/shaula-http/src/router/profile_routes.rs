@@ -345,6 +345,7 @@ pub(crate) async fn template_profile_get(
                 "incarnation": view.incarnation,
                 "desiredRevision": view.desired_revision,
                 "activeRevision": view.active_revision,
+                "runnerBackend": view.runner_backend,
                 "status": view.status,
                 "platform": view.platform,
                 "bindingsContract": view.bindings_contract,

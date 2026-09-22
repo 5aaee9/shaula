@@ -9,6 +9,36 @@ use shaula_core::template_pool::ResolvedTemplatePoolMember;
 use super::ControlPlane;
 
 impl ControlPlane {
+    pub(super) async fn active_template_backend(
+        &self,
+        key: &str,
+        revision: Option<i64>,
+    ) -> CoreResult<Option<FleetProviderKind>> {
+        let Some(revision) = revision else {
+            return Ok(None);
+        };
+        let Some(row) = self.store.template_revision_get(key, revision).await? else {
+            return Ok(None);
+        };
+        let Some(yaml) = self.store.artifact_manifest(&row.artifact_digest).await? else {
+            return Ok(None);
+        };
+        let json = row.bindings_json.as_deref().unwrap_or("{}");
+        // Read-only discovery fails closed, without projecting protected bindings.
+        let backend = serde_yaml::from_str::<ProfileManifest>(&yaml)
+            .ok()
+            .and_then(|manifest| {
+                let bindings = serde_json::from_str(json).ok()?;
+                manifest.validate().ok()?;
+                match manifest.runner_backend_for_bindings(&bindings).ok()? {
+                    "github" => Some(FleetProviderKind::Github),
+                    "forgejo" => Some(FleetProviderKind::Forgejo),
+                    _ => None,
+                }
+            });
+        Ok(backend)
+    }
+
     pub(super) async fn validate_template_backend(
         &self,
         profile: &str,

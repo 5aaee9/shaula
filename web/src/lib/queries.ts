@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, resourcePath } from "./api";
 import { authenticationExpired } from "./authentication";
 import type {
+  AuthLiveFleet,
   AuthResource,
   FleetResource,
   FleetStatus,
@@ -60,6 +61,24 @@ export function useTemplatePools(enabled = true) {
     refetchOnMount: "always",
     refetchInterval: 10_000,
   });
+}
+
+export function useAuthImpact(key: string, enabled: boolean) {
+  const query = useQuery({
+    queryKey: ["auth-impact", key],
+    enabled,
+    queryFn: async ({ signal }) => {
+      const response = await api<{ liveFleets: AuthLiveFleet[] }>(
+        resourcePath("github-auth-profiles", key) + "/impact",
+        { signal },
+      );
+      if (!Array.isArray(response.data.liveFleets))
+        throw new Error("Fleet impact response is unavailable");
+      return response.data.liveFleets;
+    },
+    refetchInterval: 5_000,
+  });
+  return { ...query, ready: !enabled || (query.isSuccess && !query.isFetching) };
 }
 
 export function useAuthProfiles(enabled = true) {

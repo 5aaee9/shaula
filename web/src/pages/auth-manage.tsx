@@ -47,10 +47,10 @@ export function AuthManagePage({ scopes, mode }: { scopes: string[]; mode: AuthF
           <h1 className="break-all">{title}</h1>
           <p>
             {creating
-              ? "Connect a GitHub App and choose the targets fleets may use."
+              ? "Connect a GitHub App or a scoped Forgejo token for runner management."
               : mode === "policy"
                 ? "Choose allowed targets using the credential from the current Active revision."
-                : "Replace this App's private key while retaining the current Active target policy."}
+                : "Replace the credential while retaining the current Active target."}
           </p>
         </div>
       </div>
@@ -69,11 +69,12 @@ export function AuthManagePage({ scopes, mode }: { scopes: string[]; mode: AuthF
         <Loading />
       ) : query.error ? (
         <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-      ) : !canManageAuthProfile(query.data.data) ? (
+      ) : !canManageAuthProfile(query.data.data) ||
+        (mode === "policy" && query.data.data.kind !== "github_app") ? (
         <ErrorNotice
           error={
             new Error(
-              "A supported Active GitHub App revision is required to manage this connection.",
+              "A supported Active revision is required. Target policy editing is only available for GitHub Apps.",
             )
           }
         />

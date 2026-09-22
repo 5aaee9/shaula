@@ -12,7 +12,11 @@ use crate::error::CoreResult;
 /// cross-dedupe, cross-wake or cross-recover.
 #[async_trait]
 pub trait LifecycleStore:
-    super::ListenerMessageStore + crate::runner_lifetime::RunnerLifetimeStore + Send + Sync
+    super::ListenerMessageStore
+    + crate::runner_lifetime::RunnerLifetimeStore
+    + crate::jobs::ForgejoJobsStore
+    + Send
+    + Sync
 {
     /// Admit a generation against a weighted template pool. Stores that do
     /// not implement pools fail explicitly so callers cannot silently fall

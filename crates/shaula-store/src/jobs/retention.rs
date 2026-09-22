@@ -35,6 +35,25 @@ impl Store {
                 AND (g.state<>'Destroyed' OR g.updated_at>=?
                     OR EXISTS(SELECT 1 FROM operation_log_invocations l WHERE l.generation_id=g.id)))
             ORDER BY o.observed_at,o.id LIMIT 1000)", vec![cutoff_ms.into(), cutoff_ms.into()]).await?;
+        let forgejo = rows(&tx, "SELECT id FROM forgejo_workflow_jobs WHERE updated_at<? ORDER BY updated_at,id LIMIT 1000", vec![cutoff_ms.into()]).await?;
+        for row in forgejo {
+            let id: String = row.try_get("", "id")?;
+            execute(
+                &tx,
+                "DELETE FROM forgejo_job_observations WHERE job_record_id=?",
+                vec![id.clone().into()],
+            )
+            .await?;
+            execute(
+                &tx,
+                "DELETE FROM forgejo_workflow_jobs WHERE id=?",
+                vec![id.into()],
+            )
+            .await?;
+        }
+        execute(&tx, "DELETE FROM forgejo_job_polls WHERE scope_key IN (
+            SELECT p.scope_key FROM forgejo_job_polls p WHERE p.attempted_at<?
+            AND NOT EXISTS(SELECT 1 FROM forgejo_workflow_jobs j WHERE j.scope_key=p.scope_key) LIMIT 1000)", vec![cutoff_ms.into()]).await?;
         tx.commit().await?;
         Ok(())
     }

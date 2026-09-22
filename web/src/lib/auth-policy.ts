@@ -2,6 +2,17 @@ import type { AuthResource, GitHubTarget, TargetSelector } from "./types";
 
 /** Management uses the validated Active revision, never a Candidate. */
 export function canManageAuthProfile(profile: AuthResource): boolean {
+  if (profile.kind === "forgejo_token")
+    return (
+      profile.schema_version === 1 &&
+      profile.credential_present &&
+      ["Active", "Validating"].includes(profile.status) &&
+      !!profile.activeRevision &&
+      profile.active?.revision === profile.activeRevision &&
+      profile.active.schema_version === 1 &&
+      profile.active.state === "Active" &&
+      !!profile.active.forgejo
+    );
   return (
     profile.schema_version === 2 &&
     profile.kind === "github_app" &&

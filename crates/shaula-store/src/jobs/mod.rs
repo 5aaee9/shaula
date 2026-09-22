@@ -1,5 +1,10 @@
 //! Read models and retained evidence. No lifecycle decisions originate here.
 mod association;
+mod forgejo;
+mod forgejo_projection;
+mod forgejo_read;
+#[cfg(test)]
+mod forgejo_tests;
 mod ingest;
 mod query;
 mod read;

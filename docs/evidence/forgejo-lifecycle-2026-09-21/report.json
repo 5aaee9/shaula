@@ -1,0 +1,19 @@
+{
+  "kind": "shaula-forgejo-docker-lifecycle/v1",
+  "serverImage": "codeberg.org/forgejo/forgejo:16.0.4",
+  "runnerImage": "code.forgejo.org/forgejo/runner:13.1.0@sha256:c4af85fd9f0dd03788676a534781a87c71aa2c6a37737143e017eb94d4312952",
+  "checks": {
+    "forgejoJobsProjection": "passed",
+    "success": "passed",
+    "failure": "passed",
+    "restart": "passed",
+    "idleExpiry": "passed",
+    "busyExpiry": "passed",
+    "destroyRetryAcrossRestart": "passed",
+    "registrationRetryAcrossRestart": "passed"
+  },
+  "passed": true,
+  "engineVersion": "29.6.2",
+  "artifactDigest": "sha256:96a65613473b2a2ddc2eabd9c0c8f8d1855aa3c87bb88052b523762fa59711ce",
+  "faults": { "dockerDelete": 1, "registrationDelete": 2 }
+}

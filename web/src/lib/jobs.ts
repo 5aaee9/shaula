@@ -3,6 +3,19 @@ import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/api";
 
 export interface Job {
+  backend?: "github" | "forgejo";
+  forgejo?: {
+    target: import("./runner-backend").ForgejoTarget;
+    repository_id: string;
+    job_id: string;
+    attempt: string;
+    run_id: string;
+    task_id: string;
+    runs_on: string[];
+    last_reported_status: string;
+    last_observed_at: number;
+    in_snapshot: boolean;
+  };
   id: string;
   fleet_key: string;
   protocol_job_id: string;
@@ -27,6 +40,7 @@ export interface Generation {
   runner_name: string;
   generation_name: string;
   github_runner_id: number | null;
+  forgejo_runner_id?: string | null;
   state: string;
   subphase: string | null;
   association_status: string;
@@ -46,6 +60,12 @@ export interface Observation {
 }
 export interface JobDetail extends Job {
   observations: Observation[];
+  forgejo_observations?: {
+    id: string;
+    reported_status: string | null;
+    task_id: string;
+    observed_at: number;
+  }[];
   observations_truncated: boolean;
   generations: Generation[];
 }
@@ -134,4 +154,19 @@ export function historyTime(value: number | null) {
 }
 export function operationName(value: string) {
   return value.toLowerCase() === "create" ? "Apply" : "Destroy";
+}
+
+export function jobRepository(job: Job) {
+  return (
+    [job.owner_name, job.repository_name].filter(Boolean).join("/") ||
+    (job.forgejo ? `Repository #${job.forgejo.repository_id}` : "Repository unknown")
+  );
+}
+
+export function snapshotFreshness(job: Job) {
+  return job.freshness === "fresh"
+    ? "Snapshot fresh"
+    : job.freshness === "not_listed"
+      ? "No longer listed"
+      : "Snapshot stale";
 }

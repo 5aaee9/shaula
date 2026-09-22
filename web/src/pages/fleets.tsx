@@ -14,7 +14,7 @@ import { Link, useLocation } from "react-router-dom";
 import { api, resourcePath } from "@/lib/api";
 import { useFleets } from "@/lib/queries";
 import type { ChangeRef, FleetResource, FleetStatus } from "@/lib/types";
-import { targetName } from "@/lib/types";
+import { fleetTargetName } from "@/lib/runner-backend";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tip } from "@/components/icon-tooltip";
@@ -55,7 +55,7 @@ export function FleetsPage({ scopes }: { scopes: string[] }) {
   }));
   const filtered = rows.filter(
     (row) =>
-      `${row.key} ${row.resource ? targetName(row.resource.spec.github.target) : ""}`
+      `${row.key} ${row.resource ? fleetTargetName(row.resource.spec) : ""}`
         .toLowerCase()
         .includes(search.toLowerCase()) &&
       (filter === "all" ||
@@ -211,7 +211,7 @@ export function FleetsPage({ scopes }: { scopes: string[] }) {
                           <strong>{row.key}</strong>
                           <small>
                             {row.resource
-                              ? targetName(row.resource.spec.github.target)
+                              ? fleetTargetName(row.resource.spec)
                               : "Loading target..."}
                           </small>
                         </span>

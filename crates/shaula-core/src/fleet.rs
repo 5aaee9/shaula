@@ -258,6 +258,12 @@ pub fn validate_fleet_spec(spec: &FleetSpec) -> CoreResult<()> {
             validate_profile_key_for_fleet_ref(&spec.github.auth_profile_ref)?;
         }
         FleetProviderKind::Forgejo => {
+            if spec.template_pool.is_some() || spec.template_pool_ref.is_some() {
+                return Err(CoreError::new(
+                    ReasonCode::SpecInvalid,
+                    "forgejo fleets require a single template_profile_ref; template pools are unsupported",
+                ));
+            }
             if !is_placeholder_github(&spec.github) {
                 return Err(CoreError::new(
                     ReasonCode::SpecInvalid,
@@ -354,110 +360,8 @@ impl FleetKey {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-mod tests {
-    use super::*;
-
-    fn base_spec() -> FleetSpec {
-        FleetSpec {
-            kind: FleetProviderKind::Github,
-            github: FleetGithubSection {
-                target: GitHubTarget::organization("example-org").unwrap(),
-                auth_profile_ref: "production-app".into(),
-                scale_set_name: "shaula-linux-x64".into(),
-                runner_group: "Default".into(),
-                labels: vec!["shaula-linux-x64".into()],
-            },
-            forgejo: None,
-            capacity: CapacityPolicyDto {
-                min_runners: 0,
-                max_runners: 20,
-            },
-            template_profile_ref: TemplateProfileRefDto::from("kubernetes-linux-x64".to_string()),
-            template_pool: None,
-            template_pool_ref: None,
-            template_inputs: serde_json::Map::new(),
-        }
-    }
-
-    #[test]
-    fn valid_spec_passes() {
-        assert!(validate_fleet_spec(&base_spec()).is_ok());
-    }
-
-    #[test]
-    fn capacity_inversion_rejected() {
-        let mut spec = base_spec();
-        spec.capacity = CapacityPolicyDto {
-            min_runners: 10,
-            max_runners: 5,
-        };
-        let err = validate_fleet_spec(&spec).unwrap_err();
-        assert_eq!(err.code, ReasonCode::SpecInvalid);
-    }
-
-    #[test]
-    fn unknown_fields_rejected() {
-        let raw = r#"{
-            "github": {"target": {"kind":"organization","owner":"o"}, "auth_profile_ref":"a",
-                       "scale_set_name":"s", "runner_group":"Default", "labels":[]},
-            "capacity": {"min_runners":0,"max_runners":1},
-            "template_profile_ref": "tpl",
-            "template_inputs": {},
-            "evil_field": {"namespace": "should-fail"}
-        }"#;
-        let parsed: Result<FleetSpec, _> = serde_json::from_str(raw);
-        assert!(parsed.is_err(), "strict JSON must reject unknown fields");
-    }
-
-    #[test]
-    fn bare_key_deserializes_and_legacy_pin_normalizes() {
-        let bare: TemplateProfileRefDto = serde_json::from_str("\"tpl\"").unwrap();
-        assert_eq!(bare.key(), "tpl");
-        let legacy: TemplateProfileRefDto =
-            serde_json::from_str(r#"{"key":"tpl","revision":4}"#).unwrap();
-        assert_eq!(legacy.key(), "tpl");
-        // The write form is always the bare key.
-        assert_eq!(serde_json::to_string(&legacy).unwrap(), "\"tpl\"");
-    }
-
-    #[test]
-    fn invalid_fleet_key_rejected() {
-        assert!(FleetKey::new("has space").is_err());
-        assert!(FleetKey::new("linux-x64.1_a").is_ok());
-        // R8-01: no trim normalization — padded forms are rejected.
-        assert!(FleetKey::new("\nlinux-x64").is_err());
-        assert!(FleetKey::new("linux-x64 ").is_err());
-    }
-
-    #[test]
-    fn pool_requires_members_and_exclusive_template_reference() {
-        let mut spec = base_spec();
-        spec.template_pool = Some(TemplatePoolSpec {
-            members: Vec::new(),
-            failure_policy: PoolFailurePolicy::Backpressure,
-        });
-        spec.template_profile_ref = TemplateProfileRefDto::default();
-        assert_eq!(
-            validate_fleet_spec(&spec).unwrap_err().code,
-            ReasonCode::SpecInvalid
-        );
-        spec.template_pool = Some(TemplatePoolSpec {
-            members: vec![TemplatePoolMember {
-                key: "a".into(),
-                template_profile_ref: TemplateProfileRefDto::from("tpl".to_string()),
-                weight: 1,
-                template_inputs: serde_json::Map::new(),
-                max_runners: None,
-            }],
-            failure_policy: PoolFailurePolicy::Backpressure,
-        });
-        spec.template_profile_ref = TemplateProfileRefDto::from("legacy".to_string());
-        assert_eq!(
-            validate_fleet_spec(&spec).unwrap_err().code,
-            ReasonCode::SpecInvalid
-        );
-    }
-}
+#[path = "fleet_tests.rs"]
+mod tests;
 
 /// Parameter object for appending a fleet revision; keeps call sites
 /// self-describing instead of positional.

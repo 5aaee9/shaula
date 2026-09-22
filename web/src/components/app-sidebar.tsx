@@ -20,7 +20,7 @@ export const navigation = [
   { url: "/fleets", title: "Fleets", icon: Boxes },
   { url: "/templates", title: "Templates", icon: Layers3 },
   { url: "/pools", title: "Template pools", icon: Network },
-  { url: "/auth", title: "GitHub authentication", icon: KeyRound },
+  { url: "/auth", title: "Authentication", icon: KeyRound },
   { url: "/changes", title: "Changes", icon: GitPullRequest },
 ];
 

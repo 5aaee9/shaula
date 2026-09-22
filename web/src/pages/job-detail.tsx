@@ -9,7 +9,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { historyTime, useHistory, type JobDetail as Detail } from "@/lib/jobs";
+import { historyTime, jobRepository, useHistory, type JobDetail as Detail } from "@/lib/jobs";
+import { ForgejoJobFacts, ForgejoJobObservations } from "@/components/forgejo-job-details";
 import { OperationLogs } from "@/components/operation-logs";
 
 export function JobDetail({ scopes }: { scopes: string[] }) {
@@ -30,10 +31,7 @@ export function JobDetail({ scopes }: { scopes: string[] }) {
           <div className="page-heading">
             <div>
               <h1>{job.job_display_name || job.protocol_job_id}</h1>
-              <p>
-                {[job.owner_name, job.repository_name].filter(Boolean).join("/") ||
-                  "Repository unknown"}
-              </p>
+              <p>{jobRepository(job)}</p>
             </div>
             {job.github_run_url && (
               <Button asChild variant="outline">
@@ -43,41 +41,47 @@ export function JobDetail({ scopes }: { scopes: string[] }) {
               </Button>
             )}
           </div>
-          <section className="details-section">
-            <h2>Workflow job</h2>
-            <dl className="details-grid">
-              <KeyValue label="Job status">
-                <StatusBadge value={job.observed_status} />
-              </KeyValue>
-              <KeyValue label="Reported result">{job.reported_result || "Unknown"}</KeyValue>
-              <KeyValue label="GitHub conclusion">{job.github_conclusion || "Unknown"}</KeyValue>
-              <KeyValue label="Fleet">
-                <Link to={`/fleets/${encodeURIComponent(job.fleet_key)}`}>{job.fleet_key}</Link>
-              </KeyValue>
-              <KeyValue label="Workflow run">{job.workflow_run_id || "Unknown"}</KeyValue>
-              <KeyValue label="Run attempt">{job.workflow_run_attempt || "Unknown"}</KeyValue>
-              <KeyValue label="Workflow">{job.job_workflow_ref || "Unknown"}</KeyValue>
-              <KeyValue label="Listener freshness">{job.freshness}</KeyValue>
-              <KeyValue label="Association">{job.association_status}</KeyValue>
-              <KeyValue label="Last observed">{historyTime(job.updated_at)}</KeyValue>
-            </dl>
-            <p className="mt-4 text-sm text-muted-foreground">
-              Status reflects listener observations. An assignment result alone does not establish
-              the workflow job’s final conclusion.
-            </p>
-          </section>
+          {job.forgejo ? (
+            <ForgejoJobFacts job={job} />
+          ) : (
+            <section className="details-section">
+              <h2>Workflow job</h2>
+              <dl className="details-grid">
+                <KeyValue label="Job status">
+                  <StatusBadge value={job.observed_status} />
+                </KeyValue>
+                <KeyValue label="Reported result">{job.reported_result || "Unknown"}</KeyValue>
+                <KeyValue label="GitHub conclusion">{job.github_conclusion || "Unknown"}</KeyValue>
+                <KeyValue label="Fleet">
+                  <Link to={`/fleets/${encodeURIComponent(job.fleet_key)}`}>{job.fleet_key}</Link>
+                </KeyValue>
+                <KeyValue label="Workflow run">{job.workflow_run_id || "Unknown"}</KeyValue>
+                <KeyValue label="Run attempt">{job.workflow_run_attempt || "Unknown"}</KeyValue>
+                <KeyValue label="Workflow">{job.job_workflow_ref || "Unknown"}</KeyValue>
+                <KeyValue label="Listener freshness">{job.freshness}</KeyValue>
+                <KeyValue label="Association">{job.association_status}</KeyValue>
+                <KeyValue label="Last observed">{historyTime(job.updated_at)}</KeyValue>
+              </dl>
+              <p className="mt-4 text-sm text-muted-foreground">
+                Status reflects listener observations. An assignment result alone does not establish
+                the workflow job’s final conclusion.
+              </p>
+            </section>
+          )}
           <section className="details-section">
             <h2>Runner history</h2>
             {job.generations.length === 0 ? (
               <Empty title="No verified runner association">
-                Provisioning history is available in{" "}
-                <Link
-                  className="underline"
-                  to={`/jobs/runners?fleet_key=${encodeURIComponent(job.fleet_key)}`}
-                >
-                  Unassigned runners
-                </Link>
-                .
+                <p>
+                  Provisioning history is available in{" "}
+                  <Link
+                    className="underline"
+                    to={`/jobs/runners?fleet_key=${encodeURIComponent(job.fleet_key)}`}
+                  >
+                    Unassigned runners
+                  </Link>
+                  .
+                </p>
               </Empty>
             ) : (
               job.generations.map((generation) => (
@@ -108,32 +112,36 @@ export function JobDetail({ scopes }: { scopes: string[] }) {
                 Showing the latest 1,000 observations.
               </p>
             )}
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Observed</TableHead>
-                  <TableHead>Event</TableHead>
-                  <TableHead>Request</TableHead>
-                  <TableHead>Runner</TableHead>
-                  <TableHead>Reported result</TableHead>
-                  <TableHead>Association</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {job.observations.map((observation) => (
-                  <TableRow key={observation.id}>
-                    <TableCell>{historyTime(observation.observed_at)}</TableCell>
-                    <TableCell>{observation.kind}</TableCell>
-                    <TableCell>{observation.runner_request_id}</TableCell>
-                    <TableCell>
-                      {observation.runner_name || observation.runner_id || "Unknown"}
-                    </TableCell>
-                    <TableCell>{observation.reported_result || "Unknown"}</TableCell>
-                    <TableCell>{observation.association_status}</TableCell>
+            {job.forgejo ? (
+              <ForgejoJobObservations job={job} />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Observed</TableHead>
+                    <TableHead>Event</TableHead>
+                    <TableHead>Request</TableHead>
+                    <TableHead>Runner</TableHead>
+                    <TableHead>Reported result</TableHead>
+                    <TableHead>Association</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {job.observations.map((observation) => (
+                    <TableRow key={observation.id}>
+                      <TableCell>{historyTime(observation.observed_at)}</TableCell>
+                      <TableCell>{observation.kind}</TableCell>
+                      <TableCell>{observation.runner_request_id}</TableCell>
+                      <TableCell>
+                        {observation.runner_name || observation.runner_id || "Unknown"}
+                      </TableCell>
+                      <TableCell>{observation.reported_result || "Unknown"}</TableCell>
+                      <TableCell>{observation.association_status}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </section>
         </>
       )}

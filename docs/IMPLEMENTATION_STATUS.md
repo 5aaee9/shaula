@@ -16,6 +16,79 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Forgejo management, real lifecycle and Jobs (2026-09-22)
+
+The three usable-version increments are implemented:
+
+1. Forgejo Fleet PUT rejects inline/shared TemplatePool before dependency resolution;
+   only a single Template Profile is supported. Web types, mixed Fleet list/detail,
+   creation/editing and authentication now branch by backend. The shared Auth API
+   path remains `/github-auth-profiles`; Forgejo token publication/rotation uses its
+   own wire fields, with target/impact/validation shown without returning the token.
+   Template discovery exposes the **Active revision's selected** `runnerBackend`,
+   not the candidate's capabilities. Unknown selection is null. Existing GitHub
+   drafts and retained pins preserve their prior behavior.
+2. `scripts/forgejo-lifecycle` runs actual `shaula serve`, HTTP/OIDC admission,
+   SQLite, Terraform 1.9.8/provider 3.0.2, real Docker Engine 29.6.2 and Forgejo
+   16.0.4/Runner 13.1.0. Success/failure, Busy restart, idle/Busy hard expiry and
+   two independent DELETE failure checkpoints converge through the production
+   runtime. Assertions require one Generation, Destroyed, zero occupancy, and
+   exact registration/container/anonymous-volume absence. CI now has a separate
+   lifecycle job; local passing evidence does not claim the remote CI job ran.
+   This exposed and fixed a real periodic-scan race: the structural scanner was
+   rejecting every Forgejo Candidate as malformed GitHub auth before its online
+   worker. HTTP+SQLite red/green regression now protects the provider distinction.
+3. Forgejo Jobs snapshots persist separately from GitHub message/assignment tables
+   (forward migration m0021), sharing only the bounded list/detail read surface.
+   Scope/Fleet incarnation/Auth Profile/repository/job/attempt namespaces and u64
+   string IDs prevent accidental merging. Waiting/running are direct observations;
+   disappearance is Unknown with retained last status, never invented completion.
+   Read-time 30s staleness, failed-poll timestamps, change-only events, pagination,
+   retention, and unverified/no-Generation associations have local regression
+   coverage. Exact Forgejo runner IDs have their own Runner read field.
+
+The focused simplification/Rust review fixes are included:
+- **S1:** Jobs history failures no longer gate validated demand or ordinary Runner
+  reclamation. Independent bounded/nonzero/deduplicated demand identities and the
+  current Fleet guard remain mandatory. History failure reports a finite reason,
+  marks stale best-effort, and retains read-time expiry when the marker also fails.
+  Four SQLite/supervisor regressions cover completion cleanup, rejected display
+  metadata, invalid identities, and simultaneous poll/history failure.
+- **S2:** Both Auth forms share the impact query and readiness gate. Two browser
+  regressions prove malformed impact blocks button and programmatic submission,
+  then recovery preserves the draft credential and permits exactly one write.
+- **S3:** Removed the unused optional target-filter argument and scope comparator
+  from backend Auth choices; both consumers retain provider filtering.
+- **S4:** Removed the fixture's write-only global volume set and unused server
+  inspection. Exact observed Runner-volume absence assertions and owned-resource
+  teardown remain; no cleanup or trust boundary was removed.
+
+Verification: `cargo fmt`, strict workspace/all-target Clippy; complete nextest
+**893 passed, 2 platform skips**; required `cargo nextest run --manifest-path
+Cargo.toml --workspace test` **708 passed, 187 filtered/skipped**. Web build/lint,
+format and **183 Playwright tests** passed. Twelve new browser cases cover Forgejo
+management/Jobs and shared Auth impact recovery. Earlier desktop/mobile screenshots
+were inspected in bounded passes and the UI detector reported no findings. All 31
+changed/new Rust files are <=400 lines. The Vite bundle-size advisory (>500 kB)
+remains non-fatal and is not addressed by this work.
+
+Real acceptance was rerun after S1–S4 with the Jobs projection enabled: all eight
+checks pass. See [sanitized lifecycle evidence](evidence/forgejo-lifecycle-2026-09-21/README.md)
+and [operator setup](forgejo-templates.md). Local rootless DNS required an official
+provider filesystem mirror with readonly lock validation; no mock engine or
+modified template was substituted. Private raw state/config/logs are not committed.
+Final `cargo fmt --check`, web format/lint, script syntax/fault tests, workflow
+`actionlint` and `git diff --check` pass. The isolated Docker Engine had no remaining
+containers or volumes after acceptance and was stopped; system Podman was untouched.
+
+Still not delivered: weighted Forgejo TemplatePool scheduling, safe early idle
+acquisition fencing, minimal-permission matrix, real VM/Kubernetes acceptance,
+final Forgejo job conclusions/history enrichment, or real GitHub acceptance.
+The explicit hard lifetime may interrupt Busy jobs. No acquisition proxy,
+`--handle` routing, Verified Forgejo job association or workflow cancellation UI
+was introduced. Earlier progress sections below are historical and are superseded
+by this increment where they describe Forgejo UI/Jobs or Docker composition as missing.
+
 ## Forgejo selection on existing VM templates (2026-09-21)
 
 Proxmox, AWS, TencentCloud and AliCloud now expose the same immutable publisher

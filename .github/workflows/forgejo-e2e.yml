@@ -35,3 +35,32 @@ jobs:
       - name: Stop Forgejo
         if: always()
         run: docker rm --force forgejo
+
+  lifecycle:
+    name: Shaula Terraform lifecycle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@b85815f71a6de0ddee80b8a80a98d43f4bcc66c7 # v31
+        with:
+          extra_nix_config: "extra-experimental-features = nix-command flakes"
+      - name: Build the actual daemon and UI
+        run: |
+          npm ci --prefix web
+          npm run build --prefix web
+          nix develop --command cargo build --locked -p shaula
+      # This job owns a disposable hosted VM. Never apply this compatibility
+      # setting to an operator's existing Docker daemon.
+      - name: Permit the pinned Docker provider API on this disposable Engine
+        run: |
+          sudo mkdir -p /etc/systemd/system/docker.service.d
+          printf '[Service]\nEnvironment=DOCKER_MIN_API_VERSION=1.24\n' | sudo tee /etc/systemd/system/docker.service.d/shaula-acceptance.conf >/dev/null
+          sudo systemctl daemon-reload
+          sudo systemctl restart docker
+      - name: Exercise real lifecycle, restart, hard expiry and deletion retries
+        run: |
+          nix develop --command node --test scripts/forgejo-lifecycle/faults.test.mjs
+          nix develop --command node scripts/forgejo-lifecycle/run.mjs

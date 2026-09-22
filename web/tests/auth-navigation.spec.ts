@@ -117,7 +117,7 @@ test("a late policy response cannot replace a later credential form", async ({ p
   await page.getByRole("button", { name: "Edit target policy", exact: true }).click();
   await page.getByRole("button", { name: "Publish policy", exact: true }).click();
   await expect.poll(() => pending !== undefined).toBe(true);
-  await page.getByRole("link", { name: "GitHub authentication", exact: true }).click();
+  await page.getByRole("link", { name: "Authentication", exact: true }).click();
   await page.getByRole("button", { name: "shared-github", exact: true }).click();
   await page.getByRole("button", { name: "Rotate credential", exact: true }).click();
   const secret = page.getByLabel("Private key (PEM)", { exact: true });

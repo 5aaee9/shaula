@@ -24,6 +24,7 @@ Fleet Spec 增加判别式 `provider`：
 约束：
 
 - Forgejo Fleet MUST NOT 声明 `runner_group`，MUST NOT 声称拥有 Scale Set，MUST NOT 参与 owned Scale Set 的创建、labels 收敛、route proof 或 Auth Handoff 流程。
+- 当前 Forgejo Fleet MUST 使用单一 `template_profile_ref`；inline `template_pool` 和共享 `template_pool_ref` MUST 在准入时拒绝。Pool Fleet 是等待型 Runner 容量语义，不是加权 TemplatePool。管理 UI 按 Runner Backend 分支显示；模板列表 `runnerBackend` 来自 Active Revision 的实际选择，不来自 Candidate 或平台名称，未知时为 null。
 - `runner_name_prefix` 是 ownership 的唯一本地依据：Shaula 创建的每个 runner 名字 MUST 以该 Fleet 唯一前缀开头（含 Generation 标识）。名字匹配只是**弱**所有权证据，MUST 与 inventory 中的 `ephemeral` 标记和 Fleet labels 联合判定；只凭名字冲突 MUST NOT 推断所有权。
 - labels 是纯字符串，形如 `name[:backend-target]`（`backend-target` 为 `host`、`docker://image` 等）。Fleet labels 决定匹配集合，同时决定 runner 的执行后端；Template manifest MUST 接纳这些 target，无法接纳的组合在静态校验阶段拒绝。**Forgejo 的匹配规则是"runner 声明的全部 labels 必须是 job `runs-on` 的子集"**，因此 Fleet labels SHOULD 保持最小；文档与 UI MUST 明示该规则，要求 workflow 逐个列出。
 - 与同一 scope 内既有持久 runner 共享 labels 属于显式配置错误：MUST 在接受前提示，并记录为"需求信号可能被外部 runner 消耗"的成本，不得声称需求与容量一一对应。
@@ -88,12 +89,25 @@ Create 顺序：
 - 注册的 Uncertain（响应丢失）按精确名字**并联合证据**在 scope inventory 内分类：候选必须同时匹配 `ephemeral=true` 与 Fleet 声明的全部 labels；仅名字相同不足以证明归属。`ExactlyOne` → 效果已落地；由于 `token` 只在响应中出现一次、不可恢复，该注册 MUST 立即移除并使 Generation 进入 `CleanupRequired`（与 [spec 0025](0025-jit-mint-uncertainty-recovery.md) 同构）；`None` → 零资源，可直接重试新的 Generation/name；`Multiple`、查找失败或移除被 Busy 阻塞 → `Quarantined` 并保留 occupancy，由操作者处置。
 - 凭据轮换：本切片**不实现 Auth Handoff**。轮换 = 新的 Fleet revision + 现有 Generation 收敛（未持有任务的先 Destroy 再以新凭据重建，Busy 的等其结束后销毁）。额外 destroy/create 是本切片的显式代价，MUST 在 UI 与文档中说明，不得宣称无缝切换。
 
+### 6.1 Jobs 只读投影
+
+`/api/v1/jobs` / `/api/v1/jobs/{id}` 聚合两个 backend 的只读历史，但不复用 GitHub message/session/assignment 身份。Forgejo 记录：
+
+- 按 Fleet incarnation、instance URL、scope、Auth Profile，再加 `repo_id/job_id/attempt` 隔离；名称不参与去重。Forgejo ID 在读取面用十进制字符串，避免浏览器丢失 u64 精度。
+- `backend: forgejo` 携带独立 `forgejo` 元数据，不生成虚假的 `scale_set_id`、GitHub URL、conclusion 或 Verified 关联。本切片不猜测候选 Generation，`generations` 为空；运行状态不依赖关联等级。
+- `waiting` → `queued`，`running` → `running`；未知状态或从成功的完整快照消失 → `unknown`。保留 `last_reported_status` 与 `last_observed_at`，明确 `in_snapshot`。消失事件不等于完成或成功。
+- `forgejo_observations` 保存状态/Task ID 变化与消失事件；相同重复轮询不增加事件。读取最多返回最新 1000 条，按既有 metadata retention 回收。
+- 轮询失败只标记 `stale`，不重写此前成功快照和任务时间；读时超过 30 秒也标记 stale，避免 daemon 停止后永远显示 fresh。`not_listed` 表示最后成功快照已不再包含此任务，不承诺当前终态。
+- 观测写入用当前 Fleet incarnation/revision/mutation fence 校验；旧 poll、旧 incarnation 和已删除 Fleet 不得刷新历史。Jobs 不授权任何生命周期操作。
+- Jobs 历史是可降级的读取投影：历史写入失败或展示元数据超限 MUST NOT 阻断已独立验证的需求更新、inventory/readiness 或正常回收。控制路径仍独立检查当前 Fleet guard、快照条数、非零 repository/job ID 与去重身份，投影失败不能绕过这些校验。失败时记录有限 reason code 并尽力标记历史 stale；标记也不可写时，已有快照仍按读时 30 秒 TTL 过期。远端 jobs 轮询本身失败仍保留旧需求及时间并冻结普通容量副作用。
+
 ## 7. 认证与凭据
 
 - Forgejo 没有 App 与 installation，因此本切片的凭据是独立的 profile kind（例如 `forgejo_token`），MUST NOT 复用 GitHub App 的 revision/binding schema，MUST NOT 作为 GitHub credential 的 fallback，也 MUST NOT 让 GitHub profile 借用 Forgejo token。
 - 凭据按 scope 选择：instance scope 需要站点管理员 token；organization / repository / user scope 需要具备对应 owner 权限的 scoped token。exact 权限名与最小权限集合归 D5。
 - profile 激活前 MUST 执行一次有界认证读（scope 内 runner 或 jobs 列表）；失败即 Rejected，成功记录 `checked_at` / `valid_until`，沿用既有正/负缓存窗口的时间语义但使用独立字段与语义，不共用 GitHub 的路线证明。
 - 凭据只以受保护形式存储，读取面只返回存在性与验证状态，MUST NOT 回显 token。
+- 现有 `/api/v1/github-auth-profiles` 路径兼容两种 kind。Forgejo 写入为 `{kind: forgejo_token, instance_url, scope, token}`，不发送 GitHub 的 `schema_version`/App/policy 字段；内部与读取面的 Forgejo revision schema 为 1。周期扫描只做结构检查，不能在在线 Forgejo probe 前按 GitHub 格式拒绝它。
 
 ## 8. 明确排除（与完整 provider 抽象的差距）
 
@@ -120,5 +134,5 @@ Create 顺序：
 - **A4 Busy-safe**：未到统一硬超时时，对 `active` runner 发起普通 Destroy → 记为 Busy 并延迟，注册与资源都保留；对 `idle` 且无任务证据的 runner → 正常收敛。
 - **A5 注册 Uncertain**：注入响应丢失，三类分类（命中 / 缺失 / 歧义）分别按 §6 收敛。
 - **A6 关联等级**：Jobs 视图与 API 只显示 `Unverified`/`Ambiguous`，无任何 `Verified` 关联产生。
-- **A7 泄漏扫描**：argv、Terraform 变量、资源 metadata、Setup Info、Operation Log 与普通日志中都不含 token。
+- **A7 泄漏扫描**：argv、资源 metadata、Setup Info、Operation Log 与普通日志中都不含 token。容器 Terraform 输入中也不得含 token；VM 仅允许 §5 的显式受保护 tfvars/plan/state/user-data 例外。
 - **A8 无回归**：既有 GitHub Fleet 的本地测试与真实路径行为不因 provider 维度改变。

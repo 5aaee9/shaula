@@ -5,6 +5,8 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api, resourcePath } from "@/lib/api";
 import type { AuthResource, ChangeRef } from "@/lib/types";
 import { selectorLabel } from "@/lib/types";
+import { authKindLabel, forgejoTargetName } from "@/lib/runner-backend";
+import { ForgejoAuthDetails } from "@/components/forgejo-auth-details";
 import { canManageAuthProfile, selectorKey } from "@/lib/auth-policy";
 import { AuthBindings } from "@/components/auth-bindings";
 import { AuthConnections } from "@/components/auth-connections";
@@ -26,7 +28,7 @@ export function AuthPage({ scopes }: { scopes: string[] }) {
       <div className="page-heading">
         <div>
           <h1>Authentication</h1>
-          <p>GitHub connections, target policies, and validated profile revisions.</p>
+          <p>GitHub and Forgejo connections, targets, and validated profile revisions.</p>
         </div>
         <Button disabled={!scopes.includes("auth.write")} onClick={() => navigate("/auth/new")}>
           <Plus />
@@ -76,15 +78,19 @@ function AuthDetails({
         <div className="flex min-w-0 flex-wrap gap-2">
           {canManage && (
             <>
-              <AuthReauth profile={data} />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => navigate(`/auth/${encodeURIComponent(profileKey)}/targets/edit`)}
-              >
-                <SlidersHorizontal />
-                Edit target policy
-              </Button>
+              {data.kind === "github_app" && (
+                <>
+                  <AuthReauth profile={data} />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate(`/auth/${encodeURIComponent(profileKey)}/targets/edit`)}
+                  >
+                    <SlidersHorizontal />
+                    Edit target policy
+                  </Button>
+                </>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -106,7 +112,7 @@ function AuthDetails({
           </Button>
         </div>
       </div>
-      {canManage && (
+      {canManage && data.kind === "github_app" && (
         <p className="mb-5 text-sm text-muted-foreground">
           Re-auth opens GitHub to install this App on more accounts. After returning, edit the
           target policy to enable those targets.
@@ -116,13 +122,7 @@ function AuthDetails({
         <KeyValue label="Status">
           <StatusBadge value={data.status} />
         </KeyValue>
-        <KeyValue label="Credential type">
-          {data.kind === "github_app"
-            ? "GitHub App"
-            : data.kind === "pat"
-              ? "Personal access token"
-              : "--"}
-        </KeyValue>
+        <KeyValue label="Credential type">{authKindLabel(data.kind)}</KeyValue>
         {data.schema_version === 2 && (
           <KeyValue label="App ID">{data.active?.app_id || data.app_id || "--"}</KeyValue>
         )}
@@ -149,7 +149,9 @@ function AuthDetails({
         {data.desired && (
           <KeyValue label={`Candidate r${data.desired.revision}: ${data.desired.state}`}>
             {data.desired.reason && <p className="text-red-600">{data.desired.reason}</p>}
-            {data.desired.target_policy?.length ? (
+            {data.desired.forgejo ? (
+              forgejoTargetName(data.desired.forgejo.target)
+            ) : data.desired.target_policy?.length ? (
               <div className="flex flex-wrap gap-2">
                 {data.desired.target_policy.map((selector) => (
                   <span className="label-chip" key={selectorKey(selector)}>
@@ -163,6 +165,7 @@ function AuthDetails({
           </KeyValue>
         )}
       </dl>
+      {data.active?.forgejo && <ForgejoAuthDetails state={data.active.forgejo} />}
       {data.status === "Unsupported" && (
         <p className="text-sm text-muted-foreground">
           This authentication format is no longer supported. Create a GitHub App profile to use it

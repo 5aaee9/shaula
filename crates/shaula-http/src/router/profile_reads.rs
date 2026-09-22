@@ -56,6 +56,7 @@ pub(crate) async fn template_profile_list(
                         "incarnation": v.incarnation,
                         "desiredRevision": v.desired_revision,
                         "activeRevision": v.active_revision,
+                        "runnerBackend": v.runner_backend,
                         "status": v.status,
                     })
                 })

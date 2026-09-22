@@ -8,8 +8,14 @@ use shaula_core::jobs::{
 use super::{decode, query::PageQuery, rows};
 use crate::{Store, StoreResult};
 
+const JOBS: &str = "SELECT j.id,j.fleet_key,j.summary_json,j.status,j.repository,j.job_name,
+    j.created_at,j.updated_at,NULL AS poll_time,NULL AS poll_failed FROM workflow_jobs j
+    UNION ALL SELECT j.id,j.fleet_key,j.summary_json,j.status,j.repository,j.job_name,
+    j.created_at,j.updated_at,p.observed_at AS poll_time,p.failed AS poll_failed
+    FROM forgejo_workflow_jobs j LEFT JOIN forgejo_job_polls p ON p.scope_key=j.scope_key";
+
 const GENERATIONS: &str = "SELECT g.id,g.fleet_key,g.runner_name,g.generation_name,g.state,g.subphase,
-    g.template_profile_key,g.template_revision,g.created_at,g.updated_at,i.fleet_incarnation,
+    g.template_profile_key,g.template_revision,g.created_at,g.updated_at,i.fleet_incarnation,fi.runner_id AS forgejo_runner_id,
     COALESCE(i.github_runner_id,g.github_runner_id) AS github_runner_id,
     CASE WHEN EXISTS(SELECT 1 FROM workflow_job_observations o WHERE o.scope_key=i.scope_key
         AND o.runner_id=i.github_runner_id AND json_extract(o.data_json,'$.association_status')='ambiguous') THEN 'ambiguous'
@@ -17,7 +23,8 @@ const GENERATIONS: &str = "SELECT g.id,g.fleet_key,g.runner_name,g.generation_na
         WHERE json_extract(o.data_json,'$.generation_id')=g.id
         AND json_extract(o.data_json,'$.association_status')='verified') THEN 'verified'
     ELSE 'unverified' END AS association_status
-    FROM runner_generations g LEFT JOIN workflow_generation_identity i ON i.generation_id=g.id";
+    FROM runner_generations g LEFT JOIN workflow_generation_identity i ON i.generation_id=g.id
+    LEFT JOIN forgejo_runner_identities fi ON fi.generation_id=g.id";
 
 #[async_trait::async_trait]
 impl JobsReadPort for Store {
@@ -25,7 +32,7 @@ impl JobsReadPort for Store {
         let page = PageQuery::jobs(&query)?;
         let found = rows(
             self.connection(),
-            &page.sql("SELECT summary_json,created_at,id FROM workflow_jobs"),
+            &page.sql(&format!("SELECT * FROM ({JOBS})")),
             page.values.clone(),
         )
         .await
@@ -59,7 +66,7 @@ impl JobsReadPort for Store {
             .map_err(|_| JobsReadError::Unavailable)?;
         let found = rows(
             &tx,
-            "SELECT summary_json FROM workflow_jobs WHERE id=?",
+            &format!("SELECT * FROM ({JOBS}) WHERE id=?"),
             vec![id.into()],
         )
         .await
@@ -68,6 +75,12 @@ impl JobsReadPort for Store {
             return Ok(None);
         };
         let job = job_summary(row).map_err(unavailable)?;
+        if job.backend == shaula_core::fleet::FleetProviderKind::Forgejo {
+            return super::forgejo_read::detail(&tx, job)
+                .await
+                .map(Some)
+                .map_err(unavailable);
+        }
         let found = rows(&tx, "SELECT data_json FROM workflow_job_observations WHERE job_record_id=? ORDER BY observed_at DESC,id DESC LIMIT 1001",
             vec![id.into()]).await.map_err(unavailable)?;
         let mut observations: Vec<JobObservation> = found
@@ -90,6 +103,7 @@ impl JobsReadPort for Store {
         Ok(Some(JobDetail {
             job,
             observations,
+            forgejo_observations: Vec::new(),
             observations_truncated,
             generations,
         }))
@@ -154,7 +168,9 @@ impl JobsReadPort for Store {
 }
 
 fn job_summary(row: &QueryResult) -> StoreResult<JobSummary> {
-    decode(&row.try_get::<String>("", "summary_json")?)
+    let mut job: JobSummary = decode(&row.try_get::<String>("", "summary_json")?)?;
+    super::forgejo_read::freshness(&mut job, row);
+    Ok(job)
 }
 
 fn generation_summary(row: &QueryResult) -> StoreResult<GenerationSummary> {
@@ -171,6 +187,9 @@ fn generation_summary(row: &QueryResult) -> StoreResult<GenerationSummary> {
         runner_name: row.try_get("", "runner_name")?,
         generation_name: row.try_get("", "generation_name")?,
         github_runner_id: row.try_get("", "github_runner_id")?,
+        forgejo_runner_id: row
+            .try_get::<Option<i64>>("", "forgejo_runner_id")?
+            .map(|id| id.to_string()),
         state: row.try_get("", "state")?,
         subphase: row.try_get("", "subphase")?,
         template_profile_key: row.try_get("", "template_profile_key")?,

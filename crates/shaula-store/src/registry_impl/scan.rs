@@ -23,10 +23,8 @@ impl SqliteControlPlane {
 
         self.scan_templates(now, &mut report).await?;
 
-        // Auth candidates: structured credential validation only at this
-        // stage (kind/identity/allowlist shape). The real github.com
-        // access matrix remains a release gate; a passing candidate is
-        // promoted with the staged-activation semantics.
+        // Structural validation only. Supported candidates remain pending
+        // until their own provider's online authentication worker verifies them.
         for key in self.store.auth_profiles_list().await.map_err(core_err)? {
             let Some(profile) = self
                 .store
@@ -47,20 +45,18 @@ impl SqliteControlPlane {
             else {
                 continue;
             };
-            // Structural validation only: a credential that cannot even be
-            // parsed is rejected. Structurally valid candidates STAY in
-            // Validating — promotion to Active requires real GitHub
-            // identity/access validation (spec 0005 section 6, phase 3),
-            // never an offline heuristic. Fail closed. A v2 Candidate's
-            // authority is its Target policy, not the (empty) legacy
-            // allowlist; an unknown schema version never passes.
-            let structurally_valid = candidate.kind == "github_app"
-                && !candidate.credential_bytes.is_empty()
-                && match candidate.schema_version {
-                    2 => candidate
+            // Never promote offline or apply the GitHub policy schema to a
+            // Forgejo target. Unknown kind/version pairs still fail closed.
+            let structurally_valid = !candidate.credential_bytes.is_empty()
+                && match (candidate.kind.as_str(), candidate.schema_version) {
+                    ("github_app", 2) => candidate
                         .policy_json
                         .as_deref()
                         .is_some_and(|p| !p.is_empty()),
+                    ("forgejo_token", 1) => candidate.policy_json.as_deref().is_some_and(|json| {
+                        serde_json::from_str::<shaula_core::forgejo::ForgejoTarget>(json)
+                            .is_ok_and(|target| target.validate().is_ok())
+                    }),
                     _ => false,
                 };
             if !structurally_valid {
@@ -76,8 +72,7 @@ impl SqliteControlPlane {
                     .map_err(core_err)?;
                 report.auth_rejected += 1;
             }
-            // else: remains Validating until the GitHub validation worker
-            // (phase 3) classifies it; no silent promotion.
+            // Otherwise remains Validating until the provider worker classifies it.
         }
 
         Ok(report)

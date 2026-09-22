@@ -11,7 +11,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { historyTime, useHistory, type Job, type Page } from "@/lib/jobs";
+import {
+  historyTime,
+  jobRepository,
+  snapshotFreshness,
+  useHistory,
+  type Job,
+  type Page,
+} from "@/lib/jobs";
 
 export function JobsPage({ scopes }: { scopes: string[] }) {
   const [params, setParams] = useSearchParams();
@@ -89,8 +96,8 @@ export function JobsPage({ scopes }: { scopes: string[] }) {
               <>
                 {jobs.data.items.length === 0 ? (
                   <Empty title="No observed jobs">
-                    Jobs appear when the Scale Set listener observes them. Runners without a
-                    verified job association are available separately.
+                    Jobs appear from GitHub listener observations or Forgejo snapshots. Runners
+                    without a verified job association are available separately.
                   </Empty>
                 ) : (
                   <div className="rounded-md border">
@@ -116,14 +123,18 @@ export function JobsPage({ scopes }: { scopes: string[] }) {
                                 {job.job_display_name || job.protocol_job_id}
                               </Link>
                               <p className="text-xs text-muted-foreground">
+                                {job.forgejo ? "Forgejo / " : "GitHub / "}
                                 {job.association_status} association
                               </p>
                             </TableCell>
                             <TableCell>
-                              {[job.owner_name, job.repository_name].filter(Boolean).join("/") ||
-                                "Unknown"}
+                              {jobRepository(job)}
                               <p className="text-xs text-muted-foreground">
-                                {job.workflow_run_id ? `Run ${job.workflow_run_id}` : "Run unknown"}
+                                {job.forgejo
+                                  ? `Run ${job.forgejo.run_id}, attempt ${job.forgejo.attempt}`
+                                  : job.workflow_run_id
+                                    ? `Run ${job.workflow_run_id}`
+                                    : "Run unknown"}
                               </p>
                             </TableCell>
                             <TableCell>
@@ -133,6 +144,11 @@ export function JobsPage({ scopes }: { scopes: string[] }) {
                             </TableCell>
                             <TableCell>
                               <StatusBadge value={job.observed_status} />
+                              {job.forgejo && (
+                                <p className="text-xs text-muted-foreground">
+                                  {snapshotFreshness(job)}
+                                </p>
+                              )}
                             </TableCell>
                             <TableCell>{job.reported_result || "Unknown"}</TableCell>
                             <TableCell>{historyTime(job.updated_at)}</TableCell>

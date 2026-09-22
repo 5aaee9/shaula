@@ -18,7 +18,6 @@ impl ForgejoPoolSupervisor {
         }
         match self.forgejo.list_jobs(&self.labels).await {
             Ok(jobs) => {
-                let snapshot = ForgejoDemandSnapshot::from_jobs(jobs, now);
                 let _claim = self.gates.acquire_claim(&self.fleet_key).await;
                 if self
                     .current_head()
@@ -28,6 +27,31 @@ impl ForgejoPoolSupervisor {
                     report.stale_demand = true;
                     report.reason = Some(ReasonCode::OwnershipProofFailed);
                 } else {
+                    // Authority and demand identity checks must survive a Jobs
+                    // history outage; that read model never authorizes effects.
+                    if let Err(error) = shaula_core::forgejo::validate_job_identities(&jobs) {
+                        self.mark_job_history_stale(now).await;
+                        return Err(error);
+                    }
+                    match self
+                        .lifecycle
+                        .forgejo_jobs_snapshot(&self.fleet_key, &self.guard, Some(&jobs), now)
+                        .await
+                    {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            report.stale_demand = true;
+                            report.reason = Some(ReasonCode::OwnershipProofFailed);
+                            return Ok(report);
+                        }
+                        Err(error) => {
+                            tracing::warn!(fleet = %self.fleet_key, reason = error.code.as_str(),
+                                "Forgejo job history unavailable; lifecycle authority is independent");
+                            report.reason = Some(error.code);
+                            self.mark_job_history_stale(now).await;
+                        }
+                    }
+                    let snapshot = ForgejoDemandSnapshot::from_jobs(jobs, now);
                     self.lifecycle
                         .demand_snapshot(
                             &self.fleet_key,
@@ -40,6 +64,8 @@ impl ForgejoPoolSupervisor {
                 }
             }
             Err(failure) => {
+                let _claim = self.gates.acquire_claim(&self.fleet_key).await;
+                self.mark_job_history_stale(now).await;
                 // Do not rewrite demand_snapshot: that would give old data a
                 // fresh timestamp. Staleness is a separate status condition.
                 report.waiting_jobs = u64::try_from(
@@ -56,6 +82,19 @@ impl ForgejoPoolSupervisor {
         }
         report.target = self.target(report.waiting_jobs);
         Ok(report)
+    }
+
+    async fn mark_job_history_stale(&self, now: i64) {
+        if let Err(error) = self
+            .lifecycle
+            .forgejo_jobs_snapshot(&self.fleet_key, &self.guard, None, now)
+            .await
+        {
+            // If even this marker cannot be persisted, the existing snapshot
+            // still expires at read time. Never refresh it or block lifecycle.
+            tracing::warn!(fleet = %self.fleet_key, reason = error.code.as_str(),
+                "Forgejo job history staleness could not be persisted");
+        }
     }
 
     pub(super) async fn classify_inventory(

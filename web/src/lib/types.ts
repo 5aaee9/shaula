@@ -21,7 +21,8 @@ export interface TemplatePoolSpec {
   members: TemplatePoolMemberSpec[];
   failure_policy: "backpressure" | "redistribute";
 }
-export interface FleetSpec {
+export interface GitHubFleetSpec extends FleetPlacement {
+  kind?: "github";
   github: {
     target: GitHubTarget;
     auth_profile_ref: string;
@@ -29,6 +30,17 @@ export interface FleetSpec {
     runner_group: string;
     labels: string[];
   };
+}
+export interface ForgejoFleetSpec extends FleetPlacement {
+  kind: "forgejo";
+  forgejo: import("./runner-backend").ForgejoTarget & {
+    auth_profile_ref: string;
+    runner_name_prefix: string;
+    labels: string[];
+  };
+}
+export type FleetSpec = GitHubFleetSpec | ForgejoFleetSpec;
+interface FleetPlacement {
   capacity: { min_runners: number; max_runners: number };
   template_profile_ref?: string;
   template_inputs?: Record<string, unknown>;
@@ -36,9 +48,9 @@ export interface FleetSpec {
   /** Spec 0037: bare key of a shared TemplatePool resource. */
   template_pool_ref?: string;
 }
-export interface FleetResource {
+export interface FleetResource<S extends FleetSpec = FleetSpec> {
   key: string;
-  spec: FleetSpec;
+  spec: S;
   metadata: { incarnation: string; revision: number };
   resolved: {
     template: {
@@ -115,6 +127,8 @@ export interface TemplateSummary {
   desiredRevision: number;
   activeRevision: number | null;
   status: string;
+  /** The Active revision's selected backend. Null is unresolved, not GitHub. */
+  runnerBackend?: import("./runner-backend").RunnerBackend | null;
 }
 export interface TemplatePoolSummary {
   key: string;
@@ -185,11 +199,13 @@ export interface AuthResource extends TemplateSummary {
   liveFleets?: AuthLiveFleet[];
 }
 /** One live fleet target desiring the profile: the impact surface. */
-export interface AuthLiveFleet {
+export type AuthLiveFleet = {
   fleetKey: string;
   phase: string;
-  target: GitHubTarget | null;
-}
+} & (
+  | { kind?: "github"; target: GitHubTarget | null }
+  | { kind: "forgejo"; target: import("./runner-backend").ForgejoTarget | null }
+);
 export type TargetSelector =
   | { kind: "organization"; owner: string }
   | { kind: "repository"; owner: string; repository: string }
@@ -216,6 +232,17 @@ export interface AuthRevisionState {
   app_id?: string | null;
   target_policy?: TargetSelector[];
   bindings?: AccountBinding[];
+  forgejo?: {
+    target: import("./runner-backend").ForgejoTarget;
+    validation: {
+      server_version: string;
+      principal_id: number | null;
+      target_id: number | null;
+      checked_at_unix_ms: number;
+      valid_until_unix_ms: number;
+      runner_count: number;
+    } | null;
+  };
 }
 export function selectorLabel(selector: TargetSelector): string {
   if (selector.kind === "repository")

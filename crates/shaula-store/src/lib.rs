@@ -48,6 +48,7 @@ mod tests {
     mod auth_validation_results;
     mod fleet_convergence;
     mod forgejo_auth_rotation;
+    mod forgejo_jobs_isolation;
     mod forgejo_lifetime;
     mod forgejo_pool;
     mod forgejo_pool_fakes;

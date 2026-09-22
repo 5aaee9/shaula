@@ -48,12 +48,12 @@ export function AuthPolicyPreview({
       ) : (
         <ul className="ml-4 list-disc">
           {fleets.map((fleet) => {
-            const covered =
-              fleet.target && next.some((selector) => selectorAllows(selector, fleet.target!));
+            const target = fleet.kind !== "forgejo" ? fleet.target : null;
+            const covered = target && next.some((selector) => selectorAllows(selector, target));
             return (
               <li key={`${fleet.fleetKey}:${JSON.stringify(fleet.target)}`}>
                 {fleet.fleetKey} ({fleet.phase}) —{" "}
-                {fleet.target ? targetName(fleet.target) : "Target unavailable"}:{" "}
+                {target ? targetName(target) : "Target unavailable"}:{" "}
                 {fleet.target
                   ? covered
                     ? "Remains covered"

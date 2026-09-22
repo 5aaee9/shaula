@@ -137,6 +137,25 @@ impl FleetForgejoSection {
     }
 }
 
+/// Bound and deduplicate demand identities independently of optional job metadata.
+/// A history projection failure must not bypass these checks or block lifecycle.
+pub fn validate_job_identities(jobs: &[crate::ports::forgejo::ForgejoJob]) -> CoreResult<()> {
+    let mut identities = std::collections::BTreeSet::new();
+    if jobs.len() > 10_000
+        || jobs.iter().any(|job| {
+            job.id == 0
+                || job.repo_id == 0
+                || !identities.insert((job.repo_id, job.id, job.attempt))
+        })
+    {
+        return Err(CoreError::new(
+            ReasonCode::AccessVerificationFailed,
+            "invalid Forgejo job snapshot identities",
+        ));
+    }
+    Ok(())
+}
+
 pub fn validate_labels(labels: &[String]) -> CoreResult<()> {
     if labels.is_empty() || labels.len() > 32 {
         return Err(CoreError::new(

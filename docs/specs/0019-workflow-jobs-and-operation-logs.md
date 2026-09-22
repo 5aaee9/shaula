@@ -10,6 +10,8 @@ Web UI 增加 **Jobs**，以 GitHub Actions **Workflow Job** 为主对象。每�
 
 v1 展示 Shaula 从已管理 Scale Set 收到并保存的 job 观测，不宣称是 GitHub 全部 workflow 的完整历史。不新增 workflow rerun/cancel、Terraform 手动重跑、浏览器直接访问平台、raw credential 日志下载或 workflow step 日志镜像。完整 workflow 日志链接到 GitHub。
 
+Forgejo 的扩展契约由 [spec 0026 §6.1](0026-forgejo-runner-backend.md#61-jobs-只读投影) 维护：共享 Jobs 读取入口，但保存独立的 scope/repository/job/attempt 快照，不借用本规范的 GitHub message/session 身份或 Verified 判据。排队/运行可直接展示；队列消失不是完成证明。
+
 ## 2. Jobs identity and GitHub evidence
 
 ### 2.1 Workflow Job and assignment observations

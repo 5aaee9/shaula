@@ -174,8 +174,10 @@ export function RunnerDetail({ scopes }: { scopes: string[] }) {
                   {generation.fleet_key}
                 </Link>
               </KeyValue>
-              <KeyValue label="GitHub runner ID">
-                {generation.github_runner_id || "Unknown"}
+              <KeyValue
+                label={generation.forgejo_runner_id ? "Forgejo runner ID" : "Remote runner ID"}
+              >
+                {generation.forgejo_runner_id || generation.github_runner_id || "Unknown"}
               </KeyValue>
               <KeyValue label="Generation">{generation.id}</KeyValue>
               <KeyValue label="Job association">

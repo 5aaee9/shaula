@@ -83,6 +83,9 @@ impl ProfileRegistryPort for ControlPlane {
             incarnation: profile.incarnation.clone(),
             desired_revision: profile.desired_revision,
             active_revision: profile.active_revision,
+            runner_backend: self
+                .active_template_backend(key, profile.active_revision)
+                .await?,
             status: profile.status.clone(),
             platform: revision.as_ref().and_then(|r| r.platform.clone()),
             bindings_contract: revision.as_ref().and_then(|r| r.bindings_contract.clone()),

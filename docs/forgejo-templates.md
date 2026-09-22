@@ -32,6 +32,18 @@ backend。旧 Generation 继续用原始 Revision / bindings 清理，不随新�
 更新服务自带模板后，需要发布新 Revision（或使用 Update from default）才能
 使用此选项。旧的单 backend manifest 继续保留原契约，不会被重新解释成可切换模板。
 
+## 在 Web 中创建 Fleet
+
+1. 打开 **Authentication → Create profile**，Runner backend 选择 **Forgejo**，填写实例 URL、scope 和 token；等待 Active。token 只写入，不会从读取面取回。轮换入口保留原实例与 scope，展示依赖 Fleet；旧 token 应保留到旧 Runner 清理完毕。
+2. 使用原有 Template Source 发布 Profile，bindings 中选择 `runner_backend: forgejo`。
+3. 打开 **Fleets → Create fleet**，选择 Forgejo 和对应认证 Profile；实例与 scope 来自它的 Active revision。模板选择器只列出 Active backend 为 Forgejo 的 Profile。当前只支持单模板，inline/shared TemplatePool 会在 API 准入即拒绝。
+4. 给 Fleet 使用独立 runner name prefix、最小必要的 labels（bundled 模板用 `name:host`），workflow 的 `runs-on` 必须包含全部 label 名称。标签不要与持久 Runner 共享，避免它们消耗同一需求。
+5. 从 Fleet 的 Jobs 入口查看排队/运行观测。Forgejo 的实例、repository/job/attempt 身份独立保存；列表消失会标为未知并保留最后观测，不猜测成功，也不把时间相近的 Runner 标为已验证关联。
+
+Fleet 的 Forgejo 目标、认证 Profile key、prefix 和 labels 在创建后固定；容量与单模板可按既有准入条件更新。普通清退仍需要安全证据；统一的 `runner.max_lifetime_secs` 默认 7200 秒是可中断 Busy 任务的硬保险，不是无损 idle drain。
+
+真实 Docker 的 Shaula 全链路与故障重试验收见 [证据](evidence/forgejo-lifecycle-2026-09-21/README.md)；重复运行方式见 [harness](../scripts/forgejo-lifecycle/README.md)。这不代表 VM/Kubernetes 已完成真实平台验收。
+
 ## Docker / Kubernetes 镜像和启动
 
 - `runner_image` 默认 `auto`，从该 backend 的官方 digest pin 选择镜像。

@@ -13,7 +13,8 @@ import { ArrowLeft, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { useFleet, useFleetStatus } from "@/lib/queries";
 import { resourcePath } from "@/lib/api";
-import { targetName, type ChangeRef } from "@/lib/types";
+import { type ChangeRef } from "@/lib/types";
+import { fleetTargetName } from "@/lib/runner-backend";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/icon-tooltip";
 import { Empty, ErrorNotice, KeyValue, Loading, StatusBadge } from "@/components/status";
@@ -40,6 +41,7 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
   if (fleet.isPending) return <Loading />;
   if (fleet.error) return <ErrorNotice error={fleet.error} retry={() => void fleet.refetch()} />;
   const { data } = fleet.data;
+  const labels = data.spec.kind === "forgejo" ? data.spec.forgejo.labels : data.spec.github.labels;
   return (
     <>
       <Link to="/fleets" className="back-link">
@@ -50,8 +52,13 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
         <div>
           <h1 className="break-all">{fleetKey}</h1>
           <p>
-            {targetName(data.spec.github.target)} <span className="mx-2">/</span>{" "}
-            {data.spec.github.scale_set_name}
+            {fleetTargetName(data.spec)}
+            {data.spec.kind !== "forgejo" && (
+              <>
+                {" "}
+                <span className="mx-2">/</span> {data.spec.github.scale_set_name}
+              </>
+            )}
           </p>
         </div>
         <div className="flex gap-2">
@@ -126,7 +133,9 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
             metrics={Object.entries(status.data.data.capacity).map(([label, value]) => ({
               label:
                 label === "assignedDemand"
-                  ? "Assigned demand"
+                  ? data.spec.kind === "forgejo"
+                    ? "Waiting jobs"
+                    : "Assigned demand"
                   : label[0].toUpperCase() + label.slice(1),
               value,
             }))}
@@ -148,8 +157,19 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
           <section className="details-section">
             <h2>Configuration</h2>
             <dl className="details-grid">
-              <KeyValue label="GitHub target">{targetName(data.spec.github.target)}</KeyValue>
-              <KeyValue label="Runner group">{data.spec.github.runner_group}</KeyValue>
+              <KeyValue label="Runner backend">
+                {data.spec.kind === "forgejo" ? "Forgejo" : "GitHub Actions"}
+              </KeyValue>
+              <KeyValue label={data.spec.kind === "forgejo" ? "Forgejo target" : "GitHub target"}>
+                {fleetTargetName(data.spec)}
+              </KeyValue>
+              {data.spec.kind === "forgejo" ? (
+                <KeyValue label="Runner name prefix">
+                  {data.spec.forgejo.runner_name_prefix}
+                </KeyValue>
+              ) : (
+                <KeyValue label="Runner group">{data.spec.github.runner_group}</KeyValue>
+              )}
               <KeyValue label="Minimum runners">{data.spec.capacity.min_runners}</KeyValue>
               <KeyValue label="Maximum runners">{data.spec.capacity.max_runners}</KeyValue>
               <KeyValue label="Template profile">
@@ -174,7 +194,11 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
                   "--"
                 )}
               </KeyValue>
-              <KeyValue label="GitHub authentication">
+              <KeyValue
+                label={
+                  data.spec.kind === "forgejo" ? "Forgejo authentication" : "GitHub authentication"
+                }
+              >
                 <Link
                   className="text-link"
                   to={`/auth?key=${encodeURIComponent(data.resolved.authDesired.profileKey)}`}
@@ -182,7 +206,7 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
                   {data.resolved.authDesired.profileKey} / r{data.resolved.authDesired.revision}
                 </Link>
               </KeyValue>
-              {status.data?.data.githubAuth?.context && (
+              {data.spec.kind !== "forgejo" && status.data?.data.githubAuth?.context && (
                 <KeyValue label="Auth context (this target)">
                   <p>
                     {status.data.data.githubAuth.context.state}
@@ -207,13 +231,15 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
               )}
               <KeyValue label="Labels">
                 <div className="flex flex-wrap gap-1">
-                  {data.spec.github.labels.length
-                    ? data.spec.github.labels.map((label) => (
+                  {labels.length
+                    ? labels.map((label) => (
                         <span className="label-chip" key={label}>
                           {label}
                         </span>
                       ))
-                    : `${data.spec.github.scale_set_name} (default)`}
+                    : data.spec.kind !== "forgejo"
+                      ? `${data.spec.github.scale_set_name} (default)`
+                      : "--"}
                 </div>
               </KeyValue>
               <KeyValue label="Incarnation">

@@ -105,6 +105,22 @@ async fn one_source_publishes_both_backends_and_rejects_mismatched_fleets_and_im
             digest
         );
     }
+    let response = app
+        .clone()
+        .oneshot(common::authorized("GET", "/api/v1/template-profiles", None))
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await?;
+    let body: Value = serde_json::from_slice(&body)?;
+    let profiles = body["profiles"].as_array().ok_or("profiles missing")?;
+    for (key, backend) in [("k8s-linux", "github"), ("forgejo-linux", "forgejo")] {
+        let profile = profiles
+            .iter()
+            .find(|p| p["key"] == key)
+            .ok_or("profile missing")?;
+        assert_eq!(profile["runnerBackend"], backend);
+        assert!(profile.get("bindings").is_none());
+    }
     let (bindings, _) = store
         .template_protected_bindings("forgejo-linux", 1)
         .await?
@@ -137,6 +153,16 @@ async fn one_source_publishes_both_backends_and_rejects_mismatched_fleets_and_im
         ))
         .await?;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
+    // The periodic structural scan must not race the provider's online probe
+    // and reject a valid Forgejo credential as an unsupported GitHub schema.
+    let scan = store.periodic_scan(1_800_000_002_000).await?;
+    assert_eq!(scan.auth_rejected, 0);
+    let pending = store
+        .auth_profile_get("forgejo-auth")
+        .await?
+        .ok_or("auth missing")?;
+    assert_eq!(pending.status, "Validating");
+    assert_eq!(pending.active_revision, None);
     let probe = shaula_core::ports::forgejo::ForgejoAuthProbe {
         server_version: "16.0.4".into(),
         principal_id: None,
@@ -179,6 +205,41 @@ async fn one_source_publishes_both_backends_and_rejects_mismatched_fleets_and_im
         put_fleet(&app, "backend-override", override_backend).await?,
         StatusCode::UNPROCESSABLE_ENTITY
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn forgejo_pool_requests_fail_before_resolving_or_persisting_dependencies() -> TestResult {
+    let (app, store, _engine, _service) = common::build_app_with_service().await;
+    for (field, value) in [
+        ("template_pool_ref", json!("nonexistent")),
+        (
+            "template_pool",
+            json!({"members":[{"key":"a","template_profile_ref":"nonexistent","weight":1,"template_inputs":{}}],"failure_policy":"backpressure"}),
+        ),
+    ] {
+        let mut body = forgejo("");
+        body.as_object_mut()
+            .ok_or("object expected")?
+            .remove("template_profile_ref");
+        body[field] = value;
+        let response = app
+            .clone()
+            .oneshot(common::authorized(
+                "PUT",
+                "/api/v1/fleets/unsupported-pool",
+                Some(body.to_string()),
+            ))
+            .await?;
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await?;
+        let error: Value = serde_json::from_slice(&body)?;
+        assert!(error["detail"]
+            .as_str()
+            .ok_or("detail missing")?
+            .contains("template pools are unsupported"));
+        assert!(store.fleet_get("unsupported-pool").await?.is_none());
+    }
     Ok(())
 }
 

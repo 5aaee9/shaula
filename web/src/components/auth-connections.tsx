@@ -3,6 +3,7 @@ import { RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { useAuthProfiles } from "@/lib/queries";
 import { selectorKey } from "@/lib/auth-policy";
 import { selectorLabel, type AuthResource } from "@/lib/types";
+import { authKindLabel, forgejoTargetName } from "@/lib/runner-backend";
 import { Empty, ErrorNotice, Loading, StatusBadge } from "./status";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -82,13 +83,7 @@ export function AuthConnections({
                       <strong>{profile.key}</strong>
                     </button>
                   </TableCell>
-                  <TableCell>
-                    {profile.kind === "github_app"
-                      ? "GitHub App"
-                      : profile.kind === "pat"
-                        ? "Personal access token"
-                        : "--"}
-                  </TableCell>
+                  <TableCell>{authKindLabel(profile.kind)}</TableCell>
                   <TableCell>
                     <StatusBadge value={profile.status} />
                   </TableCell>
@@ -111,6 +106,8 @@ export function AuthConnections({
 
 function ActiveTargets({ profile }: { profile: AuthResource }) {
   if (!profile.activeRevision) return "--";
+  if (profile.active?.forgejo)
+    return <span className="break-all">{forgejoTargetName(profile.active.forgejo.target)}</span>;
   const labels = (profile.active?.target_policy || []).map((selector) => ({
     key: selectorKey(selector),
     label: selectorLabel(selector),

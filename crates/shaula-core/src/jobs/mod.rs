@@ -1,7 +1,9 @@
 //! Workflow-job observations and read-only history. None of these types authorize lifecycle effects.
 
+mod forgejo;
 mod metadata;
 mod projection;
+pub use forgejo::{ForgejoJobObservation, ForgejoJobState, ForgejoJobsStore};
 
 pub use metadata::JobMetadata;
 pub use projection::{project_observations, JobProjection};
@@ -84,7 +86,12 @@ pub struct JobSummary {
     pub id: String,
     pub fleet_key: String,
     pub fleet_incarnation: String,
-    pub scale_set_id: i64,
+    #[serde(default)]
+    pub backend: crate::fleet::FleetProviderKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forgejo: Option<ForgejoJobState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale_set_id: Option<i64>,
     pub protocol_job_id: String,
     #[serde(flatten)]
     pub metadata: JobMetadata,
@@ -106,6 +113,8 @@ pub struct JobDetail {
     #[serde(flatten)]
     pub job: JobSummary,
     pub observations: Vec<JobObservation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forgejo_observations: Vec<ForgejoJobObservation>,
     pub observations_truncated: bool,
     pub generations: Vec<GenerationSummary>,
 }
@@ -118,6 +127,8 @@ pub struct GenerationSummary {
     pub runner_name: String,
     pub generation_name: String,
     pub github_runner_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forgejo_runner_id: Option<String>,
     pub state: String,
     pub subphase: Option<String>,
     pub template_profile_key: String,
