@@ -24,9 +24,9 @@ Fleet Spec 增加判别式 `provider`：
 约束：
 
 - Forgejo Fleet MUST NOT 声明 `runner_group`，MUST NOT 声称拥有 Scale Set，MUST NOT 参与 owned Scale Set 的创建、labels 收敛、route proof 或 Auth Handoff 流程。
-- 当前 Forgejo Fleet MUST 使用单一 `template_profile_ref`；inline `template_pool` 和共享 `template_pool_ref` MUST 在准入时拒绝。Pool Fleet 是等待型 Runner 容量语义，不是加权 TemplatePool。管理 UI 按 Runner Backend 分支显示；模板列表 `runnerBackend` 来自 Active Revision 的实际选择，不来自 Candidate 或平台名称，未知时为 null。
+- Forgejo Fleet 的模板来源三选一：单一 `template_profile_ref`、inline `template_pool` 或共享 `template_pool_ref`。加权 TemplatePool 复用 spec 0029 / 0037 的事务内选择、精确 Revision/inputs 固定、member caps、backpressure/redistribute 和 drain 后 follow；每个成员 MUST 接纳 Forgejo backend 与 Fleet 全部 label targets。权重只选择新 Generation 的基础设施，不选择 Forgejo job，不改变等待型 Pool Fleet 的需求语义。管理 UI 按 Runner Backend 分支显示；模板列表 `runnerBackend` 来自 Active Revision 的实际选择，不来自 Candidate 或平台名称，未知时为 null。
 - `runner_name_prefix` 是 ownership 的唯一本地依据：Shaula 创建的每个 runner 名字 MUST 以该 Fleet 唯一前缀开头（含 Generation 标识）。名字匹配只是**弱**所有权证据，MUST 与 inventory 中的 `ephemeral` 标记和 Fleet labels 联合判定；只凭名字冲突 MUST NOT 推断所有权。
-- labels 是纯字符串，形如 `name[:backend-target]`（`backend-target` 为 `host`、`docker://image` 等）。Fleet labels 决定匹配集合，同时决定 runner 的执行后端；Template manifest MUST 接纳这些 target，无法接纳的组合在静态校验阶段拒绝。**Forgejo 的匹配规则是"runner 声明的全部 labels 必须是 job `runs-on` 的子集"**，因此 Fleet labels SHOULD 保持最小；文档与 UI MUST 明示该规则，要求 workflow 逐个列出。
+- labels 是纯字符串，形如 `name[:backend-target]`（`backend-target` 为 `host`、`docker://image` 等）。Fleet labels 决定匹配集合，同时决定 runner 的执行后端；Template manifest MUST 接纳这些 target，无法接纳的组合在静态校验阶段拒绝。**Forgejo 的匹配规则是 job `runs-on` 必须是 Runner 声明的 label 名称集合的子集**；文档与 UI MUST 明示 workflow 请求的每个 label 都必须可用。2026-09-22 更正此前写反的子集方向：v15 `ActionRunJob.ItRunsOn` 调用 `labelSet.IsSubset(job.RunsOn)`，但 `Set.IsSubset(subset)` 检查参数是否全部存在于接收者；真实 v16 验收也验证了缺少任意请求 label 时不会创建/领取任务。
 - 与同一 scope 内既有持久 runner 共享 labels 属于显式配置错误：MUST 在接受前提示，并记录为"需求信号可能被外部 runner 消耗"的成本，不得声称需求与容量一一对应。
 
 ## 3. 控制面能力契约（adapter 最小集）
@@ -73,6 +73,7 @@ Create 顺序：
 
 - Runner Bootstrap Material 是 provider 专用的一次性身份材料。GitHub 侧仍为 JIT config，字段与语义不变；Forgejo 侧为 `{instance_url, uuid, token, labels[]}`。spec 0004 的 `bindings_digest` 语义、envelope `shaula_result` 与本规范无关，不触发 D4。
 - token MUST 以受保护文件（Secret / 平台等价物）投递，只被 runner 经 `--token-url file:…` 读取。token MUST NOT 出现于命令行 argv、环境、资源 tags/labels、Setup Info、Operation Log 或任何日志投影。Docker / Kubernetes 仍由 host 在 apply 后投递，MUST NOT 进入 Terraform 输入。
+- **Kubernetes Secret 回读边界（2026-09-22，经操作者确认）**：Terraform 在 Destroy refresh 时会读取 bootstrap Secret，单 Runner token 因而可出现在受保护的 plan/state/backup 的该 Secret data 中。必须按 credential-grade 保管这些原始材料，不得公开或投影到日志；管理 token、tfvars、argv/env、metadata 和 Setup Info 不在此允许范围。不能声称 Kubernetes token 完全不落 Terraform。不得通过忽略 `.kube` 等目录放宽 Workspace commitment；kubectl discovery cache 使用独立私有临时目录。
 - **VM 显式例外**：Proxmox / AWS / TencentCloud / AliCloud 的 v1 VM-image manifest 可声明 `forgejo_vm_bootstrap_contract: shaula.forgejo-vm-cloud-init/v1`，允许系统字段 `shaula.forgejo_vm.token` 进入受保护 tfvars、plan/state 和 cloud-init user-data / NoCloud ISO。它 MUST 仅为 Shaula 预注册得到的单 Runner token，MUST NOT 是 management/registration scope token；GitHub 和容器输入 MUST 拒绝此字段。选择该发布选项即接纳与 VM JIT 相同的凭据存储边界，base64 / sensitive 不代表加密。来宾以 root 0600 文件接收，转入非 root Runner 私有运行目录；不在来宾二次注册，不重放一次性 seed。该例外不授权 post-apply Runtime hook 或 Setup Info。
 - 容器镜像准入从"仅 `ghcr.io/actions/actions-runner`"扩展为"按 bootstrap kind 对应的官方镜像族"：Forgejo 容器族 MUST 使用官方 forgejo-runner 镜像并固定**内容 digest**，禁止自建或重打包镜像。上述 VM 则继承各平台 VM-image 信任契约，下载官方 native Runner，并用 artifact 内固定版本和 SHA-256 验证；不宣称 OCI 镜像 pin。exact registry / version / digest tuple 归 R4。
 - labels 的 backend target 决定执行方式（`host` 直接执行、`docker://` 需要容器运行时）。Docker / Kubernetes / Proxmox / AWS / TencentCloud / AliCloud 的默认组合 MUST 在模板内显式声明并分别验收：选择容器后端时，模板 MUST 声明容器运行时与挂载风险；MUST NOT 假定与 GitHub 官方 runner"步骤直接跑在 runner 内"相同的模型。
@@ -95,7 +96,8 @@ Create 顺序：
 
 - 按 Fleet incarnation、instance URL、scope、Auth Profile，再加 `repo_id/job_id/attempt` 隔离；名称不参与去重。Forgejo ID 在读取面用十进制字符串，避免浏览器丢失 u64 精度。
 - `backend: forgejo` 携带独立 `forgejo` 元数据，不生成虚假的 `scale_set_id`、GitHub URL、conclusion 或 Verified 关联。本切片不猜测候选 Generation，`generations` 为空；运行状态不依赖关联等级。
-- `waiting` → `queued`，`running` → `running`；未知状态或从成功的完整快照消失 → `unknown`。保留 `last_reported_status` 与 `last_observed_at`，明确 `in_snapshot`。消失事件不等于完成或成功。
+- `waiting` → `queued`，`running` → `running`；未知状态或从成功的完整快照消失，在没有独立终态证据时为 `unknown`。保留 `last_reported_status` 与 `last_observed_at`，明确 `in_snapshot`。消失事件不等于完成或成功。
+- 可选历史 worker 以已观测非零 `repo_id/task_id` 连接 repository `/actions/tasks` 的精确 Task ID，只接受 Task 自身的 success/failure/cancelled/skipped，并原子保存 result 与 `task_history` 事件；不以 workflow 汇总结果、名字或时间猜测。结果有来源和观测时间，旧 snapshot 不覆盖已确认的同一 Task 终态。历史失败 MUST NOT 阻塞 Runner tick，网络期间不得持有 effect gate 或 SQLite writer；提交必须复核当前 Fleet/scope/Task，歧义保持未知。预算、权限和漏观测边界见 [Forgejo Jobs](../forgejo-jobs.md)。
 - `forgejo_observations` 保存状态/Task ID 变化与消失事件；相同重复轮询不增加事件。读取最多返回最新 1000 条，按既有 metadata retention 回收。
 - 轮询失败只标记 `stale`，不重写此前成功快照和任务时间；读时超过 30 秒也标记 stale，避免 daemon 停止后永远显示 fresh。`not_listed` 表示最后成功快照已不再包含此任务，不承诺当前终态。
 - 观测写入用当前 Fleet incarnation/revision/mutation fence 校验；旧 poll、旧 incarnation 和已删除 Fleet 不得刷新历史。Jobs 不授权任何生命周期操作。
@@ -104,7 +106,7 @@ Create 顺序：
 ## 7. 认证与凭据
 
 - Forgejo 没有 App 与 installation，因此本切片的凭据是独立的 profile kind（例如 `forgejo_token`），MUST NOT 复用 GitHub App 的 revision/binding schema，MUST NOT 作为 GitHub credential 的 fallback，也 MUST NOT 让 GitHub profile 借用 Forgejo token。
-- 凭据按 scope 选择：instance scope 需要站点管理员 token；organization / repository / user scope 需要具备对应 owner 权限的 scoped token。exact 权限名与最小权限集合归 D5。
+- 凭据按 scope 选择：instance scope 需要站点管理员 token；organization / repository / user scope 需要具备对应 owner 权限的 scoped token。已核验版本的 exact 权限名与最小权限集合见 [Forgejo 最小权限](../forgejo-permissions.md)；跨版本/部署兼容性仍属于 D5/R4。激活仅做无副作用读取，不代表已经验证写权限。
 - profile 激活前 MUST 执行一次有界认证读（scope 内 runner 或 jobs 列表）；失败即 Rejected，成功记录 `checked_at` / `valid_until`，沿用既有正/负缓存窗口的时间语义但使用独立字段与语义，不共用 GitHub 的路线证明。
 - 凭据只以受保护形式存储，读取面只返回存在性与验证状态，MUST NOT 回显 token。
 - 现有 `/api/v1/github-auth-profiles` 路径兼容两种 kind。Forgejo 写入为 `{kind: forgejo_token, instance_url, scope, token}`，不发送 GitHub 的 `schema_version`/App/policy 字段；内部与读取面的 Forgejo revision schema 为 1。周期扫描只做结构检查，不能在在线 Forgejo probe 前按 GitHub 格式拒绝它。
@@ -129,7 +131,7 @@ Create 顺序：
 全部验收都必须记录为"本地运行 / 真实实例运行"的分离证据，不能以规范条款代替：
 
 - **A1 闭环**：真实 Forgejo ≥ 15 + admin token：预注册 ephemeral → runner 以 uuid/token 启动 → Declare 后 inventory 显示 `idle` → 派发一个匹配 job → 任务完成后 runner 记录消失。
-- **A2 labels 匹配**：声明 labels 必须全部包含在 job `runs-on` 中；不匹配的 job 不被取走（用两组不同 `runs-on` 的 job 验证）。
+- **A2 labels 匹配**：job `runs-on` 的每个 label 名称都必须被 Runner 声明；不匹配的 job 不被取走（用两组不同 `runs-on` 的 job 验证）。
 - **A3 需求快照**：`waiting` 变化正确驱动容量；`running` 变化不误增需求；轮询全部失败时保留旧快照且不授权普通缩容；独立硬超时不依赖需求新鲜度。
 - **A4 Busy-safe**：未到统一硬超时时，对 `active` runner 发起普通 Destroy → 记为 Busy 并延迟，注册与资源都保留；对 `idle` 且无任务证据的 runner → 正常收敛。
 - **A5 注册 Uncertain**：注入响应丢失，三类分类（命中 / 缺失 / 歧义）分别按 §6 收敛。

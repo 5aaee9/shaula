@@ -17,6 +17,7 @@ export class Fixture {
   binary = resolve(process.env.SHAULA_BIN || "target/debug/shaula");
   terraform = process.env.TERRAFORM_BIN || "terraform";
   user = "lifecycle-test";
+  platform = "docker";
 
   async cli(...args) { return command(this.docker, ["--host", this.socket, ...args]); }
   api(path, method, body, expected, headers) {
@@ -101,14 +102,14 @@ export class Fixture {
     await this.startDaemon();
   }
   async publish() {
-    const archive = join(this.directory, "docker.tar.gz");
-    await command("tar", ["-czf", archive, "-C", resolve("templates/docker"), "profile.yaml", "main.tf", ".terraform.lock.hcl", "runtime-policy.md", "schemas"]);
+    const archive = join(this.directory, `${this.platform}.tar.gz`);
+    await command("tar", ["-czf", archive, "-C", resolve(`templates/${this.platform}`), "profile.yaml", "main.tf", ".terraform.lock.hcl", "runtime-policy.md", "schemas"]);
     const bytes = await readFile(archive);
     this.digest = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
     const response = await fetch(`${this.url}/api/v1/template-artifacts/${this.digest}`, { method: "PUT", headers: { authorization: `Bearer ${this.oidc.token}` }, body: bytes, signal: AbortSignal.timeout(30_000) });
     assert.equal(response.status, 201, "artifact publication");
     await this.api("/template-profiles/forgejo", "PUT", {
-      artifact_digest: this.digest, engine_ref: "terraform", bindings: { docker_host: `unix://${this.proxySocket}`, runner_backend: "forgejo" }, fleet_input_policy: {},
+      artifact_digest: this.digest, engine_ref: "terraform", bindings: this.bindings(), fleet_input_policy: {},
     }, 202, { "if-none-match": "*" });
     await this.api("/github-auth-profiles/forgejo", "PUT", { kind: "forgejo_token", instance_url: this.target, scope: { kind: "instance" }, token: this.token }, 202, { "if-none-match": "*" });
     for (const kind of ["template-profiles", "github-auth-profiles"]) {
@@ -119,11 +120,12 @@ export class Fixture {
       });
     }
   }
-  async createFleet(key, min = 0) {
+  bindings() { return { docker_host: `unix://${this.proxySocket}`, runner_backend: "forgejo" }; }
+  async createFleet(key, min = 0, max = 1, labels = [`${key}:host`]) {
     this.fleets.add(key);
     await this.api(`/fleets/${key}`, "PUT", { kind: "forgejo", forgejo: {
-      instance_url: this.target, scope: { kind: "instance" }, auth_profile_ref: "forgejo", runner_name_prefix: `${key}-`, labels: [`${key}:host`],
-    }, capacity: { min_runners: min, max_runners: 1 }, template_profile_ref: "forgejo", template_inputs: {} }, 202, { "if-none-match": "*" });
+      instance_url: this.target, scope: { kind: "instance" }, auth_profile_ref: "forgejo", runner_name_prefix: `${key}-`, labels,
+    }, capacity: { min_runners: min, max_runners: max }, template_profile_ref: "forgejo", template_inputs: {} }, 202, { "if-none-match": "*" });
   }
   async capZero(key) {
     const response = await fetch(`${this.url}/api/v1/fleets/${key}`, { headers: { authorization: `Bearer ${this.oidc.token}` } });
@@ -132,11 +134,11 @@ export class Fixture {
     body.spec.capacity = { min_runners: 0, max_runners: 0 };
     await this.api(`/fleets/${key}`, "PUT", body.spec, 202, { "if-match": response.headers.get("shaula-resource-version") || response.headers.get("etag") });
   }
-  async queue(key, seconds = 8, failure = false) {
+  async queue(key, seconds = 8, failure = false, labels = [key]) {
     await this.forgejo("/user/repos", "POST", { name: key, private: true, auto_init: true, default_branch: "main" }, 201);
-    const yaml = `name: lifecycle\non: [push]\njobs:\n  build:\n    runs-on: [${key}]\n    steps:\n      - run: |\n          sleep ${seconds}\n          exit ${failure ? 1 : 0}\n`;
+    const yaml = `name: lifecycle\non: [push]\njobs:\n  build:\n    runs-on: [${labels.join(", ")}]\n    steps:\n      - run: |\n          sleep ${seconds}\n          exit ${failure ? 1 : 0}\n`;
     await this.forgejo(`/repos/${this.user}/${key}/contents/.forgejo/workflows/check.yaml`, "POST", { content: Buffer.from(yaml).toString("base64"), message: "disposable lifecycle acceptance", branch: "main" }, 201);
-    await until("queued demand", async () => (await this.forgejo(`/admin/actions/runners/jobs?labels=${key}`) ?? []).some(j => j.status === "waiting"));
+    await until("queued demand", async () => (await this.forgejo(`/admin/actions/runners/jobs?labels=${labels.join(",")}`) ?? []).some(j => j.status === "waiting"));
   }
   async containerVolumes(id) {
     const [container] = JSON.parse(await this.cli("inspect", id));

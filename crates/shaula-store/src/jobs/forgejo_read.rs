@@ -12,7 +12,9 @@ pub(super) fn freshness(job: &mut JobSummary, row: &QueryResult) {
         .and_then(|duration| i64::try_from(duration.as_millis()).ok());
     let observed = row.try_get::<Option<i64>>("", "poll_time").ok().flatten();
     let failed = row.try_get::<Option<i64>>("", "poll_failed").ok().flatten();
-    job.freshness = if !state.in_snapshot {
+    job.freshness = if state.result.is_some() {
+        "confirmed"
+    } else if !state.in_snapshot {
         "not_listed"
     } else if failed == Some(0)
         && observed

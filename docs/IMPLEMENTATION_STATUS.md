@@ -20,8 +20,8 @@ integration boundaries are recorded below.
 
 The three usable-version increments are implemented:
 
-1. Forgejo Fleet PUT rejects inline/shared TemplatePool before dependency resolution;
-   only a single Template Profile is supported. Web types, mixed Fleet list/detail,
+1. Forgejo Fleet PUT originally admitted only a single Template Profile; the weighted
+   follow-up below adds inline/shared TemplatePool support. Web types, mixed Fleet list/detail,
    creation/editing and authentication now branch by backend. The shared Auth API
    path remains `/github-auth-profiles`; Forgejo token publication/rotation uses its
    own wire fields, with target/impact/validation shown without returning the token.
@@ -81,13 +81,66 @@ Final `cargo fmt --check`, web format/lint, script syntax/fault tests, workflow
 `actionlint` and `git diff --check` pass. The isolated Docker Engine had no remaining
 containers or volumes after acceptance and was stopped; system Podman was untouched.
 
-Still not delivered: weighted Forgejo TemplatePool scheduling, safe early idle
-acquisition fencing, minimal-permission matrix, real VM/Kubernetes acceptance,
-final Forgejo job conclusions/history enrichment, or real GitHub acceptance.
-The explicit hard lifetime may interrupt Busy jobs. No acquisition proxy,
-`--handle` routing, Verified Forgejo job association or workflow cancellation UI
-was introduced. Earlier progress sections below are historical and are superseded
-by this increment where they describe Forgejo UI/Jobs or Docker composition as missing.
+Weighted TemplatePool follow-up (2026-09-22): Forgejo now reuses common transactional
+member selection/caps, persists exact member inputs, and preserves the selection on
+restart. HTTP admission rejects incompatible backend/label targets; pool/profile
+retirement is rechecked at routing commit. Capacity-only PUTs retain old inline/shared
+pins instead of duplicating hydrated shared members or requiring old pins to remain
+Active. The existing Fleet form offers single, weighted and shared placement.
+Local verification: strict workspace Clippy, 909 workspace tests (2 skipped), Web
+lint/build and 13 Forgejo management browser tests passed; desktop/mobile placement
+screens were inspected. These are not real Kubernetes/VM or weighted-load acceptance.
+
+Further follow-up (2026-09-22):
+
+- **Inputs commit fence:** changed `template_inputs` require zero Generation/open-effect
+  occupancy inside the same SQLite writer transaction as Fleet PUT. Unchanged inputs
+  still permit capacity-only updates. Races use the public Store commit boundary.
+- **Profile retirement:** periodic scans recheck live Fleet/pool/Generation references,
+  operations, worker leases, HTTP-state capabilities/locks and auth execution contexts.
+  Once quiescent, Template/Auth release their active/observed heads and become Retired,
+  completing the Retire Change atomically. Repeated DELETE stays terminal. History and
+  protected credential/artifact bytes are retained, not force-deleted or garbage-collected.
+- **Exact Jobs results:** forward migration m0022 persists optional history budgets.
+  Independent bounded reads join the previously observed repository/Task ID to repository
+  task history, not a workflow summary or Runner. Results/events commit atomically under
+  current Fleet/scope/task fences; absence alone remains Unknown. Old JSON is readable,
+  budgets survive restart and stale snapshots cannot erase results or move updated time
+  backwards. See [Jobs limits](forgejo-jobs.md).
+- **Real acceptance:** [Docker and Kubernetes receipts](evidence/forgejo-followup-2026-09-22/README.md)
+  pass 13 and 10 checks respectively: normal completion/failure, restart, labels, stale
+  demand, hard expiry, exact Jobs results and lost-registration quarantine. Docker also
+  exercises DELETE retries and the [four-scope permission matrix](forgejo-permissions.md).
+  Local Kind 0.32.0 / Kubernetes v1.36.1 uses the existing template and pinned provider.
+- **Kubernetes correction:** kubectl discovery cache now goes to a private temporary
+  directory for both backends, not frozen Workspace material. A failing real Destroy and
+  red/green unit test exposed the issue; the final real rerun proves convergence without
+  weakening material integrity. Real labels also corrected the old reversed subset copy.
+- **Approved credential boundary:** Kubernetes provider refresh copies the single Runner
+  token into protected Destroy plan/state/backup Secret data. The operator explicitly
+  accepted this; actual owner-only permissions and absence from inputs, metadata, argv/env
+  and log/API projections are checked. The passing receipt records two retained token
+  occurrences, rather than claiming zero. Management credentials are never permitted there.
+
+Final local verification for this follow-up: `cargo fmt` / `cargo fmt --check` and
+`cargo clippy --workspace --all-targets -- -D warnings` pass. The unfiltered workspace
+nextest run passes **922 tests, 2 skipped**; the required `cargo nextest run
+--manifest-path Cargo.toml --workspace test` passes **735 tests, 189 filtered/skipped**.
+Web format/lint/build and **190 Playwright tests** pass, including 19 Forgejo management
+and Jobs cases. The non-fatal Vite bundle-size advisory remains. Desktop/mobile views
+were inspected and both focused UI detector runs reported no findings. All 54 changed/new
+Rust files are <=400 lines. All four lifecycle fault/leak helper tests, script syntax,
+workflow `actionlint` and `git diff --check` pass. No remote CI or production deployment
+is implied. The isolated Kind cluster was deleted; the empty private Docker Engine was
+stopped, temporary Nix roots removed, and host inotify watches restored to 524288.
+
+Still not established: safe early idle acquisition fencing, real VM/cloud and GitHub
+acceptance, the full real A5 None/ExactlyOne/Multiple matrix, weighted-load distribution,
+or the minimum-version/all-deployment permission matrix. The real lost-response case
+correctly quarantines an undeclared registration; fixture teardown is not automatic reclaim.
+The explicit hard lifetime may interrupt Busy jobs. No acquisition proxy, `--handle`
+routing, Verified Forgejo association or workflow cancellation UI was introduced.
+Earlier Forgejo sections are historical and are superseded by the increments above.
 
 ## Forgejo selection on existing VM templates (2026-09-21)
 
@@ -1035,10 +1088,10 @@ Commands, service configuration and acceptance boundaries are in [the Nix guide]
 | Contract | Source evidence / remaining gap |
 | --- | --- |
 | Keep an unchanged old Template pin during capacity/no-op PUT | Already handled by `ControlPlane::resolve_admission_materials` in `crates/shaula-daemon/src/service_fleet_ops.rs`; do not list this wholesale as unimplemented. Spec 0002 clarifies new-reference versus unchanged-reference admission. |
-| Zero-Occupancy barrier for changed `template_inputs` | Still missing from the audited replacement boundary; `crates/shaula-store/src/registry_impl/commits_fleet.rs` currently protects reference replacement but does not establish the newly explicit inputs-change rule. Requires transactional race tests with Generation/worker admission. |
+| Zero-Occupancy barrier for changed `template_inputs` | Implemented (2026-09-22): `commits_fleet.rs` compares semantic inputs and rechecks Generation/open-operation occupancy under the commit writer lock. `tests/fleet_inputs_fence.rs` covers Create-after-admission, an open effect after Destroyed, and unchanged inputs during capacity-only updates. |
 | Lower max below current Busy/Occupancy | Normative behavior is stop new admission and retire safely, not reject solely for current Occupancy or kill Busy. Existing arithmetic does not prove complete listener/worker scale-down acceptance. |
 | Reachable cross-Auth handoff with an idle session | Spec 0002 removes an idle session as an admission blocker while retaining the zero-Occupancy/effect barrier. The listener repair adds exact-context session gates and quiescence; real multi-account idle-session/race acceptance remains a release gate. |
-| Profile retirement self-head release | `service_profile_retirement.rs` and `shaula-store/src/registry_impl/retirement.rs` retain current heads. Spec 0005 §7.1's final self-reference release/Retired transaction and history-versus-runtime-reference tests are missing. |
+| Profile retirement self-head release | Implemented (2026-09-22): level-triggered `retirement_scan.rs` rechecks live Fleet/pool pins, Generations/effects, sessions/acquisitions and worker/validator claims under one writer transaction, clears active/observed heads and completes Retire Changes. Desired revision remains a historical high-water mark; protected bytes/history are not GC'd. New pool references recheck the retirement fence at commit. HTTP replay, unused Active heads, consumer release, retained pool revisions, expired claims, transaction rollback and restart are covered by `profile_retirement*` tests. Local validation: strict workspace Clippy and 440 Store/binary tests passed (2 skipped); this is not remote cleanup acceptance. |
 | Binding reads | Existing core/Profile reads expose coarse `bindings_present`; spec 0005 §5.2 retains that conservative projection, not a new per-secret fingerprint map. Full manifest annotation/schema/redaction acceptance still needs verification. |
 | Attestation integrity/evidence | Existing `service_profile_attestation.rs`, `service_attestation.rs` and core `registry/attestation_subject.rs` provide authority/subject handling. No independent signing PKI is required by the clarified contract; complete external report linkage, canonical compatibility and real-platform suite evidence are not established by local record-acceptance tests. |
 | `bindings_digest` compatibility | Current `BindingsDigest::from_keyed_material` in `crates/shaula-core/src/template.rs` emits `bd1_` HMAC-SHA256; its material does not include Profile incarnation. D4 remains deferred. No new encoding or historical-record rewrite was made. |

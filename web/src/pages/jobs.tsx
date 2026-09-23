@@ -131,7 +131,7 @@ export function JobsPage({ scopes }: { scopes: string[] }) {
                               {jobRepository(job)}
                               <p className="text-xs text-muted-foreground">
                                 {job.forgejo
-                                  ? `Run ${job.forgejo.run_id}, attempt ${job.forgejo.attempt}`
+                                  ? `Run ${job.forgejo.result?.run_number || (job.forgejo.run_id === "0" ? "unknown" : job.forgejo.run_id)}, attempt ${job.forgejo.attempt}`
                                   : job.workflow_run_id
                                     ? `Run ${job.workflow_run_id}`
                                     : "Run unknown"}

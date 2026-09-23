@@ -272,6 +272,12 @@ pub trait ForgejoPoolPort: Send + Sync {
     }
 
     async fn list_jobs(&self, labels: &[String]) -> Result<Vec<ForgejoJob>, AccessFailure>;
+    /// Optional bounded repository-task history. Never used for capacity/cleanup.
+    async fn task_results(
+        &self,
+        repository_id: u64,
+        task_ids: &[u64],
+    ) -> Result<Vec<crate::jobs::ForgejoTaskResult>, AccessFailure>;
 
     async fn delete_runner(&self, id: u64) -> Result<ForgejoRemovalOutcome, AccessFailure>;
 

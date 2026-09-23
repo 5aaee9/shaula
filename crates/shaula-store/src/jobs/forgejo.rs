@@ -4,9 +4,7 @@ use crate::{
     registry_impl::{core_err, SqliteControlPlane},
     Store, StoreError, StoreResult,
 };
-use sha2::{Digest, Sha256};
 use shaula_core::{
-    fleet::{FleetProviderKind, FleetSpec},
     jobs::{ForgejoJobsStore, JobSummary, ObservedStatus},
     ports::forgejo::ForgejoJob,
     registry::FleetRuntimeGuard,
@@ -15,6 +13,32 @@ use std::collections::BTreeSet;
 
 #[async_trait::async_trait]
 impl ForgejoJobsStore for SqliteControlPlane {
+    async fn forgejo_jobs_pending_results(
+        &self,
+        fleet: &str,
+        guard: &FleetRuntimeGuard,
+        now: i64,
+    ) -> shaula_core::error::CoreResult<Vec<shaula_core::jobs::ForgejoJobLookup>> {
+        self.store()
+            .pending_forgejo_results(fleet, guard, now)
+            .await
+            .map_err(core_err)
+    }
+
+    async fn forgejo_job_result(
+        &self,
+        fleet: &str,
+        guard: &FleetRuntimeGuard,
+        lookup: &shaula_core::jobs::ForgejoJobLookup,
+        result: &shaula_core::jobs::ForgejoTaskResult,
+        now: i64,
+    ) -> shaula_core::error::CoreResult<bool> {
+        self.store()
+            .apply_forgejo_result(fleet, guard, lookup, result, now)
+            .await
+            .map_err(core_err)
+    }
+
     async fn forgejo_jobs_snapshot(
         &self,
         fleet: &str,
@@ -38,40 +62,11 @@ impl Store {
         now: i64,
     ) -> StoreResult<bool> {
         let tx = self.begin().await?;
-        let found = rows(
-            &tx,
-            "SELECT r.spec_json FROM fleets f JOIN fleet_revisions r
-            ON r.fleet_key=f.key AND r.incarnation=f.incarnation AND r.revision=f.desired_revision
-            WHERE f.key=? AND f.incarnation=? AND f.desired_revision=? AND f.mutation_fence=?
-            AND f.deletion_marker=0 AND f.tombstone=0",
-            vec![
-                fleet.into(),
-                guard.incarnation.clone().into(),
-                guard.desired_revision.into(),
-                guard.mutation_fence.into(),
-            ],
-        )
-        .await?;
-        let Some(row) = found.first() else {
+        let Some(scope) = super::forgejo_scope::current(&tx, fleet, guard).await? else {
             return Ok(false);
         };
-        let spec: FleetSpec = decode(&row.try_get::<String>("", "spec_json")?)?;
-        if spec.kind != FleetProviderKind::Forgejo {
-            return Ok(false);
-        }
-        let section = spec
-            .forgejo
-            .ok_or_else(|| StoreError::Corrupt("Forgejo target missing".into()))?;
-        let target = section.target();
-        let scope = hex::encode(Sha256::digest(
-            encode(&(
-                fleet,
-                &guard.incarnation,
-                &target,
-                &section.auth_profile_ref,
-            ))?
-            .as_bytes(),
-        ));
+        let target = scope.target;
+        let scope = scope.key;
         let polls = rows(
             &tx,
             "SELECT attempted_at FROM forgejo_job_polls WHERE scope_key=?",
@@ -125,12 +120,14 @@ impl Store {
                 .ok_or_else(|| StoreError::Corrupt("Forgejo job metadata missing".into()))?;
             state.in_snapshot = false;
             let task_id = state.task_id.clone();
-            summary.observed_status = ObservedStatus::Unknown;
-            summary.updated_at = now;
+            if state.result.is_none() {
+                summary.observed_status = ObservedStatus::Unknown;
+            }
+            summary.updated_at = summary.updated_at.max(now);
             // Last listed time stays attributed to the actual job. Absence is
             // a separate retained observation, never a synthetic success/result.
-            execute(&tx, "UPDATE forgejo_workflow_jobs SET summary_json=?,status='unknown',in_snapshot=0,updated_at=? WHERE id=?",
-                vec![encode(&summary)?.into(), now.into(), id.clone().into()]).await?;
+            execute(&tx, "UPDATE forgejo_workflow_jobs SET summary_json=?,status=?,in_snapshot=0,updated_at=? WHERE id=?",
+                vec![encode(&summary)?.into(), summary.observed_status.as_str().into(), summary.updated_at.into(), id.clone().into()]).await?;
             forgejo_projection::event(&tx, &id, None, &task_id, now).await?;
         }
         execute(&tx, "INSERT INTO forgejo_job_polls(scope_key,observed_at,attempted_at,failed) VALUES(?,?,?,0)

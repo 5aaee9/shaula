@@ -14,10 +14,10 @@ serde_json.workspace = true
 thiserror.workspace = true
 url.workspace = true
 futures.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 axum.workspace = true
-tokio.workspace = true
 
 [lints]
 workspace = true

@@ -8,7 +8,8 @@ use shaula_core::{
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-async fn fixture() -> Result<(tempfile::TempDir, SqliteControlPlane, FleetRuntimeGuard)> {
+pub(super) async fn fixture() -> Result<(tempfile::TempDir, SqliteControlPlane, FleetRuntimeGuard)>
+{
     let directory = tempfile::tempdir()?;
     let store = Store::open(&directory.path().join("jobs.db")).await?;
     store.migrate().await?;
@@ -32,7 +33,7 @@ async fn seed(store: &Store) -> Result {
         VALUES ('forgejo','inc',1,?,'token',1,'inputs',1)", [spec.to_string().into()])).await?;
     Ok(())
 }
-fn job() -> ForgejoJob {
+pub(super) fn job() -> ForgejoJob {
     ForgejoJob {
         id: 7,
         repo_id: 9,

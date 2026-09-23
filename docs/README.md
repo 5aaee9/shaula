@@ -18,8 +18,10 @@
 | 腾讯云 CVM 与阿里云 ECS 模板配置、安全边界和验收 | [云主机 Runner](cloud-runners.md) |
 | 已实现范围、集成缺口与验收证据 | [实现状态](IMPLEMENTATION_STATUS.md) |
 | 在现有六种模板发布时选择 Forgejo（含 VM cloud-init） | [Forgejo 模板选项](forgejo-templates.md) |
+| Forgejo 精确 Task 终态、来源、查询预算与 Unknown 边界 | [Forgejo Jobs](forgejo-jobs.md) |
+| Forgejo 四种 scope 的最小权限与只读激活探测边界 | [Forgejo 最小权限](forgejo-permissions.md) |
 | Forgejo Busy-safe drain 的源码证据、竞态与发布阻塞 | [Forgejo drain](forgejo-drain.md) |
-| Forgejo A1–A8 本地与真实平台验收矩阵 | [Forgejo A1–A8 evidence](evidence/forgejo-a1-a8-2026-09-12/README.md) |
+| Forgejo Docker / 本地 Kubernetes 真实验收与 A1–A8 边界 | [Forgejo follow-up evidence](evidence/forgejo-followup-2026-09-22/README.md) |
 
 ## 设计与决策
 
@@ -85,7 +87,7 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 | D2 | 运行策略 | Changes、幂等记录、audit、tombstones、retired credentials、artifacts、state snapshots、emergency state 与 Workspace 的 retention 时限；原始凭据的外部撤销时机。Operation Log/Jobs 历史的独立默认值已由 spec 0019 冻结，不扩展为上述恢复材料的 GC 规则 | 0005 §7 / 0019 §5 |
 | D3 | 运行策略 | operation/recovery timeout、retry budget、reaper interval、worker/backend body/rate/backlog/concurrency 的最终默认值与硬上限；OIDC 已有具体值见部署说明，Operation Log/Setup Info 的默认值见 spec 0019，不重新标为待定 | 0001 §5 / 0009 / 0019 |
 | D4 | 持久格式，阻塞发布冻结 | `bindings_digest` 是否继续作为独立 commitment，以及 exact Revision/incarnation 绑定、编码和兼容迁移；本轮不新增 bd2/HMAC 格式，不重写旧记录 | 0004 §3 / 0005 §5 |
-| D5 | 协议验收 | Forgejo 凭据的 profile kind/schema、scope → token 类型与最小权限的 exact 映射，以及激活前验证读取的契约；不属于 GitHub authentication，也不作为其 fallback | 0026 §7 |
+| D5 | 跨版本协议验收 | `forgejo_token` schema、四 scope 的权限映射和只读激活探测已在 Forgejo 16.0.4 核验，见 [最小权限](forgejo-permissions.md)；其它支持版本/定制权限部署尚需运行同一矩阵，不属于 GitHub credential fallback | 0026 §7 |
 | D6 | 运行策略 | Forgejo 轮询的规模边界与默认值：jobs 无分页且 labels 在服务端内存过滤，inventory 按可变活动时间分页；需要最终 interval/backoff/条数上限、idle deadline 与可支持的实例规模上限 | 0026 §3 / §4 |
 | R1 | 发布配置与验收 | Rust toolchain/features、Terraform binary、provider locks/checksums、官方 Runner image/宿主 bootstrap CLI、runtime/trust policy 与 conformance suite 的 exact tuple | 0003 / 0004 / 0006 / 0007 |
 | R2 | 协议验收 | Go oracle 的 commit/module/checksum、获取方式和完整 differential suite；真实已注册 OIDC Provider 的 browser/API 验收 | 0007 §4 / 0009 §7 |

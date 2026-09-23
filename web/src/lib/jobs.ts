@@ -15,6 +15,15 @@ export interface Job {
     last_reported_status: string;
     last_observed_at: number;
     in_snapshot: boolean;
+    result?: {
+      task_id: string;
+      conclusion: "success" | "failure" | "cancelled" | "skipped";
+      observed_at: number;
+      run_number: string;
+      run_url: string;
+      workflow: string;
+    };
+    enrichment_attempted_at?: number;
   };
   id: string;
   fleet_key: string;
@@ -65,6 +74,7 @@ export interface JobDetail extends Job {
     reported_status: string | null;
     task_id: string;
     observed_at: number;
+    source?: "runner_snapshot" | "task_history";
   }[];
   observations_truncated: boolean;
   generations: Generation[];
@@ -163,7 +173,27 @@ export function jobRepository(job: Job) {
   );
 }
 
+export function forgejoRunUrl(job: Job): string | undefined {
+  try {
+    if (!job.forgejo?.result) return undefined;
+    const url = new URL(job.forgejo.result.run_url);
+    const base = new URL(job.forgejo.target.instance_url);
+    return ["http:", "https:"].includes(url.protocol) &&
+      url.origin === base.origin &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      url.pathname.startsWith(`${base.pathname.replace(/\/$/, "")}/`)
+      ? url.href
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function snapshotFreshness(job: Job) {
+  if (job.forgejo?.result) return "Task result confirmed";
   return job.freshness === "fresh"
     ? "Snapshot fresh"
     : job.freshness === "not_listed"

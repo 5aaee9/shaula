@@ -15,7 +15,6 @@ pub(super) async fn launch(
     timeout: Duration,
 ) -> Result<(), TemplateOutcomeError> {
     let namespace = binding(request, "namespace")?;
-    let kubeconfig = binding(request, "kubeconfig")?;
     let name = &request.input.generation.generation_name;
     let runner = resource(envelope, "runner")?;
     let bootstrap = resource(envelope, "bootstrap")?;
@@ -26,13 +25,7 @@ pub(super) async fn launch(
     let commands = Commands::new(
         "kubectl",
         &request.workspace_path,
-        vec![
-            "--kubeconfig".into(),
-            kubeconfig.into(),
-            "--namespace".into(),
-            namespace.into(),
-            "--request-timeout=15s".into(),
-        ],
+        super::kubectl_prefix(request, temporary)?,
         timeout,
     )?;
     let pod = commands.json(&["get", "pod", name, "-o", "json"]).await?;

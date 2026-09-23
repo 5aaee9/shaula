@@ -258,12 +258,6 @@ pub fn validate_fleet_spec(spec: &FleetSpec) -> CoreResult<()> {
             validate_profile_key_for_fleet_ref(&spec.github.auth_profile_ref)?;
         }
         FleetProviderKind::Forgejo => {
-            if spec.template_pool.is_some() || spec.template_pool_ref.is_some() {
-                return Err(CoreError::new(
-                    ReasonCode::SpecInvalid,
-                    "forgejo fleets require a single template_profile_ref; template pools are unsupported",
-                ));
-            }
             if !is_placeholder_github(&spec.github) {
                 return Err(CoreError::new(
                     ReasonCode::SpecInvalid,

@@ -113,7 +113,7 @@ test("Forgejo creation only selects compatible templates and submits no GitHub o
   const templates = page.getByLabel("Template profile", { exact: true });
   await expect(templates.locator('option[value="kubernetes-linux"]')).toHaveCount(0);
   await expect(templates.locator('option[value="unresolved"]')).toHaveCount(0);
-  await expect(page.getByRole("radio", { name: "Weighted pool" })).toHaveCount(0);
+  await expect(page.getByLabel("Template placement", { exact: true })).toHaveValue("single");
   await templates.selectOption("forgejo-linux");
   await page.getByRole("button", { name: "Load latest Active" }).click();
   let body: Record<string, unknown> | undefined;
@@ -140,6 +140,122 @@ test("Forgejo creation only selects compatible templates and submits no GitHub o
       template_profile_ref: "forgejo-linux",
       template_inputs: {},
     });
+});
+
+for (const placement of ["pool", "shared"]) {
+  test(`Forgejo ${placement} placement submits exactly one routing source`, async ({ page }) => {
+    await setup(page);
+    await page.route("**/api/v1/template-pools", (route) =>
+      route.fulfill({
+        json: { pools: [{ key: "forgejo-pool", revision: 1, incarnation: "pool-inc" }] },
+      }),
+    );
+    await page.goto("/fleets/new");
+    await page.getByLabel("Runner backend", { exact: true }).selectOption("forgejo");
+    await page.getByLabel("Fleet key", { exact: true }).fill("forgejo-weighted");
+    await page
+      .getByLabel("Forgejo authentication profile", { exact: true })
+      .selectOption("forgejo-auth");
+    await page.getByLabel("Labels", { exact: true }).fill("linux:host");
+    await page.getByLabel("Template placement", { exact: true }).selectOption(placement);
+    if (placement === "pool") {
+      const templates = page.getByLabel("Template profile", { exact: true });
+      await expect(templates.locator('option[value="kubernetes-linux"]')).toHaveCount(0);
+      await templates.selectOption("forgejo-linux");
+      await page.getByLabel("Weight", { exact: true }).fill("3");
+    } else {
+      await page.getByLabel("Template pool", { exact: true }).selectOption("forgejo-pool");
+    }
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await page.screenshot({
+        path: `test-results/forgejo-${placement}-${width}.png`,
+        fullPage: true,
+      });
+    }
+    let body: Record<string, unknown> | undefined;
+    await page.route("**/api/v1/fleets/forgejo-weighted", (route) => {
+      body = route.request().postDataJSON();
+      return route.fulfill({
+        status: 202,
+        json: { changeId: "change", revision: 1, state: "Pending" },
+      });
+    });
+    await page.getByRole("button", { name: "Create fleet", exact: true }).click();
+    await expect.poll(() => body?.kind).toBe("forgejo");
+    expect(body).not.toHaveProperty("github");
+    expect(body).not.toHaveProperty("template_profile_ref");
+    expect(body).not.toHaveProperty("template_inputs");
+    if (placement === "pool") {
+      expect(body).not.toHaveProperty("template_pool_ref");
+      expect(body?.template_pool).toEqual({
+        failure_policy: "backpressure",
+        members: [
+          {
+            key: "member-1",
+            template_profile_ref: "forgejo-linux",
+            weight: 3,
+            template_inputs: {},
+          },
+        ],
+      });
+    } else {
+      expect(body).not.toHaveProperty("template_pool");
+      expect(body?.template_pool_ref).toBe("forgejo-pool");
+    }
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    }
+  });
+}
+
+test("Forgejo shared-pool edit retains the frozen route without loading a single-template contract", async ({
+  page,
+}) => {
+  await setup(page);
+  const pooled = {
+    ...resource,
+    spec: {
+      ...resource.spec,
+      template_profile_ref: undefined,
+      template_inputs: undefined,
+      template_pool_ref: "forgejo-pool",
+    },
+    resolved: { ...resource.resolved, template: null },
+  };
+  let body: Record<string, unknown> | undefined;
+  let contractReads = 0;
+  await page.route("**/api/v1/template-profiles/**/input-contract", (route) => {
+    contractReads++;
+    return route.fallback();
+  });
+  await page.route("**/api/v1/template-pools", (route) => route.fulfill({ json: { pools: [] } }));
+  await page.route("**/api/v1/fleets/forgejo-build", (route) => {
+    if (route.request().method() === "PUT") {
+      expect(route.request().headers()["if-match"]).toBe('"fleet-incarnation:2"');
+      body = route.request().postDataJSON();
+      return route.fulfill({
+        status: 202,
+        json: { changeId: "change", revision: 3, state: "Pending" },
+      });
+    }
+    return route.fulfill({ headers: { etag: '"fleet-incarnation:2"' }, json: pooled });
+  });
+  await page.goto("/fleets/forgejo-build/edit");
+  await expect(page.getByLabel("Template placement", { exact: true })).toHaveValue("shared");
+  await expect(page.getByLabel("Template placement", { exact: true })).toBeDisabled();
+  await page.getByLabel("Maximum runners", { exact: true }).fill("3");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect.poll(() => body?.template_pool_ref).toBe("forgejo-pool");
+  expect(body).not.toHaveProperty("template_profile_ref");
+  expect(body).not.toHaveProperty("template_inputs");
+  expect(contractReads).toBe(0);
 });
 
 for (const scope of ["instance", "user", "organization", "repository"]) {

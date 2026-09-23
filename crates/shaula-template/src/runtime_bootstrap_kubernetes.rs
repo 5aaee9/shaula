@@ -23,7 +23,6 @@ pub(super) async fn launch(
         return forgejo::launch(request, envelope, image, temporary, timeout).await;
     }
     let namespace = binding(request, "namespace")?;
-    let kubeconfig = binding(request, "kubeconfig")?;
     let name = &request.input.generation.generation_name;
     let runner = resource(envelope, "runner")?;
     let bootstrap = resource(envelope, "bootstrap")?;
@@ -34,13 +33,7 @@ pub(super) async fn launch(
     let commands = Commands::new(
         "kubectl",
         &request.workspace_path,
-        vec![
-            "--kubeconfig".into(),
-            kubeconfig.into(),
-            "--namespace".into(),
-            namespace.into(),
-            "--request-timeout=15s".into(),
-        ],
+        kubectl_prefix(request, temporary)?,
         timeout,
     )?;
     let pod = commands.json(&["get", "pod", name, "-o", "json"]).await?;
@@ -62,6 +55,33 @@ pub(super) async fn launch(
         .await?;
     Ok(())
 }
+
+pub(super) fn kubectl_prefix(
+    request: &TemplateCreateRequest,
+    temporary: &Path,
+) -> Result<Vec<String>, TemplateOutcomeError> {
+    if !temporary.is_absolute() || temporary.starts_with(&request.workspace_path) {
+        return Err(failed());
+    }
+    // env_clear removes HOME. kubectl otherwise creates .kube/cache in the
+    // immutable workspace, invalidating the material commitment before Destroy.
+    // Keep discovery state in the existing private, operation-scoped directory;
+    // never exempt .kube from the provenance check.
+    let cache = temporary.join("kubectl-cache");
+    Ok(vec![
+        "--cache-dir".into(),
+        cache.to_str().ok_or_else(failed)?.into(),
+        "--kubeconfig".into(),
+        binding(request, "kubeconfig")?.into(),
+        "--namespace".into(),
+        binding(request, "namespace")?.into(),
+        "--request-timeout=15s".into(),
+    ])
+}
+
+#[cfg(test)]
+#[path = "runtime_bootstrap_kubernetes_cache_tests.rs"]
+mod cache_tests;
 
 pub(super) fn validate_metadata(
     value: &Value,

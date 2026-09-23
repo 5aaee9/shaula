@@ -1,5 +1,7 @@
 import { Plus, Trash2, CircleAlert } from "lucide-react";
 import { useTemplates } from "@/lib/queries";
+import { templateChoices, type RunnerBackend } from "@/lib/runner-backend";
+import type { ProfileChoices } from "@/lib/profile-choice";
 import { useMemberContract } from "@/lib/use-member-inputs";
 import { inputEntries, inputsJson } from "@/lib/input-values";
 import type { TemplatePoolMemberSpec } from "@/lib/types";
@@ -41,14 +43,17 @@ export function TemplatePoolEditor({
   failurePolicy,
   setFailurePolicy,
   canRead,
+  backend,
 }: {
   members: TemplatePoolMemberSpec[];
   setMembers: (members: TemplatePoolMemberSpec[]) => void;
   failurePolicy: "backpressure" | "redistribute";
   setFailurePolicy: (value: "backpressure" | "redistribute") => void;
   canRead: boolean;
+  backend?: RunnerBackend;
 }) {
-  const templates = useTemplates(canRead);
+  const query = useTemplates(canRead);
+  const templates = backend ? templateChoices(query, backend) : query;
   const total = members.reduce((sum, member) => sum + Math.max(0, member.weight), 0);
   const shares = members.map((member) =>
     total > 0 && member.weight > 0 ? member.weight / total : 0,
@@ -73,7 +78,7 @@ export function TemplatePoolEditor({
         </div>
         <p className="mt-2 text-sm text-muted-foreground">
           Each new runner draws a member independently by weight. Weights shape the long-run mix;
-          finite batches can vary and GitHub job routing is not controlled.
+          finite batches can vary and workflow job routing is not controlled.
         </p>
       </div>
 
@@ -121,8 +126,9 @@ export function TemplatePoolEditor({
           </NativeSelectOption>
         </NativeSelect>
         <p className="text-sm text-muted-foreground">
-          When a member's backend fails, hold capacity (backpressure) or redraw onto the remaining
-          members (redistribute).
+          Inline pools pause when any member reaches its cap (backpressure), or draw from uncapped
+          members (redistribute). Shared pools always exclude capped members. An admitted runner
+          keeps its selected template, even after failure.
         </p>
       </Field>
     </div>
@@ -144,7 +150,7 @@ function MemberRow({
   member: TemplatePoolMemberSpec;
   tone: string;
   share: number;
-  templates: ReturnType<typeof useTemplates>;
+  templates: ProfileChoices;
   canRead: boolean;
   canRemove: boolean;
   onChange: (member: TemplatePoolMemberSpec) => void;

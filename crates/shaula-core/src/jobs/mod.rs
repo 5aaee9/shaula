@@ -1,9 +1,15 @@
 //! Workflow-job observations and read-only history. None of these types authorize lifecycle effects.
 
 mod forgejo;
+mod forgejo_result;
 mod metadata;
 mod projection;
-pub use forgejo::{ForgejoJobObservation, ForgejoJobState, ForgejoJobsStore};
+pub use forgejo::{
+    ForgejoJobObservation, ForgejoJobState, ForgejoJobsStore, ForgejoObservationSource,
+};
+pub use forgejo_result::{
+    ForgejoJobLookup, ForgejoJobResult, ForgejoTaskConclusion, ForgejoTaskResult,
+};
 
 pub use metadata::JobMetadata;
 pub use projection::{project_observations, JobProjection};

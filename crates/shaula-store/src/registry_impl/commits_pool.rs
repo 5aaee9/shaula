@@ -13,6 +13,23 @@ impl SqliteControlPlane {
         facts: MutationFacts,
     ) -> CoreResult<Result<(), MutationError>> {
         let tx = self.store.begin().await.map_err(core_err)?;
+        // Admission may have observed Active before DELETE reserved the writer.
+        // Only exact pins already owned by this live pool may survive its fence.
+        for member in &facts.template_pool {
+            use sea_orm::{ConnectionTrait, DbBackend, Statement};
+            let retired = tx.query_one(Statement::from_sql_and_values(DbBackend::Sqlite,
+                "SELECT 1 FROM template_profiles t WHERE t.key=? AND t.deletion_requested=1
+                 AND NOT EXISTS(SELECT 1 FROM template_pool_members m JOIN template_pools p
+                    ON p.key=m.pool_key AND p.desired_revision=m.pool_revision
+                    WHERE p.key=? AND p.tombstone=0 AND m.template_profile_key=t.key AND m.template_revision=?)",
+                [member.template_profile_key.clone().into(), facts.resource_key.clone().into(), member.template_revision.into()],
+            )).await.map_err(|e| core_err(e.into()))?;
+            if retired.is_some() {
+                return Ok(Err(MutationError::RetirementBlocked {
+                    reason: "profile is retiring".into(),
+                }));
+            }
+        }
         // The failure policy rides on the admitted spec JSON; the commit
         // persists it denormalized on the revision row for cheap reads.
         let failure_policy =

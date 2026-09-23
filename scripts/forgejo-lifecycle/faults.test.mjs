@@ -33,6 +33,31 @@ test("Docker fault only blocks removal; recovery forwards the original request",
   }
 });
 
+test("demand failure and a lost registration response never intercept task acquisition", async () => {
+  let posts = 0;
+  const upstream = createServer((req,res) => {
+    req.resume();
+    if (req.method === "POST" && req.url === "/api/v1/admin/actions/runners") {
+      posts++; res.writeHead(201, { "content-type": "application/json" }); res.end('{"id":1,"token":"fixture-canary"}');
+    } else { res.writeHead(204); res.end(); }
+  });
+  await new Promise(resolve => upstream.listen(0,"127.0.0.1",resolve));
+  const port = await freePort();
+  const proxy = await faultProxy({target:`http://127.0.0.1:${upstream.address().port}`,listen:{host:"127.0.0.1",port}});
+  const url = `http://127.0.0.1:${port}`;
+  try {
+    proxy.gate.failJobs = true;
+    assert.equal((await fetch(`${url}/api/v1/admin/actions/runners/jobs?labels=linux`)).status,503);
+    assert.equal((await fetch(`${url}/twirp/runner.v1.RunnerService/FetchTask`,{method:"POST"})).status,204);
+    proxy.gate.dropRegistrationResponses = true;
+    await assert.rejects(fetch(`${url}/api/v1/admin/actions/runners`,{method:"POST"}));
+    assert.equal(posts,1);
+    assert.equal(proxy.gate.registrationPosts,1);
+    assert.equal(proxy.gate.droppedRegistrations,1);
+    assert.equal(proxy.gate.jobFailures,1);
+  } finally { await proxy.close(); upstream.closeAllConnections(); await new Promise(resolve=>upstream.close(resolve)); }
+});
+
 test("Forgejo fault does not intercept task acquisition or reads", async () => {
   const upstream = createServer((req, res) => { req.resume(); res.writeHead(204); res.end(); });
   await new Promise(resolve => upstream.listen(0, "127.0.0.1", resolve));

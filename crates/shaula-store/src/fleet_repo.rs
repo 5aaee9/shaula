@@ -129,9 +129,30 @@ impl Store {
             if profile.deletion_requested
                 || profile.active_revision != Some(member.template_revision)
             {
-                return Err(crate::store::StoreError::Conflict {
-                    resource: format!("{}:template-revision-not-active", member.key),
-                });
+                // Capacity-only PUTs retain the exact pin already owned by the
+                // current Fleet, even after promotion/retirement. This is not a
+                // new consumer or a way to admit changed inputs against an old pin.
+                let retained = if let Some(head) = &existing {
+                    fleet_revision_pool_members::Entity::find()
+                        .filter(fleet_revision_pool_members::Column::FleetKey.eq(key))
+                        .filter(fleet_revision_pool_members::Column::FleetRevision.eq(head.desired_revision))
+                        .filter(fleet_revision_pool_members::Column::MemberKey.eq(&member.key))
+                        .one(tx).await?
+                        .is_some_and(|old| old.template_profile_key == member.template_profile_key
+                            && old.template_revision == member.template_revision
+                            && old.template_artifact_digest == member.template_artifact_digest
+                            && old.template_attestation_id == member.template_attestation_id
+                            && old.inputs_digest == member.inputs_digest
+                            && serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&old.template_inputs_json)
+                                .is_ok_and(|inputs| inputs == member.template_inputs))
+                } else {
+                    false
+                };
+                if !retained {
+                    return Err(crate::store::StoreError::Conflict {
+                        resource: format!("{}:template-revision-not-active", member.key),
+                    });
+                }
             }
             if template_profile_revisions::Entity::find()
                 .filter(

@@ -44,6 +44,64 @@ test("Forgejo jobs show the backend, exact identity and stale snapshot without a
   await expect(row).toContainText("Run 8, attempt 2");
 });
 
+for (const conclusion of ["success", "failure", "cancelled", "skipped"]) {
+  test(`Forgejo exact task history shows ${conclusion} without a verified runner`, async ({
+    page,
+  }) => {
+    await mockApi(page);
+    await page.route("**/api/v1/jobs/forgejo-job", (route) =>
+      route.fulfill({
+        json: {
+          ...job,
+          observed_status: "completed",
+          reported_result: conclusion,
+          freshness: "confirmed",
+          forgejo: {
+            ...job.forgejo,
+            in_snapshot: false,
+            result: {
+              task_id: "42",
+              conclusion,
+              observed_at: 1800000002000,
+              run_number: "8",
+              run_url: "https://forgejo.example.test/owner/repo/actions/runs/8",
+              workflow: "build.yml",
+            },
+          },
+          generations: [],
+          observations: [],
+          observations_truncated: false,
+          forgejo_observations: [
+            {
+              id: "final",
+              reported_status: conclusion,
+              task_id: "42",
+              observed_at: 1800000002000,
+              source: "task_history",
+            },
+          ],
+        },
+      }),
+    );
+    await page.goto("/jobs/forgejo-job");
+    await expect(page.getByText("Task result", { exact: true })).toBeVisible();
+    await expect(page.getByText(`Task history: ${conclusion}`, { exact: true })).toBeVisible();
+    await expect(page.getByText("No verified runner association", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Open workflow run", exact: true }),
+    ).toHaveAttribute("href", "https://forgejo.example.test/owner/repo/actions/runs/8");
+    await expect(page.getByText("GitHub conclusion", { exact: true })).toHaveCount(0);
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    }
+    if (conclusion === "success")
+      await page.screenshot({ path: "test-results/forgejo-job-result-mobile.png", fullPage: true });
+  });
+}
+
 test("a no-longer-listed Forgejo job has an unknown outcome and provider-specific observations", async ({
   page,
 }) => {

@@ -101,7 +101,7 @@ _Avoid_: Tenant sandbox, credential broker, control-plane trust domain
 _Avoid_: Provider, image, template directory
 
 **Template Pool**:
-一个共享单一 GitHub Scale Set 路由身份、并以明确权重提供多个 Template Profile Revision 的逻辑执行集合；权重是 Shaula 对 eligible acquisition 的长期调度目标，不是 GitHub 的 job 路由保证。
+按明确权重为每个新 Generation 选择并固定一个 Template Profile Revision 的执行集合，可内联于 Fleet 或由多个 Fleet 引用共享池。每个成员必须兼容引用 Fleet 的 Runner Backend；GitHub Fleet 保持其单一 Scale Set 身份，Forgejo Fleet 保持其 scope 与 labels。权重仅控制基础设施抽取的长期比例，不保证 job 路由；已创建 Generation 不重新抽取。
 _Avoid_: Fleet, Scale Set, guaranteed job ratio
 
 **Template Profile Revision**:

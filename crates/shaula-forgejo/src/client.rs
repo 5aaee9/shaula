@@ -371,6 +371,8 @@ impl ForgejoClient {
 mod capabilities;
 #[path = "client_identity.rs"]
 mod identity;
+#[path = "client_jobs.rs"]
+mod jobs;
 
 #[derive(Deserialize)]
 struct RawRegistration {

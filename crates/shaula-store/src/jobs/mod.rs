@@ -4,6 +4,10 @@ mod forgejo;
 mod forgejo_projection;
 mod forgejo_read;
 #[cfg(test)]
+mod forgejo_result_tests;
+mod forgejo_results;
+mod forgejo_scope;
+#[cfg(test)]
 mod forgejo_tests;
 mod ingest;
 mod query;

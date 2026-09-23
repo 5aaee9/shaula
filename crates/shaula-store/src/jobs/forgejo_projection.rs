@@ -38,14 +38,28 @@ pub(super) async fn upsert(
             || old.last_reported_status != job.status
             || old.task_id != job.task_id.to_string()
     });
-    let status = match job.status.as_str() {
-        "waiting" => ObservedStatus::Queued,
-        "running" => ObservedStatus::Running,
-        _ => ObservedStatus::Unknown,
+    let retained = prior.filter(|old| old.task_id == job.task_id.to_string());
+    let result = retained.and_then(|old| old.result.clone());
+    let status = if result.is_some() {
+        ObservedStatus::Completed
+    } else {
+        match job.status.as_str() {
+            "waiting" => ObservedStatus::Queued,
+            "running" => ObservedStatus::Running,
+            _ => ObservedStatus::Unknown,
+        }
     };
     let (owner, repository) = match &target.scope {
         ForgejoScope::Repository { owner, name } => (Some(owner.clone()), Some(name.clone())),
-        _ => (None, None),
+        _ => previous
+            .as_ref()
+            .map(|j| {
+                (
+                    j.metadata.owner_name.clone(),
+                    j.metadata.repository_name.clone(),
+                )
+            })
+            .unwrap_or_default(),
     };
     let repository_filter = owner
         .as_ref()
@@ -69,7 +83,7 @@ pub(super) async fn upsert(
             ..Default::default()
         },
         observed_status: status,
-        reported_result: None,
+        reported_result: result.as_ref().map(|r| r.conclusion.as_str().into()),
         freshness: "unknown".into(),
         association_status: AssociationStatus::Unverified,
         github_run_url: None,
@@ -77,7 +91,7 @@ pub(super) async fn upsert(
         workflow_run_attempt: None,
         github_conclusion: None,
         created_at: previous.as_ref().map_or(now, |j| j.created_at),
-        updated_at: now,
+        updated_at: previous.as_ref().map_or(now, |old| now.max(old.updated_at)),
         forgejo: Some(ForgejoJobState {
             target: target.clone(),
             repository_id: job.repo_id.to_string(),
@@ -89,6 +103,8 @@ pub(super) async fn upsert(
             last_reported_status: job.status.clone(),
             last_observed_at: now,
             in_snapshot: true,
+            result,
+            enrichment_attempted_at: retained.and_then(|old| old.enrichment_attempted_at),
         }),
     };
     execute(tx, "INSERT INTO forgejo_workflow_jobs(id,scope_key,fleet_key,fleet_incarnation,protocol_job_id,
@@ -97,7 +113,7 @@ pub(super) async fn upsert(
         repository=excluded.repository,job_name=excluded.job_name,in_snapshot=1,updated_at=excluded.updated_at",
         vec![summary.id.clone().into(), scope.into(), fleet.into(), incarnation.into(), protocol_id.into(),
             encode(&summary)?.into(), status.as_str().into(), repository_filter.into(), job.name.clone().into(),
-            summary.created_at.into(), now.into()]).await?;
+            summary.created_at.into(), summary.updated_at.into()]).await?;
     if changed {
         event(
             tx,
@@ -118,11 +134,48 @@ pub(super) async fn event(
     task_id: &str,
     now: i64,
 ) -> StoreResult<()> {
+    append_event(
+        tx,
+        id,
+        status,
+        task_id,
+        now,
+        shaula_core::jobs::ForgejoObservationSource::RunnerSnapshot,
+    )
+    .await
+}
+
+pub(super) async fn result_event(
+    tx: &DatabaseTransaction,
+    id: &str,
+    result: &shaula_core::jobs::ForgejoTaskResult,
+    now: i64,
+) -> StoreResult<()> {
+    append_event(
+        tx,
+        id,
+        Some(result.conclusion.as_str()),
+        &result.task_id.to_string(),
+        now,
+        shaula_core::jobs::ForgejoObservationSource::TaskHistory,
+    )
+    .await
+}
+
+async fn append_event(
+    tx: &DatabaseTransaction,
+    id: &str,
+    status: Option<&str>,
+    task_id: &str,
+    now: i64,
+    source: shaula_core::jobs::ForgejoObservationSource,
+) -> StoreResult<()> {
     let observation = ForgejoJobObservation {
         id: uuid::Uuid::new_v4().to_string(),
         reported_status: status.map(str::to_owned),
         task_id: task_id.into(),
         observed_at: now,
+        source,
     };
     execute(tx, "INSERT INTO forgejo_job_observations(id,job_record_id,data_json,observed_at) VALUES(?,?,?,?)",
         vec![observation.id.clone().into(), id.into(), encode(&observation)?.into(), now.into()]).await

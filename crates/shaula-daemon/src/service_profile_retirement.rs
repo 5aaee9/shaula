@@ -47,18 +47,19 @@ impl ControlPlane {
             return Ok(Err(error));
         }
         let now = self.now_ms();
-        // Existing heads and exact pins are retained until retention/reference clearance.
+        // Logical retirement retains immutable bytes and the revision high-water mark.
+        let retired = head.status == "Retired";
         let accepted = MutationAccepted {
             etag: format!("{}:{}", head.incarnation, head.desired_revision),
-            no_op: false,
+            no_op: retired,
             change: ChangeView {
                 id: self.new_id(),
                 resource_kind: kind.into(),
                 resource_key: key.into(),
                 revision: head.desired_revision,
                 kind: "Retire".into(),
-                state: "Blocked".into(),
-                reason: Some("ResourceInUse".into()),
+                state: if retired { "Succeeded" } else { "Blocked" }.into(),
+                reason: (!retired).then(|| "ResourceInUse".into()),
             },
         };
         let body = serde_json::to_string(&accepted)
@@ -79,7 +80,7 @@ impl ControlPlane {
             change: accepted.change.clone(),
             outbox_topic: "profile.retire".into(),
             outbox_payload: serde_json::json!({"kind": kind, "key": key}).to_string(),
-            idempotency: idempotency_key.map(|k| (k, hash, 202, body)),
+            idempotency: idempotency_key.map(|k| (k, hash, if retired { 200 } else { 202 }, body)),
         };
         match self.store.commit_profile_retirement(facts).await? {
             Ok(()) => Ok(Ok(accepted)),

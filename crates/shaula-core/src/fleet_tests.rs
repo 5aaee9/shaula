@@ -100,7 +100,7 @@ fn pool_requires_members_and_exclusive_template_reference() {
 }
 
 #[test]
-fn forgejo_only_admits_single_template_and_omits_github_on_read() {
+fn forgejo_admits_each_exclusive_template_source_and_omits_github_on_read() {
     let mut spec = FleetSpec {
         kind: FleetProviderKind::Forgejo,
         github: FleetGithubSection::default(),
@@ -119,14 +119,13 @@ fn forgejo_only_admits_single_template_and_omits_github_on_read() {
     assert_eq!(json["kind"], "forgejo");
     spec.template_profile_ref = TemplateProfileRefDto::default();
     spec.template_pool_ref = Some("shared".into());
-    assert!(validate_fleet_spec(&spec)
-        .unwrap_err()
-        .summary
-        .contains("template pools are unsupported"));
+    assert!(validate_fleet_spec(&spec).is_ok());
     spec.template_pool_ref = None;
     spec.template_pool = Some(pool());
-    assert!(validate_fleet_spec(&spec)
-        .unwrap_err()
-        .summary
-        .contains("template pools are unsupported"));
+    assert!(validate_fleet_spec(&spec).is_ok());
+    spec.template_pool_ref = Some("shared".into());
+    assert_eq!(
+        validate_fleet_spec(&spec).unwrap_err().code,
+        ReasonCode::SpecInvalid
+    );
 }

@@ -1,8 +1,8 @@
 # Forgejo lifecycle acceptance
 
-Unlike `scripts/forgejo-e2e.sh`, this harness starts the **actual `shaula serve` binary** with an isolated SQLite database and a disposable HTTPS OIDC issuer. It publishes the bundled Docker artifact and Forgejo credential through authenticated HTTP, then lets the production supervisor and Terraform runtime own Runner Create/Destroy. No fake runtime, direct runner registration, or direct runner start is used.
+This harness starts **actual `shaula serve`**, isolated SQLite and a disposable HTTPS OIDC issuer. It publishes the bundled artifact and credential through authenticated HTTP; the production supervisor and Terraform own Runner Create/Destroy. No fake runtime or direct Runner start/registration substitutes for the lifecycle. Permission-only probes separately create/delete registrations to test scoped API authorization.
 
-Prerequisites: Linux, real Docker Engine (Podman is rejected), Node 22+, OpenSSL, tar, the pinned Terraform 1.9.8 executable, and a built Shaula binary. The caller must be in the Docker host's network namespace; for a rootless Engine enter its RootlessKit child user/mount/network namespace. Do not expose the fixture ports outside a disposable development/test host. Only generated test workflows are executed.
+Prerequisites: Linux, real Docker Engine (not Podman), Node 22.13+, OpenSSL, tar, Terraform **1.9.8**, and a built Shaula binary. The caller must be in the Docker host network namespace (enter the RootlessKit child user/mount/network namespace for rootless Docker). Only generated test workflows run. Do not expose fixture ports on a production host.
 
 ```sh
 npm ci --prefix web
@@ -10,21 +10,46 @@ npm run build --prefix web
 cargo build --locked -p shaula
 export DOCKER_HOST=unix:///var/run/docker.sock
 export TERRAFORM_BIN=/absolute/path/to/terraform
-# Optional: DOCKER_BIN and SHAULA_BIN are exact executable paths.
-node --test scripts/forgejo-lifecycle/faults.test.mjs
+# Optional DOCKER_BIN and SHAULA_BIN are exact executables.
+# The real docker and kubectl must also be first on PATH: runtime bootstrap
+# resolves these host CLIs independently of the harness's DOCKER_BIN.
+node --test scripts/forgejo-lifecycle/*.test.mjs
 node scripts/forgejo-lifecycle/run.mjs
 ```
 
-Docker 29 can require an explicit minimum API compatibility setting for the bundled Docker provider 3.0.2. Configure this only on the disposable Engine, not by altering a production daemon. The harness uses the existing template without modifying its command, network, image, or runtime contract.
+Docker 29 may need `DOCKER_MIN_API_VERSION=1.24` for provider 3.0.2; change only an owned disposable Engine. Rootless DNS may require a provider filesystem mirror, with the original readonly provider lock. Do not modify templates or weaken plan admission to make a test pass.
 
-Scenarios:
+## Docker checks
 
-- Queued demand creates one ephemeral runner; success and failure both end in exact registration absence, Generation Destroyed, zero occupancy, container and anonymous credential volume absence.
-- Real Jobs API: retain the running Forgejo job with no synthetic Scale Set ID or verified Runner association; after disappearance retain Unknown, never infer the workflow result.
-- Kill/restart `shaula serve` during a running job: retain the one Generation, complete the job, and reclaim it.
-- Temporarily configure `runner.max_lifetime_secs: 15`: reclaim a waiting runner, and interrupt/reclaim an active runner. These are hard-deadline tests, **not idle-safe drain evidence**.
-- Test-only transports fail Docker container DELETE, then Forgejo registration DELETE. Restart the daemon at each checkpoint; occupancy stays held until both sides converge. Task acquisition traffic is forwarded unchanged; this is not a production acquisition proxy.
+- Success/failure and daemon restart during Busy: one ephemeral registration/Generation, exact Task result in Jobs, then Destroyed, zero occupancy and no container/anonymous credential volume/registration. Jobs associations remain Unverified.
+- Matching and mismatched `runs-on`: a missing requested label leaves the job waiting and does not create a Runner. The job's requested labels must be a subset of Runner labels, not the reverse.
+- Jobs management GET returns 503: positive demand and its timestamp survive restart, no ordinary Create/drain occurs. Restore polling, finish jobs, reclaim normally. Fleet prefixes are non-overlapping.
+- Four minimum permission categories, public Shaula Auth activation, read-only mutation denial, wrong-owner/instance denial and the additional repository read permission for optional history.
+- `max_lifetime_secs: 15`: reclaim waiting and active resources. Hard expiry still works with failed demand reads. Independently fail Docker DELETE and registration DELETE, restart at each checkpoint, retain occupancy until both converge. These are **not idle-safe drain** tests.
+- Lose a real successful registration response: the undeclared runner has no joint label ownership proof, so quarantine with occupancy held; no repeated POST, no resource Create. This does **not** prove that name-only ownership is safe, or cover all artificial ExactlyOne/None/Multiple classifications on a live server.
+- Check actual per-Runner and management credentials against argv/env, metadata, runner/daemon logs, Jobs/Generation/Operation Log APIs, and Terraform inputs. Decode saved plans rather than grep compressed bytes. Bundled Forgejo v1 templates do not emit Setup Info; its rendering/redaction remains covered by local tests.
 
-The owner-only temporary directory retains config, SQLite, Terraform state/workspaces and daemon logs. These are credential-grade and must not be uploaded. `report.json` and stdout contain only bounded scenario results and commitments; they are not a full template conformance attestation. On failure teardown removes only this fixture's disposable resources after stopping Shaula. Teardown never counts as a successful lifecycle assertion. A failed teardown is reported as failure, not ignored.
+Fault proxies only alter management jobs reads, registration responses and DELETE outcomes. Acquisition traffic passes unchanged. No production acquisition proxy is introduced.
 
-Not covered: cloud VM/Kubernetes runtime acceptance, minimum scoped Forgejo permissions, safe early drain of a waiting runner, lost registration responses, or real GitHub regression. The shared local regression suite remains required independently.
+## Local Kubernetes
+
+Provision an **isolated, disposable Kind cluster** yourself. The harness creates/deletes only its random namespace and requires an explicit context beginning `kind-shaula-`; it never uses an ambient/default cluster.
+
+```sh
+export SHAULA_ACCEPTANCE_BACKEND=kubernetes
+export KUBECONFIG=/absolute/path/to/disposable-kubeconfig
+export SHAULA_ACCEPTANCE_KUBE_CONTEXT=kind-shaula-forgejo-followup
+node scripts/forgejo-lifecycle/run.mjs
+```
+
+Terraform uses the existing Kubernetes template/provider **2.33.0**. Assertions require one non-root Pod with restartPolicy Never, no service-account token, one host-released immutable Secret, and eventual Pod/Secret/registration absence. Success/failure, Busy restart, labels, stale demand, waiting/Busy hard expiry, Jobs and lost-response quarantine use real APIs. Docker transport DELETE retry and the permission matrix are tested by the Docker run, not repeated as Kubernetes-specific evidence.
+
+The exact official image digest must be available to containerd. Where cluster DNS cannot reach the registry, preload an OCI archive copied with `skopeo copy --all --preserve-digests` and verify the original index SHA-256 before importing. A legacy `docker save` archive may lose the index identity; do not relabel a different manifest with the expected digest. No custom/repacked Runner image is accepted.
+
+**Operator-approved credential boundary:** Kubernetes Destroy refresh reads the single Runner token from the bootstrap Secret into protected plan/state/backup. The harness requires owner-only directories/files, permits that token only in the exact original Secret data, and still rejects management tokens, input/metadata/argv/env or log exposure. It records `protectedTokenCopies` explicitly. It does not claim Kubernetes tokens never enter Terraform evidence. Raw materials remain credential-grade even after the token's ephemeral registration disappears.
+
+## Evidence and limits
+
+Owner-only temporary directories retain config, SQLite, raw plans/state/workspaces and logs; **never upload them**. `report.json`/stdout contain bounded results and digests only. Teardown stops Shaula and deletes only fixture-owned resources; it never counts as successful Shaula reclaim. The deliberately quarantined response-loss orphan is removed only with the disposable Forgejo server and is not counted as automatic cleanup.
+
+No real VM/cloud, real GitHub, busy-safe early idle drain, full supported-version matrix, or weighted-load distribution acceptance is claimed. Local Rust/browser regression, Terraform/runtime conformance and these real acceptance checks are separate verification layers.

@@ -20,6 +20,8 @@ pub use models::{
 };
 
 #[cfg(test)]
+mod client_jobs_tests;
+#[cfg(test)]
 mod http_safety_tests;
 #[cfg(test)]
 mod tests;

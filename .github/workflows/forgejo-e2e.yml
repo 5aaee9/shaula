@@ -60,7 +60,7 @@ jobs:
           printf '[Service]\nEnvironment=DOCKER_MIN_API_VERSION=1.24\n' | sudo tee /etc/systemd/system/docker.service.d/shaula-acceptance.conf >/dev/null
           sudo systemctl daemon-reload
           sudo systemctl restart docker
-      - name: Exercise real lifecycle, restart, hard expiry and deletion retries
+      - name: Exercise lifecycle, permissions, Jobs, faults and credential boundaries
         run: |
-          nix develop --command node --test scripts/forgejo-lifecycle/faults.test.mjs
+          nix develop --command node --test scripts/forgejo-lifecycle/*.test.mjs
           nix develop --command node scripts/forgejo-lifecycle/run.mjs

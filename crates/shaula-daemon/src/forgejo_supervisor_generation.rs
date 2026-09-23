@@ -41,22 +41,28 @@ impl ForgejoPoolSupervisor {
         if spec.kind != FleetProviderKind::Forgejo {
             return Ok(false);
         }
-        let (
-            Some(profile_key),
-            Some(template_revision),
-            Some(artifact_digest),
-            Some(attestation_id),
-        ) = (
-            snapshot.template_profile_key,
-            snapshot.template_revision,
-            snapshot.template_artifact_digest,
-            snapshot.template_attestation_id,
-        )
-        else {
-            return Err(CoreError::new(
-                ReasonCode::TemplateInvalid,
-                "Forgejo revision has no resolved template pin",
-            ));
+        let pooled = spec.template_pool.is_some() || spec.template_pool_ref.is_some();
+        // Pool placeholders never reach storage: the common admission transaction
+        // selects and freezes the exact route before inserting the Generation.
+        let (profile_key, template_revision, artifact_digest, attestation_id) = if pooled {
+            (String::new(), 0, String::new(), String::new())
+        } else {
+            match (
+                snapshot.template_profile_key,
+                snapshot.template_revision,
+                snapshot.template_artifact_digest,
+                snapshot.template_attestation_id,
+            ) {
+                (Some(key), Some(revision), Some(digest), Some(attestation)) => {
+                    (key, revision, digest, attestation)
+                }
+                _ => {
+                    return Err(CoreError::new(
+                        ReasonCode::TemplateInvalid,
+                        "Forgejo revision has no resolved template pin",
+                    ))
+                }
+            }
         };
         let generation_id = shaula_core::auth::new_attempt_id();
         let generation_name = resource_name(&generation_id);
@@ -80,22 +86,30 @@ impl ForgejoPoolSupervisor {
             created_at: now,
             updated_at: now,
         };
-        if !self
-            .lifecycle
-            .generation_insert_guarded(record.clone(), &self.guard)
-            .await?
-        {
-            // The captured Fleet authority changed before the ledger insert;
-            // retry from the next reconciliation pass.
-            return Ok(false);
-        }
+        let (record, parameters) = if pooled {
+            let Some(admission) = self
+                .lifecycle
+                .generation_admit_pool(record, &self.guard)
+                .await?
+            else {
+                return Ok(false);
+            };
+            (admission.generation, admission.template_inputs)
+        } else {
+            if !self
+                .lifecycle
+                .generation_insert_guarded(record.clone(), &self.guard)
+                .await?
+            {
+                return Ok(false);
+            }
+            (record, spec.template_inputs)
+        };
         self.lifecycle
             .generation_advance(&generation_id, GenerationState::Creating, now)
             .await?;
         drop(gate);
-        let prepared = self
-            .prepare_generation(&record, &spec.template_inputs)
-            .await;
+        let prepared = self.prepare_generation(&record, &parameters).await;
         let (artifact_dir, manifest, bindings, bindings_digest) = match prepared {
             Ok(prepared) => prepared,
             Err(error) => return cleanup_error(self, &generation_id, now, error).await,
@@ -123,7 +137,7 @@ impl ForgejoPoolSupervisor {
             input.forgejo_vm =
                 Some(shaula_core::template::ForgejoVmBootstrap::from_registration(&bootstrap));
         }
-        input.parameters = spec.template_inputs;
+        input.parameters = parameters;
         if manifest.input_contract_version == 2 {
             let descriptor = match self.setup_info_issuer.as_deref() {
                 Some(issuer) => issuer
@@ -145,7 +159,7 @@ impl ForgejoPoolSupervisor {
         let request = TemplateCreateRequest {
             workspace_path: workspace,
             artifact_dir,
-            pinned_artifact_digest: artifact_digest,
+            pinned_artifact_digest: record.template_artifact_digest,
             input,
             expected_bindings_digest: shaula_core::template::BindingsDigest(bindings_digest),
             managed_shape: manifest.managed_resource_shape,

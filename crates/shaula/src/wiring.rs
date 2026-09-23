@@ -247,6 +247,12 @@ impl SupervisorWiring {
             if is_forgejo {
                 match self.forgejo_supervisor_for(&key, revision).await {
                     Ok(Some(supervisor)) => {
+                        let history_key = format!("forgejo-jobs/{key}");
+                        if !self.tasks.contains(&history_key) {
+                            let history = supervisor.clone();
+                            self.tasks
+                                .spawn(history_key, async move { history.enrich_jobs().await });
+                        }
                         if !self.tasks.contains(&key) {
                             self.tasks.spawn(key, async move {
                                 let report = supervisor.tick().await?;

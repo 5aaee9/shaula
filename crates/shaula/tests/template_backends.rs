@@ -15,6 +15,9 @@ use common::attestation_harness::{put_template_profile, seed_profile_artifact};
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
+#[path = "support/forgejo_template_pools.rs"]
+mod forgejo_template_pools;
+
 fn artifact() -> TestResult<(String, Vec<u8>)> {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../templates/kubernetes");
     let mut builder = tar::Builder::new(Vec::new());
@@ -209,7 +212,7 @@ async fn one_source_publishes_both_backends_and_rejects_mismatched_fleets_and_im
 }
 
 #[tokio::test]
-async fn forgejo_pool_requests_fail_before_resolving_or_persisting_dependencies() -> TestResult {
+async fn forgejo_pool_requests_validate_dependencies_before_persisting() -> TestResult {
     let (app, store, _engine, _service) = common::build_app_with_service().await;
     for (field, value) in [
         ("template_pool_ref", json!("nonexistent")),
@@ -234,7 +237,7 @@ async fn forgejo_pool_requests_fail_before_resolving_or_persisting_dependencies(
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let body = axum::body::to_bytes(response.into_body(), 1024 * 1024).await?;
         let error: Value = serde_json::from_slice(&body)?;
-        assert!(error["detail"]
+        assert!(!error["detail"]
             .as_str()
             .ok_or("detail missing")?
             .contains("template pools are unsupported"));

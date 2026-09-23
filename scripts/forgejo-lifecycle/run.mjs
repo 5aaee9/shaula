@@ -1,15 +1,20 @@
 #!/usr/bin/env node
-// Actual shaula serve + real Forgejo + real Docker/Terraform. No simulated runtime.
+// Actual shaula serve + real Forgejo + real Terraform. No simulated runtime.
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { Fixture } from "./fixture.mjs";
+import { KubernetesFixture } from "./kubernetes.mjs";
+import { labels, staleDemand, lostRegistration } from "./scenarios.mjs";
+import { permissions } from "./permissions.mjs";
+import { captureCredentials, leakScan } from "./leaks.mjs";
+import { expiry } from "./expiry.mjs";
 import { until, serverImage, runnerImage } from "./support.mjs";
 
 process.umask(0o077);
-const fixture = new Fixture();
-const report = { kind: "shaula-forgejo-docker-lifecycle/v1", serverImage, runnerImage, checks: {}, passed: false };
+assert([undefined, "docker", "kubernetes"].includes(process.env.SHAULA_ACCEPTANCE_BACKEND), "unsupported acceptance backend");
+const fixture = process.env.SHAULA_ACCEPTANCE_BACKEND === "kubernetes" ? new KubernetesFixture() : new Fixture();
+const report = { kind: "shaula-forgejo-lifecycle/v2", platform: fixture.platform, serverImage, runnerImage, checks: {}, passed: false };
 let phase = "setup";
 try {
   await fixture.start();
@@ -19,7 +24,7 @@ try {
     phase = scenario;
     console.log(`Running ${scenario}`);
     const key = `${fixture.prefix}-${scenario}`;
-    await fixture.queue(key, scenario === "restart" ? 20 : 8, scenario === "failure");
+    await fixture.queue(key, scenario === "success" ? 40 : scenario === "restart" ? 20 : 8, scenario === "failure");
     await fixture.createFleet(key);
     const observed = await fixture.observe(key, "active");
     const job = await until(`${key}: retained running job`, async () => {
@@ -31,62 +36,61 @@ try {
     assert.equal(job.association_status, "unverified");
     const detail = await fixture.api(`/jobs/${job.id}`);
     assert.equal(detail.generations.length, 0, "snapshot timing must not create verified runner links");
+    let secrets;
+    if (scenario === "success") {
+      secrets = await captureCredentials(fixture, observed);
+      report.leakScanBeforeCompletion = await leakScan(fixture, key, observed, secrets, true);
+    }
     if (scenario === "restart") await fixture.restart();
     await until(`${key}: workflow conclusion`, async () => {
       const runs = await fixture.forgejo(`/repos/${fixture.user}/${key}/actions/runs`);
       return runs.workflow_runs.some(run => run.status === (scenario === "failure" ? "failure" : "success"));
     });
     await fixture.reclaimed(key, observed);
-    await until(`${key}: no inferred job completion`, async () => {
+    await until(`${key}: exact task result after snapshot disappearance`, async () => {
       const retained = await fixture.api(`/jobs/${job.id}`);
-      assert.equal(retained.reported_result, null);
-      return retained.observed_status === "unknown" && retained.forgejo.in_snapshot === false;
+      assert.equal(retained.association_status, "unverified");
+      assert.equal(retained.generations.length, 0);
+      if (!retained.forgejo.result) return false;
+      assert.equal(retained.reported_result, scenario === "failure" ? "failure" : "success");
+      assert.equal(retained.forgejo.result.task_id, job.forgejo.task_id);
+      assert(retained.forgejo_observations.some(event => event.source === "task_history"));
+      assert(retained.forgejo.result.run_url.startsWith(`${fixture.target}/${fixture.user}/${key}/actions/runs/`));
+      return retained.observed_status === "completed" && retained.forgejo.in_snapshot === false;
     });
-    report.checks.forgejoJobsProjection = "passed";
+    if (secrets) {
+      report.leakScanAfterCompletion = await leakScan(fixture, key, observed, secrets, false);
+      report.setupInfo = "not emitted by bundled Forgejo v1 templates";
+      report.checks.leakScan = "passed";
+    }
+    report.checks.forgejoJobsProjection = "exact task results; runner associations remain Unverified";
     report.checks[scenario] = "passed";
   }
-
-  phase = "idle-expiry";
+  for (const [name, check] of [["labels", labels], ["staleDemand", staleDemand]]) {
+    phase = name;
+    console.log(`Running ${name}`);
+    await check(fixture);
+    report.checks[name] = "passed";
+  }
+  if (fixture.platform === "docker") {
+    phase = "permissions";
+    console.log(`Running ${phase}`);
+    report.permissions = await permissions(fixture);
+    report.checks.minimumPermissions = "passed";
+  }
+  phase = "hard-expiry";
   console.log(`Running ${phase}`);
-  await fixture.restart(15);
-  const idleKey = `${fixture.prefix}-idle`;
-  await fixture.createFleet(idleKey, 1);
-  const idle = await fixture.observe(idleKey, "idle");
-  await fixture.capZero(idleKey);
-  await fixture.reclaimed(idleKey, idle);
-  report.checks.idleExpiry = "passed";
-
-  phase = "busy-expiry-delete-retries";
+  await expiry(fixture, report.checks);
+  phase = "lost-registration";
   console.log(`Running ${phase}`);
-  const key = `${fixture.prefix}-busy`;
-  await fixture.queue(key, 180);
-  await fixture.createFleet(key);
-  const busy = await fixture.observe(key, "active");
-  fixture.dockerProxy.gate.block = true;
-  fixture.registrationProxy.gate.block = true;
-  await fixture.capZero(key);
-  await until("Docker Destroy failed and remains retryable", () => fixture.dockerProxy.gate.failures > 0);
-  assert((await fixture.api(`/fleets/${key}/status`)).capacity.occupancy > 0, "failed Destroy cannot release occupancy");
-  assert((await fixture.forgejo("/admin/actions/runners")).some(r => r.id === busy.runner && r.status === "active"), "ordinary drain must preserve a busy registration");
-  await fixture.restart();
-  fixture.dockerProxy.gate.block = false;
-  await until("registration delete is retried after resource destruction", () => fixture.registrationProxy.gate.failures > 0);
-  assert(!(await fixture.cli("ps", "-a", "--no-trunc", "-q")).split("\n").includes(busy.id), "hard expiry must destroy the busy resource before registration removal");
-  assert((await fixture.api(`/fleets/${key}/status`)).capacity.occupancy > 0, "registration failure retains occupancy");
-  assert((await fixture.forgejo("/admin/actions/runners")).some(r => r.id === busy.runner), "registration retry checkpoint must be exercised");
-  await fixture.restart();
-  await delay(500);
-  fixture.registrationProxy.gate.block = false;
-  await fixture.reclaimed(key, busy);
-  report.checks.busyExpiry = "passed";
-  report.checks.destroyRetryAcrossRestart = "passed";
-  report.checks.registrationRetryAcrossRestart = "passed";
-  report.faults = { dockerDelete: fixture.dockerProxy.gate.failures, registrationDelete: fixture.registrationProxy.gate.failures };
+  await lostRegistration(fixture);
+  report.checks.lostRegistration = "quarantined; no POST replay or resource Create; occupancy held";
+  report.faults = { dockerDelete: fixture.dockerProxy.gate.failures, registrationDelete: fixture.registrationProxy.gate.failures,
+    jobsRead: fixture.registrationProxy.gate.jobFailures, registrationResponseLost: fixture.registrationProxy.gate.droppedRegistrations };
   report.passed = true;
 } catch (error) {
   report.failedPhase = phase;
-  // Diagnostics remain in the 0700 fixture directory. Never publish a body,
-  // secret-bearing subprocess output, or raw server logs in a failure report.
+  // No bodies, secret-bearing subprocess output or raw server logs in reports.
   report.reason = error.message;
   process.exitCode = 1;
 } finally {

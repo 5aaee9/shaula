@@ -36,13 +36,13 @@ backend。旧 Generation 继续用原始 Revision / bindings 清理，不随新�
 
 1. 打开 **Authentication → Create profile**，Runner backend 选择 **Forgejo**，填写实例 URL、scope 和 token；等待 Active。token 只写入，不会从读取面取回。轮换入口保留原实例与 scope，展示依赖 Fleet；旧 token 应保留到旧 Runner 清理完毕。
 2. 使用原有 Template Source 发布 Profile，bindings 中选择 `runner_backend: forgejo`。
-3. 打开 **Fleets → Create fleet**，选择 Forgejo 和对应认证 Profile；实例与 scope 来自它的 Active revision。模板选择器只列出 Active backend 为 Forgejo 的 Profile。当前只支持单模板，inline/shared TemplatePool 会在 API 准入即拒绝。
-4. 给 Fleet 使用独立 runner name prefix、最小必要的 labels（bundled 模板用 `name:host`），workflow 的 `runs-on` 必须包含全部 label 名称。标签不要与持久 Runner 共享，避免它们消耗同一需求。
-5. 从 Fleet 的 Jobs 入口查看排队/运行观测。Forgejo 的实例、repository/job/attempt 身份独立保存；列表消失会标为未知并保留最后观测，不猜测成功，也不把时间相近的 Runner 标为已验证关联。
+3. 打开 **Fleets → Create fleet**，选择 Forgejo 和对应认证 Profile；实例与 scope 来自它的 Active revision。模板放置可选 Single template、Weighted pool 或 Shared pool。单模板与 inline 成员选择器只列出 Forgejo Profile；共享池的全部成员由服务端检查 backend 和 label targets，混合 GitHub/Forgejo 的池不可用于此 Fleet。权重只决定新 Runner 使用哪份基础设施，不决定领取哪个 job；已创建 Generation 固定其成员、Revision 和 inputs，失败/重启不会重新抽取。
+4. 给 Fleet 使用独立 runner name prefix、最小必要的 labels（bundled 模板用 `name:host`），workflow 的 `runs-on` 中每个名称都必须由 Runner 声明（`runs-on` 是 Runner label 名称集合的子集）。标签不要与持久 Runner 共享，避免它们消耗同一需求。
+5. 从 Fleet 的 Jobs 入口查看排队/运行观测与精确 Task 终态。Forgejo 的实例、repository/job/attempt 身份独立保存；列表消失不证明完成，只有已观测 Task ID 命中仓库任务历史才确认结果，仍不建立 Verified Runner 关联。漏掉运行期、没有权限或超出查询窗口时保持 Unknown，见 [Jobs 说明](forgejo-jobs.md)。
 
 Fleet 的 Forgejo 目标、认证 Profile key、prefix 和 labels 在创建后固定；容量与单模板可按既有准入条件更新。普通清退仍需要安全证据；统一的 `runner.max_lifetime_secs` 默认 7200 秒是可中断 Busy 任务的硬保险，不是无损 idle drain。
 
-真实 Docker 的 Shaula 全链路与故障重试验收见 [证据](evidence/forgejo-lifecycle-2026-09-21/README.md)；重复运行方式见 [harness](../scripts/forgejo-lifecycle/README.md)。这不代表 VM/Kubernetes 已完成真实平台验收。
+真实 Docker 与本地 Kind/Kubernetes 的 Shaula 全链路验收见 [证据](evidence/forgejo-followup-2026-09-22/README.md)；重复运行方式见 [harness](../scripts/forgejo-lifecycle/README.md)。VM/云平台及其它集群部署尚未完成真实验收。token scope 的最小配置和只读 Active 探测的边界见 [权限矩阵](forgejo-permissions.md)。
 
 ## Docker / Kubernetes 镜像和启动
 
@@ -57,6 +57,11 @@ Fleet 的 Forgejo 目标、认证 Profile key、prefix 和 labels 在创建后�
 - Forgejo token 由 Shaula 在 apply 后写入容器文件 / Kubernetes Secret，
   不进入 Terraform 变量、命令行或环境变量。Docker 的匿名 `/data` volume 随
   Destroy 删除；Kubernetes Pod 通过必需的 Secret key 等待安全引导。
+- **Kubernetes 原始 plan/state 是凭据材料**：Destroy refresh 会从 Secret 回读
+  单 Runner token，并可能保留在 plan/state/backup 中；这是操作者明确接受的边界。
+  工作目录与备份必须 owner-only，不能上传原始文件，日志只用经过脱敏的 API。
+  这不允许管理 token、tfvars、metadata、argv/env 或 Setup Info 携带 Runner token。
+  不支持要求 token 永不进入 Terraform plan/state 的部署。
 
 ## VM：Proxmox / AWS / TencentCloud / AliCloud
 
@@ -103,7 +108,7 @@ Shaula 在精确注册缺失等可靠终结证据下销毁底层资源；普通�
 Forgejo Fleet 需要独立的 `forgejo_token` 认证和显式 `:host` labels，例如
 `linux:host`；workflow 使用 `runs-on: [linux]`。这里的 `host` 指一次性的 Runner
 容器内或 VM 内，不是 Shaula 服务端。容器不挂载宿主 Docker socket、不支持 DinD。
-Fleet 创建 UI / Jobs 展示的 Forgejo 完整接入不属于此模板选项变更。
+Fleet UI 与 Jobs 已按 backend 分支呈现；精确 Task 结果不等于已验证的 Runner 关联。
 
 验证分层：Rust 测试覆盖发布、backend / 镜像不匹配、follow 和生命周期；
 `scripts/template-backends/plan.mjs` 使用真实 Terraform 及锁定 provider、仅读取的

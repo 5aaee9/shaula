@@ -165,7 +165,10 @@ impl ControlPlane {
                 return Ok(Err(unprocessable(e.code, e.summary)));
             }
         }
-        let mut resolved_pool = if pool_unchanged {
+        // Shared routing owns its pins on the pool revision, not duplicated
+        // inline rows. A capacity-only PUT must not turn a hydrated shared
+        // snapshot into new inline pins that must still be current Active.
+        let mut resolved_pool = if spec.template_pool.is_some() && pool_unchanged {
             previous_row
                 .as_ref()
                 .map(|row| row.template_pool.clone())

@@ -1,0 +1,35 @@
+{
+  "kind": "shaula-forgejo-lifecycle/v2",
+  "platform": "docker",
+  "serverImage": "codeberg.org/forgejo/forgejo:16.0.4",
+  "runnerImage": "code.forgejo.org/forgejo/runner:13.1.0@sha256:c4af85fd9f0dd03788676a534781a87c71aa2c6a37737143e017eb94d4312952",
+  "checks": {
+    "leakScan": "passed",
+    "forgejoJobsProjection": "exact task results; runner associations remain Unverified",
+    "success": "passed",
+    "failure": "passed",
+    "restart": "passed",
+    "labels": "passed",
+    "staleDemand": "passed",
+    "minimumPermissions": "passed",
+    "idleExpiry": "passed",
+    "busyExpiryDuringStaleDemand": "passed",
+    "destroyRetryAcrossRestart": "passed",
+    "registrationRetryAcrossRestart": "passed",
+    "lostRegistration": "quarantined; no POST replay or resource Create; occupancy held"
+  },
+  "passed": true,
+  "engineVersion": "29.6.2",
+  "artifactDigest": "sha256:96a65613473b2a2ddc2eabd9c0c8f8d1855aa3c87bb88052b523762fa59711ce",
+  "leakScanBeforeCompletion": { "surfaces": 11, "protectedTokenCopies": 0 },
+  "leakScanAfterCompletion": { "surfaces": 11, "protectedTokenCopies": 0 },
+  "setupInfo": "not emitted by bundled Forgejo v1 templates",
+  "permissions": {
+    "instance": { "management": "write:admin", "readOnlyMutations": "denied", "shaulaAttestation": "Active", "taskHistory": "read:repository additionally required; existing repository access also required" },
+    "user": { "management": "write:user", "readOnlyMutations": "denied", "shaulaAttestation": "Active", "taskHistory": "read:repository additionally required; existing repository access also required" },
+    "organization": { "management": "write:organization", "readOnlyMutations": "denied", "shaulaAttestation": "Active", "taskHistory": "read:repository additionally required; existing repository access also required" },
+    "repository": { "management": "write:repository", "readOnlyMutations": "denied", "shaulaAttestation": "Active", "taskHistory": "included" },
+    "unauthorizedOwner": "private repository, organization and instance denied"
+  },
+  "faults": { "dockerDelete": 1, "registrationDelete": 2, "jobsRead": 58, "registrationResponseLost": 1 }
+}

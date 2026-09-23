@@ -65,6 +65,31 @@ pub(super) async fn allows_references(
             return Ok(false);
         }
     }
+    if let Some((key, revision)) = &facts.template_pool_ref {
+        use sea_orm::{ConnectionTrait, DbBackend, Statement};
+        // Pool DELETE and Fleet routing admission share the writer. A stale
+        // admission snapshot cannot resurrect a tombstoned pool's authority.
+        let live = tx
+            .query_one(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                "SELECT 1 FROM template_pools p JOIN template_pool_revisions r ON r.pool_key=p.key
+             WHERE p.key=? AND r.revision=? AND p.desired_revision>=r.revision
+             AND p.deletion_marker=0 AND p.tombstone=0",
+                [key.clone().into(), (*revision).into()],
+            ))
+            .await?;
+        if live.is_none() {
+            return Ok(false);
+        }
+        let unchanged = previous.is_some_and(|p| {
+            p.template_pool_ref.as_ref() == Some(key) && p.template_pool_revision == Some(*revision)
+        });
+        if !unchanged && tx.query_one(Statement::from_sql_and_values(DbBackend::Sqlite,
+            "SELECT 1 FROM template_pool_members m LEFT JOIN template_profiles t ON t.key=m.template_profile_key
+             WHERE m.pool_key=? AND m.pool_revision=? AND (t.key IS NULL OR t.deletion_requested=1) LIMIT 1",
+            [key.clone().into(),(*revision).into()],
+        )).await?.is_some() { return Ok(false); }
+    }
     Ok(true)
 }
 
@@ -74,10 +99,23 @@ impl SqliteControlPlane {
         facts: MutationFacts,
     ) -> CoreResult<Result<(), MutationError>> {
         let tx = self.store.begin().await.map_err(core_err)?;
+        let retired = if facts.resource_kind == "template_profile" {
+            template::Entity::find_by_id(&facts.resource_key)
+                .one(&tx)
+                .await
+                .map(|head| head.is_some_and(|h| h.status == "Retired"))
+        } else {
+            auth::Entity::find_by_id(&facts.resource_key)
+                .one(&tx)
+                .await
+                .map(|head| head.is_some_and(|h| h.status == "Retired"))
+        }
+        .map_err(|e| core_err(e.into()))?;
+        let status = if retired { "Retired" } else { "Retiring" };
         let changed = if facts.resource_kind == "template_profile" {
             template::Entity::update_many()
                 .col_expr(template::Column::DeletionRequested, Expr::value(true))
-                .col_expr(template::Column::Status, Expr::value("Retiring"))
+                .col_expr(template::Column::Status, Expr::value(status))
                 .col_expr(template::Column::UpdatedAt, Expr::value(facts.now))
                 .filter(template::Column::Key.eq(&facts.resource_key))
                 .filter(template::Column::Incarnation.eq(&facts.incarnation))
@@ -87,7 +125,7 @@ impl SqliteControlPlane {
         } else {
             auth::Entity::update_many()
                 .col_expr(auth::Column::DeletionRequested, Expr::value(true))
-                .col_expr(auth::Column::Status, Expr::value("Retiring"))
+                .col_expr(auth::Column::Status, Expr::value(status))
                 .col_expr(auth::Column::UpdatedAt, Expr::value(facts.now))
                 .filter(auth::Column::Key.eq(&facts.resource_key))
                 .filter(auth::Column::Incarnation.eq(&facts.incarnation))
@@ -124,10 +162,13 @@ impl SqliteControlPlane {
             .await
             .map_err(core_err)?;
         profile_changes::Entity::update_many()
-            .col_expr(profile_changes::Column::State, Expr::value("Blocked"))
+            .col_expr(
+                profile_changes::Column::State,
+                Expr::value(if retired { "Succeeded" } else { "Blocked" }),
+            )
             .col_expr(
                 profile_changes::Column::Reason,
-                Expr::value("ResourceInUse"),
+                Expr::value((!retired).then_some("ResourceInUse")),
             )
             .filter(profile_changes::Column::Id.eq(&facts.change.id))
             .exec(&tx)

@@ -7,6 +7,11 @@ use std::sync::{
 
 #[derive(Default)]
 pub(super) struct Forgejo {
+    pub history: Mutex<Vec<shaula_core::jobs::ForgejoTaskResult>>,
+    pub history_reads: AtomicU64,
+    pub hold_history: AtomicBool,
+    pub history_started: tokio::sync::Notify,
+    pub history_release: tokio::sync::Notify,
     pub runners: Mutex<Vec<ForgejoRunnerRef>>,
     pub jobs: Mutex<Option<Vec<ForgejoJob>>>,
     pub waiting: AtomicU64,
@@ -95,6 +100,25 @@ impl ForgejoPoolPort for Forgejo {
             .retain(|r| r.id != id);
         Ok(ForgejoRemovalOutcome::Removed)
     }
+    async fn task_results(
+        &self,
+        repository_id: u64,
+        task_ids: &[u64],
+    ) -> Result<Vec<shaula_core::jobs::ForgejoTaskResult>, AccessFailure> {
+        self.history_reads.fetch_add(1, Ordering::SeqCst);
+        self.history_started.notify_one();
+        if self.hold_history.load(Ordering::SeqCst) {
+            self.history_release.notified().await;
+        }
+        Ok(self
+            .history
+            .lock()
+            .map_err(|_| failure())?
+            .iter()
+            .filter(|task| task.repository_id == repository_id && task_ids.contains(&task.task_id))
+            .cloned()
+            .collect())
+    }
     async fn classify_uncertain_registration(
         &self,
         name: &str,
@@ -120,6 +144,7 @@ fn failure() -> AccessFailure {
 
 #[derive(Default)]
 pub(super) struct Runtime {
+    pub inputs: Mutex<Vec<serde_json::Value>>,
     pub creates: AtomicU64,
     pub destroys: AtomicU64,
     pub idle_proof: AtomicBool,
@@ -145,6 +170,10 @@ impl TemplateRuntimePort for Runtime {
         request: TemplateCreateRequest,
     ) -> Result<TemplateCreateResult, TemplateOutcomeError> {
         self.creates.fetch_add(1, Ordering::SeqCst);
+        self.inputs
+            .lock()
+            .map_err(|_| runtime_error("inputs poisoned"))?
+            .push(serde_json::Value::Object(request.input.parameters.clone()));
         let material = request
             .forgejo_bootstrap
             .as_ref()

@@ -120,6 +120,16 @@ impl ForgejoPoolPort for ForgejoClient {
             })
     }
 
+    async fn task_results(
+        &self,
+        repository_id: u64,
+        task_ids: &[u64],
+    ) -> Result<Vec<shaula_core::jobs::ForgejoTaskResult>, AccessFailure> {
+        self.task_results(repository_id, task_ids)
+            .await
+            .map_err(map_error)
+    }
+
     async fn classify_uncertain_registration(
         &self,
         name: &str,

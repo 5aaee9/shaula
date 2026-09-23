@@ -223,6 +223,8 @@ mod destroy;
 mod expiry;
 #[path = "forgejo_supervisor_generation.rs"]
 mod generation;
+#[path = "forgejo_supervisor_jobs.rs"]
+mod jobs;
 #[path = "forgejo_supervisor_observation.rs"]
 mod observation;
 #[path = "forgejo_supervisor_readiness.rs"]

@@ -75,6 +75,7 @@ impl SqliteControlPlane {
             // Otherwise remains Validating until the provider worker classifies it.
         }
 
+        report.profiles_retired = self.scan_retirements(now).await?;
         Ok(report)
     }
 }
@@ -89,4 +90,5 @@ pub struct ScanReport {
     pub candidates_rejected: usize,
     pub auth_promoted: usize,
     pub auth_rejected: usize,
+    pub profiles_retired: usize,
 }

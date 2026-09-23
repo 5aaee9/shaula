@@ -96,7 +96,18 @@ async fn profile_create_replays_before_preconditions_and_retirement_is_durable()
         assert_eq!(change.state, "Blocked");
         assert_eq!(change.reason.as_deref(), Some("ResourceInUse"));
         store.periodic_scan(1_800_000_003_000).await.unwrap();
-        assert_eq!(get_json(&app, &uri).await["status"], "Retiring");
+        let view = get_json(&app, &uri).await;
+        assert_eq!(view["status"], "Retired");
+        assert_eq!(view["activeRevision"], serde_json::Value::Null);
+        let completed = get_json(
+            &app,
+            &format!(
+                "/api/v1/profile-changes/{}",
+                accepted["changeId"].as_str().unwrap()
+            ),
+        )
+        .await;
+        assert_eq!(completed["state"], "Succeeded");
         let mut retry = authorized("DELETE", &uri, None);
         retry.headers_mut().insert("if-match", etag.clone());
         retry
@@ -111,6 +122,27 @@ async fn profile_create_replays_before_preconditions_and_retirement_is_durable()
         )
         .unwrap();
         assert_eq!(actual, accepted);
+        // A fresh conditional DELETE is also idempotent: never re-arm a tombstone.
+        let mut again = authorized("DELETE", &uri, None);
+        again.headers_mut().insert("if-match", etag);
+        let response = app.clone().oneshot(again).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let receipt: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), 1 << 20)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(get_json(&app, &uri).await["status"], "Retired");
+        assert_eq!(
+            store
+                .profile_change_get(receipt["changeId"].as_str().unwrap())
+                .await
+                .unwrap()
+                .unwrap()
+                .state,
+            "Succeeded"
+        );
     }
     assert!(store
         .auth_credential_bytes("prod-app", 1)
