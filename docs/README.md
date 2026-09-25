@@ -50,7 +50,7 @@
 | AWS EC2、user-data cloud-init 与官方 Ubuntu AMI 信任 | [spec 0027](specs/0027-aws-runner-template.md) / [ARD-0034](ard/0034-provision-aws-runners-with-ec2-user-data.md)；Draft + `proposed`，尚未接受 |
 | Fleet 跟随最新 Active 模板 Revision（follow-only 引用与 level-triggered 级联升级） | [spec 0023](specs/0023-fleet-template-follow-latest.md) / [ARD-0028](ard/0028-follow-latest-active-template-revision.md) / [ARD-0029](ard/0029-drop-pinned-template-revisions.md) |
 | Generation readiness 对账（WaitingOnline → Idle / CleanupRequired 的库存驱动） | [spec 0024](specs/0024-generation-readiness-reconciliation.md) / [ARD-0030](ard/0030-drive-generation-readiness-from-inventory.md) |
-| JIT mint 不确定性恢复（精确名查找分类：落地即移除、缺失即清理、歧义隔离） | [spec 0025](specs/0025-jit-mint-uncertainty-recovery.md) / [ARD-0031](ard/0031-classify-uncertain-jit-mints-by-exact-name-lookup.md) |
+| JIT mint 不确定性恢复（精确名查找分类：落地即移除、缺失即清理、歧义隔离） | [spec 0025](specs/0025-jit-mint-uncertainty-recovery.md) / [ARD-0031](ard/0031-classify-uncertain-jit-mints-by-exact-name-lookup.md)；从未开始 Create apply 的 Generation 直接 `Destroyed` 见 [ARD-0040](ard/0040-destroy-generations-that-never-started-a-create-apply.md) |
 | Forgejo Runner Backend（provider 维度、Pool 切片、未验证关联、Busy-safe removal） | [spec 0026](specs/0026-forgejo-runner-backend.md) / [ARD-0033](ard/0033-admit-forgejo-through-a-pool-backend-first.md)；Draft + `proposed`，尚未接受 |
 | Fleet authentication/template Profile 服务端列表选择 | [spec 0016](specs/0016-fleet-profile-selection.md) / [ARD-0020](ard/0020-load-fleet-profile-choices-from-registry.md) |
 | Template 静态校验后的自动激活与旧 Ready 升级 | [spec 0017](specs/0017-automatic-template-activation.md) / [ARD-0021](ard/0021-activate-templates-after-static-validation.md) |

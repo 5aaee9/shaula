@@ -6,6 +6,7 @@ use shaula_core::ports::forgejo::ForgejoRunnerRef;
 use shaula_core::registry::GenerationRecord;
 
 use super::ForgejoPoolSupervisor;
+use crate::runner_operation::forgejo::observe_identity;
 
 const READINESS_TIMEOUT_MS: i64 = 15 * 60 * 1000;
 
@@ -141,31 +142,4 @@ impl ForgejoPoolSupervisor {
             .generation_advance(&generation.id, next, now)
             .await
     }
-}
-
-/// An ID match with changed UUID/name is NOT absence. A colliding name/UUID is
-/// also contradictory evidence, even when the expected ID is missing.
-pub(super) fn observe_identity<'a>(
-    generation: &GenerationRecord,
-    identity: &(i64, String),
-    runners: &'a [ForgejoRunnerRef],
-) -> Result<Option<&'a ForgejoRunnerRef>, ()> {
-    let mut observed = None;
-    for runner in runners {
-        if i64::try_from(runner.id).ok() == Some(identity.0)
-            || runner.uuid == identity.1
-            || runner.name == generation.runner_name
-        {
-            if observed.is_some()
-                || i64::try_from(runner.id).ok() != Some(identity.0)
-                || runner.uuid != identity.1
-                || runner.name != generation.runner_name
-                || !runner.ephemeral
-            {
-                return Err(());
-            }
-            observed = Some(runner);
-        }
-    }
-    Ok(observed)
 }

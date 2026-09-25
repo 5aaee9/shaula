@@ -9,7 +9,7 @@ pub mod effect_gate;
 pub mod forgejo_supervisor;
 pub mod handoff;
 pub mod listener;
-mod runner_lifetime;
+mod runner_operation;
 pub mod service;
 pub mod service_auth_format;
 pub mod supervisor;

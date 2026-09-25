@@ -31,7 +31,13 @@ Err；传输层解码失败目前仍归入 Err，本 spec 的恢复路径不覆�
 
 ## 2. 状态与占用
 
-CleanupRequired 的 Generation（本次两类落地路径均无 post-apply state identity）
+> **rev 2（2026-09-25，[ARD-0040](../ard/0040-destroy-generations-that-never-started-a-create-apply.md)；已实现于 daemon `runner_operation`）**：
+> 本节原规则被取代。没有 Create `ApplyStarting` 记录、且 Runner Registration 已证明
+> 移除（ExactlyOne 已移除）或不存在（None，Destroy 时以精确名查找复核）的 CleanupRequired
+> Generation 直接推进 `Destroyed` 并释放 occupancy，不执行 Terraform destroy；Registration 无法
+> 证明时仍 Quarantine。GitHub 与 Forgejo 使用同一规则。
+
+（已被取代的原文，rev 1）CleanupRequired 的 Generation（本次两类落地路径均无 post-apply state identity）
 按既有 60 秒 stale 规则收敛到 `Quarantined` 并保留 occupancy，直到操作者按
 quarantine 处置流程清理。每次未闭环的 Uncertain 事件消耗一个容量槽——这是有界、
 可见、fail-safe 的代价，换取 fleet 不死锁；真正的 quarantine GC 属于独立的

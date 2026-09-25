@@ -16,6 +16,32 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Runner Operation: shared Destroy for both Runner Backends (2026-09-25)
+
+The GitHub Retirement Destroy, the Forgejo Destroy and the Runner Maximum Lifetime
+reaper were three copies of the same Generation effect; they are now one daemon Module
+(`crates/shaula-daemon/src/runner_operation`). Drivers keep candidate selection; the
+Module owns the state walk, destroy proofs and Quarantine rules. The Runner Backend
+seam holds only registration admission, removal and unrecorded-absence proof.
+
+Behavior changes (intended, see [ARD-0040](ard/0040-destroy-generations-that-never-started-a-create-apply.md)
+and spec 0024 §2.1 rev 4):
+
+- A Generation that never admitted a Create apply and whose registration is proven
+  removed or absent becomes `Destroyed` without Terraform on both backends (GitHub
+  previously quarantined it after 60 s and kept the capacity slot).
+- GitHub Destroy now quarantines missing bindings or an invalid manifest instead of
+  aborting the whole pass or destroying with an empty managed shape.
+- One Generation's failure no longer aborts the rest of a pass; the separate
+  `quarantine_stale_cleanup` step is removed.
+- An expired Generation without a registration identity is quarantined after its
+  resources are destroyed instead of retrying forever.
+
+Verification: `cargo nextest run --workspace` 936 passed (14 new Runner Operation matrix
+tests run each scenario against both adapters); `cargo clippy --workspace --all-targets
+-D warnings`; `cargo fmt --check`. Create, restart classification and the admission
+transaction (the remaining C1 steps) are unchanged; no real-platform run was performed.
+
 ## Forgejo management, real lifecycle and Jobs (2026-09-22)
 
 The three usable-version increments are implemented:

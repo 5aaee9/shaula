@@ -181,8 +181,12 @@ _Avoid_: Compose project, Swarm service, host daemon
 _Avoid_: Kubernetes UID, metadata.uid, reusable name, proof against out-of-band replacement
 
 **Runner Operation**:
-作用于一个 Generation 的 Create 或 Destroy 生命周期行为；必要的外部副作用意图/结果持久化，但不是由 daemon 逐 Terraform 命令派发的 durable task。
-_Avoid_: Update, worker process, one Terraform command
+作用于一个 Generation 的 Create 或 Destroy 生命周期行为；必要的外部副作用意图/结果持久化，但不是由 daemon 逐 Terraform 命令派发的 durable task。Destroy 由 Retirement 或 Runner Maximum Lifetime 到期触发，触发原因只决定 Runner Registration 移除与 Runner Resource 销毁的先后，不改变销毁的证明要求；Runner Backend 不改变 Runner Operation 的规则。
+_Avoid_: Update, worker process, one Terraform command, Generation lifecycle
+
+**Runner Maximum Lifetime**:
+一个 Runner Generation 自成功 Create 起允许存在的硬上限；到期后即使 job 仍在运行也先销毁 Runner Resource，再移除 Runner Registration。
+_Avoid_: Idle timeout, busy-safe drain, readiness timeout
 
 **Execution Attempt**:
 一个 Runner Operation 中的一次实际基础设施执行尝试；同一 Destroy 的后续尝试拥有独立结果和日志，不能覆盖前一次证据。

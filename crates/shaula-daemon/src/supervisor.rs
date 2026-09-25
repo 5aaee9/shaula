@@ -105,7 +105,9 @@ impl FleetSupervisor {
 
         // Hard lifetime is independent of demand, listener health and auth handoff.
         // It destroys only resources proved by this generation's original pins.
-        report.destroyed = self.expire_runners(now).await?;
+        let expired = self.expire_runners(now).await?;
+        report.destroyed = expired.destroyed;
+        report.quarantined = expired.quarantined;
 
         // 1. Auth handoff: read-only classification then acknowledge.
         let bound_scale_set_id = self
@@ -178,8 +180,9 @@ impl FleetSupervisor {
             if let Some(listener) = &self.listener {
                 listener.stop().await?;
             }
-            report.destroyed += self.retire_excess(i64::MAX, now).await?;
-            report.quarantined = self.quarantine_stale_cleanup(now).await?;
+            let retired = self.retire_excess(i64::MAX, now).await?;
+            report.destroyed += retired.destroyed;
+            report.quarantined += retired.quarantined;
             // Completion predicate (spec 0002 §4.4): every owned
             // Generation terminal (Destroyed). A still-Retiring or
             // Quarantined generation keeps the Decommission Change
@@ -272,7 +275,9 @@ impl FleetSupervisor {
         );
 
         let excess = (effective - current_target).max(0);
-        report.destroyed += self.retire_excess(excess, now).await?;
+        let retired = self.retire_excess(excess, now).await?;
+        report.destroyed += retired.destroyed;
+        report.quarantined += retired.quarantined;
 
         // Start the whole deficit together. Each operation acquires the
         // shared create semaphore inside `create_one_generation`, so this
@@ -287,12 +292,6 @@ impl FleetSupervisor {
                 report.created += 1;
             }
         }
-
-        // Cleanup reconcile: a CleanupRequired generation whose old child
-        // cannot be proven terminated never auto-destroys; it transitions
-        // to Quarantined so an explicit, auditable operator procedure can
-        // take over (spec 0001 §11.2 — no silent forget).
-        report.quarantined = self.quarantine_stale_cleanup(now).await?;
 
         Ok(report)
     }
@@ -328,8 +327,6 @@ pub use readiness_impl::READINESS_TIMEOUT_MS;
 
 #[path = "supervisor_destroy.rs"]
 mod destroy_impl;
-#[path = "supervisor_expiry.rs"]
-mod expiry_impl;
 
 impl std::fmt::Debug for FleetSupervisorConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

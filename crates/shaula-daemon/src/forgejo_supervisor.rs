@@ -6,9 +6,11 @@ use std::sync::Arc;
 use shaula_core::capacity::CapacityPolicy;
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::fleet::FleetForgejoSection;
-use shaula_core::ports::forgejo::{ForgejoPoolPort, ForgejoRunnerRef};
+use shaula_core::ports::forgejo::ForgejoPoolPort;
 use shaula_core::ports::{AccessFailure, ApplyIntentSink, Clock, TemplateRuntimePort};
 use shaula_core::registry::{ControlPlaneStore, FleetRuntimeGuard, LifecycleStore};
+
+use crate::runner_operation::forgejo::is_owned_runner;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ForgejoReconcileReport {
@@ -133,7 +135,7 @@ impl ForgejoPoolSupervisor {
         let deleting = head.deletion_marker;
         let expired = self.expire_runners(now).await?;
         let mut report = self.observe_demand(deleting, now).await?;
-        report.destroyed = expired;
+        report.destroyed = expired.destroyed;
         let runners = match self.forgejo.list_runners().await {
             Ok(runners) => runners,
             Err(failure) => {
@@ -149,7 +151,7 @@ impl ForgejoPoolSupervisor {
         self.reconcile_generation_readiness(&runners, now).await?;
         if !report.stale_demand {
             // Never use a pre-Create inventory to clean up a new registration.
-            report.destroyed += self.destroy_excess(report.target, now).await?;
+            report.destroyed += self.destroy_excess(report.target, now).await?.destroyed;
             if !deleting && report.unknown_runners == 0 {
                 let (effective, occupancy) = self.store.capacity_counters(&self.fleet_key).await?;
                 let creates = create_count(self.capacity, report.target, effective, occupancy);
@@ -201,12 +203,6 @@ fn normalized_labels(labels: &[String]) -> CoreResult<Vec<String>> {
         .collect())
 }
 
-fn is_owned_runner(runner: &ForgejoRunnerRef, labels: &[String]) -> bool {
-    runner.ephemeral
-        && runner.is_known()
-        && labels.iter().all(|label| runner.labels.contains(label))
-}
-
 fn access_reason(failure: &AccessFailure) -> ReasonCode {
     match failure {
         AccessFailure::Unauthenticated => ReasonCode::Unauthenticated,
@@ -219,8 +215,6 @@ fn access_reason(failure: &AccessFailure) -> ReasonCode {
 
 #[path = "forgejo_supervisor_destroy.rs"]
 mod destroy;
-#[path = "forgejo_supervisor_expiry.rs"]
-mod expiry;
 #[path = "forgejo_supervisor_generation.rs"]
 mod generation;
 #[path = "forgejo_supervisor_jobs.rs"]

@@ -2584,6 +2584,7 @@ dependencies = [
  "sha2 0.10.9",
  "shaula-core",
  "shaula-observability",
+ "shaula-store",
  "tempfile",
  "tokio",
  "tracing",

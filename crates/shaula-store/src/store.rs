@@ -102,6 +102,15 @@ impl Store {
         &self.db
     }
 
+    /// Seeds fixture rows for other crates' tests with literal SQL. No ORM
+    /// type crosses this seam; production builds never enable the feature.
+    #[cfg(feature = "test-support")]
+    pub async fn execute_for_tests(&self, sql: &str) -> StoreResult<()> {
+        use sea_orm::ConnectionTrait;
+        self.db.execute_unprepared(sql).await?;
+        Ok(())
+    }
+
     /// Returns process-local evidence of waits for SQLite's single writer.
     ///
     /// This is diagnostic only; it does not participate in admission or

@@ -322,10 +322,11 @@ async fn destroy_pending_is_reclassified_without_excess() {
         store.generation_advance("gen1", state, 4).await.unwrap();
     }
     supervisor.tick(10).await.unwrap();
-    // Missing Create proof is quarantined; it must neither strand nor reach Terraform.
+    // DestroyPending resumes without excess. The seeded row never admitted a
+    // Create apply, so it is destroyed without reaching Terraform (ARD-0039).
     assert_eq!(
         store.generation_get("gen1").await.unwrap().unwrap().state,
-        G::Quarantined
+        G::Destroyed
     );
 }
 
@@ -370,7 +371,8 @@ async fn cleanup_with_missing_auth_reference_is_quarantined() {
     // Give the settled listener one effect pass before exercising cleanup.
     supervisor.tick(4).await.unwrap();
     let report = supervisor.tick(60_003).await.unwrap();
-    assert_eq!(report.quarantined, 0);
+    // The Retirement pass itself reports the Quarantine it performed.
+    assert_eq!(report.quarantined, 1);
     assert_eq!(github.removals.load(Ordering::SeqCst), 0);
     assert_eq!(
         store
@@ -552,12 +554,12 @@ async fn idle_generation_whose_runner_vanished_from_inventory_retires() {
     store.demand_snapshot("f1", 1, 6).await.unwrap();
     supervisor.tick(10).await.unwrap();
     // Idle -> Retiring, then the retirement chain re-gates the runner
-    // removal at zero excess and attempts it once (the seeded row has
-    // no Create provenance, so the destroy gate quarantines it rather
-    // than reaching Terraform).
+    // removal at zero excess and attempts it once (the seeded row never
+    // admitted a Create apply, so it is destroyed without reaching
+    // Terraform, ARD-0039).
     assert_eq!(
         store.generation_get("gen1").await.unwrap().unwrap().state,
-        G::Quarantined
+        G::Destroyed
     );
     assert_eq!(github.removals.load(Ordering::SeqCst), 1);
 }
@@ -609,9 +611,10 @@ async fn idle_generation_with_offline_runner_retires() {
         });
     store.demand_snapshot("f1", 1, 6).await.unwrap();
     supervisor.tick(10).await.unwrap();
+    // Never admitted a Create apply: destroyed without Terraform (ARD-0039).
     assert_eq!(
         store.generation_get("gen1").await.unwrap().unwrap().state,
-        G::Quarantined
+        G::Destroyed
     );
     assert_eq!(github.removals.load(Ordering::SeqCst), 1);
 }
