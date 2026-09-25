@@ -197,34 +197,8 @@ pub struct AttestationPut {
     pub completed_at: i64,
 }
 
-/// Precondition outcomes used by the HTTP adapter to map status codes.
-#[derive(Debug, Clone, PartialEq)]
-pub enum MutationError {
-    /// 428
-    PreconditionRequired,
-    /// 412 with current revision metadata
-    PreconditionFailed { current: (String, i64) },
-    /// 409 immutable identity change
-    IdentityConflict,
-    /// 409 idempotency key reuse with different content
-    IdempotencyConflict,
-    /// 422 inadmissible spec
-    Unprocessable {
-        reason: crate::error::ReasonCode,
-        summary: String,
-    },
-    /// 404
-    NotFound,
-    /// 410 terminal tombstone
-    Gone { tombstone: String },
-    /// 409 referenced resources block retirement; stays visibly blocked
-    RetirementBlocked { reason: String },
-    /// 409 the durable state refuses this transition (e.g. spec 0028
-    /// finalize on a non-Quarantined generation)
-    Conflict { summary: String },
-    /// 429 admission/backlog limit
-    TooManyRequests { retry_after_secs: u64 },
-}
+mod mutation_error;
+pub use mutation_error::MutationError;
 
 pub type MutationResult<T> = Result<T, MutationError>;
 
@@ -368,7 +342,9 @@ pub trait HealthPort: Send + Sync {
 pub mod attestation_port;
 pub mod auth_port;
 pub mod lifecycle_port;
+mod mutation_facts;
 pub mod store_port;
+mod store_rows;
 pub use attestation_port::{
     attestation_record_id, AttestationCommit, AttestationRecord, AttestationReplayRow,
 };

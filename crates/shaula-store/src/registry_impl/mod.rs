@@ -63,6 +63,7 @@ mod artifact_reads;
 mod artifacts;
 
 mod auth_execution;
+mod control_plane_reads;
 #[path = "control_plane_store.rs"]
 mod control_plane_store;
 
@@ -78,6 +79,7 @@ mod commits_fleet_noop;
 mod commits_generation;
 mod commits_noop;
 mod commits_pool;
+mod commits_pool_noop;
 mod retirement;
 mod retirement_refs;
 mod retirement_scan;

@@ -1,6 +1,7 @@
 //! Explicit published-template updates reuse immutable configuration server-side.
 
-use super::{request_hash, unprocessable, ControlPlane};
+use super::conditional_put::{template::Template, Request};
+use super::{unprocessable, ControlPlane};
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::registry::bindings_projection::BindingsSchema;
 use shaula_core::registry::{
@@ -143,74 +144,17 @@ impl ControlPlane {
         &self,
         actor: &Actor,
         key: &str,
-        publication: TemplatePublication,
+        mut publication: TemplatePublication,
     ) -> CoreResult<Result<MutationAccepted, MutationError>> {
-        let canonical = publication.canonical()?;
-        let idem = publication.idempotency_key.clone();
-        let submitted = serde_json::to_string(&publication.payload.bindings)
-            .map_err(|_| stored_configuration_error("template bindings could not be encoded"))?;
-        let result = self.template_publish_admit(actor, key, publication).await;
-        // Two requests can both observe an idempotency miss before one wins
-        // the transaction. Reclassify against its durable result, including
-        // NoOp's unique-key race. This only reads; it never retries a mutation.
-        if actor.has(Scope::TemplatePublish)
-            && matches!(
-                &result,
-                Ok(Err(MutationError::PreconditionFailed { .. })) | Err(_)
-            )
-        {
-            if let Some(idem) = idem {
-                match self
-                    .template_publication_replay(key, &idem, &canonical, &submitted)
-                    .await?
-                {
-                    Ok(Some(accepted)) => return Ok(Ok(accepted)),
-                    Err(mutation) => return Ok(Err(mutation)),
-                    Ok(None) => {}
-                }
-            }
-        }
-        result
-    }
-
-    pub(super) async fn template_publication_replay(
-        &self,
-        key: &str,
-        idem: &str,
-        canonical: &str,
-        submitted_bindings: &str,
-    ) -> CoreResult<Result<Option<MutationAccepted>, MutationError>> {
-        let hash = request_hash(&[
-            b"template_profile",
-            key.as_bytes(),
-            idem.as_bytes(),
-            canonical.as_bytes(),
-        ]);
-        match self
-            .store
-            .idempotency_find("template_profile", key, idem, &hash)
-            .await?
-        {
-            shaula_core::registry::IdempotencyLookup::Miss => Ok(Ok(None)),
-            shaula_core::registry::IdempotencyLookup::Conflict => {
-                Ok(Err(MutationError::IdempotencyConflict))
-            }
-            shaula_core::registry::IdempotencyLookup::Replay(body) => {
-                let accepted: MutationAccepted = serde_json::from_str(&body).map_err(|_| {
-                    stored_configuration_error("stored publication result is invalid")
-                })?;
-                let stored = self
-                    .store
-                    .template_protected_bindings(key, accepted.change.revision)
-                    .await?
-                    .map(|(json, _)| json)
-                    .unwrap_or_default();
-                if stored != submitted_bindings {
-                    return Ok(Err(MutationError::IdempotencyConflict));
-                }
-                Ok(Ok(Some(accepted)))
-            }
-        }
+        let request = Request {
+            actor,
+            key,
+            create: publication.if_none_match,
+            expected: publication.if_match.take(),
+            idempotency_key: publication.idempotency_key.take(),
+        };
+        self.conditional_put(request, || Template::prepare(key, publication))
+            .await
     }
 
     pub(super) async fn template_update_impl(

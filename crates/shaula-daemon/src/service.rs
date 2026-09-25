@@ -281,6 +281,9 @@ impl FleetMutationDraft {
     }
 }
 
+#[path = "conditional_put/mod.rs"]
+mod conditional_put;
+
 #[path = "service_fleet_registry.rs"]
 mod fleet_registry;
 
@@ -306,8 +309,6 @@ mod pool_registry;
 #[path = "service_profile_registry.rs"]
 mod profile_registry;
 
-#[path = "service_profile_registry_put.rs"]
-mod profile_registry_put;
 #[path = "service_profile_update.rs"]
 mod profile_update;
 #[path = "service_template_source.rs"]
@@ -319,8 +320,6 @@ mod profile_attestation;
 
 #[path = "service_auth.rs"]
 mod auth;
-#[path = "service_auth_forgejo.rs"]
-mod auth_forgejo;
 #[path = "service_auth_policy.rs"]
 mod auth_policy;
 #[path = "service_profile_conditions.rs"]

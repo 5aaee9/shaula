@@ -16,6 +16,42 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Shared conditional publication (C2, 2026-09-25)
+
+Fleet, Template Pool, Template Profile and both GitHub/Forgejo Auth PUT now enter
+one internal daemon Module (`conditional_put/`). Existing Registry Interfaces
+remain the callers' test surface. Typed resource Adapters retain canonical bytes,
+exact-pin/admission rules, protected-material comparison and transactional fences;
+Template Update keeps its preparation before entering Template publication.
+
+- Pool no-op now checks the exact live head, audits and saves an optional durable
+  `200` replay in one writer transaction, with no Revision/Change/outbox growth.
+- CAS/commit losers with an idempotency key perform a read-only replay recheck.
+  They never change the request ETag, re-admit or retry a write.
+- New mixed `If-None-Match: *` + `If-Match` PUTs return
+  `400 ConflictingPreconditions` after authorization, format and replay checks.
+  Matching history still replays; key/content conflicts remain `409`.
+
+Local verification: **16 new HTTP/Registry + real SQLite tests** pass, including
+five frozen historical hash fixtures, all five publication variants, bounded
+concurrency barriers, protected-material conflicts and transactional fault
+injection. Disabling the shared replay recheck caused three concurrency tests to
+fail; restoring it made them pass. Full workspace nextest: **952 passed, 2 skipped**.
+The required name-filtered `cargo nextest run --manifest-path Cargo.toml --workspace
+test` passes **749 tests, 205 filtered/skipped**. Rustfmt, strict workspace/all-target
+Clippy and whitespace checks pass; every C2-touched/new Rust file is <=400 lines.
+
+No schema migration, hash rewrite, public Registry parameter change, unified
+error channel or MutationFacts redesign was introduced. Read models and SQLite
+read projections were physically split only to respect the file-size rule.
+DELETE, Policy Update, Finalize, attestation and cascade orchestration stay intact.
+No real-platform or remote-CI acceptance was run for C2.
+
+Deferred, not silently resolved: identical full Auth PUT still creates a Candidate
+(the spec 0005 no-op discrepancy); principal/method idempotency scope still needs
+compatibility design; Template no-op versus Retirement remains an unverified race
+lead. C1 Create/restart/admission and C3/C5 are separate work.
+
 ## Runner Operation: shared Destroy for both Runner Backends (2026-09-25)
 
 The GitHub Retirement Destroy, the Forgejo Destroy and the Runner Maximum Lifetime

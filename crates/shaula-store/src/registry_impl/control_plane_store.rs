@@ -1,8 +1,4 @@
-use super::mapping::{
-    auth_handoff_row, auth_profile_head, auth_row, fleet_change_row, fleet_head,
-    fleet_pool_member_row, fleet_revision_row, pool_member_row, profile_change_row, template_row,
-    tpl_profile_head,
-};
+use super::mapping::auth_handoff_row;
 use super::{core_err, SqliteControlPlane};
 use async_trait::async_trait;
 use shaula_core::error::CoreResult;
@@ -30,66 +26,19 @@ impl ControlPlaneStore for SqliteControlPlane {
         self.commit_profile_retirement_impl(facts).await
     }
     async fn fleet_get(&self, key: &str) -> CoreResult<Option<FleetHead>> {
-        Ok(self
-            .store
-            .fleet_get(key)
-            .await
-            .map_err(core_err)?
-            .map(fleet_head))
+        self.fleet_head_read(key).await
     }
     async fn fleet_list(
         &self,
         _actor: &shaula_core::registry::Actor,
     ) -> CoreResult<Vec<(String, i64, String)>> {
-        Ok(self
-            .store
-            .fleet_list()
-            .await
-            .map_err(core_err)?
-            .into_iter()
-            .map(|f| (f.key, f.desired_revision, f.phase))
-            .collect())
+        self.fleet_list_read().await
     }
     async fn fleet_count(&self) -> CoreResult<usize> {
         Ok(self.store.fleet_list().await.map_err(core_err)?.len())
     }
     async fn fleet_revision_latest(&self, key: &str) -> CoreResult<Option<FleetRevisionRow>> {
-        let Some(row) = self
-            .store
-            .fleet_revision_latest(key)
-            .await
-            .map_err(core_err)?
-        else {
-            return Ok(None);
-        };
-        let mut mapped = fleet_revision_row(row.clone());
-        let pool_scope = row
-            .template_pool_ref
-            .clone()
-            .zip(row.template_pool_revision);
-        // Shared-pool fleets hydrate their members from the pool revision
-        // the fleet revision froze (spec 0037 §4); inline pools keep
-        // reading their own member rows.
-        mapped.template_pool = if let Some((pool_key, pool_revision)) = &pool_scope {
-            self.store
-                .template_pool_members(pool_key, *pool_revision)
-                .await
-                .map_err(core_err)?
-                .into_iter()
-                .map(pool_member_row)
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(core_err)?
-        } else {
-            self.store
-                .fleet_revision_pool_members(key, row.revision)
-                .await
-                .map_err(core_err)?
-                .into_iter()
-                .map(fleet_pool_member_row)
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(core_err)?
-        };
-        Ok(Some(mapped))
+        self.fleet_revision_read(key).await
     }
     async fn generation_lookup(
         &self,
@@ -118,22 +67,10 @@ impl ControlPlaneStore for SqliteControlPlane {
             .map_err(core_err)
     }
     async fn template_profile_get(&self, key: &str) -> CoreResult<Option<ProfileHead>> {
-        Ok(self
-            .store
-            .template_profile_get(key)
-            .await
-            .map_err(core_err)?
-            .map(tpl_profile_head))
+        self.template_head_read(key).await
     }
     async fn template_profile_keys(&self) -> CoreResult<Vec<String>> {
-        Ok(self
-            .store
-            .template_profiles_list()
-            .await
-            .map_err(core_err)?
-            .into_iter()
-            .map(|p| p.key)
-            .collect())
+        self.template_keys_read().await
     }
     async fn template_source_get(
         &self,
@@ -146,50 +83,23 @@ impl ControlPlaneStore for SqliteControlPlane {
         key: &str,
         revision: i64,
     ) -> CoreResult<Option<TemplateRevisionRow>> {
-        Ok(self
-            .store
-            .template_revision_get(key, revision)
-            .await
-            .map_err(core_err)?
-            .map(template_row))
+        self.template_revision_read(key, revision).await
     }
     async fn auth_profile_get(&self, key: &str) -> CoreResult<Option<ProfileHead>> {
-        Ok(self
-            .store
-            .auth_profile_get(key)
-            .await
-            .map_err(core_err)?
-            .map(auth_profile_head))
+        self.auth_head_read(key).await
     }
     async fn auth_profile_keys(&self) -> CoreResult<Vec<String>> {
-        Ok(self
-            .store
-            .auth_profiles_list()
-            .await
-            .map_err(core_err)?
-            .into_iter()
-            .map(|p| p.key)
-            .collect())
+        self.auth_keys_read().await
     }
     async fn auth_revision_get(
         &self,
         key: &str,
         revision: i64,
     ) -> CoreResult<Option<AuthRevisionRow>> {
-        Ok(self
-            .store
-            .auth_revision_get(key, revision)
-            .await
-            .map_err(core_err)?
-            .map(auth_row))
+        self.auth_revision_read(key, revision).await
     }
     async fn auth_revision_active(&self, key: &str) -> CoreResult<Option<AuthRevisionRow>> {
-        Ok(self
-            .store
-            .auth_revision_active(key)
-            .await
-            .map_err(core_err)?
-            .map(auth_row))
+        self.auth_active_read(key).await
     }
     async fn auth_apply_validation_v2(
         &self,
@@ -299,20 +209,10 @@ impl ControlPlaneStore for SqliteControlPlane {
             .map_err(core_err)
     }
     async fn fleet_change_get(&self, change_id: &str) -> CoreResult<Option<ChangeView>> {
-        Ok(self
-            .store
-            .change_get(change_id)
-            .await
-            .map_err(core_err)?
-            .map(fleet_change_row))
+        self.fleet_change_read(change_id).await
     }
     async fn profile_change_get(&self, change_id: &str) -> CoreResult<Option<ChangeView>> {
-        Ok(self
-            .store
-            .profile_change_get(change_id)
-            .await
-            .map_err(core_err)?
-            .map(profile_change_row))
+        self.profile_change_read(change_id).await
     }
     async fn idempotency_find(
         &self,
@@ -321,21 +221,8 @@ impl ControlPlaneStore for SqliteControlPlane {
         idempotency_key: &str,
         request_hash: &str,
     ) -> CoreResult<shaula_core::registry::IdempotencyLookup> {
-        let Some(record) = self
-            .store
-            .idempotency_find_by_key(resource_kind, resource_key, idempotency_key)
+        self.idempotency_read(resource_kind, resource_key, idempotency_key, request_hash)
             .await
-            .map_err(core_err)?
-        else {
-            return Ok(shaula_core::registry::IdempotencyLookup::Miss);
-        };
-        if record.request_hash != request_hash {
-            return Ok(shaula_core::registry::IdempotencyLookup::Conflict);
-        }
-        Ok(match record.response_body {
-            Some(body) => shaula_core::registry::IdempotencyLookup::Replay(body),
-            None => shaula_core::registry::IdempotencyLookup::Miss,
-        })
     }
     async fn artifact_manifest(&self, digest: &str) -> CoreResult<Option<String>> {
         self.artifact_manifest_impl(digest).await
@@ -458,30 +345,11 @@ impl ControlPlaneStore for SqliteControlPlane {
         &self,
         key: &str,
     ) -> CoreResult<Option<shaula_core::template_pool::TemplatePoolHead>> {
-        Ok(self
-            .store
-            .template_pool_get(key)
-            .await
-            .map_err(core_err)?
-            .map(|p| shaula_core::template_pool::TemplatePoolHead {
-                key: p.key,
-                incarnation: p.incarnation,
-                desired_revision: p.desired_revision,
-                phase: p.phase,
-                deletion_marker: p.deletion_marker,
-                tombstone: p.tombstone,
-            }))
+        self.pool_head_read(key).await
     }
 
     async fn template_pool_list(&self) -> CoreResult<Vec<(String, i64, String)>> {
-        Ok(self
-            .store
-            .template_pool_list()
-            .await
-            .map_err(core_err)?
-            .into_iter()
-            .map(|p| (p.key, p.desired_revision, p.incarnation))
-            .collect())
+        self.pool_list_read().await
     }
 
     async fn template_pool_revision_latest(
@@ -498,6 +366,19 @@ impl ControlPlaneStore for SqliteControlPlane {
         self.commit_template_pool_mutation_impl(facts).await
     }
 
+    async fn commit_template_pool_noop(
+        &self,
+        key: &str,
+        incarnation: &str,
+        revision: i64,
+        actor: &str,
+        idempotency: Option<shaula_core::registry::IdempotencyInsert>,
+        now: i64,
+    ) -> CoreResult<Result<(), MutationError>> {
+        self.commit_template_pool_noop_impl(key, incarnation, revision, actor, idempotency, now)
+            .await
+    }
+
     async fn commit_template_pool_delete(
         &self,
         facts: MutationFacts,
@@ -506,20 +387,6 @@ impl ControlPlaneStore for SqliteControlPlane {
     }
 
     async fn template_pool_change_get(&self, change_id: &str) -> CoreResult<Option<ChangeView>> {
-        Ok(self
-            .store
-            .profile_change_get(change_id)
-            .await
-            .map_err(core_err)?
-            .filter(|c| c.resource_kind == "template_pool")
-            .map(|c| ChangeView {
-                id: c.id,
-                resource_kind: "template_pool".to_string(),
-                resource_key: c.profile_key,
-                revision: c.revision.unwrap_or_default(),
-                kind: c.kind,
-                state: c.state,
-                reason: c.reason,
-            }))
+        self.pool_change_read(change_id).await
     }
 }
