@@ -8,6 +8,7 @@
 | --- | --- |
 | Nix 构建环境、打包与 NixOS 服务部署 | [Nix / NixOS](nix.md) |
 | 登录、HTTPS、API 身份与访问授权 | [OIDC 部署](oidc-deployment.md) |
+| 个人 Access Token、远程 CLI 与机器输出 | [CLI](cli.md) |
 | Jobs 状态、apply / destroy 日志与保留策略 | [Jobs 与执行日志](jobs-and-operation-logs.md) |
 | 从源码构建、开发 Web UI 与运行检查 | [开发指南](development.md) |
 | GitHub / Forgejo 共用 Runner 硬超时、配置与升级风险 | [Runner 最大存活时间](runner-lifetime.md) |

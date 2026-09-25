@@ -102,3 +102,6 @@ mod template_scan;
 pub use scan::ScanReport;
 
 mod auth_observations;
+
+mod control_reads;
+mod control_reads_more;

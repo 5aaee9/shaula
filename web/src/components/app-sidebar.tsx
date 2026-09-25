@@ -21,6 +21,7 @@ export const navigation = [
   { url: "/templates", title: "Templates", icon: Layers3 },
   { url: "/pools", title: "Template pools", icon: Network },
   { url: "/auth", title: "Authentication", icon: KeyRound },
+  { url: "/settings/access-tokens", title: "Access tokens", icon: KeyRound },
   { url: "/changes", title: "Changes", icon: GitPullRequest },
 ];
 

@@ -58,6 +58,8 @@ fn default_artifact_root() -> String {
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HttpConfigDto {
+    #[serde(default)]
+    pub access_tokens: shaula_core::access_tokens::TokenPolicy,
     /// Loopback-only: `127.0.0.1:8080` form.
     pub listen: String,
     #[serde(default = "default_body_limit")]

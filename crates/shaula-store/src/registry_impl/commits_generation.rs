@@ -19,7 +19,7 @@ impl SqliteControlPlane {
         &self,
         generation_id: &str,
         operation_id: &str,
-        actor: &str,
+        actor: &shaula_core::registry::Actor,
         reason: &str,
         idempotency: Option<shaula_core::registry::IdempotencyInsert>,
         now: i64,
@@ -82,7 +82,7 @@ impl SqliteControlPlane {
                 state: "Succeeded".to_string(),
                 provenance_json: Some(
                     serde_json::json!({
-                        "actor": actor,
+                        "actor": actor.name,
                         "reason": reason,
                     })
                     .to_string(),
@@ -99,9 +99,10 @@ impl SqliteControlPlane {
             .audit_append(
                 &tx,
                 shaula_core::registry::AuditAppend {
+                    authentication: actor.authentication.clone(),
                     resource_kind: "runner_generation".into(),
                     action: "finalize".into(),
-                    actor: actor.to_string(),
+                    actor: actor.name.clone(),
                     resource_key: generation_id.to_string(),
                     revision: None,
                     outcome: "accepted".into(),

@@ -48,7 +48,7 @@ async fn accepted_policy_replays_after_activation_and_base_credential_cleanup() 
 }
 
 #[tokio::test]
-async fn policy_and_complete_put_cannot_replay_each_others_idempotency_key() -> TestResult {
+async fn policy_and_complete_put_have_independent_operation_namespaces() -> TestResult {
     let fixture = Fixture::new().await?;
     let etag = fixture.etag().await?;
     assert_eq!(
@@ -66,25 +66,19 @@ async fn policy_and_complete_put_cannot_replay_each_others_idempotency_key() -> 
     request
         .headers_mut()
         .insert("idempotency-key", "policy".parse()?);
-    let conflict = fixture.app.clone().oneshot(request).await?;
-    assert_eq!(conflict.status(), StatusCode::CONFLICT);
-    assert_eq!(
-        json_response(conflict).await?["code"],
-        "IdempotencyConflict"
-    );
+    let publication = fixture.app.clone().oneshot(request).await?;
+    assert_eq!(publication.status(), StatusCode::ACCEPTED);
+    assert_eq!(json_response(publication).await?["revision"], 3);
     fixture.rotate("new-private-key", "rotation").await?;
-    let conflict = fixture
+    let policy = fixture
         .post(
             body(1, &["example-org"]),
             &fixture.etag().await?,
             "rotation",
         )
         .await?;
-    assert_eq!(conflict.status(), StatusCode::CONFLICT);
-    assert_eq!(
-        json_response(conflict).await?["code"],
-        "IdempotencyConflict"
-    );
+    assert_eq!(policy.status(), StatusCode::ACCEPTED);
+    assert_eq!(json_response(policy).await?["revision"], 5);
     Ok(())
 }
 

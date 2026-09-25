@@ -82,6 +82,7 @@ async fn ready_fleet_converges_only_when_effective_and_occupied_capacity_match_t
             "unused".into(),
         );
         let actor = Actor {
+            authentication: Default::default(),
             name: "operator".into(),
             scopes: vec![Scope::FleetRead],
         };

@@ -75,6 +75,7 @@ impl SqliteControlPlane {
             .audit_append(
                 &tx,
                 shaula_core::registry::AuditAppend {
+                    authentication: Default::default(),
                     resource_kind: kind.into(),
                     action: "retire".into(),
                     actor: "reconciler".into(),

@@ -86,6 +86,8 @@ impl ControlPlane {
         self.store
             .commit_auth_policy_update(
                 MutationFacts {
+                    idempotency_operation: "v1:POST:policy-updates",
+                    authentication: actor.authentication.clone(),
                     resource_kind: "github_auth_profile",
                     resource_key: key.into(),
                     incarnation,

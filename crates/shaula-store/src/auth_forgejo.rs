@@ -165,6 +165,7 @@ impl Store {
             self.audit_append(
                 tx,
                 shaula_core::registry::AuditAppend {
+                    authentication: Default::default(),
                     resource_kind: "fleet".into(),
                     action: "auth-rotation".into(),
                     actor: "shaula:forgejo-token-rotation".into(),

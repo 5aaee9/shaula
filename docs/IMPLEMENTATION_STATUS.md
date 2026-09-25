@@ -16,6 +16,68 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Personal access tokens and remote CLI (2026-09-25)
+
+PR #3's spec/ARD 0039 is merged. Local implementation now includes owner-bound
+opaque PAT issuance/verification/revocation, finite TTL/quota/rate limits,
+primary-OIDC-only delegation, credential audit provenance, and principal plus
+HTTP-operation idempotency namespaces. Migrations m0023–m0025 preserve unknown
+legacy ownership as a conflict. Existing OIDC browser/startup requirements stay
+in place. Token secrets are returned only on the first successful issue response.
+
+`shaula-api-types` and `shaula-client` provide independent transport contracts
+and all 49 inventory operations. The remote CLI covers Fleet, Template, Pool,
+GitHub/Forgejo Auth Profile, history/log, Change and token commands. Strong
+versions, immutable attempts, exact numeric request tokens, separate finalize
+receipts, bounded reads, no redirects and private credential files are implemented.
+The Web token page supports explicit scopes, ephemeral secret reveal, recovery,
+verified replacement followed by optional revocation, and disabled deployment
+policy. Usage and recovery procedures: [CLI](cli.md), [deployment](oidc-deployment.md).
+
+Local evidence:
+
+- Full workspace nextest: **955 passed, 2 skipped**. The two ignored tests are
+  opt-in harnesses, not silently counted as passing. The prescribed trailing
+  `test` command also passed (740 passed, 217 skipped), but is a name filter.
+- Real Axum/OIDC/SQLite tests cover issue/replay, same owner across credentials,
+  different owners, legacy conflicts, operation/precondition namespaces, audit,
+  revocation, quota races, policy changes and all 49 route authorization boundaries.
+  Bidirectional router/inventory checks and SDK routing tests reject route drift.
+- CLI subprocess workflows cover GitHub/Forgejo publication and rotation, write-only
+  access, Fleet/Pool create/update/conflict/retire, Template typed projections and
+  omitted/null Update semantics, context/login/logout, stream cursors and partial
+  results. These exercise production handlers and store code; external provider
+  activation/Runner execution is fixture-driven in these management tests.
+- A production `shaula serve` subprocess test proves persisted PAT use after
+  restart and during a runtime Provider outage, mandatory Discovery on startup,
+  and rejection after disabling PATs or removing the owner's grant on restart.
+- Web regression: **194 passed**; all four token-page tests pass. Rustfmt, strict
+  all-target clippy, standalone SDK build, Web lint/build and full Web formatting
+  pass. Explicit LF attributes fix Windows checkout differences in template
+  integrity inputs and formatter-controlled Web sources. The separate real-daemon
+  HTTPS/OIDC browser suite passes **9 tests**, including:
+  browser login and issuance → CLI Fleet read → self-revocation → CLI 401 → browser
+  revoked metadata. It uses the local test Provider, not the deployed identity service.
+
+Deployment: molecule's complete system update passed Linux Clippy, 949 nextest
+tests (2 skipped), and 2 Terraform HTTP-state tests, then activated successfully.
+The actual HTTPS Browser session recovered Indexyz's identity and displays the
+new Access tokens page. Migrations m0020–m0025 and live/backup integrity checks
+passed; the full stopped-service state backup is retained. Source snapshot,
+system paths and logs are recorded in [deployment evidence](evidence/0039-deployment-2026-09-25.md).
+
+Actual deployment acceptance passed: browser-primary issuance, CLI PAT identity
+and Fleet reads, HTTP 403 for an undelegated scope, continued PAT use after a
+service restart, self-revocation and HTTP 401 on reuse. Browser and SQLite confirm
+revocation; zero unrevoked PATs remain after the test.
+
+Remaining release acceptance: actual Provider-outage and backup-restore exercises
+remain open. The deployed
+Kanidm registration cannot mint the distinct primary API-JWT audience. Exhaustive
+paired Web/CLI evidence for every WF-01–WF-14 failure branch is not claimed by the
+route coverage or existing component suite. Spec 0039's complete external/parity
+acceptance remains open until those results are recorded.
+
 ## Forgejo management, real lifecycle and Jobs (2026-09-22)
 
 The three usable-version increments are implemented:

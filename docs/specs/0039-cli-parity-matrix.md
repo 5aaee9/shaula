@@ -158,4 +158,4 @@ Fleet、Profile、Pool 目前是完整列表；CLI 的 --search/--sort 可以在
 
 客户端与 Web 的同一 workflow 使用同一套服务端 fixture/主体/scopes，分别通过真实 Axum HTTP listener 执行，比较准入、提交事实和安全投影，不比较截图布局。禁止仅 stub client response 后宣称服务端兼容性验证完成。
 
-本清单本身尚未成为仓库的 CI，也未运行上述业务测试；交付 JSON 是后续自动化的设计输入。
+JSON inventory 已接入 `personal_tokens_http` 的双向路由登记/鉴权测试及 `shaula-client/tests/routes.rs` 的 SDK method/path 覆盖。该覆盖不等于 14 项组合 workflow 的 Web/CLI 对等验收；详细证据与剩余项见 [实现状态](../IMPLEMENTATION_STATUS.md)。

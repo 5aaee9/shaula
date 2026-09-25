@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/shaula-api-types",
+    "crates/shaula-client",
     "crates/shaula",
     "crates/shaula-core",
     "crates/shaula-daemon",
@@ -20,6 +22,8 @@ rust-version = "1.88"
 license = "Apache-2.0"
 
 [workspace.dependencies]
+shaula-api-types = { path = "crates/shaula-api-types" }
+shaula-client = { path = "crates/shaula-client" }
 shaula-core = { path = "crates/shaula-core" }
 shaula-daemon = { path = "crates/shaula-daemon" }
 shaula-http = { path = "crates/shaula-http" }

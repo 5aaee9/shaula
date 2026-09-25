@@ -78,8 +78,25 @@ async fn authenticate(
             .and_then(|v| v.to_str().ok())
             .ok_or(AuthError::Unauthorized)?;
         let (scheme, token) = raw.split_once(' ').ok_or(AuthError::Unauthorized)?;
-        if !scheme.eq_ignore_ascii_case("bearer") || token.contains(char::is_whitespace) {
+        if !scheme.eq_ignore_ascii_case("bearer")
+            || token.is_empty()
+            || token.chars().any(|c| c.is_whitespace() || c.is_control())
+        {
             return Err(AuthError::Unauthorized);
+        }
+        if token.starts_with("shaula_pat_v1_") {
+            let service = state.access_tokens.as_ref().ok_or(AuthError::Unavailable)?;
+            let (actor, id) = service.authenticate(token).await.map_err(|e| match e {
+                shaula_core::access_tokens::TokenError::Unavailable => AuthError::Unavailable,
+                _ => AuthError::Unauthorized,
+            })?;
+            return Ok(Authenticated {
+                name: actor.name.clone(),
+                actor,
+                csrf: None,
+                credential_kind: "personal_access_token",
+                token_id: Some(id),
+            });
         }
         let claims = state.oidc.claims(token, true).await?;
         return state.oidc.identity(&claims, true);

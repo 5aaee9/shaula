@@ -120,7 +120,7 @@ impl ControlPlane {
         };
         match self
             .store
-            .commit_attestation(record, actor.name.clone(), now)
+            .commit_attestation(record, actor.clone(), now)
             .await?
         {
             // Created and Replayed return the same stable evidence key;

@@ -192,6 +192,7 @@ pub(crate) fn document(path: &str) -> bool {
             | "/auth"
             | "/auth/new"
             | "/changes"
+            | "/settings/access-tokens"
             | "/jobs"
             | "/jobs/runners"
     ) || path

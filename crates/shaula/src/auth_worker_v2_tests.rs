@@ -93,6 +93,8 @@ pub(crate) async fn seed_candidate_as(
         reason: None,
     };
     let facts = MutationFacts {
+        idempotency_operation: "v1:PUT",
+        authentication: Default::default(),
         resource_kind: "github_auth_profile",
         resource_key: key.into(),
         incarnation: "inc-v2".into(),

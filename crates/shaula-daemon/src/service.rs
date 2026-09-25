@@ -187,7 +187,8 @@ impl ControlPlane {
     /// Looks up a stored idempotent response for this exact request shape.
     async fn idempotency_replay(
         &self,
-        kind: &str,
+        actor: &shaula_core::registry::Actor,
+        kind: (&str, &str),
         key: &str,
         idempotency_key: &Option<String>,
         canonical_body: &str,
@@ -196,9 +197,17 @@ impl ControlPlane {
         let Some(idem) = idempotency_key else {
             return Ok(Ok(None));
         };
+        let (kind, operation) = kind;
         let hash = self.idempotency_hash(kind, key, idem, canonical_body, precondition);
-        match self.store.idempotency_find(kind, key, idem, &hash).await? {
+        match self
+            .store
+            .idempotency_find(&actor.name, operation, kind, key, idem, &hash)
+            .await?
+        {
             shaula_core::registry::IdempotencyLookup::Miss => Ok(Ok(None)),
+            shaula_core::registry::IdempotencyLookup::LegacyConflict => {
+                Ok(Err(MutationError::LegacyIdempotencyConflict))
+            }
             shaula_core::registry::IdempotencyLookup::Conflict => {
                 Ok(Err(MutationError::IdempotencyConflict))
             }
@@ -224,6 +233,7 @@ pub(crate) fn template_referenced(spec: &FleetSpec) -> String {
 /// operator PUT and the follow cascade build identical ChangeView/
 /// MutationFacts material so audit and the change feed can never drift.
 pub(crate) struct FleetMutationDraft {
+    pub authentication: shaula_core::registry::AuthenticationContext,
     pub key: String,
     pub incarnation: String,
     pub revision: i64,
@@ -261,6 +271,8 @@ impl FleetMutationDraft {
     ) -> MutationFacts {
         let change_id = change.id.clone();
         MutationFacts {
+            idempotency_operation: "v1:PUT",
+            authentication: self.authentication,
             resource_kind: "fleet",
             resource_key: self.key,
             incarnation: self.incarnation,

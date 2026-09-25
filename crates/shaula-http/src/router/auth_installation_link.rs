@@ -10,14 +10,7 @@ use super::{require_scope, AppState};
 use crate::problem::problem;
 
 /// Public metadata only; the App JWT and private key stay in the adapter.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AuthInstallationLink {
-    pub url: String,
-    pub app_id: String,
-    pub revision: i64,
-    pub incarnation: String,
-}
+pub use shaula_api_types::AuthInstallationLink;
 
 /// Stable failures carry no provider body, credential or transport diagnostics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

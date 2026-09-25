@@ -9,6 +9,7 @@ use super::config::BootstrapConfig;
 /// Validated bootstrap, frozen for the process lifetime.
 #[derive(Clone)]
 pub struct ValidatedBootstrap {
+    pub access_tokens: shaula_core::access_tokens::TokenPolicy,
     pub data_dir: PathBuf,
     pub database_path: PathBuf,
     pub work_root: PathBuf,
@@ -152,6 +153,9 @@ impl ValidatedBootstrap {
         if config.version != 1 {
             return Err(format!("unsupported bootstrap version {}", config.version));
         }
+        if !config.http.access_tokens.validate() {
+            return Err("http.access_tokens policy is invalid".into());
+        }
         if config.template_source_dirs.len() > 16
             || config
                 .template_source_dirs
@@ -241,6 +245,7 @@ impl ValidatedBootstrap {
             template_source_dirs: config.template_source_dirs,
             listen: config.http.listen,
             authorization: config.http.authorization,
+            access_tokens: config.http.access_tokens,
             bindings_server_key,
             request_body_limit,
             artifact_body_limit,

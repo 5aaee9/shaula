@@ -38,6 +38,8 @@ pub enum AuthError {
     Csrf,
     #[error("authentication capacity exhausted")]
     Capacity,
+    #[error("authentication unavailable")]
+    Unavailable,
 }
 
 impl IntoResponse for AuthError {
@@ -45,14 +47,21 @@ impl IntoResponse for AuthError {
         use axum::http::{header, StatusCode};
         let status = match self {
             Self::Csrf => StatusCode::FORBIDDEN,
-            Self::Provider | Self::Capacity | Self::Configuration(_) => {
+            Self::Provider | Self::Capacity | Self::Configuration(_) | Self::Unavailable => {
                 StatusCode::SERVICE_UNAVAILABLE
             }
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
         };
-        let mut response =
-            crate::problem::problem(status, "AuthenticationFailed", self.to_string())
-                .into_response();
+        let mut response = crate::problem::problem(
+            status,
+            match self {
+                Self::Unavailable => "AuthenticationUnavailable",
+                Self::Unauthorized => "AuthenticationRequired",
+                _ => "AuthenticationFailed",
+            },
+            self.to_string(),
+        )
+        .into_response();
         if status == StatusCode::UNAUTHORIZED {
             response.headers_mut().insert(
                 header::WWW_AUTHENTICATE,
@@ -65,6 +74,8 @@ impl IntoResponse for AuthError {
 
 #[derive(Clone)]
 pub struct Authenticated {
+    pub(crate) credential_kind: &'static str,
+    pub(crate) token_id: Option<String>,
     pub actor: Actor,
     pub name: String,
     pub(crate) csrf: Option<String>,
@@ -119,6 +130,31 @@ impl Oidc {
             exchanges: Arc::new(tokio::sync::Semaphore::new(16)),
             login_available: std::sync::atomic::AtomicBool::new(true),
         }))
+    }
+
+    pub fn token_context(
+        &self,
+    ) -> (
+        String,
+        std::collections::BTreeMap<String, Vec<shaula_core::registry::Scope>>,
+    ) {
+        let realm = shaula_core::auth::request_hash_parts(&[
+            b"shaula-token-realm-v1",
+            self.config.issuer.as_bytes(),
+            self.config.audience.as_bytes(),
+            self.config.origin.as_bytes(),
+        ]);
+        let grants = self
+            .config
+            .grants
+            .iter()
+            .filter_map(|g| {
+                serde_json::to_string(&("oidc-v1", &g.issuer, &g.subject))
+                    .ok()
+                    .map(|p| (p, self.config.scopes(&g.subject)))
+            })
+            .collect();
+        (realm, grants)
     }
 
     pub async fn ready(&self) -> bool {

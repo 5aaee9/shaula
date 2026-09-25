@@ -1,5 +1,11 @@
 # Embedded Web UI
 
+Amended by [spec 0039](0039-user-access-tokens-and-cli.md): `/settings/access-tokens`
+uses the primary OIDC browser session for owner-only token management. Issued
+secrets exist only in component memory until explicitly revealed/saved; they do
+not enter persistent browser storage or query caches. Rotation verifies the new
+credential before offering old-token revocation.
+
 The operator UI lives in `web/` and is served from `/` by the existing loopback
 HTTP listener. It uses React, Vite 8's Oxc toolchain and official shadcn/ui
 components downloaded with the CLI and composed into resource views.

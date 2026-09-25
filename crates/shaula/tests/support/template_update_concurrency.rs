@@ -46,6 +46,7 @@ async fn race(
             service
                 .template_update(
                     &Actor {
+                        authentication: Default::default(),
                         name: "publisher".into(),
                         scopes: vec![Scope::TemplatePublish],
                     },

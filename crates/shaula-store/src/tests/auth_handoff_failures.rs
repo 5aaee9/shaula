@@ -50,6 +50,8 @@ async fn mutate(store: &crate::registry_impl::SqliteControlPlane, mutation: Muta
             let previous = store.fleet_revision_latest("fleet").await.unwrap().unwrap();
             let result = store
                 .commit_fleet_mutation(MutationFacts {
+                    idempotency_operation: "v1:PUT",
+                    authentication: Default::default(),
                     resource_kind: "fleet",
                     resource_key: "fleet".into(),
                     incarnation: "inc-fleet".into(),

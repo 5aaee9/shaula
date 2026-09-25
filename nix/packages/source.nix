@@ -14,7 +14,16 @@ lib.cleanSourceWith {
       "crates"
       "templates"
       "web"
+      "docs"
     ]
+    && (
+      root != "docs"
+      || builtins.elem relative [
+        "docs"
+        "docs/design"
+        "docs/design/0039-route-inventory.json"
+      ]
+    )
     && !(builtins.elem (baseNameOf path) [
       "target"
       "node_modules"

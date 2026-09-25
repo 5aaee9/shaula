@@ -3,10 +3,12 @@ status: accepted
 date: 2026-09-06
 supersedes: 0011
 amends: [0005, 0009, 0012]
-amended-by: [0014, 0017]
+amended-by: [0014, 0017, 0039]
 ---
 
 # Require OpenID Connect for all HTTP access
+
+> API credentials amended by [ARD-0039](0039-user-access-tokens-and-api-client.md): OIDC remains mandatory at startup and for browser login. API/health also accept locally issued personal tokens with stable OIDC ownership and attenuated scopes; arbitrary opaque Provider tokens remain unsupported.
 
 > Session expiry amended by [ADR-0017](0017-renew-browser-sessions-in-the-authentication-guard.md): renewable browser sessions first obtain fresh Provider authorization in the guard; successful renewal preserves the current page.
 

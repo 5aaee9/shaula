@@ -30,7 +30,15 @@ export function oidcDevelopmentGuard(target: string): Plugin {
     }
     if (status === 200) return next();
     const document =
-      ["/", "/fleets", "/templates", "/templates/new", "/auth", "/changes"].includes(path) ||
+      [
+        "/",
+        "/fleets",
+        "/templates",
+        "/templates/new",
+        "/auth",
+        "/changes",
+        "/settings/access-tokens",
+      ].includes(path) ||
       (/^\/fleets\/[a-zA-Z0-9_.-]{1,128}$/.test(path) &&
         !["/fleets/.", "/fleets/.."].includes(path)) ||
       (/^\/templates\/[a-zA-Z0-9_.-]{1,128}\/revisions\/new$/.test(path) &&

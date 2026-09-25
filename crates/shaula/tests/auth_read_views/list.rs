@@ -126,6 +126,8 @@ async fn auth_collection_propagates_a_profile_read_fault_after_successful_key_en
     let commit = store
         .commit_auth_revision(
             MutationFacts {
+                idempotency_operation: "v1:PUT",
+                authentication: Default::default(),
                 resource_kind: "github_auth_profile",
                 resource_key: corrupt_key.into(),
                 incarnation: head.incarnation,

@@ -123,6 +123,17 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
     let http_config =
         shaula_http::server::ServerConfig::new(host, port, bootstrap.request_body_limit)?;
     let state = shaula_http::router::AppState {
+        access_tokens: Some(std::sync::Arc::new({
+            let (realm, grants) = oidc.token_context();
+            shaula_daemon::access_tokens::PersonalTokens::new(
+                jobs.clone(),
+                clock.clone(),
+                bootstrap.access_tokens.clone(),
+                realm,
+                grants,
+            )
+            .map_err(|e| e.to_string())?
+        })),
         auth_installation_link: Some(std::sync::Arc::new(
             auth_installation_link::StoredAuthInstallationLink::production(
                 control_plane_store.clone(),

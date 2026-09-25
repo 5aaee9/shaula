@@ -100,6 +100,7 @@ async fn installation_link_checks_both_scopes_and_missing_profiles_before_github
     );
     assert_eq!(test.calls(), 0);
     let actor = Actor {
+        authentication: Default::default(),
         name: "reader".into(),
         scopes: vec![Scope::AuthRead],
     };
@@ -236,6 +237,7 @@ async fn installation_link_rejects_noncanonical_keys_without_lookup() -> TestRes
     let test = Fixture::new(true).await?;
     test.seed(true).await?;
     let actor = Actor {
+        authentication: Default::default(),
         name: "operator".into(),
         scopes: vec![Scope::AuthRead, Scope::AuthWrite],
     };

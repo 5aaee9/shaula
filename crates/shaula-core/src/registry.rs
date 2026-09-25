@@ -8,54 +8,8 @@ use crate::auth::AuthKind;
 use crate::error::CoreResult;
 use crate::fleet::FleetSpec;
 
-/// Authenticated principal and effective grants supplied by the HTTP adapter.
-/// `name` is a versioned stable identity, not a mutable display name.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Actor {
-    pub name: String,
-    pub scopes: Vec<Scope>,
-}
-
-impl Actor {
-    pub fn has(&self, scope: Scope) -> bool {
-        self.scopes.contains(&scope)
-    }
-}
-
-/// Independent management capabilities (spec 0005 §8). High-trust
-/// capabilities are separately grantable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Scope {
-    FleetRead,
-    LogsRead,
-    FleetWrite,
-    FleetRetire,
-    TemplateRead,
-    TemplatePublish,
-    TemplateAttest,
-    TemplateRetire,
-    AuthRead,
-    AuthWrite,
-    AuthRetire,
-}
-
-impl Scope {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Scope::FleetRead => "fleet.read",
-            Scope::LogsRead => "logs.read",
-            Scope::FleetWrite => "fleet.write",
-            Scope::FleetRetire => "fleet.retire",
-            Scope::TemplateRead => "template.read",
-            Scope::TemplatePublish => "template.publish",
-            Scope::TemplateAttest => "template.attest",
-            Scope::TemplateRetire => "template.retire",
-            Scope::AuthRead => "auth.read",
-            Scope::AuthWrite => "auth.write",
-            Scope::AuthRetire => "auth.retire",
-        }
-    }
-}
+mod identity;
+pub use identity::{Actor, AuthenticationContext, Scope};
 
 /// Read model of the canonical desired Fleet representation.
 #[derive(Debug, Clone, PartialEq)]
@@ -208,6 +162,8 @@ pub enum MutationError {
     IdentityConflict,
     /// 409 idempotency key reuse with different content
     IdempotencyConflict,
+    /// Historical request cannot be attributed to a verified principal.
+    LegacyIdempotencyConflict,
     /// 422 inadmissible spec
     Unprocessable {
         reason: crate::error::ReasonCode,

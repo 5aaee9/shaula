@@ -83,6 +83,8 @@ async fn seed_fleet(store: &SqliteControlPlane, key: &str) {
     spec["github"]["auth_profile_ref"] = serde_json::json!("shared-github");
     store
         .commit_fleet_mutation(MutationFacts {
+            idempotency_operation: "v1:PUT",
+            authentication: Default::default(),
             resource_kind: "fleet",
             resource_key: key.into(),
             incarnation: format!("{key}-inc"),

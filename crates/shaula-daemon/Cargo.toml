@@ -21,6 +21,12 @@ fd-lock = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
+base64.workspace = true
+subtle.workspace = true
+zeroize.workspace = true
+uuid.workspace = true
+getrandom = "0.2"
+
 [dev-dependencies]
 tempfile = "3"
 

@@ -25,6 +25,10 @@ pub mod m0020_runner_lifetime;
 pub mod m0021_forgejo_jobs;
 pub mod m0022_forgejo_job_enrichment;
 
+pub mod m0023_principal_idempotency;
+pub mod m0024_personal_tokens;
+pub mod m0025_audit_credentials;
+
 use sea_orm_migration::prelude::*;
 
 pub use sea_orm_migration::MigratorTrait;
@@ -57,6 +61,9 @@ impl MigratorTrait for Migrator {
             Box::new(m0020_runner_lifetime::Migration),
             Box::new(m0021_forgejo_jobs::Migration),
             Box::new(m0022_forgejo_job_enrichment::Migration),
+            Box::new(m0023_principal_idempotency::Migration),
+            Box::new(m0024_personal_tokens::Migration),
+            Box::new(m0025_audit_credentials::Migration),
         ]
     }
 }

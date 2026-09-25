@@ -54,7 +54,12 @@ impl ControlPlane {
         // semantic member of the parsed format — identity fields AND the
         // target policy — so changed content conflicts instead of
         // silently replaying (spec 0005 section 3/§2).
-        let canonical_body = format.canonical_body();
+        let canonical_body = serde_json::json!({
+            "body": format.canonical_body(),
+            "if_none_match": if_none_match,
+            "if_match": if_match,
+        })
+        .to_string();
         if let Some(idem) = &idempotency_key {
             let hash = request_hash(&[
                 b"github_auth_profile",
@@ -64,7 +69,14 @@ impl ControlPlane {
             ]);
             match self
                 .store
-                .idempotency_find("github_auth_profile", key, idem, &hash)
+                .idempotency_find(
+                    &actor.name,
+                    "v1:PUT",
+                    "github_auth_profile",
+                    key,
+                    idem,
+                    &hash,
+                )
                 .await?
             {
                 shaula_core::registry::IdempotencyLookup::Replay(body) => {
@@ -85,6 +97,9 @@ impl ControlPlane {
                         return Ok(Err(MutationError::IdempotencyConflict));
                     }
                     return Ok(Ok(accepted));
+                }
+                shaula_core::registry::IdempotencyLookup::LegacyConflict => {
+                    return Ok(Err(MutationError::LegacyIdempotencyConflict))
                 }
                 shaula_core::registry::IdempotencyLookup::Conflict => {
                     return Ok(Err(MutationError::IdempotencyConflict));
@@ -193,6 +208,8 @@ impl ControlPlane {
         };
 
         let facts = MutationFacts {
+            idempotency_operation: "v1:PUT",
+            authentication: actor.authentication.clone(),
             resource_kind: "github_auth_profile",
             resource_key: key.to_string(),
             incarnation: incarnation.clone(),

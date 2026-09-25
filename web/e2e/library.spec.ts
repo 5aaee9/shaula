@@ -61,9 +61,13 @@ test("real database imports default templates and supplies Terraform variables t
   const policy = JSON.parse(
     await dialog.getByLabel("Fleet input policy (JSON)", { exact: true }).inputValue(),
   );
-  expect(policy.runner_image).toEqual(["ghcr.io/actions/actions-runner:2.337.0"]);
+  expect(policy.runner_image).toEqual([
+    "auto",
+    "ghcr.io/actions/actions-runner:2.337.0",
+    "code.forgejo.org/forgejo/runner:13.1.0",
+  ]);
   await expect(dialog.getByLabel("Bindings (JSON)", { exact: true })).toHaveValue(
-    '{"docker_host":"unix:///run/custom-docker.sock"}',
+    '{"docker_host":"unix:///run/custom-docker.sock","runner_backend":"github"}',
   );
   await dialog.getByRole("button", { name: "Advanced settings", exact: true }).click();
   await expect(host).toBeVisible();

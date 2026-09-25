@@ -101,6 +101,7 @@ impl SqliteControlPlane {
             .audit_append(
                 &tx,
                 shaula_core::registry::AuditAppend {
+                    authentication: facts.authentication.clone(),
                     resource_kind: "template_profile".into(),
                     action: "put".into(),
                     actor: facts.actor.clone(),
@@ -128,6 +129,8 @@ impl SqliteControlPlane {
                 .idempotency_store(
                     &tx,
                     shaula_core::registry::IdempotencyInsert {
+                        operation: facts.idempotency_operation.into(),
+                        principal: facts.actor.clone(),
                         id: format!("idem-{}", facts.change.id),
                         resource_kind: facts.resource_kind.to_string(),
                         resource_key: facts.resource_key.clone(),
@@ -152,7 +155,7 @@ impl SqliteControlPlane {
     pub(crate) async fn commit_attestation_impl(
         &self,
         record: AttestationRecord,
-        actor: String,
+        actor: shaula_core::registry::Actor,
         now: i64,
     ) -> CoreResult<
         Result<shaula_core::registry::AttestationCommit, shaula_core::registry::MutationError>,
@@ -226,9 +229,10 @@ impl SqliteControlPlane {
             .audit_append(
                 &tx,
                 shaula_core::registry::AuditAppend {
+                    authentication: Default::default(),
                     resource_kind: "template_profile".into(),
                     action: "attest".into(),
-                    actor: actor.clone(),
+                    actor: actor.name.clone(),
                     resource_key: record.profile_key.clone(),
                     revision: Some(record.revision),
                     outcome: audit_outcome,

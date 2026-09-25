@@ -94,7 +94,15 @@ async fn stale_attestation_commits_durable_evidence_and_audit() {
         subject_verified: true,
     };
     let committed = control_plane
-        .commit_attestation(record("att-a"), "ops".into(), 5)
+        .commit_attestation(
+            record("att-a"),
+            shaula_core::registry::Actor {
+                name: "ops".into(),
+                scopes: vec![],
+                authentication: Default::default(),
+            },
+            5,
+        )
         .await
         .unwrap()
         .unwrap();
@@ -124,7 +132,15 @@ async fn stale_attestation_commits_durable_evidence_and_audit() {
     tx.commit().await.unwrap();
 
     let committed = control_plane
-        .commit_attestation(record("att-a-late"), "ops".into(), 7)
+        .commit_attestation(
+            record("att-a-late"),
+            shaula_core::registry::Actor {
+                name: "ops".into(),
+                scopes: vec![],
+                authentication: Default::default(),
+            },
+            7,
+        )
         .await
         .unwrap()
         .unwrap();

@@ -12,6 +12,8 @@ pub mod idempotency_records {
         pub id: String,
         pub resource_kind: String,
         pub resource_key: String,
+        pub principal: Option<String>,
+        pub operation: String,
         pub idempotency_key: String,
         pub request_hash: String,
         pub response_status: i32,
@@ -33,6 +35,8 @@ pub mod audit_records {
     pub struct Model {
         #[sea_orm(primary_key)]
         pub seq: i64,
+        pub credential_kind: String,
+        pub access_token_id: Option<String>,
         pub resource_kind: String,
         pub action: String,
         pub actor: String,

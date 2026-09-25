@@ -176,6 +176,7 @@ async fn status_read_exposes_persisted_failure_in_last_error_and_converged_condi
         "unused".into(),
     );
     let actor = Actor {
+        authentication: Default::default(),
         name: "operator".into(),
         scopes: vec![Scope::FleetRead],
     };

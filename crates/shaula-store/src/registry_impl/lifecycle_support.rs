@@ -142,11 +142,21 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 impl Store {
     pub(crate) async fn idempotency_find_by_key(
         &self,
+        principal: Option<&str>,
+        operation: Option<&str>,
         resource_kind: &str,
         resource_key: &str,
         idempotency_key: &str,
     ) -> crate::store::StoreResult<Option<idempotency_records::Model>> {
-        idempotency_records::Entity::find()
+        let mut query = idempotency_records::Entity::find();
+        if let Some(operation) = operation {
+            query = query.filter(idempotency_records::Column::Operation.eq(operation));
+        }
+        query
+            .filter(match principal {
+                Some(value) => idempotency_records::Column::Principal.eq(value),
+                None => idempotency_records::Column::Principal.is_null(),
+            })
             .filter(idempotency_records::Column::ResourceKind.eq(resource_kind))
             .filter(idempotency_records::Column::ResourceKey.eq(resource_key))
             .filter(idempotency_records::Column::IdempotencyKey.eq(idempotency_key))

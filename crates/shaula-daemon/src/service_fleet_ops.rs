@@ -167,7 +167,8 @@ impl ControlPlane {
         };
         match self
             .idempotency_replay(
-                "fleet",
+                actor,
+                ("fleet", "v1:DELETE"),
                 key,
                 &idempotency_key,
                 "decommission",
@@ -228,6 +229,8 @@ impl ControlPlane {
         };
 
         let facts = MutationFacts {
+            idempotency_operation: "v1:DELETE",
+            authentication: actor.authentication.clone(),
             resource_kind: "fleet",
             resource_key: key.to_string(),
             incarnation: fleet.incarnation.clone(),

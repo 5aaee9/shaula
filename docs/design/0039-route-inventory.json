@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "proposed-design-inventory-not-an-implemented-test",
+  "status": "implemented-route-coverage-workflow-acceptance-tracked-separately",
   "baseline_commit": "118a732405069908d62fce7a9639c1079d9d348e",
   "existing_operations": 43,
   "proposed_operations": 6,

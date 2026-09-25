@@ -78,6 +78,7 @@ async fn auth_policy_update_runs_existing_validator_before_activation() -> TestR
         "unused-engine".into(),
     );
     let actor = shaula_core::registry::Actor {
+        authentication: Default::default(),
         name: "operator".into(),
         scopes: vec![shaula_core::registry::Scope::AuthRead],
     };

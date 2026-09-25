@@ -48,6 +48,7 @@ async fn fleet_admission_commits_revision_change_audit_outbox() {
         .audit_append(
             &tx,
             shaula_core::registry::AuditAppend {
+                authentication: Default::default(),
                 resource_kind: "fleet".into(),
                 action: "create".into(),
                 actor: "admin".into(),

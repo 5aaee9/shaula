@@ -136,6 +136,7 @@ impl SqliteControlPlane {
             .audit_append(
                 tx,
                 shaula_core::registry::AuditAppend {
+                    authentication: facts.authentication.clone(),
                     resource_kind: "template_pool".into(),
                     action: action.into(),
                     actor: facts.actor.clone(),
@@ -163,6 +164,8 @@ impl SqliteControlPlane {
                 .idempotency_store(
                     tx,
                     shaula_core::registry::IdempotencyInsert {
+                        operation: facts.idempotency_operation.into(),
+                        principal: facts.actor.clone(),
                         id: format!("idem-{}", facts.change.id),
                         resource_kind: facts.resource_kind.to_string(),
                         resource_key: facts.resource_key.clone(),

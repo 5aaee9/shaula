@@ -114,6 +114,8 @@ impl ControlPlane {
         };
         let inputs_digest = super::super::sha256_digest(latest.spec_json.as_bytes());
         let facts = shaula_core::registry::MutationFacts {
+            idempotency_operation: "v1:PUT",
+            authentication: Default::default(),
             resource_kind: "template_pool",
             resource_key: key.to_string(),
             incarnation: head.incarnation.clone(),

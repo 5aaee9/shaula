@@ -21,11 +21,18 @@ impl ControlPlane {
         let hash =
             shaula_core::auth::request_hash_parts(&[kind.as_bytes(), key.as_bytes(), b"DELETE"]);
         if let Some(idem) = &idempotency_key {
-            match self.store.idempotency_find(kind, key, idem, &hash).await? {
+            match self
+                .store
+                .idempotency_find(&actor.name, "v1:DELETE", kind, key, idem, &hash)
+                .await?
+            {
                 IdempotencyLookup::Replay(body) => {
                     return serde_json::from_str(&body).map(Ok).map_err(|_| {
                         CoreError::new(ReasonCode::Internal, "invalid retirement replay")
                     })
+                }
+                IdempotencyLookup::LegacyConflict => {
+                    return Ok(Err(MutationError::LegacyIdempotencyConflict))
                 }
                 IdempotencyLookup::Conflict => return Ok(Err(MutationError::IdempotencyConflict)),
                 IdempotencyLookup::Miss => {}
@@ -65,6 +72,8 @@ impl ControlPlane {
         let body = serde_json::to_string(&accepted)
             .map_err(|_| CoreError::new(ReasonCode::Internal, "retirement serialization failed"))?;
         let facts = MutationFacts {
+            idempotency_operation: "v1:DELETE",
+            authentication: actor.authentication.clone(),
             resource_kind: kind,
             resource_key: key.into(),
             incarnation: head.incarnation,

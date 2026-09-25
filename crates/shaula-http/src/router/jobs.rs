@@ -159,8 +159,8 @@ pub(super) async fn generation_finalize(
         Ok(Ok(accepted)) => (
             StatusCode::ACCEPTED,
             [(
-                header::CONTENT_LOCATION,
-                format!("/api/v1/changes/{}", accepted.change.id),
+                header::LINK,
+                format!("</api/v1/generations/{id}>; rel=\"related\""),
             )],
             Json(accepted),
         )

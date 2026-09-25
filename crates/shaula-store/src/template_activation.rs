@@ -150,6 +150,7 @@ impl Store {
         self.audit_append(
             &tx,
             shaula_core::registry::AuditAppend {
+                authentication: Default::default(),
                 resource_kind: "template_profile".into(),
                 action: if outcome == ValidationCommit::Activated {
                     "activate"

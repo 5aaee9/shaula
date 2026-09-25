@@ -90,7 +90,7 @@ test("real daemon activates a legacy Ready template and loads its approved Fleet
   const response = await submitted;
   expect(response.request().postDataJSON()).toMatchObject({
     github: { auth_profile_ref: "browser-auth" },
-    template_profile_ref: { key: "browser-inputs", revision: 1 },
+    template_profile_ref: "browser-inputs",
     template_inputs: { runner_image: "runner:approved", cpu_request: "1" },
   });
   // A selectable Profile is not a target authorization guarantee. The inert

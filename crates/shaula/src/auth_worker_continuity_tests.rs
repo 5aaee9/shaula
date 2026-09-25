@@ -68,6 +68,8 @@ async fn seed_predecessor(control_plane: &Arc<SqliteControlPlane>, app_id: &str)
         reason: None,
     };
     let facts = MutationFacts {
+        idempotency_operation: "v1:PUT",
+        authentication: Default::default(),
         resource_kind: "github_auth_profile",
         resource_key: KEY.into(),
         incarnation: "inc-v2".into(),

@@ -1,6 +1,7 @@
 # Shaula v1 Rust Workspace Architecture Specification
 
 - Status: Draft
+- Amended by: [spec 0039](0039-user-access-tokens-and-cli.md). `shaula-api-types` owns shared transport contracts; `shaula-client` depends only on transport/runtime libraries, not daemon/store/core implementations. Remote CLI dispatch does not initialize `serve`.
 - Date: 2026-09-04
 - Production language: Rust
 - Async runtime: Tokio

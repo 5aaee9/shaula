@@ -21,6 +21,7 @@ mod auth_worker_probe;
 pub(crate) mod auth_worker_scheduling_tests;
 mod auth_worker_selectors;
 mod auth_worker_v2;
+mod client_cli;
 mod diagnostics;
 mod fleet_tasks;
 #[cfg(test)]
@@ -54,12 +55,16 @@ impl Clock for SystemClock {
     about = "GitHub Actions Scale Set capacity controller"
 )]
 struct Cli {
+    #[command(flatten)]
+    client: client_cli::args::ClientArgs,
     #[command(subcommand)]
     command: Command,
 }
 
 #[derive(Subcommand)]
 enum Command {
+    #[command(flatten)]
+    Remote(client_cli::args::RemoteCommand),
     /// Run the HTTP control plane and all active fleets.
     Serve {
         /// Path to the daemon bootstrap configuration file.
@@ -90,8 +95,25 @@ async fn main() {
             );
         }
     }
-    let cli = Cli::parse();
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) if !error.use_stderr() => error.exit(),
+        Err(_) => {
+            // Clap diagnostics can echo unexpected argv. Keep machine errors
+            // stable and never echo a mistakenly supplied credential value.
+            let args = client_cli::args::ClientArgs {
+                output: Some(client_cli::args::Output::Json),
+                ..Default::default()
+            };
+            let outcome = client_cli::Outcome::error(shaula_client::Error::Invalid(
+                "invalid command arguments; use --help for usage",
+            ));
+            client_cli::output(&args, "parse", &outcome);
+            std::process::exit(2);
+        }
+    };
     match cli.command {
+        Command::Remote(command) => std::process::exit(client_cli::run(cli.client, command).await),
         Command::Version => {
             println!("shaula {}", env!("CARGO_PKG_VERSION"));
         }

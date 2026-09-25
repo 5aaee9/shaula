@@ -58,7 +58,7 @@ impl ControlPlaneStore for MemoryStore {
     async fn commit_generation_finalize(
         &self,
         _generation_id: &str,
-        _actor: &str,
+        _actor: &Actor,
         _reason: &str,
         _idempotency: Option<shaula_core::registry::IdempotencyInsert>,
         _now: i64,
@@ -246,6 +246,8 @@ impl ControlPlaneStore for MemoryStore {
     }
     async fn idempotency_find(
         &self,
+        _principal: &str,
+        _operation: &str,
         _resource_kind: &str,
         _resource_key: &str,
         _idempotency_key: &str,
@@ -290,7 +292,7 @@ impl ControlPlaneStore for MemoryStore {
         _key: &str,
         _incarnation: &str,
         _revision: i64,
-        _actor: &str,
+        _actor: &shaula_core::registry::Actor,
         _idempotency: Option<shaula_core::registry::IdempotencyInsert>,
         _now: i64,
     ) -> CoreResult<Result<(), MutationError>> {
@@ -315,8 +317,8 @@ impl ControlPlaneStore for MemoryStore {
         _key: &str,
         _incarnation: &str,
         _revision: i64,
-        _actor: &str,
-        _idempotency: Option<(String, String)>,
+        _actor: &shaula_core::registry::Actor,
+        _idempotency: Option<(String, String, String)>,
         _now: i64,
     ) -> CoreResult<Result<(), MutationError>> {
         Ok(Ok(()))
@@ -348,7 +350,7 @@ impl ControlPlaneStore for MemoryStore {
     async fn commit_attestation(
         &self,
         _record: shaula_core::registry::AttestationRecord,
-        _actor: String,
+        _actor: Actor,
         _now: i64,
     ) -> CoreResult<
         Result<shaula_core::registry::AttestationCommit, shaula_core::registry::MutationError>,

@@ -82,6 +82,7 @@ async fn http_app(control_plane: &TestPlane) -> axum::Router {
     ));
     service.set_ready(true);
     shaula_http::router::build_router(AppState {
+        access_tokens: None,
         auth_installation_link: None,
         fleets: service.clone(),
         profiles: service.clone(),

@@ -68,7 +68,7 @@ async fn web_tests_shell_and_management_require_authentication() {
         .contains(&serde_json::json!("fleet.read")));
     assert_eq!(
         json.as_object().unwrap().len(),
-        2,
-        "session must expose only identity and scopes"
+        5,
+        "session exposes identity, scopes, principal, authentication and capabilities only"
     );
 }

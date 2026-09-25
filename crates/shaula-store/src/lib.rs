@@ -80,3 +80,5 @@ mod tests {
     mod template_source_migration_support;
     mod write_contention;
 }
+
+mod personal_tokens;

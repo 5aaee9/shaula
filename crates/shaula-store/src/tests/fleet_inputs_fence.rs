@@ -23,6 +23,8 @@ async fn replacement(fixture: &Fixture) -> TestResult<MutationFacts> {
     let mut spec = fixture.spec.clone();
     spec.template_inputs.insert("size".into(), "large".into());
     Ok(MutationFacts {
+        idempotency_operation: "v1:PUT",
+        authentication: Default::default(),
         resource_kind: "fleet",
         resource_key: "fleet".into(),
         incarnation: "inc".into(),

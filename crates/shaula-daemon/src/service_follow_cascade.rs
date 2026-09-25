@@ -19,6 +19,7 @@ impl ControlPlane {
     /// records stay distinguishable from operator mutations.
     fn daemon_actor() -> Actor {
         Actor {
+            authentication: Default::default(),
             name: "shaula-daemon".to_string(),
             scopes: vec![
                 Scope::FleetRead,
@@ -140,6 +141,7 @@ impl ControlPlane {
         }
 
         let draft = super::FleetMutationDraft {
+            authentication: Default::default(),
             key: key.to_string(),
             incarnation: head.incarnation.clone(),
             revision: head.desired_revision + 1,
@@ -230,6 +232,7 @@ impl ControlPlane {
             return Ok(false);
         }
         let draft = super::FleetMutationDraft {
+            authentication: Default::default(),
             key: key.to_string(),
             incarnation: head.incarnation.clone(),
             revision: head.desired_revision + 1,

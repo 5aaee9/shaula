@@ -12,6 +12,8 @@ async fn commit_same_auth_replacement(plane: &TestPlane) {
     // fence and renews Pending handoff intent even though the auth ref is equal.
     store
         .commit_fleet_mutation(MutationFacts {
+            idempotency_operation: "v1:PUT",
+            authentication: Default::default(),
             resource_kind: "fleet",
             resource_key: FLEET.into(),
             incarnation: initial.incarnation.clone(),
@@ -156,6 +158,8 @@ async fn decommission_after_same_auth_replacement_accepts_only_the_current_hando
     let sessions = listener.session_creates.load(Ordering::SeqCst);
     store
         .commit_decommission(MutationFacts {
+            idempotency_operation: "v1:PUT",
+            authentication: Default::default(),
             resource_kind: "fleet",
             resource_key: FLEET.into(),
             incarnation: pending.incarnation.clone(),
@@ -252,6 +256,8 @@ async fn decommission_converges_to_tombstone_without_a_spec_revision_row() {
     assert_eq!(spec_rows.revision, head.desired_revision);
     store
         .commit_decommission(MutationFacts {
+            idempotency_operation: "v1:PUT",
+            authentication: Default::default(),
             resource_kind: "fleet",
             resource_key: FLEET.into(),
             incarnation: head.incarnation.clone(),

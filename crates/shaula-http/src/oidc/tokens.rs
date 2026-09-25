@@ -210,7 +210,18 @@ impl Oidc {
             .unwrap_or(&claims.sub)
             .to_owned();
         Ok(Authenticated {
+            credential_kind: if api {
+                "oidc_access_token"
+            } else {
+                "oidc_session"
+            },
+            token_id: None,
             actor: Actor {
+                authentication: if api {
+                    shaula_core::registry::AuthenticationContext::OidcAccessToken
+                } else {
+                    shaula_core::registry::AuthenticationContext::OidcSession
+                },
                 name: principal,
                 scopes,
             },

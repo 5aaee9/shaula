@@ -215,6 +215,7 @@ impl SupervisorWiring {
         }
         let mut live_keys = std::collections::HashSet::new();
         let actor = Actor {
+            authentication: Default::default(),
             name: "shaula-daemon".to_string(),
             scopes: vec![
                 Scope::FleetRead,

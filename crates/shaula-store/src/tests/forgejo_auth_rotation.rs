@@ -172,6 +172,7 @@ async fn forgejo_auth_reads_keep_active_validation_and_candidate_separate() -> T
         fixture.directory.path().join("unused-terraform"),
     );
     let actor = Actor {
+        authentication: Default::default(),
         name: "test".into(),
         scopes: vec![Scope::AuthRead],
     };

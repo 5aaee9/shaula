@@ -50,6 +50,11 @@ pub fn mutation_problem(error: &MutationError) -> Problem {
             "Conflict",
             "immutable identity change rejected",
         ),
+        MutationError::LegacyIdempotencyConflict => problem(
+            StatusCode::CONFLICT,
+            "LegacyIdempotencyConflict",
+            "historical request has no verified owner; inspect the resource before a new attempt",
+        ),
         MutationError::IdempotencyConflict => problem(
             StatusCode::CONFLICT,
             "IdempotencyConflict",

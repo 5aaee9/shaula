@@ -15,6 +15,7 @@ impl Store {
         append: shaula_core::registry::AuditAppend,
     ) -> StoreResult<()> {
         let shaula_core::registry::AuditAppend {
+            authentication,
             resource_kind,
             action,
             actor,
@@ -31,6 +32,8 @@ impl Store {
         let outcome = outcome.as_str();
         let row = audit_records::ActiveModel {
             seq: Default::default(),
+            credential_kind: Set(authentication.kind().to_owned()),
+            access_token_id: Set(authentication.token_id().map(str::to_owned)),
             resource_kind: Set(resource_kind.to_string()),
             action: Set(action.to_string()),
             actor: Set(actor.to_string()),
@@ -81,6 +84,8 @@ impl Store {
     ) -> StoreResult<()> {
         let row = idempotency_records::ActiveModel {
             id: Set(insert.id),
+            principal: Set(Some(insert.principal)),
+            operation: Set(insert.operation),
             resource_kind: Set(insert.resource_kind),
             resource_key: Set(insert.resource_key),
             idempotency_key: Set(insert.idempotency_key),

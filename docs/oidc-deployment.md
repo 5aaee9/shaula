@@ -13,7 +13,8 @@ supporting Authorization Code, PKCE S256, `openid`, RS256 and
 `client_secret_basic`. Register the exact callback
 `https://shaula.example.com/auth/oidc/callback`. Configure a separate API audience
 and API clients that receive RFC 9068 JWT access tokens (`typ=at+jwt`, RS256).
-ID tokens and opaque access tokens cannot authenticate API calls.
+ID tokens and opaque Provider access tokens cannot authenticate API calls.
+Shaula-issued personal access tokens are a separate API credential described below.
 The browser login also requests `profile` when Discovery advertises that scope.
 
 ## Startup
@@ -60,7 +61,57 @@ Run `shaula serve --config bootstrap.yaml`. Discovery and JWKS must initialize
 successfully before the daemon creates runtime state, starts workers or listens.
 Provider/client settings are not accepted in bootstrap YAML.
 
-## HTTPS ingress
+## Personal access tokens
+
+Add `access-token.read`, `access-token.write`, and `access-token.revoke` explicitly
+to the intended operator's `http.authorization[].scopes`. They are not implicit
+administrator privileges. The write scope permits issuance only from primary
+OIDC authentication and cannot be delegated to a PAT. For primary API JWT
+issuance the Provider's scope claim must also contain `access-token.write`.
+
+Optional bootstrap policy (defaults shown):
+
+```yaml
+http:
+  access_tokens:
+    enabled: true
+    default_ttl_secs: 7776000
+    max_ttl_secs: 31536000
+    max_active_per_principal: 20
+    max_active_total: 10000
+```
+
+Merge this into the existing `http` object. TTL is at least 60 seconds and at
+most 365 days. Issuance is also bounded to 5 new tokens per owner/minute and
+100 globally/minute. Metadata-only idempotent recovery does not consume quota.
+Disabling PATs rejects issuance/authentication while primary OIDC can still read
+metadata and revoke. Current grants are intersected on every PAT request, with
+no positive authentication cache. Grant configuration changes require restart.
+IdP logout/disable does not remotely revoke local PATs; explicitly revoke, remove
+the grant and restart, or disable PATs. Runtime Provider outage does not prevent
+local PAT verification, while OIDC readiness remains independent. Discovery/JWKS
+failure at startup still prevents the daemon and workers from starting.
+
+Before upgrade, stop service and back up the entire data directory (including
+SQLite WAL if not checkpointed), then verify the backup. Migrations 23–25 add
+principal/operation idempotency, token storage and audit provenance. Legacy
+idempotency records with unknown owner return `LegacyIdempotencyConflict`; they
+are never attributed to a retrying caller. Roll back binary and the matching
+complete pre-upgrade data together; do not run an old binary against the new
+idempotency schema.
+
+After restoring any backup, keep ingress closed and start with
+`http.access_tokens.enabled: false`. A restored database may resurrect revoked
+tokens. Have each owner revoke their imported tokens through primary OIDC, or
+perform a reviewed offline administrative transaction revoking every imported
+token, incrementing revisions and appending recovery audit. Back up first and
+verify the complete revoked set before re-enabling PATs and issuing replacements.
+There is no ordinary cross-owner token administration endpoint. If complete
+revocation cannot be proven, leave PATs disabled.
+
+See [CLI usage](cli.md) and [acceptance status](IMPLEMENTATION_STATUS.md).
+
+## HTTPS ingress configuration
 
 Terminate HTTPS at a reverse proxy forwarding to the loopback listener. Forward
 cookies, Authorization, Origin and X-CSRF-Token without generating identity

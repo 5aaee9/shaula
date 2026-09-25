@@ -55,7 +55,8 @@ impl FleetRegistryPort for ControlPlane {
 
         match self
             .idempotency_replay(
-                "fleet",
+                actor,
+                ("fleet", "v1:PUT"),
                 key,
                 &idempotency_key,
                 &canonical_body,
@@ -217,6 +218,8 @@ impl FleetRegistryPort for ControlPlane {
                 let response_body = serde_json::to_string(&accepted)
                     .map_err(|e| CoreError::new(ReasonCode::Internal, e.to_string()))?;
                 Ok(shaula_core::registry::IdempotencyInsert {
+                    operation: "v1:PUT".into(),
+                    principal: actor.name.clone(),
                     id: format!("idem-noop-{}", self.new_id()),
                     resource_kind: "fleet".to_string(),
                     resource_key: key.to_string(),
@@ -237,7 +240,7 @@ impl FleetRegistryPort for ControlPlane {
                     key,
                     &incarnation,
                     revision,
-                    &actor.name,
+                    actor,
                     idempotency,
                     self.now_ms(),
                 )
@@ -268,6 +271,7 @@ impl FleetRegistryPort for ControlPlane {
             "Create"
         };
         let draft = super::FleetMutationDraft {
+            authentication: actor.authentication.clone(),
             key: key.to_string(),
             incarnation: incarnation.clone(),
             revision,
@@ -330,41 +334,7 @@ impl FleetRegistryPort for ControlPlane {
         _actor: &Actor,
         key: &str,
     ) -> CoreResult<Result<FleetResource, MutationError>> {
-        let Some(fleet) = self.store.fleet_get(key).await? else {
-            return Ok(Err(MutationError::NotFound));
-        };
-        if fleet.tombstone {
-            return Ok(Err(MutationError::Gone {
-                tombstone: key.to_string(),
-            }));
-        }
-        let Some(revision) = self.store.fleet_revision_latest(key).await? else {
-            return Ok(Err(MutationError::NotFound));
-        };
-        let spec: FleetSpec = serde_json::from_str(&revision.spec_json)
-            .map_err(|e| CoreError::new(ReasonCode::Internal, e.to_string()))?;
-        Ok(Ok(FleetResource {
-            key: key.to_string(),
-            spec,
-            incarnation: fleet.incarnation,
-            revision: fleet.desired_revision,
-            resolved_template: revision.template_profile_key.clone().map(|k| {
-                (
-                    k,
-                    revision.template_revision.unwrap_or_default(),
-                    revision
-                        .template_artifact_digest
-                        .clone()
-                        .unwrap_or_default(),
-                    revision.template_attestation_id.clone().unwrap_or_default(),
-                )
-            }),
-            resolved_template_pool: revision.template_pool.clone(),
-            resolved_template_pool_ref: revision.template_pool_ref.clone(),
-            resolved_auth: revision.auth_desired.clone(),
-            created_at: revision.created_at,
-            updated_at: revision.created_at,
-        }))
+        self.fleet_get_read(_actor, key).await
     }
 
     async fn fleet_status_get(
@@ -409,3 +379,6 @@ impl FleetRegistryPort for ControlPlane {
             .await
     }
 }
+
+#[path = "service_fleet_read.rs"]
+mod read;

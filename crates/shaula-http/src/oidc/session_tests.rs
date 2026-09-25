@@ -2,7 +2,10 @@
 use super::*;
 fn identity() -> Authenticated {
     Authenticated {
+        credential_kind: "oidc_session",
+        token_id: None,
         actor: shaula_core::registry::Actor {
+            authentication: Default::default(),
             name: "principal".into(),
             scopes: vec![],
         },

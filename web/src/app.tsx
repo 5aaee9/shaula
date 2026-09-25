@@ -22,6 +22,7 @@ import { PoolsPage } from "@/pages/pools";
 import { TemplatePublishPage } from "@/pages/template-publish";
 import { TemplateUpdatePage } from "@/pages/template-update";
 import { AuthPage } from "@/pages/auth";
+import { AccessTokensPage } from "@/pages/access-tokens";
 import { AuthManagePage } from "@/pages/auth-manage";
 import { ChangesPage } from "@/pages/changes";
 import { JobsPage } from "@/pages/jobs";
@@ -91,6 +92,15 @@ export function App() {
               </>
             ) : (
               <Routes>
+                <Route
+                  path="/settings/access-tokens"
+                  element={
+                    <AccessTokensPage
+                      scopes={scopes}
+                      enabled={session.data?.data.capabilities?.personal_access_tokens ?? true}
+                    />
+                  }
+                />
                 <Route path="/" element={<Navigate to="/fleets" replace />} />
                 <Route path="/fleets" element={<FleetsPage scopes={scopes} />} />
                 <Route

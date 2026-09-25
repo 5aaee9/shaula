@@ -19,7 +19,18 @@ pub(super) struct TemplatePublication {
 }
 
 impl TemplatePublication {
+    pub(super) fn operation(&self) -> &'static str {
+        if self.update_identity.is_some() {
+            "v1:POST:updates"
+        } else {
+            "v1:PUT"
+        }
+    }
     pub(super) fn canonical(&self) -> CoreResult<String> {
+        serde_json::to_string(&serde_json::json!({"body": self.canonical_body()?, "if_none_match": self.if_none_match, "if_match": self.if_match}))
+            .map_err(|error| CoreError::new(ReasonCode::Internal, error.to_string()))
+    }
+    fn canonical_body(&self) -> CoreResult<String> {
         if let Some(identity) = &self.update_identity {
             return Ok(identity.clone());
         }
@@ -145,6 +156,7 @@ impl ControlPlane {
         key: &str,
         publication: TemplatePublication,
     ) -> CoreResult<Result<MutationAccepted, MutationError>> {
+        let operation = publication.operation();
         let canonical = publication.canonical()?;
         let idem = publication.idempotency_key.clone();
         let submitted = serde_json::to_string(&publication.payload.bindings)
@@ -161,7 +173,9 @@ impl ControlPlane {
         {
             if let Some(idem) = idem {
                 match self
-                    .template_publication_replay(key, &idem, &canonical, &submitted)
+                    .template_publication_replay(
+                        actor, operation, key, &idem, &canonical, &submitted,
+                    )
                     .await?
                 {
                     Ok(Some(accepted)) => return Ok(Ok(accepted)),
@@ -175,6 +189,8 @@ impl ControlPlane {
 
     pub(super) async fn template_publication_replay(
         &self,
+        actor: &Actor,
+        operation: &str,
         key: &str,
         idem: &str,
         canonical: &str,
@@ -188,10 +204,13 @@ impl ControlPlane {
         ]);
         match self
             .store
-            .idempotency_find("template_profile", key, idem, &hash)
+            .idempotency_find(&actor.name, operation, "template_profile", key, idem, &hash)
             .await?
         {
             shaula_core::registry::IdempotencyLookup::Miss => Ok(Ok(None)),
+            shaula_core::registry::IdempotencyLookup::LegacyConflict => {
+                Ok(Err(MutationError::LegacyIdempotencyConflict))
+            }
             shaula_core::registry::IdempotencyLookup::Conflict => {
                 Ok(Err(MutationError::IdempotencyConflict))
             }

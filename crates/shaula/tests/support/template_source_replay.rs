@@ -132,7 +132,14 @@ async fn absent_source_keeps_legacy_put_and_update_identities_and_null_replays()
         "{}|terraform|{{\"size_class\":[\"standard\"]}}",
         fixture.target_digest
     );
-    assert_legacy_identity(&fixture, "legacy-put", &legacy_put_canonical).await?;
+    assert_legacy_identity(
+        &fixture,
+        "legacy-put",
+        &legacy_put_canonical,
+        &fixture.etag,
+        "v1:PUT",
+    )
+    .await?;
     let mut explicit_null = ordinary;
     explicit_null["source_key"] = serde_json::Value::Null;
     assert_eq!(
@@ -158,7 +165,14 @@ async fn absent_source_keeps_legacy_put_and_update_identities_and_null_replays()
         "fleet_input_policy":null,
     })
     .to_string();
-    assert_legacy_identity(&fixture, "legacy-update", &legacy_update_canonical).await?;
+    assert_legacy_identity(
+        &fixture,
+        "legacy-update",
+        &legacy_update_canonical,
+        &first.2,
+        "v1:POST:updates",
+    )
+    .await?;
     body["source_key"] = serde_json::Value::Null;
     assert_eq!(
         fixture
@@ -178,7 +192,15 @@ async fn absent_source_keeps_legacy_put_and_update_identities_and_null_replays()
     Ok(())
 }
 
-async fn assert_legacy_identity(fixture: &Fixture, idem: &str, canonical: &str) -> TestResult {
+async fn assert_legacy_identity(
+    fixture: &Fixture,
+    idem: &str,
+    canonical: &str,
+    etag: &str,
+    operation: &str,
+) -> TestResult {
+    let (incarnation, revision) = etag.trim_matches('"').rsplit_once(':').ok_or("etag")?;
+    let canonical = serde_json::json!({"body":canonical,"if_none_match":false,"if_match":[incarnation,revision.parse::<i64>()?]}).to_string();
     let hash = shaula_core::auth::request_hash_parts(&[
         b"template_profile",
         b"k8s-linux",
@@ -188,7 +210,18 @@ async fn assert_legacy_identity(fixture: &Fixture, idem: &str, canonical: &str) 
     assert!(matches!(
         fixture
             .store
-            .idempotency_find("template_profile", "k8s-linux", idem, &hash)
+            .idempotency_find(
+                &serde_json::to_string(&(
+                    "oidc-v1",
+                    &crate::common::oidc::provider().issuer,
+                    "ops"
+                ))?,
+                operation,
+                "template_profile",
+                "k8s-linux",
+                idem,
+                &hash
+            )
             .await?,
         IdempotencyLookup::Replay(_)
     ));

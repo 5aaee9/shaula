@@ -2,6 +2,7 @@
 //! context, authorization scopes, conditional writes and idempotency
 //! headers before delegating to registry ports.
 
+pub(crate) mod access_tokens;
 pub mod auth_installation_link;
 pub mod fleet_routes;
 mod input_contract;
@@ -33,6 +34,7 @@ use crate::problem::problem;
 /// Shared handler state.
 #[derive(Clone)]
 pub struct AppState {
+    pub access_tokens: Option<Arc<dyn shaula_core::access_tokens::TokenService>>,
     pub fleets: Arc<dyn FleetRegistryPort>,
     pub profiles: Arc<dyn ProfileRegistryPort>,
     pub pools: Arc<dyn TemplatePoolRegistryPort>,
@@ -147,23 +149,24 @@ pub(crate) fn accepted_response(accepted: &MutationAccepted) -> Response {
         return (
             StatusCode::OK,
             resource_version_headers(&accepted.etag),
-            Json(serde_json::json!({
-                "changeId": accepted.change.id,
-                "state": accepted.change.state,
-                "revision": accepted.change.revision,
-                "noOp": true,
-            })),
+            Json(shaula_api_types::NormalMutation {
+                change_id: accepted.change.id.clone(),
+                state: accepted.change.state.clone(),
+                revision: accepted.change.revision,
+                no_op: true,
+            }),
         )
             .into_response();
     }
     (
         StatusCode::ACCEPTED,
         resource_version_headers(&accepted.etag),
-        Json(serde_json::json!({
-            "changeId": accepted.change.id,
-            "state": accepted.change.state,
-            "revision": accepted.change.revision,
-        })),
+        Json(shaula_api_types::NormalMutation {
+            change_id: accepted.change.id.clone(),
+            state: accepted.change.state.clone(),
+            revision: accepted.change.revision,
+            no_op: false,
+        }),
     )
         .into_response()
 }
@@ -188,9 +191,19 @@ async fn health_ready(State(state): State<AppState>) -> Response {
     }
 }
 
-async fn session(auth: Authenticated) -> Response {
+async fn session(State(state): State<AppState>, auth: Authenticated) -> Response {
+    let principal = serde_json::from_str::<(String, String, String)>(&auth.actor.name)
+        .ok()
+        .map(|(_, issuer, subject)| serde_json::json!({"issuer":issuer,"subject":subject}));
+    let mut authentication = serde_json::json!({"kind":auth.credential_kind});
+    if let Some(id) = auth.token_id {
+        authentication["token_id"] = id.into();
+    }
     let mut response = Json(serde_json::json!({
         "name": auth.name,
+        "principal": principal,
+        "authentication": authentication,
+        "capabilities": { "personal_access_tokens":state.access_tokens.as_ref().is_some_and(|s|s.enabled()), "token_management_api":1 },
         "scopes": auth.actor.scopes.iter().map(|scope| scope.as_str()).collect::<Vec<_>>(),
     }))
     .into_response();
@@ -247,6 +260,9 @@ async fn record_http_outcome(
 pub fn build_router(state: AppState) -> Router {
     use axum::extract::DefaultBodyLimit;
     Router::new()
+        .route("/api/v1/access-tokens", get(access_tokens::list).post(access_tokens::issue))
+        .route("/api/v1/access-tokens/current", get(access_tokens::current).delete(access_tokens::revoke_current))
+        .route("/api/v1/access-tokens/{id}", get(access_tokens::get).delete(access_tokens::revoke))
         .route("/api/v1/session", get(session))
         .route("/api/v1/jobs", get(jobs::list))
         .route("/api/v1/jobs/{id}", get(jobs::detail))

@@ -16,6 +16,8 @@ pub struct OperationInsert {
 /// Parameter object for the shared idempotency record.
 #[derive(Debug, Clone)]
 pub struct IdempotencyInsert {
+    pub operation: String,
+    pub principal: String,
     pub id: String,
     pub resource_kind: String,
     pub resource_key: String,
@@ -29,6 +31,7 @@ pub struct IdempotencyInsert {
 /// Parameter object for appending one audit fact.
 #[derive(Debug, Clone)]
 pub struct AuditAppend {
+    pub authentication: super::AuthenticationContext,
     pub resource_kind: String,
     pub action: String,
     pub actor: String,

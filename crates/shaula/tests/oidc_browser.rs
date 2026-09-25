@@ -27,6 +27,14 @@ struct BrowserFixture {
 #[ignore = "long-running HTTPS harness owned by web/oidc.playwright.config.ts"]
 async fn oidc_browser_server() {
     let fixture = Startup::new();
+    let bootstrap_path = fixture.directory.path().join("bootstrap.json");
+    let mut bootstrap: Value =
+        serde_json::from_slice(&std::fs::read(&bootstrap_path).unwrap()).unwrap();
+    bootstrap["http"]["authorization"][0]["scopes"] = json!(shaula_core::registry::Scope::ALL
+        .iter()
+        .map(|s| s.as_str())
+        .collect::<Vec<_>>());
+    std::fs::write(bootstrap_path, serde_json::to_vec(&bootstrap).unwrap()).unwrap();
     template_fixture::seed(fixture.directory.path())
         .await
         .unwrap();
@@ -118,5 +126,7 @@ async fn configure_provider(
 async fn provider_status(State(fixture): State<BrowserFixture>) -> Json<Value> {
     let refresh_requests = fixture.provider.lock().unwrap().refresh_requests;
     let requests = fixture.requests.lock().unwrap();
-    Json(json!({"refreshRequests": refresh_requests, "requests": *requests}))
+    Json(
+        json!({"refreshRequests": refresh_requests, "requests": *requests,"cliOrigin":fixture.target}),
+    )
 }

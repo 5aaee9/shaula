@@ -21,8 +21,8 @@ impl SqliteControlPlane {
         key: &str,
         incarnation: &str,
         revision: i64,
-        actor: &str,
-        idempotency: Option<(String, String)>,
+        actor: &shaula_core::registry::Actor,
+        idempotency: Option<(String, String, String)>,
         now: i64,
     ) -> CoreResult<Result<(), MutationError>> {
         let tx = self.store.begin().await.map_err(core_err)?;
@@ -44,9 +44,10 @@ impl SqliteControlPlane {
             .audit_append(
                 &tx,
                 shaula_core::registry::AuditAppend {
+                    authentication: actor.authentication.clone(),
                     resource_kind: "template_profile".into(),
                     action: "put".into(),
-                    actor: actor.to_string(),
+                    actor: actor.name.clone(),
                     resource_key: key.to_string(),
                     revision: Some(revision),
                     outcome: "noop".into(),
@@ -56,7 +57,7 @@ impl SqliteControlPlane {
             )
             .await
             .map_err(core_err)?;
-        if let Some((idem, canonical)) = idempotency {
+        if let Some((idem, canonical, operation)) = idempotency {
             let request_hash = shaula_core::auth::request_hash_parts(&[
                 b"template_profile",
                 key.as_bytes(),
@@ -67,6 +68,8 @@ impl SqliteControlPlane {
                 .idempotency_store(
                     &tx,
                     shaula_core::registry::IdempotencyInsert {
+                        operation,
+                        principal: actor.name.clone(),
                         id: format!("idem-noop-{}", shaula_core::auth::new_attempt_id()),
                         resource_kind: "template_profile".to_string(),
                         resource_key: key.to_string(),

@@ -200,6 +200,8 @@ pub trait ProfileRegistryPort: Send + Sync {
 /// Outcome of an idempotency lookup before admission.
 #[derive(Debug, Clone, PartialEq)]
 pub enum IdempotencyLookup {
+    /// Historical key has no trustworthy owner; do not replay or re-execute.
+    LegacyConflict,
     /// Key is new; proceed with conditional validation.
     Miss,
     /// Same key + same request hash: replay the stored response.

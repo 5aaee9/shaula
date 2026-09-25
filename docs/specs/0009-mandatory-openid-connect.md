@@ -3,6 +3,7 @@
 - Status: Accepted contract; implementation and acceptance evidence live in [implementation status](../IMPLEMENTATION_STATUS.md)
 - Date: 2026-09-06
 - Decision: [ADR-0013](../ard/0013-require-openid-connect-for-all-http-access.md)
+- Amended by: [spec 0039](0039-user-access-tokens-and-cli.md) / [ARD-0039](../ard/0039-user-access-tokens-and-api-client.md). API/health additionally accept Shaula-issued personal access tokens bound to a verified OIDC owner. The opaque-token exclusion below continues to reject arbitrary Provider tokens; it excludes this explicitly specified local credential format. UI and startup still require OIDC; default deny, mixed-credential rejection and CSRF rules remain.
 
 ## 1. Scope
 

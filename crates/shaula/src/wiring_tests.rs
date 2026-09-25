@@ -165,6 +165,8 @@ pub(crate) async fn seed_profile_and_fleet_config(
         r#"{{"github":{{"target":{REPO_TARGET_JSON},"auth_profile_ref":"{KEY}","scale_set_name":"shaula-x64","runner_group":"Default","labels":{labels}}},"capacity":{{"min_runners":0,"max_runners":{max_runners}}},"template_profile_ref":{{"key":"k8s-linux","revision":1}}}}"#
     );
     let facts = MutationFacts {
+        idempotency_operation: "v1:PUT",
+        authentication: Default::default(),
         resource_kind: "fleet",
         resource_key: FLEET.into(),
         incarnation: "inc-f1".into(),
@@ -281,6 +283,7 @@ pub(crate) async fn execution_wiring(plane: &TestPlane) -> SupervisorWiring {
 
 pub(super) fn fleet_actor() -> Actor {
     Actor {
+        authentication: Default::default(),
         name: "wiring-test".into(),
         scopes: vec![Scope::FleetRead, Scope::FleetWrite, Scope::AuthRead],
     }

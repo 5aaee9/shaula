@@ -14,6 +14,7 @@ Shaula 是一个自托管的 GitHub Actions Runner Scale Set 容量控制器。�
 - **保留执行日志**：按执行尝试保存 apply / destroy 日志，Runner 销毁后仍可在保留期内排查问题；可选将脱敏后的 apply 输出交付到 GitHub 的 **Set up job** 日志。
 - **集中认证与权限**：通过 GitHub App 管理 GitHub 连接，使用 OIDC 登录 Web UI，并分别控制管理操作和日志读取权限。
 - **内置 Web UI 与 API**：UI 随 Rust 可执行文件一起发布；提供 Nix 构建环境和 NixOS 服务模块。
+- **个人 Access Token 与远程 CLI**：通过 OIDC 签发受 scope 和有效期约束的个人 Token；使用同一 `shaula` 二进制管理资源和查询日志，见 [CLI 指南](docs/cli.md) 与 [验收状态](docs/IMPLEMENTATION_STATUS.md)。
 
 Docker、Kubernetes Runner 直接使用 GitHub 官方镜像；Shaula 在容器外准备 Setup Info，再启动 Runner，无需构建定制镜像。项目仍在开发中，新启动流程的真实平台验收进度见 [实现状态](docs/IMPLEMENTATION_STATUS.md)。
 

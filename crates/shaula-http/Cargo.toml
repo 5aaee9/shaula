@@ -7,6 +7,8 @@ license.workspace = true
 description = "Axum adapter and strict HTTP DTOs for the Shaula control plane"
 
 [dependencies]
+shaula-api-types.workspace = true
+
 shaula-core = { workspace = true }
 shaula-observability = { workspace = true }
 async-trait = { workspace = true }

@@ -16,6 +16,7 @@ impl ControlPlane {
         key: &str,
         publication: super::profile_update::TemplatePublication,
     ) -> CoreResult<Result<MutationAccepted, MutationError>> {
+        let operation = publication.operation();
         let canonical = publication.canonical()?;
         let super::profile_update::TemplatePublication {
             payload,
@@ -47,7 +48,7 @@ impl ControlPlane {
             let submitted = serde_json::to_string(&payload.bindings)
                 .map_err(|error| CoreError::new(ReasonCode::Internal, error.to_string()))?;
             match self
-                .template_publication_replay(key, idem, &canonical, &submitted)
+                .template_publication_replay(actor, operation, key, idem, &canonical, &submitted)
                 .await?
             {
                 Ok(None) => {}
@@ -183,14 +184,14 @@ impl ControlPlane {
                     // precondition, never record a stale 200.
                     let idempotency = idempotency_key
                         .as_ref()
-                        .map(|idem| (idem.clone(), canonical.clone()));
+                        .map(|idem| (idem.clone(), canonical.clone(), operation.into()));
                     match self
                         .store
                         .commit_template_noop(
                             key,
                             &head.incarnation,
                             head.desired_revision,
-                            &actor.name,
+                            actor,
                             idempotency,
                             self.now_ms(),
                         )
@@ -268,6 +269,8 @@ impl ControlPlane {
         };
 
         let facts = MutationFacts {
+            idempotency_operation: operation,
+            authentication: actor.authentication.clone(),
             resource_kind: "template_profile",
             resource_key: key.to_string(),
             incarnation: incarnation.clone(),

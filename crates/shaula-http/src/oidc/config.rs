@@ -59,7 +59,7 @@ impl OidcConfig {
                 || grant.subject.is_empty()
                 || grant.subject.len() > 256
                 || !principals.insert(grant.subject.clone())
-                || grant.scopes.len() > 11
+                || grant.scopes.len() > Scope::ALL.len()
                 || grant.scopes.iter().any(|s| parse_scope(s).is_none())
             {
                 return Err(AuthError::Configuration("authorization grants"));
@@ -102,19 +102,5 @@ pub(super) fn https_url(raw: &str) -> Result<Url, AuthError> {
 }
 
 fn parse_scope(raw: &str) -> Option<Scope> {
-    [
-        Scope::FleetRead,
-        Scope::LogsRead,
-        Scope::FleetWrite,
-        Scope::FleetRetire,
-        Scope::TemplateRead,
-        Scope::TemplatePublish,
-        Scope::TemplateAttest,
-        Scope::TemplateRetire,
-        Scope::AuthRead,
-        Scope::AuthWrite,
-        Scope::AuthRetire,
-    ]
-    .into_iter()
-    .find(|s| s.as_str() == raw)
+    Scope::parse(raw)
 }

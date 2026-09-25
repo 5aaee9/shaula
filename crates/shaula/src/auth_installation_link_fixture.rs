@@ -114,6 +114,7 @@ impl Fixture {
             "target/unused-engine".into(),
         ));
         let app = shaula_http::router::build_router(shaula_http::router::AppState {
+            access_tokens: None,
             fleets: service.clone(),
             profiles: service.clone(),
             pools: service.clone(),

@@ -253,7 +253,7 @@ async fn concurrent_updates_admit_only_one_candidate_from_the_same_base() -> Tes
 }
 
 #[tokio::test]
-async fn update_noop_replays_and_cannot_alias_an_ordinary_put() -> TestResult {
+async fn update_noop_replays_and_ordinary_put_has_an_independent_namespace() -> TestResult {
     let fixture = Fixture::new().await?;
     let mut body = fixture.body();
     body["artifact_digest"] = fixture.base_digest.clone().into();
@@ -279,7 +279,7 @@ async fn update_noop_replays_and_cannot_alias_an_ordinary_put() -> TestResult {
         .insert("idempotency-key", HeaderValue::from_static("noop"));
     assert_eq!(
         response(fixture.app.clone().oneshot(put).await?).await?.0,
-        StatusCode::CONFLICT
+        StatusCode::OK
     );
     assert!(fixture
         .store

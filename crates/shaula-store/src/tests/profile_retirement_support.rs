@@ -22,6 +22,8 @@ pub(super) fn facts(template: bool) -> MutationFacts {
         ("github_auth_profile", "forgejo", "auth-inc")
     };
     MutationFacts {
+        idempotency_operation: "v1:PUT",
+        authentication: Default::default(),
         resource_kind: kind,
         resource_key: key.into(),
         incarnation: incarnation.into(),

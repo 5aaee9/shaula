@@ -38,7 +38,8 @@ impl ControlPlane {
         let canonical_body = format!("finalize:{reason}");
         match self
             .idempotency_replay(
-                "runner_generation",
+                actor,
+                ("runner_generation", "v1:POST:finalize"),
                 generation_id,
                 &idempotency_key,
                 &canonical_body,
@@ -92,6 +93,8 @@ impl ControlPlane {
             let response_body = serde_json::to_string(&accepted)
                 .map_err(|e| CoreError::new(ReasonCode::Internal, e.to_string()))?;
             Ok(shaula_core::registry::IdempotencyInsert {
+                operation: "v1:POST:finalize".into(),
+                principal: actor.name.clone(),
                 id: format!("idem-finalize-{}", self.new_id()),
                 resource_kind: "runner_generation".to_string(),
                 resource_key: generation_id.to_string(),
@@ -116,7 +119,7 @@ impl ControlPlane {
             .await;
         let committed = self
             .store
-            .commit_generation_finalize(generation_id, &actor.name, reason, idempotency, now)
+            .commit_generation_finalize(generation_id, actor, reason, idempotency, now)
             .await;
         drop(effect_gate);
         if let Err(fence) = committed? {

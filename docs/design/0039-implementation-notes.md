@@ -1,6 +1,6 @@
 # Spec 0039 — Code Findings and Implementation Plan
 
-- Status: **Draft / proposed**；本 PR 仅增加设计文档，未实现功能。
+- Status: **Historical design baseline**；PR #3 仅增加设计文档并已合并。后续代码与本地验证见 [实现状态](../IMPLEMENTATION_STATUS.md#personal-access-tokens-and-remote-cli-2026-09-25)；下文的调研与实施批次保留原始基线，不作为当前完成度声明。
 - Baseline: `5aaee9/shaula@118a732405069908d62fce7a9639c1079d9d348e`
 - Inspection date: 2026-09-25
 - Main documents: [spec](../specs/0039-user-access-tokens-and-cli.md)、[ARD](../ard/0039-user-access-tokens-and-api-client.md)、[对等矩阵](../specs/0039-cli-parity-matrix.md)

@@ -12,6 +12,8 @@ pub(super) async fn commit_labels(plane: &TestPlane, labels: &[&str], now: i64) 
     let revision = head.desired_revision + 1;
     store
         .commit_fleet_mutation(MutationFacts {
+            idempotency_operation: "v1:PUT",
+            authentication: Default::default(),
             resource_kind: "fleet",
             resource_key: FLEET.into(),
             incarnation: head.incarnation,

@@ -11,7 +11,7 @@ impl SqliteControlPlane {
         key: &str,
         incarnation: &str,
         revision: i64,
-        actor: &str,
+        actor: &shaula_core::registry::Actor,
         idempotency: Option<shaula_core::registry::IdempotencyInsert>,
         now: i64,
     ) -> CoreResult<Result<(), MutationError>> {
@@ -44,9 +44,10 @@ impl SqliteControlPlane {
             .audit_append(
                 &tx,
                 shaula_core::registry::AuditAppend {
+                    authentication: actor.authentication.clone(),
                     resource_kind: "fleet".to_string(),
                     action: "put".into(),
-                    actor: actor.to_string(),
+                    actor: actor.name.clone(),
                     resource_key: key.to_string(),
                     revision: Some(revision),
                     outcome: "noop".into(),

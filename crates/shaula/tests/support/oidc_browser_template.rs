@@ -28,11 +28,21 @@ pub async fn seed(directory: &Path) -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     let sources = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../templates");
+    // Keep this explicitly legacy fixture independent of the bundled template's
+    // newer multi-backend and official-image selection contracts.
+    let mut legacy_manifest: serde_yaml::Value =
+        serde_yaml::from_slice(&std::fs::read(sources.join("kubernetes/profile.yaml"))?)?;
+    if let Some(fields) = legacy_manifest.as_mapping_mut() {
+        fields.remove(serde_yaml::Value::String("runner_backends".into()));
+        fields.remove(serde_yaml::Value::String(
+            "container_bootstrap_contract".into(),
+        ));
+    }
     let mut archive = tar::Builder::new(Vec::new());
     for (name, content) in [
         (
             "profile.yaml",
-            std::fs::read(sources.join("kubernetes/profile.yaml"))?,
+            serde_yaml::to_string(&legacy_manifest)?.into_bytes(),
         ),
         (
             ".terraform.lock.hcl",
@@ -101,7 +111,7 @@ pub async fn seed(directory: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let policy = json!({"runner_image": ["runner:approved"], "cpu_request": ["500m", "1"]});
     database.execute(Statement::from_sql_and_values(
         DatabaseBackend::Sqlite,
-        "INSERT INTO template_profile_revisions (profile_key,revision,artifact_digest,engine_ref,platform,bindings_contract,fleet_input_policy_json,state,created_at) VALUES ('browser-inputs',1,?,'terraform','kubernetes','shaula.bindings.kubernetes/v1',?,'Ready',1)",
+        "INSERT INTO template_profile_revisions (profile_key,revision,artifact_digest,engine_ref,platform,bindings_contract,fleet_input_policy_json,bindings_json,bindings_digest,state,created_at) VALUES ('browser-inputs',1,?,'terraform','kubernetes','shaula.bindings.kubernetes/v1',?,'{}','legacy-browser-fixture','Ready',1)",
         [digest.into(), serde_json::to_string(&policy)?.into()],
     )).await?;
     database.execute(Statement::from_string(

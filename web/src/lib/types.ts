@@ -1,6 +1,7 @@
 export interface Session {
   name: string;
   scopes: string[];
+  capabilities?: { personal_access_tokens: boolean; token_management_api: number };
 }
 export interface FleetSummary {
   key: string;

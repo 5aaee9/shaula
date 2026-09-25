@@ -4,6 +4,12 @@ Shaula 管理多个 GitHub Actions Runner Scale Set 的容量，并通过基础�
 
 ## Language
 
+**Personal Access Token (PAT)**:
+由已验证 OIDC principal 签发、绑定部署 realm 的 Shaula API 凭据。有效权限是当前 owner grant 与签发时委托 scopes 的交集；不可签发其他 Token，不用于 Web 登录，也不是下游 GitHub/Forgejo Auth Profile 的凭据。
+
+**Mutation Attempt**:
+绑定 origin、principal、HTTP 操作、资源、原始请求、条件版本与幂等 key 的不可变提交尝试。接受回执与最终收敛分别报告；重试不自动换 key 或刷新版本覆盖冲突。
+
 **Fleet**:
 Shaula 中独立收敛的控制单元，由一个 GitHub Actions Scale Set、一个 GitHub Auth Profile、一份选定的 Template Profile Revision 和其全部 Runner 组成。
 _Avoid_: Cluster, pool, daemon

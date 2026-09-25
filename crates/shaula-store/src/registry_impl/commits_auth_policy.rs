@@ -105,10 +105,23 @@ async fn policy_replay(
     let Some((key, hash, _, _)) = &facts.idempotency else {
         return Ok(Ok(None));
     };
-    let Some(record) = idempotency_records::Entity::find()
+    let query = idempotency_records::Entity::find()
         .filter(idempotency_records::Column::ResourceKind.eq(facts.resource_kind))
         .filter(idempotency_records::Column::ResourceKey.eq(&facts.resource_key))
-        .filter(idempotency_records::Column::IdempotencyKey.eq(key))
+        .filter(idempotency_records::Column::IdempotencyKey.eq(key));
+    if query
+        .clone()
+        .filter(idempotency_records::Column::Principal.is_null())
+        .one(tx)
+        .await
+        .map_err(|e| core_err(e.into()))?
+        .is_some()
+    {
+        return Ok(Err(MutationError::LegacyIdempotencyConflict));
+    }
+    let Some(record) = query
+        .filter(idempotency_records::Column::Principal.eq(&facts.actor))
+        .filter(idempotency_records::Column::Operation.eq(facts.idempotency_operation))
         .one(tx)
         .await
         .map_err(|error| core_err(error.into()))?
