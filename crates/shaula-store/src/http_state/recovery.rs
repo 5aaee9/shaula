@@ -95,13 +95,18 @@ impl SqliteStateBackend {
                 && lock.is_none()
         });
         tx.execute(sql("INSERT INTO lifecycle_fences(worker_attempt, generation_id, worker_epoch, process_identity, orphan_lock, outcome) VALUES (?, ?, ?, ?, ?, ?)", vec![record.worker_attempt.clone().into(), record.generation_id.clone().into(), record.worker_epoch.into(), record.process_identity.clone().into(), lock.into(), (if fenced { "fenced" } else { "unknown" }).into()])).await.map_err(unavailable)?;
+        let complete_state = match state.snapshot(&tx).await {
+            Ok(Some(snapshot)) => {
+                !state.create_started
+                    || super::create_proof::verified(&tx, &record.generation_id, &snapshot.document)
+                        .await?
+            }
+            _ => false,
+        };
         if !fenced
             || preserve_evidence
             || (record.create_started && !record.has_input)
-            || !state
-                .snapshot(&tx)
-                .await
-                .is_ok_and(|snapshot| snapshot.is_some())
+            || !complete_state
         {
             tx.execute(sql(
                 "UPDATE generation_http_state SET revoked = 1 WHERE generation_id = ?",

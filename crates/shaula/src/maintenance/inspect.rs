@@ -100,9 +100,10 @@ pub(super) fn inspect(
         && bytes[2].is_none()
         && archive.as_deref() == Some(&generation.template_artifact_digest)
         && state.as_ref().is_some_and(|state| {
-            backup.as_ref().is_none_or(|backup| {
-                backup.lineage() == state.lineage() && backup.serial() <= state.serial()
-            })
+            generation.state_matches_original(state)
+                && backup.as_ref().is_none_or(|backup| {
+                    backup.lineage() == state.lineage() && backup.serial() <= state.serial()
+                })
         })
         && (bytes[1].is_none() || backup.is_some())
         && original.as_ref().is_some_and(|proof| {

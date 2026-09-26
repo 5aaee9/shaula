@@ -28,7 +28,7 @@ pub(super) struct Session {
     pub logs: Mutex<super::logs::LogState>,
     pub permit: Mutex<Option<tokio::sync::OwnedSemaphorePermit>>,
     pub completed: Mutex<Option<tokio::time::Instant>>,
-    pub cleanup_attempted: std::sync::atomic::AtomicBool,
+    pub cleanup_attempts: std::sync::atomic::AtomicU8,
     pub fenced: std::sync::atomic::AtomicBool,
 }
 

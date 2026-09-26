@@ -5,6 +5,37 @@ use shaula_core::{
 };
 type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
+#[test]
+fn cleanup_inventory_bounds_flat_and_nested_entries() -> TestResult {
+    let root = tempfile::tempdir()?;
+    for index in 0..8192 {
+        std::fs::write(root.path().join(index.to_string()), b"")?;
+    }
+    let collect = || {
+        let mut files = BTreeMap::new();
+        let mut dirs = Vec::new();
+        let result = inventory(root.path(), Path::new(""), &mut files, &mut dirs);
+        (result, files.len() + dirs.len())
+    };
+    assert!(collect().0.is_ok(), "exact budget remains supported");
+    let extra = root.path().join("extra");
+    std::fs::write(&extra, b"")?;
+    let (result, count) = collect();
+    assert!(matches!(result, Err(StateError::TooLarge)));
+    assert!(count <= 8192);
+    std::fs::remove_file(extra)?;
+    std::fs::remove_file(root.path().join("0"))?;
+    std::fs::create_dir(root.path().join("nested"))?;
+    std::fs::write(root.path().join("nested/extra"), b"")?;
+    let (result, count) = collect();
+    assert!(matches!(result, Err(StateError::TooLarge)));
+    assert!(
+        count <= 8192,
+        "directories reserve budget before descending"
+    );
+    Ok(())
+}
+
 struct Fixture {
     root: tempfile::TempDir,
     request: WorkspaceCleanup,
@@ -100,6 +131,21 @@ fn cleanup_receipt_cannot_authorize_another_generation_directory() -> TestResult
     f.request.receipt.claim.generation_id = uuid::Uuid::new_v4();
     assert!(matches!(f.reap()?, CleanupOutcome::Retained));
     assert!(f.request.workspace.join("shaula.tfvars.json").is_file());
+    Ok(())
+}
+
+#[test]
+fn never_started_cleanup_handles_materialized_and_absent_input() -> TestResult {
+    for materialized in [true, false] {
+        let mut f = Fixture::new()?;
+        f.request.receipt.kind = CompletionKind::NeverStarted;
+        if !materialized {
+            std::fs::remove_file(f.request.workspace.join("shaula.tfvars.json"))?;
+            f.request.retained_input_digest = None;
+        }
+        assert!(matches!(f.reap()?, CleanupOutcome::Reaped));
+        assert!(!f.request.workspace.exists());
+    }
     Ok(())
 }
 

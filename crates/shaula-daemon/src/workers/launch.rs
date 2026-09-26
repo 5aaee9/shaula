@@ -97,7 +97,7 @@ impl Workers {
             logs: Mutex::new(Default::default()),
             permit: Mutex::new(Some(permit)),
             completed: Mutex::new(None),
-            cleanup_attempted: AtomicBool::new(false),
+            cleanup_attempts: std::sync::atomic::AtomicU8::new(0),
             fenced: AtomicBool::new(false),
         });
         {

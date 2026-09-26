@@ -109,8 +109,11 @@ saturation still require LW-30 evidence before a production capacity is promised
    Quarantine preserves occupancy and source evidence; it is not proof of cleanup.
 
 Automatic import requires trustworthy primary state, consistent backup lineage,
-no emergency state, original immutable input/artifact and compatible engine
-provenance. Unknown or incompatible entries stay quarantined. Old source files
+the daemon's retained successful Create lineage/serial, no emergency state,
+original immutable input/artifact and compatible engine provenance. The source
+must match that original lineage and cannot roll back its serial. An empty source
+inherits completion proof only when the original resource-destruction fact also
+exists; otherwise it requires delete-only verification. Unknown or incompatible entries stay quarantined. Old source files
 remain untouched. A new Generation alone receives a fresh empty HTTP snapshot;
 missing state in an old Generation never enables another Create.
 
@@ -123,7 +126,15 @@ quarantine: resources still need the existing audited operator resolution.
 Do not manually clear locks, remove evidence or reset lifecycle tables to unblock
 admission. A sealed state, terminal fact, completion receipt and capacity release
 commit together. Ordinary workspace reaping requires that durable receipt and a
-proven stopped tree; unknown files and emergency state are retained.
+proven stopped tree; unknown files and emergency state are retained. Cleanup
+inventory is limited to 8,192 entries and depth 32. Transient cleanup/storage
+errors are reported without secret-bearing details and retried at most three
+times during the receipt replay window; unresolved work is reconsidered on restart.
+
+A stopped local process is not proof that its remote Create effects are fully
+represented in state. Interrupted Create without the retained successful result
+is quarantined even when a partial state exists. Neither command termination nor
+deleting the known subset grants permission to release that Generation's capacity.
 
 A normal service stop interrupts local execution after its grace period; it does
 not destroy all runners. State/control remain available until worker fencing and

@@ -87,3 +87,25 @@ impl StateBackend for StateFaults {
         self.backend.write(access, id, document).await
     }
 }
+pub struct ReaperFaults {
+    pub failures: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    pub inner: shaula_template::cleanup::ReceiptWorkspaceReaper,
+}
+
+#[async_trait::async_trait]
+impl shaula_core::worker::cleanup::WorkspaceReaper for ReaperFaults {
+    async fn reap(
+        &self,
+        request: shaula_core::worker::cleanup::WorkspaceCleanup,
+    ) -> shaula_core::state_backend::StateResult<shaula_core::worker::cleanup::CleanupOutcome> {
+        use std::sync::atomic::Ordering;
+        if self
+            .failures
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
+            .is_ok()
+        {
+            return Err(shaula_core::state_backend::StateError::Unavailable);
+        }
+        self.inner.reap(request).await
+    }
+}

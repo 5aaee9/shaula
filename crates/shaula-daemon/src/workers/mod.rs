@@ -227,7 +227,8 @@ impl TemplateRuntimePort for Workers {
                     self.journal
                         .protected_input(&session.access)
                         .await
-                        .map_err(|_| failed())?,
+                        .map_err(|_| failed())?
+                        .ok_or_else(failed)?,
                 )
                 .map_err(|_| failed())?,
             );

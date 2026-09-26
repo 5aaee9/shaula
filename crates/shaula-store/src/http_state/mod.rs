@@ -4,6 +4,7 @@
 mod admin;
 mod admissions;
 mod cleanup;
+mod create_proof;
 pub use cleanup::CompletedWorkspace;
 mod cutover;
 mod operations;

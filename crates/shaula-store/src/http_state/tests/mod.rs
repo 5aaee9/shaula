@@ -19,6 +19,7 @@ mod recovery;
 mod worker;
 mod worker_limits;
 mod worker_recovery;
+mod worker_uncertainty;
 
 pub(super) type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 

@@ -68,6 +68,9 @@ async fn real_worker_create_wait_destroy_uses_sqlite_http_and_one_process() -> T
         shaula_core::worker::ProcessObservation::Exited
     );
     let (stop, watch) = tokio::sync::watch::channel(false);
+    fixture
+        .reaper_failures
+        .store(1, std::sync::atomic::Ordering::Release);
     let workers = fixture.workers.clone();
     let reaper = tokio::spawn(async move { workers.supervise(watch).await });
     for _ in 0..50 {
@@ -78,7 +81,7 @@ async fn real_worker_create_wait_destroy_uses_sqlite_http_and_one_process() -> T
     }
     assert!(
         !fixture.workspace.exists(),
-        "sealed ordinary workspace is reaped"
+        "sealed ordinary workspace is reaped after a transient cleanup error"
     );
     stop.send(true)?;
     reaper.await??;

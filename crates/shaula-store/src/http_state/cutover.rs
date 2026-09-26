@@ -20,9 +20,16 @@ pub struct LegacyGeneration {
     pub updated_at: i64,
     pub effects: String,
     pub authority: String,
+    pub create_result: Option<String>,
+    pub resources_destroyed_at: Option<i64>,
 }
 
 impl LegacyGeneration {
+    /// Imported bytes must be anchored to the daemon's retained successful
+    /// Create, rather than certify their own ownership or completeness.
+    pub fn state_matches_original(&self, state: &StateDocument) -> bool {
+        super::create_proof::matches(self.create_result.as_deref(), state)
+    }
     pub fn commitment(&self) -> StateResult<String> {
         Ok(format!(
             "sha256:{}",
@@ -79,7 +86,7 @@ impl SqliteStateBackend {
     }
     pub async fn legacy_generations(&self) -> StateResult<Vec<LegacyGeneration>> {
         let rows = self.store.connection().query_all(sql(
-            "SELECT g.id, g.fleet_key, g.workspace_path, g.template_artifact_digest, g.inputs_digest,
+            "SELECT g.id, g.fleet_key, g.workspace_path, g.template_artifact_digest, g.inputs_digest, g.shaula_result_json AS create_result, g.resources_destroyed_at,
                 g.state, g.created_at, g.updated_at, json_array(g.runner_name,g.generation_name,g.fleet_revision,g.template_profile_key,g.template_revision,g.attestation_id,g.pool_member_key,g.subphase,g.jit_phase,g.github_runner_id,g.shaula_result_json,g.shaula_result_digest,g.provisioned_at,g.expiry_requested_at,g.resources_destroyed_at,(SELECT json_array(f.runner_id,f.runner_uuid,f.created_at,f.updated_at) FROM forgejo_runner_identities f WHERE f.generation_id = g.id)) AS authority,
                 (SELECT json_group_array(json_object('id',o.id,'kind',o.kind,'state',o.state,'provenance',o.provenance_json,'updated_at',o.updated_at,'attempts',o.attempts,'plan',o.saved_plan_digest,'path',o.saved_plan_path,'owner',o.lease_owner,'lease',o.lease_expires_at,'retry',o.next_retry_at,'created_at',o.created_at)) FROM (SELECT * FROM runner_operations WHERE generation_id = g.id ORDER BY id) o) AS effects FROM runner_generations g
              WHERE g.state != 'Destroyed'
@@ -172,7 +179,7 @@ impl SqliteStateBackend {
             return Err(StateError::Conflict);
         }
         let row = tx.query_one(sql(
-            "SELECT g.id, g.fleet_key, g.workspace_path, g.template_artifact_digest, g.inputs_digest, g.state, g.created_at, g.updated_at, json_array(g.runner_name,g.generation_name,g.fleet_revision,g.template_profile_key,g.template_revision,g.attestation_id,g.pool_member_key,g.subphase,g.jit_phase,g.github_runner_id,g.shaula_result_json,g.shaula_result_digest,g.provisioned_at,g.expiry_requested_at,g.resources_destroyed_at,(SELECT json_array(f.runner_id,f.runner_uuid,f.created_at,f.updated_at) FROM forgejo_runner_identities f WHERE f.generation_id = g.id)) AS authority, (SELECT json_group_array(json_object('id',o.id,'kind',o.kind,'state',o.state,'provenance',o.provenance_json,'updated_at',o.updated_at,'attempts',o.attempts,'plan',o.saved_plan_digest,'path',o.saved_plan_path,'owner',o.lease_owner,'lease',o.lease_expires_at,'retry',o.next_retry_at,'created_at',o.created_at)) FROM (SELECT * FROM runner_operations WHERE generation_id = g.id ORDER BY id) o) AS effects FROM runner_generations g WHERE g.id = ?",
+            "SELECT g.id, g.fleet_key, g.workspace_path, g.template_artifact_digest, g.inputs_digest, g.shaula_result_json AS create_result, g.resources_destroyed_at, g.state, g.created_at, g.updated_at, json_array(g.runner_name,g.generation_name,g.fleet_revision,g.template_profile_key,g.template_revision,g.attestation_id,g.pool_member_key,g.subphase,g.jit_phase,g.github_runner_id,g.shaula_result_json,g.shaula_result_digest,g.provisioned_at,g.expiry_requested_at,g.resources_destroyed_at,(SELECT json_array(f.runner_id,f.runner_uuid,f.created_at,f.updated_at) FROM forgejo_runner_identities f WHERE f.generation_id = g.id)) AS authority, (SELECT json_group_array(json_object('id',o.id,'kind',o.kind,'state',o.state,'provenance',o.provenance_json,'updated_at',o.updated_at,'attempts',o.attempts,'plan',o.saved_plan_digest,'path',o.saved_plan_path,'owner',o.lease_owner,'lease',o.lease_expires_at,'retry',o.next_retry_at,'created_at',o.created_at)) FROM (SELECT * FROM runner_operations WHERE generation_id = g.id ORDER BY id) o) AS effects FROM runner_generations g WHERE g.id = ?",
             vec![generation.id.clone().into()],
         )).await.map_err(unavailable)?.ok_or(StateError::Conflict)?;
         let current = LegacyGeneration::from_query_result(&row, "").map_err(unavailable)?;
@@ -182,7 +189,14 @@ impl SqliteStateBackend {
         let classification = match classification {
             MigrationClassification::Imported => {
                 let state = state.ok_or(StateError::Invalid)?;
-                let resource_state_seen = !state.managed_empty();
+                if !current.state_matches_original(&state) {
+                    return Err(StateError::Conflict);
+                }
+                // The retained successful Create proves resources were fully
+                // recorded even when a later completed Destroy left empty state.
+                let cleanup_revision = (state.managed_empty()
+                    && current.resources_destroyed_at.is_some())
+                .then_some(1_i64);
                 let input = protected_input.ok_or(StateError::Invalid)?;
                 let workspace = workspace.ok_or(StateError::Invalid)?;
                 if input.len() > shaula_core::state_backend::MAX_STATE_BYTES
@@ -202,8 +216,8 @@ impl SqliteStateBackend {
                 )).await.map_err(unavailable)?;
                 tx.execute(sql("INSERT INTO lifecycle_workers(generation_id, control_hash, phase, cleanup_only, protected_input) VALUES (?, ?, 'fenced', 1, ?)", vec![generation.id.clone().into(), admission.control.verifier().into(), input.into()])).await.map_err(unavailable)?;
                 tx.execute(sql(
-                    "UPDATE lifecycle_workers SET resource_state_seen = ? WHERE generation_id = ?",
-                    vec![resource_state_seen.into(), generation.id.clone().into()],
+                    "UPDATE lifecycle_workers SET resource_state_seen = 1, cleanup_revision = ? WHERE generation_id = ?",
+                    vec![cleanup_revision.into(), generation.id.clone().into()],
                 ))
                 .await
                 .map_err(unavailable)?;

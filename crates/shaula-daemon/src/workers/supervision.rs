@@ -84,27 +84,15 @@ impl Workers {
             }
             *session.permit.lock().await = None;
             if let Some(reaper) = &self.reaper {
-                if !session.cleanup_attempted.swap(true, Ordering::AcqRel) {
-                    use sha2::{Digest, Sha256};
-                    let input = self.journal.protected_input(&session.access).await.ok();
-                    let result = reaper
-                        .reap(shaula_core::worker::cleanup::WorkspaceCleanup {
-                            receipt: receipt.clone(),
-                            workspace: session.workspace.clone(),
-                            artifact: session.artifact.clone(),
-                            artifact_digest: session.digest.clone(),
-                            retained_input_digest: input
-                                .map(|b| format!("sha256:{}", hex::encode(Sha256::digest(b)))),
-                        })
-                        .await;
-                    if matches!(
-                        result,
-                        Ok(shaula_core::worker::cleanup::CleanupOutcome::Reaped)
-                    ) && self.journal.workspace_reaped(&receipt).await.is_ok()
+                if session.cleanup_attempts.load(Ordering::Acquire) < 3 {
+                    let attempt = session.cleanup_attempts.fetch_add(1, Ordering::AcqRel) + 1;
+                    match self
+                        .reap_workspace(&session, &receipt, reaper.as_ref())
+                        .await
                     {
-                        if let Some(identity) = session.identity.lock().await.clone() {
-                            let _ = self.executor.release_fenced(&identity).await;
-                        }
+                        Ok(()) => session.cleanup_attempts.store(3, Ordering::Release),
+                        Err(_) => tracing::warn!(generation_id = %id, attempt,
+                            "receipt-authorized workspace cleanup deferred; evidence retained"),
                     }
                 }
             }
@@ -112,6 +100,37 @@ impl Workers {
             // sealed backend. Unknown/emergency workspace files are retained.
             if since.elapsed() >= Duration::from_secs(60) {
                 self.sessions.lock().await.remove(&id);
+            }
+        }
+        Ok(())
+    }
+
+    async fn reap_workspace(
+        &self,
+        session: &Session,
+        receipt: &shaula_core::worker::CompletionReceipt,
+        reaper: &dyn shaula_core::worker::cleanup::WorkspaceReaper,
+    ) -> StateResult<()> {
+        use sha2::{Digest, Sha256};
+        use shaula_core::worker::{cleanup::*, CompletionKind};
+        let input = self.journal.protected_input(&session.access).await?;
+        if receipt.kind == CompletionKind::ProviderCleanup && input.is_none() {
+            return Err(StateError::Unavailable);
+        }
+        let result = reaper
+            .reap(WorkspaceCleanup {
+                receipt: receipt.clone(),
+                workspace: session.workspace.clone(),
+                artifact: session.artifact.clone(),
+                artifact_digest: session.digest.clone(),
+                retained_input_digest: input
+                    .map(|b| format!("sha256:{}", hex::encode(Sha256::digest(b)))),
+            })
+            .await?;
+        if result == CleanupOutcome::Reaped {
+            self.journal.workspace_reaped(receipt).await?;
+            if let Some(identity) = session.identity.lock().await.clone() {
+                self.executor.release_fenced(&identity).await?;
             }
         }
         Ok(())

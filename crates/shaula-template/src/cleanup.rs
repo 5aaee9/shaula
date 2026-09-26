@@ -52,16 +52,19 @@ fn inventory(
     files: &mut BTreeMap<PathBuf, u64>,
     dirs: &mut Vec<PathBuf>,
 ) -> StateResult<()> {
-    if files.len() + dirs.len() > 8192 || relative.components().count() > 32 {
+    if relative.components().count() > 32 {
         return Err(StateError::TooLarge);
     }
     for item in std::fs::read_dir(root.join(relative)).map_err(|_| StateError::Unavailable)? {
+        if files.len() + dirs.len() >= 8192 {
+            return Err(StateError::TooLarge);
+        }
         let item = item.map_err(|_| StateError::Unavailable)?;
         let path = relative.join(item.file_name());
         let meta = std::fs::symlink_metadata(item.path()).map_err(|_| StateError::Unavailable)?;
         if meta.is_dir() {
+            dirs.push(path.clone());
             inventory(root, &path, files, dirs)?;
-            dirs.push(path);
         } else if meta.is_file() {
             files.insert(path, meta.len());
         } else {
@@ -176,7 +179,7 @@ fn reap(work: &Path, artifacts: &Path, request: &WorkspaceCleanup) -> StateResul
     for path in files.keys() {
         std::fs::remove_file(workspace.join(path)).map_err(|_| StateError::Unavailable)?;
     }
-    for path in dirs {
+    for path in dirs.into_iter().rev() {
         std::fs::remove_dir(workspace.join(path)).map_err(|_| StateError::Unavailable)?;
     }
     std::fs::remove_dir(workspace).map_err(|_| StateError::Unavailable)?;

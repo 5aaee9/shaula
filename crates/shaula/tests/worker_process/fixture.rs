@@ -29,6 +29,7 @@ pub struct Fixture {
     pub executor: Arc<shaula_executor::ExecExecutor>,
     pub faults: Arc<super::faults::StateFaults>,
     pub control_faults: Arc<super::faults::ControlFaults>,
+    pub reaper_failures: Arc<std::sync::atomic::AtomicUsize>,
     pub control: Arc<SqliteControlPlane>,
     artifact: PathBuf,
     digest: String,
@@ -115,10 +116,14 @@ impl Fixture {
             PathBuf::from(env!("CARGO_BIN_EXE_shaula")),
             PathBuf::from(std::env::var("SHAULA_TEST_CGROUP")?),
         )?);
-        let reaper = Arc::new(shaula_template::cleanup::ReceiptWorkspaceReaper::new(
-            work_root.clone(),
-            artifact_root.clone(),
-        ));
+        let reaper_failures = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let reaper = Arc::new(super::faults::ReaperFaults {
+            failures: reaper_failures.clone(),
+            inner: shaula_template::cleanup::ReceiptWorkspaceReaper::new(
+                work_root.clone(),
+                artifact_root.clone(),
+            ),
+        });
         let workers = Arc::new(
             Workers::new(
                 WorkerConfig {
@@ -167,6 +172,7 @@ impl Fixture {
             executor,
             faults,
             control_faults,
+            reaper_failures,
             control,
             artifact,
             digest,
@@ -201,10 +207,25 @@ impl Fixture {
             )
             .await
             .map_err(|e| format!("prepare failed: {e:?}"))?;
-        self.workers
+        let result = self
+            .workers
             .create(self.request())
             .await
-            .map_err(|e| format!("create failed: {e:?}").into())
+            .map_err(|e| format!("create failed: {e:?}"))?;
+        // Production supervisors persist this identity only after Create and
+        // fixed bootstrap succeed. Recovery must not infer it from state.
+        self.control
+            .generation_set_result(
+                &self.id.to_string(),
+                &serde_json::json!({
+                    "state_lineage": result.state_lineage, "state_serial": result.state_serial,
+                })
+                .to_string(),
+                "fixture",
+                3,
+            )
+            .await?;
+        Ok(result)
     }
     pub async fn destroy(&self, result: &TemplateCreateResult) -> TestResult {
         self.db

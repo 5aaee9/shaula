@@ -6,7 +6,7 @@ use uuid::Uuid;
 pub trait WorkerJournal: Send + Sync {
     async fn admission(&self, generation: Uuid) -> StateResult<WorkerAdmission>;
     async fn retain_input(&self, access: &ControlAccess, input: Vec<u8>) -> StateResult<()>;
-    async fn protected_input(&self, access: &ControlAccess) -> StateResult<Vec<u8>>;
+    async fn protected_input(&self, access: &ControlAccess) -> StateResult<Option<Vec<u8>>>;
     async fn replace_fenced(&self, access: &ControlAccess) -> StateResult<()>;
     async fn authenticate(&self, access: &ControlAccess) -> StateResult<()>;
     async fn launch_pending(&self, access: &ControlAccess) -> StateResult<()>;

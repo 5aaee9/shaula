@@ -52,6 +52,17 @@ async fn completed_cleanup_survives_restart_before_ci_registration_removal() -> 
             )
             .await?;
         f.backend.unlock(&state_access, lock("apply")?.id()).await?;
+        f.store
+            .generation_set_result(
+                &id,
+                &serde_json::json!({
+                    "state_lineage": lineage, "state_serial": 1,
+                })
+                .to_string(),
+                "fixture",
+                3,
+            )
+            .await?;
         journal.verify_cleanup(&access).await?;
         f.store.connection().execute(sql(
             "UPDATE runner_generations SET state = 'Destroying', resources_destroyed_at = 10 WHERE id = ?",

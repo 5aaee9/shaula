@@ -86,7 +86,7 @@ impl WorkerJournal for SqliteWorkerJournal {
         .map_err(unavailable)?;
         tx.commit().await.map_err(unavailable)
     }
-    async fn protected_input(&self, access: &ControlAccess) -> StateResult<Vec<u8>> {
+    async fn protected_input(&self, access: &ControlAccess) -> StateResult<Option<Vec<u8>>> {
         WorkerRow::load(self.backend.store.connection(), access).await?;
         self.backend
             .store
@@ -99,8 +99,7 @@ impl WorkerJournal for SqliteWorkerJournal {
             .map_err(unavailable)?
             .ok_or(StateError::Unavailable)?
             .try_get::<Option<Vec<u8>>>("", "protected_input")
-            .map_err(unavailable)?
-            .ok_or(StateError::Unavailable)
+            .map_err(unavailable)
     }
     async fn verify_cleanup(&self, access: &ControlAccess) -> StateResult<()> {
         let id = access.claim.generation_id.to_string();
@@ -116,6 +115,9 @@ impl WorkerJournal for SqliteWorkerJournal {
             return Err(StateError::Conflict);
         }
         if state.create_started {
+            if !super::create_proof::verified(&tx, &id, &snapshot.document).await? {
+                return Err(StateError::Conflict);
+            }
             let seen = tx
                 .query_one(sql(
                     "SELECT resource_state_seen FROM lifecycle_workers WHERE generation_id = ?",

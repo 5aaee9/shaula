@@ -60,6 +60,12 @@ impl SqliteStateBackend {
             return Err(StateError::Unauthorized);
         }
         let snapshot = row.snapshot(tx).await?.ok_or(StateError::Unavailable)?;
+        if proof.intent == PlanIntent::Destroy
+            && row.create_started
+            && !super::create_proof::verified(tx, &proof.generation_id, &snapshot.document).await?
+        {
+            return Err(StateError::Conflict);
+        }
         if proof.intent == PlanIntent::Create {
             if !snapshot.document.managed_empty() {
                 return Err(StateError::Conflict);
