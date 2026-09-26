@@ -63,6 +63,7 @@
 | 个人 Access Token、独立 Rust client、远程 CLI 与 API 对等矩阵 | [spec 0039](specs/0039-user-access-tokens-and-cli.md) / [ARD-0039](ard/0039-user-access-tokens-and-api-client.md) / [parity matrix](specs/0039-cli-parity-matrix.md)；不恢复 GitHub PAT 支持 |
 | Browser session 到期后的 Provider 续期、页面保留 | [spec 0013](specs/0013-provider-backed-browser-session-renewal.md) / [ADR-0017](ard/0017-renew-browser-sessions-in-the-authentication-guard.md) |
 | Worker/Executor、内部 control/state HTTP、locks/CAS、恢复与备份 | [spec 0010](specs/0010-lifecycle-worker-and-http-state-backend.md)；理由见 [ADR-0014](ard/0014-run-lifecycle-workers-with-a-database-http-state-backend.md) |
+| Worker/HTTP-state 生产接线、legacy cutover 与集成验收 | [spec 0042](specs/0042-production-lifecycle-worker-integration.md) / [ARD-0042](ard/0042-integrate-exec-workers-with-authoritative-http-state.md)；Draft + `proposed`，协议仍由 spec 0010 维护，不代表已经接入生产 |
 | 多账户 GitHub App authentication、动态仓库 selector、installation routing | [spec 0011](specs/0011-multi-account-github-authentication.md) / [ADR-0015](ard/0015-route-one-github-app-profile-to-multiple-accounts.md)；已有本地实现，运行时集成边界见 implementation status，真实 GitHub 路由验收与生产迁移未执行 |
 
 ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec 中维护。已 superseded 的 ARD 不是当前实现选项。通用规则由所属 spec 定义，平台文档只增加差异和验收，不维护另一套通用状态机。
