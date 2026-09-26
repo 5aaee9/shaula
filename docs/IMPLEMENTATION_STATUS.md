@@ -40,7 +40,7 @@ state or capability material. See the [deployment and recovery guide](lifecycle-
 Local evidence obtained for this implementation:
 
 - Windows strict workspace/all-target Clippy and rustfmt pass; unfiltered nextest
-  passes **1,022 tests**, with two platform/protocol tests skipped. The separately
+  passes **1,027 tests**, with two platform/protocol tests skipped. The separately
   requested name-filtered nextest command also ran and is not the full-suite gate.
 - Web lint/format checks and **203 Playwright tests** pass.
 - Linux/WSL, Rust 1.98.1 and pinned Terraform 1.9.8: eight explicit ignored tests
@@ -76,11 +76,41 @@ Local evidence obtained for this implementation:
   was retried. Recovery now retains only the exact verified revision after a
   confirmed fence with no superseding command/lock; a new apply invalidates it.
   A regression rejects later revisions and unresolved commands/locks. The full
-  Docker job must pass again before this is considered platform acceptance.
+  [Docker job on a5b8095](https://github.com/5aaee9/shaula/actions/runs/36260661214/job/108455702249)
+  subsequently passed, including both retries across separate daemon restarts,
+  eventual resource/registration removal, terminal Generation and zero occupancy.
+- Forgejo/Kubernetes completed the entire harness on `4e9452f` in
+  [CI run 36260195383](https://github.com/5aaee9/shaula/actions/runs/36260195383/job/108454421786):
+  successful/failed workflows, restart, labels, stale demand, idle and busy hard
+  expiry, lost-registration quarantine and credential scans. The tested tuple
+  is Kind 0.33.0 / Kubernetes 1.37.0, Terraform 1.9.8 with the bundled provider
+  lock, Forgejo 16.0.4 and pinned runner 13.1.0. This does not establish GitHub
+  acceptance. A subsequent run completed an eight-second failed workflow before
+  the harness observed its running Job; running-projection cases now last 40
+  seconds and retain the original assertions. Reports additionally bind the
+  exact binary digest, checkout commit, kernel and provider-lock digest.
+- On `b444b88`, [Forgejo Docker and Kubernetes both passed](https://github.com/5aaee9/shaula/actions/runs/36260855850),
+  and [formal Nix package/NixOS E2E and 203 Playwright tests passed](https://github.com/5aaee9/shaula/actions/runs/36260855817).
+  The x86_64-linux package suite passed 1,017 tests plus the real Terraform HTTP
+  tests; the NixOS VMs exercised service start/stop/restart/reboot, OIDC/PAT and
+  missing-credential/provider failure behavior. This does not validate aarch64.
+- Subsequent review reproduced two state-completeness gaps. Recovery, Destroy
+  admission and cleanup verification now require the daemon's independently
+  retained successful Create identity, not just a fenced process and some state.
+  Offline inspect and import also reject foreign/rolled-back state relative to
+  that original identity. Missing proof preserves quarantine and occupancy;
+  a previous successful Create still permits delete-only recovery retries.
+  Reaper inventory now enforces its entry budget for flat and nested directories,
+  and transient cleanup errors receive bounded retries with secret-free warnings.
+  On `f09cdaf`, Windows full/filtered suites pass 1,027/793 tests respectively,
+  strict Windows/Linux Clippy and rustfmt pass, and all eight Linux process tests
+  pass again, including a real Worker completion with an injected cleanup failure.
+  These later changes require their own final CI results; earlier platform passes
+  are evidence for their named commits, not automatic acceptance of later code.
 
 **Release/merge acceptance is not yet complete.** The changed default path still
-needs formal package/NixOS evidence and actual updated-binary GitHub and Forgejo
-lifecycles covering Docker/Kubernetes (LW-32). Full composition fault coverage for
+needs actual updated-binary GitHub lifecycle evidence (LW-32) and final CI on the
+review fixes above. Full composition fault coverage for
 LW-11–15, backup/restore with late external effects (LW-28), and saturation/RSS/
 recovery-reserve behavior (LW-30) are not established by the local tests above.
 Historical platform receipts and old-binary workflows do not satisfy this gate.

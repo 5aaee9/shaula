@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { mkdtemp, writeFile, readFile, open, mkdir } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { tmpdir, release } from "node:os";
 import { join, resolve } from "node:path";
 import { issuer, scopes } from "./oidc.mjs";
 import { faultProxy } from "./faults.mjs";
@@ -28,6 +29,15 @@ export class Fixture {
   }
   async start() {
     assert(this.socket.startsWith("unix:///"), "acceptance requires an explicit local Docker socket");
+    const binaryHash = createHash("sha256");
+    for await (const chunk of createReadStream(this.binary)) binaryHash.update(chunk);
+    this.runtimeTuple = {
+      sourceCommit: await command("git", ["rev-parse", "HEAD"]),
+      binaryDigest: `sha256:${binaryHash.digest("hex")}`,
+      kernel: release(), containment: "linux-cgroup-v2",
+      terraformVersion: JSON.parse(await command(this.terraform, ["version", "-json"])).terraform_version,
+      providerLockDigest: `sha256:${createHash("sha256").update(await readFile(resolve(`templates/${this.platform}/.terraform.lock.hcl`))).digest("hex")}`,
+    };
     this.engine = JSON.parse(await this.cli("version", "--format", "{{json .Server}}"));
     assert(this.engine.Components?.some(c => c.Name === "Engine" && c.Details?.Os === "linux"), "real Linux Docker Engine required (not Podman)");
     this.directory = await mkdtemp(join(tmpdir(), `${this.prefix}-`));

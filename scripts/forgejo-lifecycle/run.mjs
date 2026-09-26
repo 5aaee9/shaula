@@ -19,13 +19,16 @@ const report = { kind: "shaula-forgejo-lifecycle/v2", platform: fixture.platform
 let phase = "setup";
 try {
   await fixture.start();
+  report.runtimeTuple = fixture.runtimeTuple;
   report.engineVersion = fixture.engine.Version;
   report.artifactDigest = fixture.digest;
   for (const scenario of ["success", "failure", "restart"]) {
     phase = scenario;
     console.log(`Running ${scenario}`);
     const key = `${fixture.prefix}-${scenario}`;
-    await fixture.queue(key, scenario === "success" ? 40 : scenario === "restart" ? 20 : 8, scenario === "failure");
+    // All three cases assert a retained running Job. Leave that state visible
+    // across real Kubernetes inspection and the daemon's next Jobs poll.
+    await fixture.queue(key, 40, scenario === "failure");
     await fixture.createFleet(key);
     const observed = await fixture.observe(key, "active");
     const job = await until(`${key}: retained running job`, async () => {

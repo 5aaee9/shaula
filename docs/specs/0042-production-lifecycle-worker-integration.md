@@ -227,7 +227,7 @@ Graceful shutdown 先停止管理 mutation、新 claims/acquisition 和新 effec
 
 ## 11. 验收矩阵
 
-以下均为**待实现/待执行**的要求。本文件没有新增运行时代码或测试结果。每项证据要绑定 commit/binary、OS/fence、Terraform/provider lock、Runner Backend、Template Platform tuple；不把 mock、本地真实 Terraform 和真实平台验收混为一项。
+以下为必须满足的验收要求；执行结果统一记录在 [implementation status](../IMPLEMENTATION_STATUS.md)，本表不代替测试证据。每项证据要绑定 commit/binary、OS/fence、Terraform/provider lock、Runner Backend、Template Platform tuple；不把 mock、本地真实 Terraform 和真实平台验收混为一项。
 
 | ID | 场景 | 必须断言 |
 | --- | --- | --- |

@@ -14,6 +14,7 @@ export class KubernetesFixture extends Fixture {
     this.kubeconfig = resolve(process.env.KUBECONFIG);
     this.context = process.env.SHAULA_ACCEPTANCE_KUBE_CONTEXT;
     assert(this.context.startsWith("kind-shaula-"), "acceptance only supports an isolated shaula Kind context");
+    this.runtimeTuple.kubernetesVersion = JSON.parse(await this.kube("version", "-o", "json")).serverVersion.gitVersion;
     await this.kube("create", "namespace", this.prefix);
     this.namespaceCreated = true;
     await super.publish();
