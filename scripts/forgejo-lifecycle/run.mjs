@@ -12,6 +12,7 @@ import { expiry } from "./expiry.mjs";
 import { workerPressure } from "./worker-pressure.mjs";
 import { interruptedCreate } from "./worker-crash.mjs";
 import { workerBackup } from "./worker-backup.mjs";
+import { controlFaults } from "./worker-control.mjs";
 import { ledger } from "./diagnostics-evidence.mjs";
 import { until, serverImage, runnerImage } from "./support.mjs";
 
@@ -95,6 +96,11 @@ try {
     phase = "worker-pressure";
     console.log(`Running ${phase}`);
     report.workerPressure = await workerPressure(fixture);
+    if (fixture.controlProxy) {
+      phase = "worker-control-faults";
+      console.log(`Running ${phase}`);
+      report.controlFaults = await controlFaults(fixture);
+    }
     phase = "interrupted-create";
     console.log(`Running ${phase}`);
     report.interruptedCreate = await interruptedCreate(fixture);

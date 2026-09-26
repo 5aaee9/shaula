@@ -64,6 +64,22 @@ post-checkpoint divergence, and waiting-worker measurements from maximum-count
 or log-flood capacity. An interrupted Create must retain its actual external
 resource and occupancy in quarantine; fixture teardown is not recovery evidence.
 
+On an explicitly disposable Linux host, `SHAULA_ACCEPTANCE_CONTROL_FAULTS=1`
+also enables a root loopback transport proxy. The fixture must run as a non-root
+user with noninteractive sudo. One iptables OUTPUT rule matches only that UID,
+one private loopback destination port and this fixture's random comment; teardown
+removes that exact rule. No public listener or production authentication change
+is involved. The root proxy forwards authenticated bytes without logging them.
+It tests lost committed Spawn ACK responses, a crash after exec but before Create,
+DELETE committed before a delayed Create-start request, and a crash after the
+Create intent commits but before its response reaches the worker.
+
+Hard-expiry Docker deletion and CI-registration retry use separate checkpoints.
+Docker provider 3.0.2 stops a container before issuing DELETE, so a failed removal
+cannot imply that its former Busy runner is still running. Registration retry
+is checked with an unassigned idle runner instead of relying on a completed
+ephemeral task's registration remaining present.
+
 ## Real GitHub lifecycle with Browser dispatch
 
 `github-run.mjs` starts a separate data directory and daemon with the actual

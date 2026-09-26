@@ -7,6 +7,7 @@ import { tmpdir, release } from "node:os";
 import { join, resolve } from "node:path";
 import { issuer, scopes } from "./oidc.mjs";
 import { faultProxy } from "./faults.mjs";
+import { ControlProxy } from "./control-proxy.mjs";
 import { command, freePort, json, until, serverImage, runnerImage } from "./support.mjs";
 
 export class Fixture {
@@ -80,6 +81,10 @@ export class Fixture {
       execution: { engines: { terraform: { executable: this.terraform } }, operation_timeout_secs: 90 },
       runner: { max_lifetime_secs: 300 },
     };
+    if (process.env.SHAULA_ACCEPTANCE_CONTROL_FAULTS === "1" && this.platform === "docker") {
+      this.controlProxy = new ControlProxy();
+      await this.controlProxy.start(this);
+    }
     await this.startDaemon();
     await this.publish();
   }
@@ -186,6 +191,7 @@ export class Fixture {
   }
   async close() {
     await this.stopDaemon();
+    await this.controlProxy?.close();
     // Only resources bearing this fixture's exact random Fleet keys. Teardown
     // is never evidence of successful Shaula cleanup; assertions precede it.
     for (const key of this.fleets) {
