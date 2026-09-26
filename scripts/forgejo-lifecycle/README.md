@@ -55,6 +55,46 @@ Owner-only temporary directories retain config, SQLite, raw plans/state/workspac
 
 No real VM/cloud, real GitHub, busy-safe early idle drain, full supported-version matrix, or weighted-load distribution acceptance is claimed. Local Rust/browser regression, Terraform/runtime conformance and these real acceptance checks are separate verification layers.
 
+## Worker crash, restoration and pressure
+
+The Docker run additionally executes an offline full-data-set backup/restore,
+small-host Worker saturation and an accepted Docker Create whose response is
+withheld across daemon SIGKILL. Reports distinguish quiescent restoration from
+post-checkpoint divergence, and waiting-worker measurements from maximum-count
+or log-flood capacity. An interrupted Create must retain its actual external
+resource and occupancy in quarantine; fixture teardown is not recovery evidence.
+
+## Real GitHub lifecycle with Browser dispatch
+
+`github-run.mjs` starts a separate data directory and daemon with the actual
+binary, pinned Terraform, the Docker template and an existing GitHub App profile.
+Run it only on an operator-approved host already entrusted with that App key.
+The input is an owner-only JSON file containing the normal v2 auth-profile PUT
+payload. Never copy the key into workflow secrets, command arguments or reports.
+The script narrows the test to `5aaee9/shaula` and uses a fresh random Scale Set.
+
+```sh
+export SHAULA_ACCEPTANCE_GITHUB_PROFILE=/private/existing-test-profile.json
+export SHAULA_TEST_CGROUP=/sys/fs/cgroup/your-delegated-test-service
+export SHAULA_BIN=/absolute/path/to/shaula
+export TERRAFORM_BIN=/absolute/path/to/terraform
+node scripts/forgejo-lifecycle/github-run.mjs
+```
+
+Run the parent within the specified delegation. After it prints
+`await-browser-dispatch`, use Browser to run **Shaula Docker smoke** on the exact
+PR branch and enter the emitted `runner_label`. The job remains Busy for 45
+seconds so the harness can restart the real daemon and require cleanup-only
+recovery. Verify the same workflow's conclusion and final GitHub runner inventory
+in Browser; a local `passed` report alone does not establish that external check.
+The report pins the executed binary/source/runtime, requires one Generation,
+retained GitHub Jobs, zero occupancy and absent container/credential volumes,
+then retires the test Fleet. On failure it retains evidence and external
+resources for reconciliation instead of force-removing an uncertain runner.
+
+These scripts require completed, reviewed run evidence before their scenarios
+can be marked accepted; their presence is not a full LW-11–15/28/30/32 pass.
+
 ## DX-30 diagnostics acceptance
 
 `diagnostics.mjs` exercises spec 0041 against a dedicated disposable Linux VM

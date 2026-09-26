@@ -2,13 +2,19 @@ name: Shaula Docker smoke
 
 on:
   workflow_dispatch:
+    inputs:
+      runner_label:
+        description: Exact label of the disposable acceptance Scale Set
+        required: true
+        default: shaula-codex-docker
+        type: string
 
 permissions: {}
 
 jobs:
   smoke:
     name: Verify the Shaula Docker runner
-    runs-on: shaula-codex-docker
+    runs-on: ${{ inputs.runner_label }}
     timeout-minutes: 5
     steps:
       - name: Check runner and bootstrap isolation
@@ -25,3 +31,5 @@ jobs:
           printf 'runner=%s os=%s arch=%s\n' "$RUNNER_NAME" "$RUNNER_OS" "$RUNNER_ARCH"
           printf 'repository=%s run=%s attempt=%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
           printf 'Shaula Docker smoke passed: socket and bootstrap credentials are absent\n'
+      - name: Keep Busy observable for lifecycle acceptance
+        run: sleep 45
