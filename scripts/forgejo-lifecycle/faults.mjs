@@ -5,12 +5,14 @@ export async function faultProxy({ socketPath, target, listen }) {
   const gate = { block: false, failures: 0, failJobs: false, jobFailures: 0,
     dropRegistrationResponses: false, registrationPosts: 0, droppedRegistrations: 0,
     failImageRead: false, imageFailures: 0, blockDeclare: false, declareFailures: 0,
-    containerCreates: 0, containerDeletes: 0 };
+    containerCreates: 0, containerDeletes: 0,
+    holdCreateResponses: false, heldCreates: 0, heldResponses: [] };
   const server = createServer((incoming, outgoing) => {
     const path = new URL(incoming.url, "http://fixture.invalid").pathname;
     const register = target && incoming.method === "POST" && path === "/api/v1/admin/actions/runners";
     if (register) gate.registrationPosts++;
-    if (socketPath && incoming.method === "POST" && /^\/(?:v[\d.]+\/)?containers\/create$/.test(path)) gate.containerCreates++;
+    const containerCreate = socketPath && incoming.method === "POST" && /^\/(?:v[\d.]+\/)?containers\/create$/.test(path);
+    if (containerCreate) gate.containerCreates++;
     if (socketPath && incoming.method === "DELETE" && /^\/(?:v[\d.]+\/)?containers\/[a-f0-9]+$/.test(path)) gate.containerDeletes++;
     // A real provider plan must fail before apply; never forge ledger records.
     if (gate.failImageRead && socketPath && incoming.method === "GET" && /^\/(?:v[\d.]+\/)?images\//.test(path)) {
@@ -43,6 +45,20 @@ export async function faultProxy({ socketPath, target, listen }) {
     const destination = target ? new URL(incoming.url, target) : undefined;
     const remote = request({ socketPath, hostname: destination?.hostname, port: destination?.port,
       path: incoming.url, method: incoming.method, headers: incoming.headers }, response => {
+      if (containerCreate && gate.holdCreateResponses && response.statusCode === 201) {
+        // The actual Engine has committed a resource. Withhold only its response,
+        // leaving the provider unable to publish its new identity into state.
+        const chunks = [];
+        response.on("data", chunk => chunks.push(chunk));
+        response.on("end", () => {
+          gate.heldCreates++;
+          gate.heldResponses.push(() => {
+            outgoing.writeHead(response.statusCode, response.headers);
+            outgoing.end(Buffer.concat(chunks));
+          });
+        });
+        return;
+      }
       if (register && gate.dropRegistrationResponses && response.statusCode === 201) {
         // Let the real server commit, then discard the one-shot response. Never log its body.
         response.on("end", () => { gate.droppedRegistrations++; outgoing.destroy(); });

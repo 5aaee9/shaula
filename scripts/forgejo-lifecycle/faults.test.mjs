@@ -5,7 +5,30 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { faultProxy } from "./faults.mjs";
-import { freePort } from "./support.mjs";
+import { freePort, until } from "./support.mjs";
+
+test("accepted Docker Create can outlive its withheld response", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "shaula-create-response-"));
+  const socketPath = join(dir, "engine.sock");
+  let committed = 0;
+  const upstream = createServer((req, res) => {
+    req.resume(); committed++; res.writeHead(201); res.end('{"Id":"fixture"}');
+  });
+  await new Promise(resolve => upstream.listen(socketPath, resolve));
+  const endpoint = join(dir, "proxy.sock");
+  const proxy = await faultProxy({ socketPath, listen: endpoint });
+  let received = false;
+  try {
+    proxy.gate.holdCreateResponses = true;
+    const response = call(endpoint, "/v1.41/containers/create?name=test", "POST").then(status => { received = true; return status; });
+    await until("committed response withheld", () => proxy.gate.heldCreates === 1);
+    assert.equal(committed, 1);
+    assert.equal(received, false);
+    for (const release of proxy.gate.heldResponses.splice(0)) release();
+    assert.equal(await response, 201);
+    assert.equal(proxy.gate.containerCreates, 1);
+  } finally { await proxy.close(); await new Promise(resolve => upstream.close(resolve)); await rm(dir, { recursive: true }); }
+});
 
 function call(socketPath, path, method) {
   return new Promise((resolve, reject) => {

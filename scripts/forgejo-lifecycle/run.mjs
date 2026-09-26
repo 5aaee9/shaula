@@ -9,6 +9,9 @@ import { labels, staleDemand, lostRegistration } from "./scenarios.mjs";
 import { permissions } from "./permissions.mjs";
 import { captureCredentials, leakScan } from "./leaks.mjs";
 import { expiry } from "./expiry.mjs";
+import { workerPressure } from "./worker-pressure.mjs";
+import { interruptedCreate } from "./worker-crash.mjs";
+import { workerBackup } from "./worker-backup.mjs";
 import { ledger } from "./diagnostics-evidence.mjs";
 import { until, serverImage, runnerImage } from "./support.mjs";
 
@@ -85,6 +88,17 @@ try {
   phase = "hard-expiry";
   console.log(`Running ${phase}`);
   await expiry(fixture, report.checks);
+  if (fixture.platform === "docker") {
+    phase = "worker-backup";
+    console.log(`Running ${phase}`);
+    report.workerBackup = await workerBackup(fixture);
+    phase = "worker-pressure";
+    console.log(`Running ${phase}`);
+    report.workerPressure = await workerPressure(fixture);
+    phase = "interrupted-create";
+    console.log(`Running ${phase}`);
+    report.interruptedCreate = await interruptedCreate(fixture);
+  }
   phase = "lost-registration";
   console.log(`Running ${phase}`);
   await lostRegistration(fixture);
