@@ -9,7 +9,7 @@ import { until } from "./support.mjs";
 export function workers(fixture, key) {
   const db = new DatabaseSync(join(fixture.directory, "data", "shaula.db"), { readOnly: true });
   try {
-    return db.prepare(`SELECT w.phase,w.process_identity,w.cleanup_only,s.worker_epoch,g.id,g.state
+    return db.prepare(`SELECT w.phase,w.process_identity,w.cleanup_only,s.worker_epoch,g.id,g.state,g.workspace_path
       FROM lifecycle_workers w JOIN runner_generations g ON g.id=w.generation_id
       JOIN generation_http_state s ON s.generation_id=g.id WHERE g.fleet_key=?`).all(key);
   } finally { db.close(); }
@@ -57,12 +57,12 @@ export async function workerPressure(fixture) {
   const identity = JSON.parse(old.process_identity);
   process.kill(identity.process_id, "SIGKILL");
   // The daemon must perform recovery while the other waiting workers remain.
-  await fixture.queue(liveKeys[0], 8);
+  await fixture.queue(liveKeys[0], 40, false, [liveKeys[0]], false);
   const first = await fixture.observe(liveKeys[0], "active");
   await fixture.reclaimed(liveKeys[0], first);
   assert(workers(fixture, liveKeys[0])[0].worker_epoch > old.worker_epoch, "cleanup must use a new fenced epoch");
   for (const key of liveKeys.slice(1)) {
-    await fixture.queue(key, 8);
+    await fixture.queue(key, 40, false, [key], false);
     const observed = await fixture.observe(key, "active");
     await fixture.reclaimed(key, observed);
   }

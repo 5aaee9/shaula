@@ -15,7 +15,7 @@ export async function backendOutage(fixture) {
   await fixture.createFleet(key, 1);
   await until("external Create committed before backend outage", () => gate.heldCreates === held + 1);
   const original = workers(fixture, key)[0];
-  const emergencyPath = join(fixture.directory, "data", "runners", original.id, "errored.tfstate");
+  const emergencyPath = join(original.workspace_path, "errored.tfstate");
   await fixture.controlProxy.arm("state_all", "reject_before", 1000);
   gate.holdCreateResponses = false;
   for (const release of gate.heldResponses.splice(0)) release();

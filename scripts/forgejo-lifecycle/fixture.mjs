@@ -150,11 +150,18 @@ export class Fixture {
     body.spec.capacity = { min_runners: 0, max_runners: 0 };
     await this.api(`/fleets/${key}`, "PUT", body.spec, 202, { "if-match": response.headers.get("shaula-resource-version") || response.headers.get("etag") });
   }
-  async queue(key, seconds = 8, failure = false, labels = [key]) {
+  async queue(key, seconds = 8, failure = false, labels = [key], requireWaiting = true) {
     await this.forgejo("/user/repos", "POST", { name: key, private: true, auto_init: true, default_branch: "main" }, 201);
     const yaml = `name: lifecycle\non: [push]\njobs:\n  build:\n    runs-on: [${labels.join(", ")}]\n    steps:\n      - run: |\n          sleep ${seconds}\n          exit ${failure ? 1 : 0}\n`;
     await this.forgejo(`/repos/${this.user}/${key}/contents/.forgejo/workflows/check.yaml`, "POST", { content: Buffer.from(yaml).toString("base64"), message: "disposable lifecycle acceptance", branch: "main" }, 201);
-    await until("queued demand", async () => (await this.forgejo(`/admin/actions/runners/jobs?labels=${labels.join(",")}`) ?? []).some(j => j.status === "waiting"));
+    if (requireWaiting) {
+      await until("queued demand", async () => (await this.forgejo(`/admin/actions/runners/jobs?labels=${labels.join(",")}`) ?? []).some(j => j.status === "waiting"));
+    } else {
+      // A ready runner can acquire the task before the first management poll.
+      // Verify the actual run exists, then the caller observes Busy and cleanup.
+      await until("workflow accepted by Forgejo", async () =>
+        (await this.forgejo(`/repos/${this.user}/${key}/actions/runs`)).workflow_runs.length === 1);
+    }
   }
   async containerVolumes(id) {
     const [container] = JSON.parse(await this.cli("inspect", id));
