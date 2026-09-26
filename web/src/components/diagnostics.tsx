@@ -10,6 +10,7 @@ interface Reason {
   severity: string;
   effect: string;
   evidenceIds: string[];
+  parameters?: { completionSource?: string };
 }
 interface Question {
   question: string;
@@ -73,6 +74,12 @@ const titles: Record<string, string> = {
   cleanup: "Why has cleanup not finished?",
   rollout: "Why has the configuration not converged?",
   job_dispatch: "Why has this job not started?",
+};
+const completionSources: Record<string, string> = {
+  provider_cleanup: "Provider cleanup",
+  never_started: "Create apply never started",
+  operator_attested: "Operator attestation",
+  unknown: "Unknown",
 };
 function message(reason: Reason) {
   return (
@@ -223,6 +230,8 @@ function QuestionView({
   const primary = fresh
     ? question.reasons.find((r) => r.id === question.primaryReasonId)
     : undefined;
+  const completion = question.reasons.find((r) => r.code === "cleanup.completed")?.parameters
+    ?.completionSource;
   return (
     <article className="rounded-md border p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -246,6 +255,11 @@ function QuestionView({
             ? message(question.reasons[0])
             : "No current evidence explains this question."}
       </p>
+      {completion && (
+        <p className="mt-2 text-sm">
+          Completion source: {completionSources[completion] ?? "Unknown"}
+        </p>
+      )}
       <details className="mt-3 text-sm">
         <summary className="cursor-pointer">Evidence and evaluated stages</summary>
         <p className="mt-2 text-muted-foreground">

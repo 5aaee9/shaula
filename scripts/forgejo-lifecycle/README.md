@@ -53,3 +53,38 @@ The exact official image digest must be available to containerd. Where cluster D
 Owner-only temporary directories retain config, SQLite, raw plans/state/workspaces and logs; **never upload them**. `report.json`/stdout contain bounded results and digests only. Teardown stops Shaula and deletes only fixture-owned resources; it never counts as successful Shaula reclaim. The deliberately quarantined response-loss orphan is removed only with the disposable Forgejo server and is not counted as automatic cleanup.
 
 No real VM/cloud, real GitHub, busy-safe early idle drain, full supported-version matrix, or weighted-load distribution acceptance is claimed. Local Rust/browser regression, Terraform/runtime conformance and these real acceptance checks are separate verification layers.
+
+## DX-30 diagnostics acceptance
+
+`diagnostics.mjs` exercises spec 0041 against a dedicated disposable Linux VM
+with its own Docker Engine. The VM may run under Hyper-V; the resource platform
+under test is **Docker**, not a Hyper-V Runner backend. Use the same prerequisites
+as above, plus Chromium installed through `web/node_modules/playwright/cli.js`.
+The explicit opt-in is required:
+
+```sh
+node web/node_modules/playwright/cli.js install --with-deps chromium
+node --test scripts/forgejo-lifecycle/faults.test.mjs
+SHAULA_DX30_DISPOSABLE_VM=1 node scripts/forgejo-lifecycle/diagnostics.mjs
+```
+
+The four scenarios use the actual daemon, original bundled template, real
+Forgejo registrations and real Docker resources:
+
+| Scenario | Scoped fault and required evidence |
+| --- | --- |
+| no-create | Fail Docker image reads during Terraform plan; prove no container Create/Destroy request, failed plan invocation and `never_started` cleanup. |
+| waiting-online | Fail only the initial Runner Declare RPC; retain the original offline registration/container, then restore and restart that same external process. |
+| destroy-failure | Fail container DELETE at the explicit maximum-lifetime deadline; retain occupancy, restart and restore transport, then require both resource and registration absence before zero occupancy. Forgejo may remove an exiting ephemeral registration itself. This does not establish busy-safe ordinary drain or a separate registration-DELETE failure. |
+| rollout-lag | Publish an Active revision using a second socket alias while the old Generation occupies capacity; compare old/candidate pins and observe follow after legitimate cleanup. |
+
+For every failure checkpoint and recovery, the harness reads the real diagnostics
+HTTP endpoint, SQLite domain ledger through a read-only connection, provider
+inventory, and the actual embedded UI with Playwright. It does not mock browser
+responses or inject ledger rows. The browser completes a real authorization-code
+and PKCE flow against the disposable issuer and uses the daemon's secure session
+cookie over a loopback HTTPS relay. API probes use OIDC Bearer tokens. Screenshots and bounded JSON receipts go
+into the fixture's `public-evidence/` directory after credential checks; raw
+SQLite, logs, plans, keys and token files remain outside that directory and must
+never be published. Only a report with `passed: true` and all four checks is
+DX-30 acceptance. Failed attempts and fixture teardown are not cleanup evidence.

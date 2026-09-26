@@ -284,3 +284,54 @@ async fn diagnostics_gc_preserves_domain_and_restart_invalidates_runtime_evidenc
     settled(&store, &observation).await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn hard_lifetime_mode_survives_projection_loss_and_cleanup_checkpoints() -> Result {
+    let (mut store, _) = established().await?;
+    store.connection().execute_unprepared("INSERT INTO runner_generations
+        (id,fleet_key,runner_name,generation_name,fleet_revision,template_profile_key,template_revision,template_artifact_digest,attestation_id,inputs_digest,state,workspace_path,created_at,updated_at,expiry_requested_at)
+        VALUES('expired','fleet','runner','resource',1,'profile',1,'digest','attestation','inputs','DestroyPending','private',1,100,90)").await?;
+    store
+        .connection()
+        .execute_unprepared(
+            "INSERT INTO runner_operations
+        (id,generation_id,kind,state,attempts,created_at,updated_at)
+        VALUES('destroy','expired','Destroy','ApplyStarting',0,95,100)",
+        )
+        .await?;
+    // Model restart with no process-local producer or retained projection.
+    store.diagnostics = crate::diagnostics::Hub::start(store.connection().clone());
+    store
+        .connection()
+        .execute_unprepared("DROP TABLE diagnostic_snapshots")
+        .await?;
+    for resource_gone in [false, true] {
+        if resource_gone {
+            store.connection().execute_unprepared("UPDATE runner_generations SET resources_destroyed_at=150,updated_at=150 WHERE id='expired';
+                UPDATE runner_operations SET state='Succeeded',updated_at=150 WHERE id='destroy'").await?;
+        }
+        let report = store
+            .diagnostics(SubjectKind::Generation, "expired", &actor(), 200)
+            .await?
+            .ok_or("generation diagnostics")?;
+        let cleanup = report
+            .questions
+            .iter()
+            .find(|q| q.question == QuestionId::Cleanup)
+            .ok_or("cleanup question")?;
+        assert_eq!(cleanup.basis.kind, BasisKind::LedgerProjection);
+        assert_eq!(cleanup.cleanup_mode, Some(CleanupMode::HardLifetime));
+        assert!(cleanup
+            .reasons
+            .iter()
+            .any(|r| r.code == Code::CleanupHardLifetime.as_str()));
+        let expected = if resource_gone {
+            Code::CleanupRegistrationPending
+        } else {
+            Code::LifecycleApplyOutcomeUnknown
+        };
+        assert!(cleanup.reasons.iter().any(|r| r.code == expected.as_str()));
+        assert_ne!(cleanup.outcome, Outcome::Satisfied);
+    }
+    Ok(())
+}

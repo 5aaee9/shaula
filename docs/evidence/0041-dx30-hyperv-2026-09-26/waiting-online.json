@@ -1,0 +1,271 @@
+{
+  "name": "waiting-online",
+  "capturedAt": "2026-09-26T12:56:05.320Z",
+  "expectedReason": "lifecycle.awaiting_online",
+  "http": {
+    "schemaVersion": 1,
+    "subject": {
+      "kind": "generation",
+      "id": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+      "fleetIncarnation": "be01d847-2dc0-4f4a-a572-3bad216749c4"
+    },
+    "generatedAt": "2026-09-26T12:56:05.301Z",
+    "questions": [
+      {
+        "question": "readiness",
+        "outcome": "progressing",
+        "coverage": "partial",
+        "basis": {
+          "kind": "recorded_decision",
+          "observationId": "cd61c34b-fb19-4090-a08b-3bfed039f9c0:1",
+          "observedAt": "2026-09-26T12:55:57.807Z",
+          "validUntil": "2026-09-26T12:56:27.807Z",
+          "freshness": "fresh",
+          "subjectRevision": "1"
+        },
+        "stages": [
+          {
+            "id": "create_effect",
+            "evaluation": "passed",
+            "reasonIds": []
+          },
+          {
+            "id": "bootstrap",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "runner_inventory",
+            "evaluation": "pending",
+            "reasonIds": [
+              "r-0"
+            ]
+          }
+        ],
+        "primaryReasonId": null,
+        "reasons": [
+          {
+            "id": "r-0",
+            "code": "lifecycle.awaiting_online",
+            "stage": "runner_inventory",
+            "severity": "info",
+            "effect": "informational",
+            "parameters": {},
+            "evidenceIds": [
+              "e-0"
+            ],
+            "firstObservedAt": "2026-09-26T12:55:57.807Z",
+            "lastObservedAt": "2026-09-26T12:55:57.807Z"
+          }
+        ],
+        "evidence": [
+          {
+            "id": "e-0",
+            "kind": "controller_observation",
+            "observedAt": "2026-09-26T12:55:57.807Z",
+            "freshness": "fresh",
+            "validUntil": "2026-09-26T12:56:27.807Z",
+            "predicate": "lifecycle.awaiting_online"
+          }
+        ],
+        "suggestions": [
+          {
+            "suggestionId": "view_invocations",
+            "reference": {
+              "kind": "generation",
+              "id": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+              "fleetIncarnation": "be01d847-2dc0-4f4a-a572-3bad216749c4"
+            }
+          }
+        ],
+        "capacity": null
+      },
+      {
+        "question": "cleanup",
+        "outcome": "unknown",
+        "coverage": "partial",
+        "basis": {
+          "kind": "ledger_projection",
+          "observationId": null,
+          "observedAt": "2026-09-26T12:56:04.900Z",
+          "validUntil": null,
+          "freshness": "fresh",
+          "subjectRevision": "1"
+        },
+        "stages": [
+          {
+            "id": "intent",
+            "evaluation": "not_evaluated",
+            "reasonIds": [
+              "r-0"
+            ]
+          },
+          {
+            "id": "safe_removal",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "execution_admission",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "resource_cleanup",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "registration_cleanup",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "completion",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          }
+        ],
+        "primaryReasonId": null,
+        "reasons": [
+          {
+            "id": "r-0",
+            "code": "observation.missing",
+            "stage": "intent",
+            "severity": "warning",
+            "effect": "informational",
+            "parameters": {},
+            "evidenceIds": [
+              "e-0"
+            ],
+            "firstObservedAt": "2026-09-26T12:56:04.900Z",
+            "lastObservedAt": "2026-09-26T12:56:04.900Z"
+          }
+        ],
+        "evidence": [
+          {
+            "id": "e-0",
+            "kind": "controller_observation",
+            "observedAt": "2026-09-26T12:56:04.900Z",
+            "freshness": "fresh",
+            "validUntil": null,
+            "predicate": "observation.missing"
+          }
+        ],
+        "suggestions": [
+          {
+            "suggestionId": "view_invocations",
+            "reference": {
+              "kind": "generation",
+              "id": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+              "fleetIncarnation": "be01d847-2dc0-4f4a-a572-3bad216749c4"
+            }
+          }
+        ],
+        "capacity": null
+      }
+    ],
+    "related": [],
+    "truncated": false
+  },
+  "uiText": "Why\n−\nWhy is the runner not ready?\nIn progress\n\npartial coverage · fresh · observed 2026-09-26T12:55:57.807Z\n\nWaiting for runner inventory to confirm readiness\n\nEvidence and evaluated stages\n\nSource: recorded_decision. This explanation does not authorize lifecycle operations.\n\ncreate_effect: passed\nbootstrap: not_evaluated\nrunner_inventory: pending\n\nWaiting for runner inventory to confirm readiness\n\nlifecycle.awaiting_online · info · informational\n\ncontroller_observation: 2026-09-26T12:55:57.807Z (fresh)\n\nview invocations\n\nWhy has cleanup not finished?\nUnknown\n\npartial coverage · fresh · observed 2026-09-26T12:56:04.900Z\n\nNecessary evidence has not been collected\n\nEvidence and evaluated stages\n\nSource: ledger_projection. This explanation does not authorize lifecycle operations.\n\nintent: not_evaluated\nsafe_removal: not_evaluated\nexecution_admission: not_evaluated\nresource_cleanup: not_evaluated\nregistration_cleanup: not_evaluated\ncompletion: not_evaluated\n\nNecessary evidence has not been collected\n\nobservation.missing · warning · informational\n\ncontroller_observation: 2026-09-26T12:56:04.900Z (fresh)\n\nview invocations",
+  "ledger": {
+    "fleet": {
+      "key": "shaula-lifecycle-1fed0db6-waiting",
+      "incarnation": "be01d847-2dc0-4f4a-a572-3bad216749c4",
+      "desired_revision": 1,
+      "observed_revision": 1,
+      "phase": "Reconciling"
+    },
+    "revisions": [
+      {
+        "revision": 1,
+        "template_profile_key": "forgejo",
+        "template_revision": 1,
+        "template_artifact_digest": "sha256:1470cef3f15eeb48b139e68414b4a3f2e1fd4b4cf330d5ddd16befa478ad177f"
+      }
+    ],
+    "generations": [
+      {
+        "id": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+        "fleet_key": "shaula-lifecycle-1fed0db6-waiting",
+        "fleet_revision": 1,
+        "template_revision": 1,
+        "state": "WaitingOnline",
+        "subphase": null,
+        "provisioned_at": 1790427364900,
+        "expiry_requested_at": null,
+        "resources_destroyed_at": null
+      }
+    ],
+    "operations": [
+      {
+        "id": "forgejo-register-84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+        "generation_id": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+        "kind": "ForgejoRegistration",
+        "state": "Completed",
+        "attempts": 1
+      },
+      {
+        "id": "b0221e04-83c1-42f1-a9ce-fa21e9dc05e1",
+        "generation_id": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+        "kind": "Create",
+        "state": "Succeeded",
+        "attempts": 1
+      }
+    ],
+    "invocations": [
+      {
+        "id": "cd493fb7-f63e-4e78-b15b-c568176bd02a",
+        "generationId": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+        "operation": "Create",
+        "outcome": "succeeded",
+        "commands": [
+          {
+            "phase": "init",
+            "exitCode": 0,
+            "effectAttemptId": null
+          }
+        ]
+      },
+      {
+        "id": "17445f20-50fc-417a-a72f-92e5aa7d52d5",
+        "generationId": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+        "operation": "Create",
+        "outcome": "succeeded",
+        "commands": [
+          {
+            "phase": "plan",
+            "exitCode": 0,
+            "effectAttemptId": null
+          },
+          {
+            "phase": "apply",
+            "exitCode": 0,
+            "effectAttemptId": "b0221e04-83c1-42f1-a9ce-fa21e9dc05e1"
+          }
+        ]
+      }
+    ]
+  },
+  "capacity": {
+    "assignedDemand": 0,
+    "effective": 1,
+    "occupancy": 1,
+    "target": 1
+  },
+  "provider": {
+    "runners": [
+      {
+        "id": 2,
+        "name": "shaula-lifecycle-1fed0db6-waiting-84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+        "status": "offline",
+        "ephemeral": true,
+        "labels": null
+      }
+    ],
+    "containers": [
+      "61233d43723142a0da4095dd4a6abdc75378dfd0f2bd6ec18f6b9e896df2f0cd"
+    ]
+  }
+}

@@ -1,0 +1,232 @@
+{
+  "name": "no-create",
+  "capturedAt": "2026-09-26T12:55:43.293Z",
+  "expectedReason": "cleanup.completed",
+  "http": {
+    "schemaVersion": 1,
+    "subject": {
+      "kind": "generation",
+      "id": "88681dcd-4d4d-44c3-82cd-b1864668d6dd",
+      "fleetIncarnation": "8f711f62-e213-46f2-a4c2-ed84b5e9c969"
+    },
+    "generatedAt": "2026-09-26T12:55:43.274Z",
+    "questions": [
+      {
+        "question": "readiness",
+        "outcome": "not_applicable",
+        "coverage": "complete",
+        "basis": {
+          "kind": "ledger_projection",
+          "observationId": null,
+          "observedAt": "2026-09-26T12:55:42.803Z",
+          "validUntil": null,
+          "freshness": "fresh",
+          "subjectRevision": "1"
+        },
+        "stages": [
+          {
+            "id": "create_effect",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "bootstrap",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "runner_inventory",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          }
+        ],
+        "primaryReasonId": null,
+        "reasons": [],
+        "evidence": [],
+        "suggestions": [
+          {
+            "suggestionId": "view_invocations",
+            "reference": {
+              "kind": "generation",
+              "id": "88681dcd-4d4d-44c3-82cd-b1864668d6dd",
+              "fleetIncarnation": "8f711f62-e213-46f2-a4c2-ed84b5e9c969"
+            }
+          }
+        ],
+        "capacity": null
+      },
+      {
+        "question": "cleanup",
+        "outcome": "satisfied",
+        "coverage": "complete",
+        "basis": {
+          "kind": "ledger_projection",
+          "observationId": null,
+          "observedAt": "2026-09-26T12:55:42.803Z",
+          "validUntil": null,
+          "freshness": "fresh",
+          "subjectRevision": "1"
+        },
+        "stages": [
+          {
+            "id": "intent",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "safe_removal",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "execution_admission",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "resource_cleanup",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "registration_cleanup",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "completion",
+            "evaluation": "passed",
+            "reasonIds": [
+              "r-0"
+            ]
+          }
+        ],
+        "primaryReasonId": null,
+        "reasons": [
+          {
+            "id": "r-0",
+            "code": "cleanup.completed",
+            "stage": "completion",
+            "severity": "info",
+            "effect": "informational",
+            "parameters": {
+              "completionSource": "never_started"
+            },
+            "evidenceIds": [
+              "e-0"
+            ],
+            "firstObservedAt": "2026-09-26T12:55:42.803Z",
+            "lastObservedAt": "2026-09-26T12:55:42.803Z"
+          }
+        ],
+        "evidence": [
+          {
+            "id": "e-0",
+            "kind": "ledger_fact",
+            "observedAt": "2026-09-26T12:55:42.803Z",
+            "freshness": "fresh",
+            "validUntil": null,
+            "predicate": "cleanup.completed"
+          }
+        ],
+        "suggestions": [
+          {
+            "suggestionId": "view_invocations",
+            "reference": {
+              "kind": "generation",
+              "id": "88681dcd-4d4d-44c3-82cd-b1864668d6dd",
+              "fleetIncarnation": "8f711f62-e213-46f2-a4c2-ed84b5e9c969"
+            }
+          }
+        ],
+        "capacity": null
+      }
+    ],
+    "related": [],
+    "truncated": false
+  },
+  "uiText": "Why\n−\nWhy is the runner not ready?\nNot applicable\n\ncomplete coverage · fresh · observed 2026-09-26T12:55:42.803Z\n\nNo current evidence explains this question.\n\nEvidence and evaluated stages\n\nSource: ledger_projection. This explanation does not authorize lifecycle operations.\n\ncreate_effect: not_evaluated\nbootstrap: not_evaluated\nrunner_inventory: not_evaluated\n\nview invocations\n\nWhy has cleanup not finished?\nSatisfied\n\ncomplete coverage · fresh · observed 2026-09-26T12:55:42.803Z\n\nThe domain ledger records cleanup completion\n\nCompletion source: Create apply never started\n\nEvidence and evaluated stages\n\nSource: ledger_projection. This explanation does not authorize lifecycle operations.\n\nintent: not_evaluated\nsafe_removal: not_evaluated\nexecution_admission: not_evaluated\nresource_cleanup: not_evaluated\nregistration_cleanup: not_evaluated\ncompletion: passed\n\nThe domain ledger records cleanup completion\n\ncleanup.completed · info · informational\n\nledger_fact: 2026-09-26T12:55:42.803Z (fresh)\n\nview invocations",
+  "ledger": {
+    "fleet": {
+      "key": "shaula-lifecycle-1fed0db6-nocreate",
+      "incarnation": "8f711f62-e213-46f2-a4c2-ed84b5e9c969",
+      "desired_revision": 2,
+      "observed_revision": 2,
+      "phase": "Degraded"
+    },
+    "revisions": [
+      {
+        "revision": 1,
+        "template_profile_key": "forgejo",
+        "template_revision": 1,
+        "template_artifact_digest": "sha256:1470cef3f15eeb48b139e68414b4a3f2e1fd4b4cf330d5ddd16befa478ad177f"
+      },
+      {
+        "revision": 2,
+        "template_profile_key": "forgejo",
+        "template_revision": 1,
+        "template_artifact_digest": "sha256:1470cef3f15eeb48b139e68414b4a3f2e1fd4b4cf330d5ddd16befa478ad177f"
+      }
+    ],
+    "generations": [
+      {
+        "id": "88681dcd-4d4d-44c3-82cd-b1864668d6dd",
+        "fleet_key": "shaula-lifecycle-1fed0db6-nocreate",
+        "fleet_revision": 1,
+        "template_revision": 1,
+        "state": "Destroyed",
+        "subphase": null,
+        "provisioned_at": null,
+        "expiry_requested_at": null,
+        "resources_destroyed_at": null
+      }
+    ],
+    "operations": [
+      {
+        "id": "forgejo-register-88681dcd-4d4d-44c3-82cd-b1864668d6dd",
+        "generation_id": "88681dcd-4d4d-44c3-82cd-b1864668d6dd",
+        "kind": "ForgejoRegistration",
+        "state": "Completed",
+        "attempts": 1
+      }
+    ],
+    "invocations": [
+      {
+        "id": "4877b6ff-1cbf-4b60-b2dd-b8ce3f2d4d7f",
+        "generationId": "88681dcd-4d4d-44c3-82cd-b1864668d6dd",
+        "operation": "Create",
+        "outcome": "succeeded",
+        "commands": [
+          {
+            "phase": "init",
+            "exitCode": 0,
+            "effectAttemptId": null
+          }
+        ]
+      },
+      {
+        "id": "d6d11491-db32-48a5-9fe1-80d43adc4e17",
+        "generationId": "88681dcd-4d4d-44c3-82cd-b1864668d6dd",
+        "operation": "Create",
+        "outcome": "failed",
+        "commands": [
+          {
+            "phase": "plan",
+            "exitCode": 1,
+            "effectAttemptId": null
+          }
+        ]
+      }
+    ]
+  },
+  "capacity": {
+    "assignedDemand": 0,
+    "effective": 0,
+    "occupancy": 0,
+    "target": 0
+  },
+  "provider": {
+    "runners": [],
+    "containers": []
+  }
+}

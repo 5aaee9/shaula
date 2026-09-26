@@ -1,0 +1,387 @@
+{
+  "name": "rollout-lag",
+  "capturedAt": "2026-09-26T12:57:54.482Z",
+  "expectedReason": "rollout.waiting_zero_occupancy",
+  "http": {
+    "schemaVersion": 1,
+    "subject": {
+      "kind": "fleet",
+      "key": "shaula-lifecycle-1fed0db6-rollout",
+      "fleetIncarnation": "fdbfa386-d522-4765-bfef-67bafeab8b38"
+    },
+    "generatedAt": "2026-09-26T12:57:54.462Z",
+    "questions": [
+      {
+        "question": "scale_up",
+        "outcome": "satisfied",
+        "coverage": "partial",
+        "basis": {
+          "kind": "recorded_decision",
+          "observationId": "37fea742-f6f4-4b9f-b83f-48d91f2e8f05:1",
+          "observedAt": "2026-09-26T12:57:54.076Z",
+          "validUntil": "2026-09-26T12:58:24.076Z",
+          "freshness": "fresh",
+          "subjectRevision": "2"
+        },
+        "stages": [
+          {
+            "id": "authority",
+            "evaluation": "passed",
+            "reasonIds": []
+          },
+          {
+            "id": "demand",
+            "evaluation": "passed",
+            "reasonIds": []
+          },
+          {
+            "id": "capacity",
+            "evaluation": "passed",
+            "reasonIds": [
+              "r-0"
+            ]
+          },
+          {
+            "id": "pool",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "execution_admission",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          }
+        ],
+        "primaryReasonId": null,
+        "reasons": [
+          {
+            "id": "r-0",
+            "code": "capacity.target_satisfied",
+            "stage": "capacity",
+            "severity": "info",
+            "effect": "informational",
+            "parameters": {},
+            "evidenceIds": [
+              "e-0"
+            ],
+            "firstObservedAt": "2026-09-26T12:57:54.076Z",
+            "lastObservedAt": "2026-09-26T12:57:54.076Z"
+          }
+        ],
+        "evidence": [
+          {
+            "id": "e-0",
+            "kind": "derived_calculation",
+            "observedAt": "2026-09-26T12:57:54.076Z",
+            "freshness": "fresh",
+            "validUntil": "2026-09-26T12:58:24.076Z",
+            "predicate": "capacity.target_satisfied"
+          }
+        ],
+        "suggestions": [
+          {
+            "suggestionId": "view_generations",
+            "reference": {
+              "kind": "fleet",
+              "key": "shaula-lifecycle-1fed0db6-rollout",
+              "fleetIncarnation": "fdbfa386-d522-4765-bfef-67bafeab8b38"
+            }
+          }
+        ],
+        "capacity": {
+          "demandKind": "forgejo_waiting_jobs",
+          "min": "0",
+          "max": "0",
+          "demand": "0",
+          "target": "0",
+          "effective": "1",
+          "occupancy": "1",
+          "deficit": "0",
+          "occupancyHeadroom": "0",
+          "arithmeticCreateAllowance": "0",
+          "actuallyAdmitted": null
+        }
+      },
+      {
+        "question": "cleanup",
+        "outcome": "unknown",
+        "coverage": "partial",
+        "basis": {
+          "kind": "ledger_projection",
+          "observationId": null,
+          "observedAt": "2026-09-26T12:57:54.076Z",
+          "validUntil": null,
+          "freshness": "fresh",
+          "subjectRevision": "2"
+        },
+        "stages": [
+          {
+            "id": "intent",
+            "evaluation": "not_evaluated",
+            "reasonIds": [
+              "r-0"
+            ]
+          },
+          {
+            "id": "safe_removal",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "execution_admission",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "resource_cleanup",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "registration_cleanup",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "completion",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          }
+        ],
+        "primaryReasonId": null,
+        "reasons": [
+          {
+            "id": "r-0",
+            "code": "observation.missing",
+            "stage": "intent",
+            "severity": "warning",
+            "effect": "informational",
+            "parameters": {},
+            "evidenceIds": [
+              "e-0"
+            ],
+            "firstObservedAt": "2026-09-26T12:57:54.076Z",
+            "lastObservedAt": "2026-09-26T12:57:54.076Z"
+          }
+        ],
+        "evidence": [
+          {
+            "id": "e-0",
+            "kind": "controller_observation",
+            "observedAt": "2026-09-26T12:57:54.076Z",
+            "freshness": "fresh",
+            "validUntil": null,
+            "predicate": "observation.missing"
+          }
+        ],
+        "suggestions": [
+          {
+            "suggestionId": "view_generations",
+            "reference": {
+              "kind": "fleet",
+              "key": "shaula-lifecycle-1fed0db6-rollout",
+              "fleetIncarnation": "fdbfa386-d522-4765-bfef-67bafeab8b38"
+            }
+          }
+        ],
+        "capacity": null
+      },
+      {
+        "question": "rollout",
+        "outcome": "blocked",
+        "coverage": "partial",
+        "basis": {
+          "kind": "recorded_decision",
+          "observationId": "5b44fc46-4d23-4043-bfa6-c3821bdc3107:1",
+          "observedAt": "2026-09-26T12:57:54.066Z",
+          "validUntil": "2026-09-26T12:58:24.066Z",
+          "freshness": "fresh",
+          "subjectRevision": "2"
+        },
+        "stages": [
+          {
+            "id": "dependency_resolution",
+            "evaluation": "passed",
+            "reasonIds": []
+          },
+          {
+            "id": "input_compatibility",
+            "evaluation": "passed",
+            "reasonIds": []
+          },
+          {
+            "id": "occupancy",
+            "evaluation": "blocked",
+            "reasonIds": [
+              "r-0"
+            ]
+          },
+          {
+            "id": "commit_fence",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          }
+        ],
+        "primaryReasonId": "r-0",
+        "reasons": [
+          {
+            "id": "r-0",
+            "code": "rollout.waiting_zero_occupancy",
+            "stage": "occupancy",
+            "severity": "info",
+            "effect": "blocking",
+            "parameters": {},
+            "evidenceIds": [
+              "e-0"
+            ],
+            "firstObservedAt": "2026-09-26T12:57:54.066Z",
+            "lastObservedAt": "2026-09-26T12:57:54.066Z"
+          }
+        ],
+        "evidence": [
+          {
+            "id": "e-0",
+            "kind": "controller_observation",
+            "observedAt": "2026-09-26T12:57:54.066Z",
+            "freshness": "fresh",
+            "validUntil": "2026-09-26T12:58:24.066Z",
+            "predicate": "rollout.waiting_zero_occupancy"
+          }
+        ],
+        "suggestions": [
+          {
+            "suggestionId": "view_generations",
+            "reference": {
+              "kind": "fleet",
+              "key": "shaula-lifecycle-1fed0db6-rollout",
+              "fleetIncarnation": "fdbfa386-d522-4765-bfef-67bafeab8b38"
+            }
+          }
+        ],
+        "capacity": null,
+        "rollout": {
+          "desiredRevision": "2",
+          "observedRevision": "2",
+          "previousPin": {
+            "key": "forgejo",
+            "revision": "1"
+          },
+          "candidatePin": {
+            "key": "forgejo",
+            "revision": "2"
+          }
+        }
+      }
+    ],
+    "related": [],
+    "truncated": false
+  },
+  "uiText": "Why\n−\nWhy are no more runners being created?\nSatisfied\n\npartial coverage · fresh · observed 2026-09-26T12:57:54.076Z\n\nEffective capacity meets the observed target\n\nEvidence and evaluated stages\n\nSource: recorded_decision. This explanation does not authorize lifecycle operations.\n\nauthority: passed\ndemand: passed\ncapacity: passed\npool: not_evaluated\nexecution_admission: not_evaluated\n\nEffective capacity meets the observed target\n\ncapacity.target_satisfied · info · informational\n\nderived_calculation: 2026-09-26T12:57:54.076Z (fresh)\n\ndemandKind\nforgejo_waiting_jobs\nmin\n0\nmax\n0\ndemand\n0\ntarget\n0\neffective\n1\noccupancy\n1\ndeficit\n0\noccupancyHeadroom\n0\narithmeticCreateAllowance\n0\nactuallyAdmitted\nUnknown\n\nview generations\n\nWhy has cleanup not finished?\nUnknown\n\npartial coverage · fresh · observed 2026-09-26T12:57:54.076Z\n\nNecessary evidence has not been collected\n\nEvidence and evaluated stages\n\nSource: ledger_projection. This explanation does not authorize lifecycle operations.\n\nintent: not_evaluated\nsafe_removal: not_evaluated\nexecution_admission: not_evaluated\nresource_cleanup: not_evaluated\nregistration_cleanup: not_evaluated\ncompletion: not_evaluated\n\nNecessary evidence has not been collected\n\nobservation.missing · warning · informational\n\ncontroller_observation: 2026-09-26T12:57:54.076Z (fresh)\n\nview generations\n\nWhy has the configuration not converged?\nBlocked\n\npartial coverage · fresh · observed 2026-09-26T12:57:54.066Z\n\nFollowing the new revision requires zero occupancy\n\nEvidence and evaluated stages\n\nSource: recorded_decision. This explanation does not authorize lifecycle operations.\n\ndependency_resolution: passed\ninput_compatibility: passed\noccupancy: blocked\ncommit_fence: not_evaluated\n\nFollowing the new revision requires zero occupancy\n\nrollout.waiting_zero_occupancy · info · blocking\n\ncontroller_observation: 2026-09-26T12:57:54.066Z (fresh)\n\nDesired revision 2; observed revision 2\n\nPrevious pin: forgejo@1\n\nCandidate pin: forgejo@2\n\nview generations",
+  "ledger": {
+    "fleet": {
+      "key": "shaula-lifecycle-1fed0db6-rollout",
+      "incarnation": "fdbfa386-d522-4765-bfef-67bafeab8b38",
+      "desired_revision": 2,
+      "observed_revision": 2,
+      "phase": "Reconciling"
+    },
+    "revisions": [
+      {
+        "revision": 1,
+        "template_profile_key": "forgejo",
+        "template_revision": 1,
+        "template_artifact_digest": "sha256:1470cef3f15eeb48b139e68414b4a3f2e1fd4b4cf330d5ddd16befa478ad177f"
+      },
+      {
+        "revision": 2,
+        "template_profile_key": "forgejo",
+        "template_revision": 1,
+        "template_artifact_digest": "sha256:1470cef3f15eeb48b139e68414b4a3f2e1fd4b4cf330d5ddd16befa478ad177f"
+      }
+    ],
+    "generations": [
+      {
+        "id": "494be2b2-94c6-47c7-a7d7-e7db5a739764",
+        "fleet_key": "shaula-lifecycle-1fed0db6-rollout",
+        "fleet_revision": 1,
+        "template_revision": 1,
+        "state": "Idle",
+        "subphase": null,
+        "provisioned_at": 1790427466093,
+        "expiry_requested_at": null,
+        "resources_destroyed_at": null
+      }
+    ],
+    "operations": [
+      {
+        "id": "forgejo-register-494be2b2-94c6-47c7-a7d7-e7db5a739764",
+        "generation_id": "494be2b2-94c6-47c7-a7d7-e7db5a739764",
+        "kind": "ForgejoRegistration",
+        "state": "Completed",
+        "attempts": 1
+      },
+      {
+        "id": "1d96f404-5820-4412-9583-58f667d08f1e",
+        "generation_id": "494be2b2-94c6-47c7-a7d7-e7db5a739764",
+        "kind": "Create",
+        "state": "Succeeded",
+        "attempts": 1
+      }
+    ],
+    "invocations": [
+      {
+        "id": "92227b5e-e089-48a3-85ae-b108b4270d11",
+        "generationId": "494be2b2-94c6-47c7-a7d7-e7db5a739764",
+        "operation": "Create",
+        "outcome": "succeeded",
+        "commands": [
+          {
+            "phase": "init",
+            "exitCode": 0,
+            "effectAttemptId": null
+          }
+        ]
+      },
+      {
+        "id": "12eee91d-92ec-4c9f-bebe-441b2b5a4cd9",
+        "generationId": "494be2b2-94c6-47c7-a7d7-e7db5a739764",
+        "operation": "Create",
+        "outcome": "succeeded",
+        "commands": [
+          {
+            "phase": "plan",
+            "exitCode": 0,
+            "effectAttemptId": null
+          },
+          {
+            "phase": "apply",
+            "exitCode": 0,
+            "effectAttemptId": "1d96f404-5820-4412-9583-58f667d08f1e"
+          }
+        ]
+      }
+    ]
+  },
+  "capacity": {
+    "assignedDemand": 0,
+    "effective": 1,
+    "occupancy": 1,
+    "target": 0
+  },
+  "provider": {
+    "runners": [
+      {
+        "id": 4,
+        "name": "shaula-lifecycle-1fed0db6-rollout-494be2b2-94c6-47c7-a7d7-e7db5a739764",
+        "status": "idle",
+        "ephemeral": true,
+        "labels": [
+          "shaula-lifecycle-1fed0db6-rollout"
+        ]
+      }
+    ],
+    "containers": [
+      "dffe431e707e9b4e53236c2f3bab00e520c968f9a3be0083e3909dcc2d71fa35"
+    ]
+  }
+}

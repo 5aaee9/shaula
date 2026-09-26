@@ -1,0 +1,34 @@
+{
+  "kind": "shaula-diagnostics-dx30/v1",
+  "passed": true,
+  "checks": {
+    "no-create": "passed",
+    "waiting-online": "passed",
+    "destroy-failure": "passed",
+    "rollout-lag": "passed"
+  },
+  "platform": "docker",
+  "serverImage": "codeberg.org/forgejo/forgejo:16.0.4",
+  "runnerImage": "code.forgejo.org/forgejo/runner:13.1.0@sha256:c4af85fd9f0dd03788676a534781a87c71aa2c6a37737143e017eb94d4312952",
+  "engineVersion": "29.1.3",
+  "forgejoVersion": "16.0.4+gitea-1.22.0",
+  "terraformVersion": "1.9.8",
+  "providerVersion": "3.0.2",
+  "binarySha256": "e454908dbab8b6272676b045245cc70f78224a0ecb76f3056d7383077ee2f062",
+  "artifactDigest": "sha256:1470cef3f15eeb48b139e68414b4a3f2e1fd4b4cf330d5ddd16befa478ad177f",
+  "faults": {
+    "imageRead": 1,
+    "declare": 1,
+    "resourceDelete": 1,
+    "registrationDelete": 0
+  },
+  "receipts": [
+    "no-create",
+    "waiting-online",
+    "waiting-online-recovered",
+    "destroy-failure",
+    "destroy-recovered",
+    "rollout-lag",
+    "rollout-recovered"
+  ]
+}

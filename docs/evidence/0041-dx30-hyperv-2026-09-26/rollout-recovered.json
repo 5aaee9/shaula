@@ -1,0 +1,356 @@
+{
+  "name": "rollout-recovered",
+  "capturedAt": "2026-09-26T12:58:39.706Z",
+  "expectedReason": "capacity.target_satisfied",
+  "http": {
+    "schemaVersion": 1,
+    "subject": {
+      "kind": "fleet",
+      "key": "shaula-lifecycle-1fed0db6-rollout",
+      "fleetIncarnation": "fdbfa386-d522-4765-bfef-67bafeab8b38"
+    },
+    "generatedAt": "2026-09-26T12:58:39.687Z",
+    "questions": [
+      {
+        "question": "scale_up",
+        "outcome": "satisfied",
+        "coverage": "partial",
+        "basis": {
+          "kind": "recorded_decision",
+          "observationId": "e39c4795-ddff-48d6-b1e0-808feeebdfb6:1",
+          "observedAt": "2026-09-26T12:58:39.075Z",
+          "validUntil": "2026-09-26T12:59:09.075Z",
+          "freshness": "fresh",
+          "subjectRevision": "3"
+        },
+        "stages": [
+          {
+            "id": "authority",
+            "evaluation": "passed",
+            "reasonIds": []
+          },
+          {
+            "id": "demand",
+            "evaluation": "passed",
+            "reasonIds": []
+          },
+          {
+            "id": "capacity",
+            "evaluation": "passed",
+            "reasonIds": [
+              "r-0"
+            ]
+          },
+          {
+            "id": "pool",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "execution_admission",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          }
+        ],
+        "primaryReasonId": null,
+        "reasons": [
+          {
+            "id": "r-0",
+            "code": "capacity.target_satisfied",
+            "stage": "capacity",
+            "severity": "info",
+            "effect": "informational",
+            "parameters": {},
+            "evidenceIds": [
+              "e-0"
+            ],
+            "firstObservedAt": "2026-09-26T12:58:39.075Z",
+            "lastObservedAt": "2026-09-26T12:58:39.075Z"
+          }
+        ],
+        "evidence": [
+          {
+            "id": "e-0",
+            "kind": "derived_calculation",
+            "observedAt": "2026-09-26T12:58:39.075Z",
+            "freshness": "fresh",
+            "validUntil": "2026-09-26T12:59:09.075Z",
+            "predicate": "capacity.target_satisfied"
+          }
+        ],
+        "suggestions": [
+          {
+            "suggestionId": "view_generations",
+            "reference": {
+              "kind": "fleet",
+              "key": "shaula-lifecycle-1fed0db6-rollout",
+              "fleetIncarnation": "fdbfa386-d522-4765-bfef-67bafeab8b38"
+            }
+          }
+        ],
+        "capacity": {
+          "demandKind": "forgejo_waiting_jobs",
+          "min": "0",
+          "max": "0",
+          "demand": "0",
+          "target": "0",
+          "effective": "0",
+          "occupancy": "0",
+          "deficit": "0",
+          "occupancyHeadroom": "0",
+          "arithmeticCreateAllowance": "0",
+          "actuallyAdmitted": null
+        }
+      },
+      {
+        "question": "cleanup",
+        "outcome": "satisfied",
+        "coverage": "complete",
+        "basis": {
+          "kind": "ledger_projection",
+          "observationId": null,
+          "observedAt": "2026-09-26T12:58:39.075Z",
+          "validUntil": null,
+          "freshness": "fresh",
+          "subjectRevision": "3"
+        },
+        "stages": [
+          {
+            "id": "intent",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "safe_removal",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "execution_admission",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "resource_cleanup",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "registration_cleanup",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "completion",
+            "evaluation": "passed",
+            "reasonIds": []
+          }
+        ],
+        "primaryReasonId": null,
+        "reasons": [],
+        "evidence": [],
+        "suggestions": [
+          {
+            "suggestionId": "view_generations",
+            "reference": {
+              "kind": "fleet",
+              "key": "shaula-lifecycle-1fed0db6-rollout",
+              "fleetIncarnation": "fdbfa386-d522-4765-bfef-67bafeab8b38"
+            }
+          }
+        ],
+        "capacity": null
+      },
+      {
+        "question": "rollout",
+        "outcome": "satisfied",
+        "coverage": "partial",
+        "basis": {
+          "kind": "recorded_decision",
+          "observationId": "3b744f8e-e31c-4571-9723-3cde364bf34e:1",
+          "observedAt": "2026-09-26T12:58:39.066Z",
+          "validUntil": "2026-09-26T12:59:09.066Z",
+          "freshness": "fresh",
+          "subjectRevision": "3"
+        },
+        "stages": [
+          {
+            "id": "dependency_resolution",
+            "evaluation": "passed",
+            "reasonIds": []
+          },
+          {
+            "id": "input_compatibility",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "occupancy",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "commit_fence",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          }
+        ],
+        "primaryReasonId": null,
+        "reasons": [],
+        "evidence": [],
+        "suggestions": [
+          {
+            "suggestionId": "view_generations",
+            "reference": {
+              "kind": "fleet",
+              "key": "shaula-lifecycle-1fed0db6-rollout",
+              "fleetIncarnation": "fdbfa386-d522-4765-bfef-67bafeab8b38"
+            }
+          }
+        ],
+        "capacity": null,
+        "rollout": {
+          "desiredRevision": "3",
+          "observedRevision": "3",
+          "previousPin": {
+            "key": "forgejo",
+            "revision": "2"
+          },
+          "candidatePin": {
+            "key": "forgejo",
+            "revision": "2"
+          }
+        }
+      }
+    ],
+    "related": [],
+    "truncated": false
+  },
+  "uiText": "Why\n−\nWhy are no more runners being created?\nSatisfied\n\npartial coverage · fresh · observed 2026-09-26T12:58:39.075Z\n\nEffective capacity meets the observed target\n\nEvidence and evaluated stages\n\nSource: recorded_decision. This explanation does not authorize lifecycle operations.\n\nauthority: passed\ndemand: passed\ncapacity: passed\npool: not_evaluated\nexecution_admission: not_evaluated\n\nEffective capacity meets the observed target\n\ncapacity.target_satisfied · info · informational\n\nderived_calculation: 2026-09-26T12:58:39.075Z (fresh)\n\ndemandKind\nforgejo_waiting_jobs\nmin\n0\nmax\n0\ndemand\n0\ntarget\n0\neffective\n0\noccupancy\n0\ndeficit\n0\noccupancyHeadroom\n0\narithmeticCreateAllowance\n0\nactuallyAdmitted\nUnknown\n\nview generations\n\nWhy has cleanup not finished?\nSatisfied\n\ncomplete coverage · fresh · observed 2026-09-26T12:58:39.075Z\n\nNo current evidence explains this question.\n\nEvidence and evaluated stages\n\nSource: ledger_projection. This explanation does not authorize lifecycle operations.\n\nintent: not_evaluated\nsafe_removal: not_evaluated\nexecution_admission: not_evaluated\nresource_cleanup: not_evaluated\nregistration_cleanup: not_evaluated\ncompletion: passed\n\nview generations\n\nWhy has the configuration not converged?\nSatisfied\n\npartial coverage · fresh · observed 2026-09-26T12:58:39.066Z\n\nNo current evidence explains this question.\n\nEvidence and evaluated stages\n\nSource: recorded_decision. This explanation does not authorize lifecycle operations.\n\ndependency_resolution: passed\ninput_compatibility: not_evaluated\noccupancy: not_evaluated\ncommit_fence: not_evaluated\n\nDesired revision 3; observed revision 3\n\nPrevious pin: forgejo@2\n\nCandidate pin: forgejo@2\n\nview generations",
+  "ledger": {
+    "fleet": {
+      "key": "shaula-lifecycle-1fed0db6-rollout",
+      "incarnation": "fdbfa386-d522-4765-bfef-67bafeab8b38",
+      "desired_revision": 3,
+      "observed_revision": 3,
+      "phase": "Ready"
+    },
+    "revisions": [
+      {
+        "revision": 1,
+        "template_profile_key": "forgejo",
+        "template_revision": 1,
+        "template_artifact_digest": "sha256:1470cef3f15eeb48b139e68414b4a3f2e1fd4b4cf330d5ddd16befa478ad177f"
+      },
+      {
+        "revision": 2,
+        "template_profile_key": "forgejo",
+        "template_revision": 1,
+        "template_artifact_digest": "sha256:1470cef3f15eeb48b139e68414b4a3f2e1fd4b4cf330d5ddd16befa478ad177f"
+      },
+      {
+        "revision": 3,
+        "template_profile_key": "forgejo",
+        "template_revision": 2,
+        "template_artifact_digest": "sha256:1470cef3f15eeb48b139e68414b4a3f2e1fd4b4cf330d5ddd16befa478ad177f"
+      }
+    ],
+    "generations": [
+      {
+        "id": "494be2b2-94c6-47c7-a7d7-e7db5a739764",
+        "fleet_key": "shaula-lifecycle-1fed0db6-rollout",
+        "fleet_revision": 1,
+        "template_revision": 1,
+        "state": "Destroyed",
+        "subphase": null,
+        "provisioned_at": 1790427466093,
+        "expiry_requested_at": null,
+        "resources_destroyed_at": null
+      }
+    ],
+    "operations": [
+      {
+        "id": "forgejo-register-494be2b2-94c6-47c7-a7d7-e7db5a739764",
+        "generation_id": "494be2b2-94c6-47c7-a7d7-e7db5a739764",
+        "kind": "ForgejoRegistration",
+        "state": "Completed",
+        "attempts": 1
+      },
+      {
+        "id": "1d96f404-5820-4412-9583-58f667d08f1e",
+        "generation_id": "494be2b2-94c6-47c7-a7d7-e7db5a739764",
+        "kind": "Create",
+        "state": "Succeeded",
+        "attempts": 1
+      },
+      {
+        "id": "396bcb10-dc8c-4cd2-a774-30ac81c82af0",
+        "generation_id": "494be2b2-94c6-47c7-a7d7-e7db5a739764",
+        "kind": "Destroy",
+        "state": "Succeeded",
+        "attempts": 1
+      }
+    ],
+    "invocations": [
+      {
+        "id": "92227b5e-e089-48a3-85ae-b108b4270d11",
+        "generationId": "494be2b2-94c6-47c7-a7d7-e7db5a739764",
+        "operation": "Create",
+        "outcome": "succeeded",
+        "commands": [
+          {
+            "phase": "init",
+            "exitCode": 0,
+            "effectAttemptId": null
+          }
+        ]
+      },
+      {
+        "id": "13655d01-d028-4d25-99a5-be3f79229dde",
+        "generationId": "494be2b2-94c6-47c7-a7d7-e7db5a739764",
+        "operation": "Destroy",
+        "outcome": "succeeded",
+        "commands": [
+          {
+            "phase": "plan",
+            "exitCode": 0,
+            "effectAttemptId": null
+          },
+          {
+            "phase": "apply",
+            "exitCode": 0,
+            "effectAttemptId": "396bcb10-dc8c-4cd2-a774-30ac81c82af0"
+          }
+        ]
+      },
+      {
+        "id": "12eee91d-92ec-4c9f-bebe-441b2b5a4cd9",
+        "generationId": "494be2b2-94c6-47c7-a7d7-e7db5a739764",
+        "operation": "Create",
+        "outcome": "succeeded",
+        "commands": [
+          {
+            "phase": "plan",
+            "exitCode": 0,
+            "effectAttemptId": null
+          },
+          {
+            "phase": "apply",
+            "exitCode": 0,
+            "effectAttemptId": "1d96f404-5820-4412-9583-58f667d08f1e"
+          }
+        ]
+      }
+    ]
+  },
+  "capacity": {
+    "assignedDemand": 0,
+    "effective": 0,
+    "occupancy": 0,
+    "target": 0
+  },
+  "provider": {
+    "runners": [],
+    "containers": []
+  }
+}

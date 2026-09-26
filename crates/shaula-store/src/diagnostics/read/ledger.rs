@@ -137,6 +137,9 @@ async fn generation(db: &impl ConnectionTrait, key: &str) -> StoreResult<Option<
             .try_get::<Option<i64>>("", "expiry_requested_at")?
             .is_some()
     {
+        // Expiry intent is durable even when a restart loses runtime capture.
+        // Keep the mode attached to that fact at both cleanup checkpoints.
+        cleanup.cleanup_mode = Some(CleanupMode::HardLifetime);
         cleanup.reason(
             Code::CleanupHardLifetime,
             StageId::Intent,

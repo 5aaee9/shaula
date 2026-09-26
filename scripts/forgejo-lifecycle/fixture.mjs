@@ -80,7 +80,7 @@ export class Fixture {
     const log = await open(join(this.directory, "daemon.log"), "a", 0o600);
     this.child = spawn(this.binary, ["serve", "--config", path], { stdio: ["ignore", log.fd, log.fd], env: {
       ...process.env, SHAULA_OIDC_PROVIDER: this.oidc.url, SHAULA_OIDC_CLIENT_ID: "fixture", SHAULA_OIDC_CLIENT_SECRET: "fixture-only",
-      SHAULA_OIDC_PUBLIC_URL: "https://shaula.example.invalid", SHAULA_OIDC_API_AUDIENCE: "shaula-api", SHAULA_OIDC_CA_CERT: this.oidc.certificate,
+      SHAULA_OIDC_PUBLIC_URL: this.publicUrl || "https://shaula.example.invalid", SHAULA_OIDC_API_AUDIENCE: "shaula-api", SHAULA_OIDC_CA_CERT: this.oidc.certificate,
     } });
     this.child.on("error", () => { this.spawnFailed = true; });
     await log.close();

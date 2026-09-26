@@ -92,6 +92,28 @@ test("stale and future outcome are displayed conservatively", async ({ page }) =
   await expect(panel.getByText("Blocked", { exact: true })).toHaveCount(0);
   await expect(panel.getByText(/observed 2026-09-26T00:00:00.000Z/)).toBeVisible();
 });
+
+test("cleanup distinguishes never-started, provider and operator completion", async ({ page }) => {
+  await mockApi(page);
+  for (const [source, text] of [
+    ["never_started", "Create apply never started"],
+    ["provider_cleanup", "Provider cleanup"],
+    ["operator_attested", "Operator attestation"],
+    ["future_source", "Unknown"],
+  ]) {
+    const data = report();
+    data.questions[0].question = "cleanup";
+    data.questions[0].outcome = "satisfied";
+    data.questions[0].reasons[0].code = "cleanup.completed";
+    data.questions[0].reasons[0].parameters = { completionSource: source };
+    await page.route("**/api/v1/fleets/linux-build/diagnostics", (route) =>
+      route.fulfill({ json: data }),
+    );
+    await page.goto("/fleets/linux-build");
+    await expect(page.getByText(`Completion source: ${text}`, { exact: true })).toBeVisible();
+    await page.unroute("**/api/v1/fleets/linux-build/diagnostics");
+  }
+});
 test("old server fallback does not report that the Fleet was deleted", async ({ page }) => {
   await mockApi(page);
   await page.route("**/api/v1/fleets/linux-build/diagnostics", (route) =>

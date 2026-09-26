@@ -1,0 +1,325 @@
+{
+  "name": "destroy-failure",
+  "capturedAt": "2026-09-26T12:57:20.536Z",
+  "expectedReason": "lifecycle.apply_outcome_unknown",
+  "http": {
+    "schemaVersion": 1,
+    "subject": {
+      "kind": "generation",
+      "id": "9995ba5f-c691-4618-8d56-132236416a8e",
+      "fleetIncarnation": "eb3a863b-25b9-4de8-81c7-5516251c8c3f"
+    },
+    "generatedAt": "2026-09-26T12:57:20.514Z",
+    "questions": [
+      {
+        "question": "readiness",
+        "outcome": "unknown",
+        "coverage": "partial",
+        "basis": {
+          "kind": "ledger_projection",
+          "observationId": null,
+          "observedAt": "2026-09-26T12:57:20.165Z",
+          "validUntil": null,
+          "freshness": "fresh",
+          "subjectRevision": "1"
+        },
+        "stages": [
+          {
+            "id": "create_effect",
+            "evaluation": "not_evaluated",
+            "reasonIds": [
+              "r-0"
+            ]
+          },
+          {
+            "id": "bootstrap",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "runner_inventory",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          }
+        ],
+        "primaryReasonId": null,
+        "reasons": [
+          {
+            "id": "r-0",
+            "code": "observation.missing",
+            "stage": "create_effect",
+            "severity": "warning",
+            "effect": "informational",
+            "parameters": {},
+            "evidenceIds": [
+              "e-0"
+            ],
+            "firstObservedAt": "2026-09-26T12:57:20.165Z",
+            "lastObservedAt": "2026-09-26T12:57:20.165Z"
+          }
+        ],
+        "evidence": [
+          {
+            "id": "e-0",
+            "kind": "controller_observation",
+            "observedAt": "2026-09-26T12:57:20.165Z",
+            "freshness": "fresh",
+            "validUntil": null,
+            "predicate": "observation.missing"
+          }
+        ],
+        "suggestions": [
+          {
+            "suggestionId": "view_invocations",
+            "reference": {
+              "kind": "generation",
+              "id": "9995ba5f-c691-4618-8d56-132236416a8e",
+              "fleetIncarnation": "eb3a863b-25b9-4de8-81c7-5516251c8c3f"
+            }
+          }
+        ],
+        "capacity": null
+      },
+      {
+        "question": "cleanup",
+        "outcome": "unknown",
+        "coverage": "partial",
+        "basis": {
+          "kind": "ledger_projection",
+          "observationId": null,
+          "observedAt": "2026-09-26T12:57:20.165Z",
+          "validUntil": null,
+          "freshness": "fresh",
+          "subjectRevision": "1"
+        },
+        "stages": [
+          {
+            "id": "intent",
+            "evaluation": "passed",
+            "reasonIds": [
+              "r-0"
+            ]
+          },
+          {
+            "id": "safe_removal",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "execution_admission",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "resource_cleanup",
+            "evaluation": "unknown",
+            "reasonIds": [
+              "r-1"
+            ]
+          },
+          {
+            "id": "registration_cleanup",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "completion",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          }
+        ],
+        "primaryReasonId": null,
+        "reasons": [
+          {
+            "id": "r-0",
+            "code": "cleanup.hard_lifetime",
+            "stage": "intent",
+            "severity": "warning",
+            "effect": "informational",
+            "parameters": {},
+            "evidenceIds": [
+              "e-0"
+            ],
+            "firstObservedAt": "2026-09-26T12:57:20.165Z",
+            "lastObservedAt": "2026-09-26T12:57:20.165Z"
+          },
+          {
+            "id": "r-1",
+            "code": "lifecycle.apply_outcome_unknown",
+            "stage": "resource_cleanup",
+            "severity": "warning",
+            "effect": "informational",
+            "parameters": {},
+            "evidenceIds": [
+              "e-1"
+            ],
+            "firstObservedAt": "2026-09-26T12:57:20.165Z",
+            "lastObservedAt": "2026-09-26T12:57:20.165Z"
+          }
+        ],
+        "evidence": [
+          {
+            "id": "e-0",
+            "kind": "ledger_fact",
+            "observedAt": "2026-09-26T12:57:20.165Z",
+            "freshness": "fresh",
+            "validUntil": null,
+            "predicate": "cleanup.hard_lifetime"
+          },
+          {
+            "id": "e-1",
+            "kind": "ledger_fact",
+            "observedAt": "2026-09-26T12:57:20.165Z",
+            "freshness": "fresh",
+            "validUntil": null,
+            "predicate": "lifecycle.apply_outcome_unknown"
+          }
+        ],
+        "suggestions": [
+          {
+            "suggestionId": "view_invocations",
+            "reference": {
+              "kind": "generation",
+              "id": "9995ba5f-c691-4618-8d56-132236416a8e",
+              "fleetIncarnation": "eb3a863b-25b9-4de8-81c7-5516251c8c3f"
+            }
+          }
+        ],
+        "capacity": null,
+        "cleanupMode": "hard_lifetime"
+      }
+    ],
+    "related": [],
+    "truncated": false
+  },
+  "uiText": "Why\n−\nWhy is the runner not ready?\nUnknown\n\npartial coverage · fresh · observed 2026-09-26T12:57:20.165Z\n\nNecessary evidence has not been collected\n\nEvidence and evaluated stages\n\nSource: ledger_projection. This explanation does not authorize lifecycle operations.\n\ncreate_effect: not_evaluated\nbootstrap: not_evaluated\nrunner_inventory: not_evaluated\n\nNecessary evidence has not been collected\n\nobservation.missing · warning · informational\n\ncontroller_observation: 2026-09-26T12:57:20.165Z (fresh)\n\nview invocations\n\nWhy has cleanup not finished?\nUnknown\n\npartial coverage · fresh · observed 2026-09-26T12:57:20.165Z\n\nMaximum lifetime cleanup may interrupt a busy job\n\nEvidence and evaluated stages\n\nSource: ledger_projection. This explanation does not authorize lifecycle operations.\n\nintent: passed\nsafe_removal: not_evaluated\nexecution_admission: not_evaluated\nresource_cleanup: unknown\nregistration_cleanup: not_evaluated\ncompletion: not_evaluated\n\nMaximum lifetime cleanup may interrupt a busy job\n\ncleanup.hard_lifetime · warning · informational\n\nledger_fact: 2026-09-26T12:57:20.165Z (fresh)\n\nApply may have started; its outcome is unknown\n\nlifecycle.apply_outcome_unknown · warning · informational\n\nledger_fact: 2026-09-26T12:57:20.165Z (fresh)\n\nCleanup mode: hard_lifetime\n\nview invocations",
+  "ledger": {
+    "fleet": {
+      "key": "shaula-lifecycle-1fed0db6-destroy",
+      "incarnation": "eb3a863b-25b9-4de8-81c7-5516251c8c3f",
+      "desired_revision": 2,
+      "observed_revision": 2,
+      "phase": "Reconciling"
+    },
+    "revisions": [
+      {
+        "revision": 1,
+        "template_profile_key": "forgejo",
+        "template_revision": 1,
+        "template_artifact_digest": "sha256:1470cef3f15eeb48b139e68414b4a3f2e1fd4b4cf330d5ddd16befa478ad177f"
+      },
+      {
+        "revision": 2,
+        "template_profile_key": "forgejo",
+        "template_revision": 1,
+        "template_artifact_digest": "sha256:1470cef3f15eeb48b139e68414b4a3f2e1fd4b4cf330d5ddd16befa478ad177f"
+      }
+    ],
+    "generations": [
+      {
+        "id": "9995ba5f-c691-4618-8d56-132236416a8e",
+        "fleet_key": "shaula-lifecycle-1fed0db6-destroy",
+        "fleet_revision": 1,
+        "template_revision": 1,
+        "state": "Destroying",
+        "subphase": null,
+        "provisioned_at": 1790427409849,
+        "expiry_requested_at": 1790427425167,
+        "resources_destroyed_at": null
+      }
+    ],
+    "operations": [
+      {
+        "id": "forgejo-register-9995ba5f-c691-4618-8d56-132236416a8e",
+        "generation_id": "9995ba5f-c691-4618-8d56-132236416a8e",
+        "kind": "ForgejoRegistration",
+        "state": "Completed",
+        "attempts": 1
+      },
+      {
+        "id": "110dd299-59c3-4785-8a52-8c4601ad2b04",
+        "generation_id": "9995ba5f-c691-4618-8d56-132236416a8e",
+        "kind": "Create",
+        "state": "Succeeded",
+        "attempts": 1
+      },
+      {
+        "id": "9d5057bb-e5af-4d34-b656-f8b5b2aeb52c",
+        "generation_id": "9995ba5f-c691-4618-8d56-132236416a8e",
+        "kind": "Destroy",
+        "state": "ApplyStarting",
+        "attempts": 0
+      }
+    ],
+    "invocations": [
+      {
+        "id": "f5275701-359a-4cac-9807-db777e664ce7",
+        "generationId": "9995ba5f-c691-4618-8d56-132236416a8e",
+        "operation": "Create",
+        "outcome": "succeeded",
+        "commands": [
+          {
+            "phase": "init",
+            "exitCode": 0,
+            "effectAttemptId": null
+          }
+        ]
+      },
+      {
+        "id": "767d6768-d1fb-47ef-b820-c8fae47da003",
+        "generationId": "9995ba5f-c691-4618-8d56-132236416a8e",
+        "operation": "Destroy",
+        "outcome": "failed",
+        "commands": [
+          {
+            "phase": "plan",
+            "exitCode": 0,
+            "effectAttemptId": null
+          },
+          {
+            "phase": "apply",
+            "exitCode": 1,
+            "effectAttemptId": "9d5057bb-e5af-4d34-b656-f8b5b2aeb52c"
+          }
+        ]
+      },
+      {
+        "id": "323a4adb-8969-4048-aef4-15e24a5b76e0",
+        "generationId": "9995ba5f-c691-4618-8d56-132236416a8e",
+        "operation": "Create",
+        "outcome": "succeeded",
+        "commands": [
+          {
+            "phase": "plan",
+            "exitCode": 0,
+            "effectAttemptId": null
+          },
+          {
+            "phase": "apply",
+            "exitCode": 0,
+            "effectAttemptId": "110dd299-59c3-4785-8a52-8c4601ad2b04"
+          }
+        ]
+      },
+      {
+        "id": "fe325bb6-02eb-4504-8824-668c7d09378c",
+        "generationId": "9995ba5f-c691-4618-8d56-132236416a8e",
+        "operation": "Destroy",
+        "outcome": "running",
+        "commands": []
+      }
+    ]
+  },
+  "capacity": {
+    "assignedDemand": 0,
+    "effective": 0,
+    "occupancy": 1,
+    "target": 0
+  },
+  "provider": {
+    "runners": [],
+    "containers": [
+      "bc18e52b42cd3a8efeca47a30d32c1fa353e6b52d26a15f4155232aeb4d3be70"
+    ]
+  }
+}

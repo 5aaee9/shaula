@@ -58,16 +58,28 @@ These are local tests, not real provider acceptance.
 Verified locally on Windows:
 
 - `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Unfiltered `cargo nextest run --manifest-path Cargo.toml --workspace --no-fail-fast --status-level fail --final-status-level fail`: 1,004 passed, 2 skipped.
+- Unfiltered `cargo nextest run --manifest-path Cargo.toml --workspace --no-fail-fast --status-level fail --final-status-level fail`: 1,005 passed, 2 skipped after the DX-30 follow-up.
 - The separately requested `cargo nextest run --manifest-path Cargo.toml --workspace test` uses a name filter; it is supplementary to the unfiltered suite.
-- Web `npm run lint`, `npm run fmt:check`, `npm run build`, and the complete Playwright suite passed (202 tests); all 8 diagnostics browser tests were repeated after the final display adjustment.
+- Web `npm run lint`, `npm run fmt:check`, and `npm run build` passed. The initial complete Playwright suite passed (202 tests); the DX-30 follow-up passed all 9 diagnostics browser tests, including completion provenance.
 - All changed Rust files are at most 400 lines. Rust and Web catalogs both contain the same 41 reason codes.
 
-**Release gate still open: DX-30.** A selected isolated GitHub/Forgejo repository
-and resource platform/version tuple are required for real no-create,
-waiting-online, destroy-failure and rollout-lag scenarios. No production failure
-injection or deployment was performed. No claim is made that local mocks cover
-external platform behavior or all six resource platforms. Test totals above do not replace that release gate.
+**DX-30 passed for the selected Forgejo/Docker tuple.** The user-selected local
+Hyper-V VM ran actual Shaula, Forgejo 16.0.4, official Runner 13.1.0, Docker
+29.1.3 and Terraform 1.9.8/provider 3.0.2. All four real no-create,
+waiting-online, destroy-failure and rollout-lag scenarios passed in one run,
+including recovery and UI/HTTP/domain-ledger/provider comparisons. The
+[seven paired receipts and reproducible environment](evidence/0041-dx30-hyperv-2026-09-26/README.md)
+retain sanitized JSON, actual UI screenshots, source/binary hashes and cleanup
+checks. The experiment exposed and fixed omitted completion provenance in the
+UI and missing hard-lifetime mode in the ledger-only projection after restart.
+The latter has a red/green real-SQLite regression with optional projections absent.
+
+The requested filtered nextest command also passed (770 tests, 237 skipped), as
+did six Linux harness tests. No production instance was changed. Hyper-V is the
+test host, not a Runner resource backend; this result does not establish real
+GitHub, all six resource platforms, ordinary busy-safe drain, or an independent
+registration-DELETE failure. Test resources were reclaimed and the VM retained
+powered off with private raw evidence excluded from the repository.
 
 ## Personal access tokens and remote CLI (2026-09-25)
 

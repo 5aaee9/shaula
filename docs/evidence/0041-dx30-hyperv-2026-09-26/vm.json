@@ -1,0 +1,14 @@
+{
+  "name": "shaula-dx30-20260926",
+  "state": "Off",
+  "generation": 2,
+  "processorCount": 8,
+  "memoryStartupBytes": 17179869184,
+  "automaticStartAction": "Nothing",
+  "diskFormat": "VHDX",
+  "diskType": "Dynamic",
+  "diskSizeBytes": 107374182400,
+  "diskFileSizeBytes": 11580473344,
+  "parentPath": "",
+  "checkedAt": "2026-09-26T13:01:07.2908476Z"
+}

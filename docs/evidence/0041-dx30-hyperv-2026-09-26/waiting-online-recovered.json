@@ -1,0 +1,269 @@
+{
+  "name": "waiting-online-recovered",
+  "capturedAt": "2026-09-26T12:56:30.912Z",
+  "expectedReason": "cleanup.completed",
+  "http": {
+    "schemaVersion": 1,
+    "subject": {
+      "kind": "generation",
+      "id": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+      "fleetIncarnation": "be01d847-2dc0-4f4a-a572-3bad216749c4"
+    },
+    "generatedAt": "2026-09-26T12:56:30.893Z",
+    "questions": [
+      {
+        "question": "readiness",
+        "outcome": "not_applicable",
+        "coverage": "complete",
+        "basis": {
+          "kind": "ledger_projection",
+          "observationId": null,
+          "observedAt": "2026-09-26T12:56:30.667Z",
+          "validUntil": null,
+          "freshness": "fresh",
+          "subjectRevision": "1"
+        },
+        "stages": [
+          {
+            "id": "create_effect",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "bootstrap",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "runner_inventory",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          }
+        ],
+        "primaryReasonId": null,
+        "reasons": [],
+        "evidence": [],
+        "suggestions": [
+          {
+            "suggestionId": "view_invocations",
+            "reference": {
+              "kind": "generation",
+              "id": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+              "fleetIncarnation": "be01d847-2dc0-4f4a-a572-3bad216749c4"
+            }
+          }
+        ],
+        "capacity": null
+      },
+      {
+        "question": "cleanup",
+        "outcome": "satisfied",
+        "coverage": "complete",
+        "basis": {
+          "kind": "ledger_projection",
+          "observationId": null,
+          "observedAt": "2026-09-26T12:56:30.667Z",
+          "validUntil": null,
+          "freshness": "fresh",
+          "subjectRevision": "1"
+        },
+        "stages": [
+          {
+            "id": "intent",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "safe_removal",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "execution_admission",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "resource_cleanup",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "registration_cleanup",
+            "evaluation": "not_evaluated",
+            "reasonIds": []
+          },
+          {
+            "id": "completion",
+            "evaluation": "passed",
+            "reasonIds": [
+              "r-0"
+            ]
+          }
+        ],
+        "primaryReasonId": null,
+        "reasons": [
+          {
+            "id": "r-0",
+            "code": "cleanup.completed",
+            "stage": "completion",
+            "severity": "info",
+            "effect": "informational",
+            "parameters": {
+              "completionSource": "provider_cleanup"
+            },
+            "evidenceIds": [
+              "e-0"
+            ],
+            "firstObservedAt": "2026-09-26T12:56:30.667Z",
+            "lastObservedAt": "2026-09-26T12:56:30.667Z"
+          }
+        ],
+        "evidence": [
+          {
+            "id": "e-0",
+            "kind": "ledger_fact",
+            "observedAt": "2026-09-26T12:56:30.667Z",
+            "freshness": "fresh",
+            "validUntil": null,
+            "predicate": "cleanup.completed"
+          }
+        ],
+        "suggestions": [
+          {
+            "suggestionId": "view_invocations",
+            "reference": {
+              "kind": "generation",
+              "id": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+              "fleetIncarnation": "be01d847-2dc0-4f4a-a572-3bad216749c4"
+            }
+          }
+        ],
+        "capacity": null
+      }
+    ],
+    "related": [],
+    "truncated": false
+  },
+  "uiText": "Why\n−\nWhy is the runner not ready?\nNot applicable\n\ncomplete coverage · fresh · observed 2026-09-26T12:56:30.667Z\n\nNo current evidence explains this question.\n\nEvidence and evaluated stages\n\nSource: ledger_projection. This explanation does not authorize lifecycle operations.\n\ncreate_effect: not_evaluated\nbootstrap: not_evaluated\nrunner_inventory: not_evaluated\n\nview invocations\n\nWhy has cleanup not finished?\nSatisfied\n\ncomplete coverage · fresh · observed 2026-09-26T12:56:30.667Z\n\nThe domain ledger records cleanup completion\n\nCompletion source: Provider cleanup\n\nEvidence and evaluated stages\n\nSource: ledger_projection. This explanation does not authorize lifecycle operations.\n\nintent: not_evaluated\nsafe_removal: not_evaluated\nexecution_admission: not_evaluated\nresource_cleanup: not_evaluated\nregistration_cleanup: not_evaluated\ncompletion: passed\n\nThe domain ledger records cleanup completion\n\ncleanup.completed · info · informational\n\nledger_fact: 2026-09-26T12:56:30.667Z (fresh)\n\nview invocations",
+  "ledger": {
+    "fleet": {
+      "key": "shaula-lifecycle-1fed0db6-waiting",
+      "incarnation": "be01d847-2dc0-4f4a-a572-3bad216749c4",
+      "desired_revision": 2,
+      "observed_revision": 2,
+      "phase": "Ready"
+    },
+    "revisions": [
+      {
+        "revision": 1,
+        "template_profile_key": "forgejo",
+        "template_revision": 1,
+        "template_artifact_digest": "sha256:1470cef3f15eeb48b139e68414b4a3f2e1fd4b4cf330d5ddd16befa478ad177f"
+      },
+      {
+        "revision": 2,
+        "template_profile_key": "forgejo",
+        "template_revision": 1,
+        "template_artifact_digest": "sha256:1470cef3f15eeb48b139e68414b4a3f2e1fd4b4cf330d5ddd16befa478ad177f"
+      }
+    ],
+    "generations": [
+      {
+        "id": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+        "fleet_key": "shaula-lifecycle-1fed0db6-waiting",
+        "fleet_revision": 1,
+        "template_revision": 1,
+        "state": "Destroyed",
+        "subphase": null,
+        "provisioned_at": 1790427364900,
+        "expiry_requested_at": null,
+        "resources_destroyed_at": null
+      }
+    ],
+    "operations": [
+      {
+        "id": "forgejo-register-84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+        "generation_id": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+        "kind": "ForgejoRegistration",
+        "state": "Completed",
+        "attempts": 1
+      },
+      {
+        "id": "b0221e04-83c1-42f1-a9ce-fa21e9dc05e1",
+        "generation_id": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+        "kind": "Create",
+        "state": "Succeeded",
+        "attempts": 1
+      },
+      {
+        "id": "a40724ed-703c-47c2-bf41-034463441e3a",
+        "generation_id": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+        "kind": "Destroy",
+        "state": "Succeeded",
+        "attempts": 1
+      }
+    ],
+    "invocations": [
+      {
+        "id": "cd493fb7-f63e-4e78-b15b-c568176bd02a",
+        "generationId": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+        "operation": "Create",
+        "outcome": "succeeded",
+        "commands": [
+          {
+            "phase": "init",
+            "exitCode": 0,
+            "effectAttemptId": null
+          }
+        ]
+      },
+      {
+        "id": "4dce0370-2a2d-4ff5-8654-99a9ad904e97",
+        "generationId": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+        "operation": "Destroy",
+        "outcome": "succeeded",
+        "commands": [
+          {
+            "phase": "plan",
+            "exitCode": 0,
+            "effectAttemptId": null
+          },
+          {
+            "phase": "apply",
+            "exitCode": 0,
+            "effectAttemptId": "a40724ed-703c-47c2-bf41-034463441e3a"
+          }
+        ]
+      },
+      {
+        "id": "17445f20-50fc-417a-a72f-92e5aa7d52d5",
+        "generationId": "84447e04-44e9-4fa7-8b6c-004e6e4fd9c0",
+        "operation": "Create",
+        "outcome": "succeeded",
+        "commands": [
+          {
+            "phase": "plan",
+            "exitCode": 0,
+            "effectAttemptId": null
+          },
+          {
+            "phase": "apply",
+            "exitCode": 0,
+            "effectAttemptId": "b0221e04-83c1-42f1-a9ce-fa21e9dc05e1"
+          }
+        ]
+      }
+    ]
+  },
+  "capacity": {
+    "assignedDemand": 0,
+    "effective": 0,
+    "occupancy": 0,
+    "target": 0
+  },
+  "provider": {
+    "runners": [],
+    "containers": []
+  }
+}

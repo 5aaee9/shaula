@@ -3,11 +3,29 @@ import { createServer, request } from "node:http";
 
 export async function faultProxy({ socketPath, target, listen }) {
   const gate = { block: false, failures: 0, failJobs: false, jobFailures: 0,
-    dropRegistrationResponses: false, registrationPosts: 0, droppedRegistrations: 0 };
+    dropRegistrationResponses: false, registrationPosts: 0, droppedRegistrations: 0,
+    failImageRead: false, imageFailures: 0, blockDeclare: false, declareFailures: 0,
+    containerCreates: 0, containerDeletes: 0 };
   const server = createServer((incoming, outgoing) => {
     const path = new URL(incoming.url, "http://fixture.invalid").pathname;
     const register = target && incoming.method === "POST" && path === "/api/v1/admin/actions/runners";
     if (register) gate.registrationPosts++;
+    if (socketPath && incoming.method === "POST" && /^\/(?:v[\d.]+\/)?containers\/create$/.test(path)) gate.containerCreates++;
+    if (socketPath && incoming.method === "DELETE" && /^\/(?:v[\d.]+\/)?containers\/[a-f0-9]+$/.test(path)) gate.containerDeletes++;
+    // A real provider plan must fail before apply; never forge ledger records.
+    if (gate.failImageRead && socketPath && incoming.method === "GET" && /^\/(?:v[\d.]+\/)?images\//.test(path)) {
+      gate.imageFailures++;
+      outgoing.writeHead(503, { "content-type": "application/json" });
+      outgoing.end('{"message":"disposable image lookup fault"}');
+      return;
+    }
+    // Only the initial Declare RPC is affected, never FetchTask/acquisition.
+    if (gate.blockDeclare && target && incoming.method === "POST" && path.endsWith("/runner.v1.RunnerService/Declare")) {
+      gate.declareFailures++;
+      outgoing.writeHead(503, { "content-type": "application/json" });
+      outgoing.end('{"code":"unavailable","msg":"disposable readiness fault"}');
+      return;
+    }
     if (gate.failJobs && target && incoming.method === "GET" && path === "/api/v1/admin/actions/runners/jobs") {
       gate.jobFailures++;
       outgoing.writeHead(503, { "content-type": "application/json" });
