@@ -1,0 +1,33 @@
+{
+  "kind": "shaula-forgejo-lifecycle/v2",
+  "platform": "docker",
+  "suite": "backend-outage",
+  "serverImage": "codeberg.org/forgejo/forgejo:16.0.4",
+  "runnerImage": "code.forgejo.org/forgejo/runner:13.1.0@sha256:c4af85fd9f0dd03788676a534781a87c71aa2c6a37737143e017eb94d4312952",
+  "checks": {},
+  "passed": true,
+  "runtimeTuple": {
+    "sourceCommit": "050f1ba95e2b169c1fabad9dff0cca86f9f65214",
+    "binaryDigest": "sha256:4df6a0a9e95a3de8c7cc138867501292f21f2b386be8abae660a6cd2feae3445",
+    "kernel": "6.17.0-1022-azure",
+    "containment": "linux-cgroup-v2",
+    "terraformVersion": "1.9.8",
+    "providerLockDigest": "sha256:541a79ea1f8f922d68c5e0b00dbaaf8d78c3a43bd172d32a8a209ce12c7c951a"
+  },
+  "engineVersion": "28.0.4",
+  "artifactDigest": "sha256:ede9d61cbf834ccc10ccfd9836491b04d556ed3ccb2e7f5317c12ec60f78de20",
+  "backendOutage": {
+    "rejectedStateRequests": 4,
+    "emergencyDigest": "sha256:7a5ccbafaec236ed51702af740f903f4bc73ee8d787acd07d1399d7344c1f9e5",
+    "creates": 1,
+    "createReplays": 0,
+    "occupancy": 1,
+    "outcome": "quarantined; original workspace and emergency bytes retained"
+  },
+  "faults": {
+    "dockerDelete": 0,
+    "registrationDelete": 0,
+    "jobsRead": 0,
+    "registrationResponseLost": 0
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "kind": "shaula-forgejo-lifecycle/v2",
+  "platform": "docker",
+  "suite": "backup",
+  "serverImage": "codeberg.org/forgejo/forgejo:16.0.4",
+  "runnerImage": "code.forgejo.org/forgejo/runner:13.1.0@sha256:c4af85fd9f0dd03788676a534781a87c71aa2c6a37737143e017eb94d4312952",
+  "checks": {},
+  "passed": true,
+  "runtimeTuple": {
+    "sourceCommit": "e3f2fb88b096b389c232c42a4a31cc879deac3ea",
+    "binaryDigest": "sha256:4df6a0a9e95a3de8c7cc138867501292f21f2b386be8abae660a6cd2feae3445",
+    "kernel": "6.17.0-1022-azure",
+    "containment": "linux-cgroup-v2",
+    "terraformVersion": "1.9.8",
+    "providerLockDigest": "sha256:541a79ea1f8f922d68c5e0b00dbaaf8d78c3a43bd172d32a8a209ce12c7c951a"
+  },
+  "engineVersion": "28.0.4",
+  "artifactDigest": "sha256:97b5ea081ed8b5881f98c64bf435d053e88ac2d8607cd94331aee54414c8d7c5",
+  "workerBackup": {
+    "completeSetFiles": 26,
+    "sqliteQuickCheck": "ok",
+    "originalWriters": "fenced before copy",
+    "manifestVerified": true,
+    "originalDirectory": "preserved",
+    "restoredEpoch": 2,
+    "duplicateCreates": 0,
+    "duplicateRegistrations": 0,
+    "cleanup": "Destroyed; occupancy zero; resource and registration absent",
+    "scope": "quiescent same-host full-set restore; post-checkpoint divergent authority is not rolled back"
+  },
+  "backupDivergence": {
+    "oldCheckpoint": "868ba55aab7eddd92b2dc4e1b66f7635bc11cc72cacbb2dd056c934649bc20fe",
+    "retainedAuthority": "a02abe67c790a87e1cd266e8d3aaf8933f8ca0df37708f2ee3e68660646ec46b",
+    "lateCreates": 1,
+    "rollback": "refused before replacing any live file",
+    "recovery": "current authority resumed; exact resource reclaimed"
+  },
+  "faults": {
+    "dockerDelete": 0,
+    "registrationDelete": 0,
+    "jobsRead": 0,
+    "registrationResponseLost": 0
+  }
+}

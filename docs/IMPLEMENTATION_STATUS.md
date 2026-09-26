@@ -108,11 +108,27 @@ Local evidence obtained for this implementation:
   These later changes require their own final CI results; earlier platform passes
   are evidence for their named commits, not automatic acceptance of later code.
 
+- The independent hosted-Linux jobs at `935a5a0` passed actual lost Spawn ACK,
+  exec-before-Create crash, DELETE/Create-start competition, crash after committed
+  Create intent, and daemon SIGKILL after the Engine accepted Create. They also
+  passed a fenced full-set backup/restore with exact subsequent cleanup, plus
+  rejection of an older checkpoint after a real later external Create. Original
+  structured receipts and precise boundaries are in the
+  [Worker acceptance evidence](evidence/0042-worker-acceptance-2026-09-26/README.md).
+  The corrected real state-outage job at `6697ee3` also passes: emergency state
+  remains byte-exact after restart and no Create is replayed when HTTP recovers.
+  The four-Worker pressure profile passes on the same head: six competing Fleets,
+  three admissions and one recovery reserve, one mutation permit, peak Worker
+  RSS 30,544 KiB/two threads, and successful recovery at saturation. During 1,104
+  bounded log replays, 67 state requests complete with maximum latency 331 ms.
+  This is not maximum-count or arbitrary production-capacity acceptance.
+
 **Release/merge acceptance is not yet complete.** The changed default path still
 needs actual updated-binary GitHub lifecycle evidence (LW-32) and final CI on the
-review fixes above. Full composition fault coverage for
-LW-11–15, backup/restore with late external effects (LW-28), and saturation/RSS/
-recovery-reserve behavior (LW-30) are not established by the local tests above.
+tested head. The remaining LW-11–15 composition cases include Auth Handoff and
+the exact pre-exec/PID-reuse/guardian boundaries. The final CI rerun after the
+ready-runner observation fix remains pending. The scoped LW-28 rehearsal
+above does not establish arbitrary production rollback or cross-host recovery.
 Historical platform receipts and old-binary workflows do not satisfy this gate.
 The implementation changes the default production path and requires explicit
 worker limits; it must not be deployed as an adapter-only, backward-compatible

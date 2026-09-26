@@ -1,0 +1,45 @@
+{
+  "kind": "shaula-forgejo-lifecycle/v2",
+  "platform": "docker",
+  "suite": "control",
+  "serverImage": "codeberg.org/forgejo/forgejo:16.0.4",
+  "runnerImage": "code.forgejo.org/forgejo/runner:13.1.0@sha256:c4af85fd9f0dd03788676a534781a87c71aa2c6a37737143e017eb94d4312952",
+  "checks": {},
+  "passed": true,
+  "runtimeTuple": {
+    "sourceCommit": "e3f2fb88b096b389c232c42a4a31cc879deac3ea",
+    "binaryDigest": "sha256:4df6a0a9e95a3de8c7cc138867501292f21f2b386be8abae660a6cd2feae3445",
+    "kernel": "6.17.0-1022-azure",
+    "containment": "linux-cgroup-v2",
+    "terraformVersion": "1.9.8",
+    "providerLockDigest": "sha256:541a79ea1f8f922d68c5e0b00dbaaf8d78c3a43bd172d32a8a209ce12c7c951a"
+  },
+  "engineVersion": "28.0.4",
+  "artifactDigest": "sha256:d24b40c82f08d115fe28560a3ae0fc61f9a618e49ea727bb1ba1badba58ee946",
+  "controlFaults": {
+    "spawnAckLost": {
+      "lostReplies": 2,
+      "creates": 1,
+      "cleanup": "Destroyed"
+    },
+    "crashBeforeCreate": {
+      "creates": 0,
+      "registrations": 0,
+      "cleanup": "NeverStarted; occupancy zero"
+    },
+    "deleteBeforeCreateStart": {
+      "lateCreates": 0,
+      "generationState": "Destroyed"
+    },
+    "crashAfterCreateIntent": {
+      "creates": 0,
+      "outcome": "quarantined; occupancy one"
+    }
+  },
+  "faults": {
+    "dockerDelete": 0,
+    "registrationDelete": 0,
+    "jobsRead": 0,
+    "registrationResponseLost": 0
+  }
+}

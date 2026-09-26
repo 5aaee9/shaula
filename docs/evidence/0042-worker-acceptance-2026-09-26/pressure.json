@@ -1,0 +1,45 @@
+{
+  "kind": "shaula-forgejo-lifecycle/v2",
+  "platform": "docker",
+  "suite": "pressure",
+  "serverImage": "codeberg.org/forgejo/forgejo:16.0.4",
+  "runnerImage": "code.forgejo.org/forgejo/runner:13.1.0@sha256:c4af85fd9f0dd03788676a534781a87c71aa2c6a37737143e017eb94d4312952",
+  "checks": {},
+  "passed": true,
+  "runtimeTuple": {
+    "sourceCommit": "050f1ba95e2b169c1fabad9dff0cca86f9f65214",
+    "binaryDigest": "sha256:4df6a0a9e95a3de8c7cc138867501292f21f2b386be8abae660a6cd2feae3445",
+    "kernel": "6.17.0-1022-azure",
+    "containment": "linux-cgroup-v2",
+    "terraformVersion": "1.9.8",
+    "providerLockDigest": "sha256:541a79ea1f8f922d68c5e0b00dbaaf8d78c3a43bd172d32a8a209ce12c7c951a"
+  },
+  "engineVersion": "28.0.4",
+  "artifactDigest": "sha256:5df49455749756526f31546127ddd955e7759156cc066edfe6d54d00fd070210",
+  "workerPressure": {
+    "maxWorkers": 4,
+    "recoveryReserve": 1,
+    "competingFleets": 6,
+    "admittedWorkers": 3,
+    "mutationPermits": 1,
+    "samples": 20,
+    "maxWorkerRssKiB": 30544,
+    "maxWorkerThreads": 2,
+    "maxSixStatusReadsMs": 13,
+    "recoveryAtSaturation": "passed",
+    "logLoad": {
+      "duplicateDeliveries": 1104,
+      "refusedDuplicates": 653,
+      "stateRequests": 67,
+      "maxStateMs": 331,
+      "duplicateInflightLimit": 32
+    },
+    "scope": "four-worker profile with real log replay pressure; not a 1,024-worker capacity claim"
+  },
+  "faults": {
+    "dockerDelete": 0,
+    "registrationDelete": 0,
+    "jobsRead": 0,
+    "registrationResponseLost": 0
+  }
+}
