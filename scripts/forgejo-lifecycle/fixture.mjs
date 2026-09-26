@@ -36,7 +36,7 @@ export class Fixture {
     assert.match(gateway, /^\d+\.\d+\.\d+\.\d+$/);
     // Run the harness in the Docker host network namespace. A rootless daemon
     // needs nsenter; the probe fails explicitly rather than changing templates.
-    const port = await freePort();
+    const port = await freePort(gateway);
     this.direct = `http://${gateway}:${port}`;
     await this.cli("pull", serverImage);
     await this.cli("pull", runnerImage);
@@ -55,9 +55,8 @@ export class Fixture {
     this.token = await this.cli("exec", "--user", "git", this.server, "forgejo", "admin", "user", "generate-access-token",
       "--username", this.user, "--token-name", "disposable", "--scopes", "all", "--raw");
     assert(/^[a-f0-9]{40}$/.test(this.token), "generated administrator token format");
-    const relayPort = await freePort();
-    this.target = `http://${gateway}:${relayPort}`;
-    this.registrationProxy = await faultProxy({ target: this.direct, listen: { port: relayPort, host: gateway } });
+    this.registrationProxy = await faultProxy({ target: this.direct, listen: { port: 0, host: gateway } });
+    this.target = `http://${gateway}:${this.registrationProxy.address.port}`;
     this.proxySocket = join(this.directory, "docker.sock");
     this.dockerProxy = await faultProxy({ socketPath: this.socket.slice(7), listen: this.proxySocket });
     this.oidc = await issuer(this.directory);

@@ -56,5 +56,5 @@ export async function faultProxy({ socketPath, target, listen }) {
     incoming.pipe(remote);
   });
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(listen, resolve); });
-  return { gate, close: () => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }) };
+  return { gate, address: server.address(), close: () => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }) };
 }

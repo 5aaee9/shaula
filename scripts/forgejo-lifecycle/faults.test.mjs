@@ -42,9 +42,10 @@ test("demand failure and a lost registration response never intercept task acqui
     } else { res.writeHead(204); res.end(); }
   });
   await new Promise(resolve => upstream.listen(0,"127.0.0.1",resolve));
-  const port = await freePort();
-  const proxy = await faultProxy({target:`http://127.0.0.1:${upstream.address().port}`,listen:{host:"127.0.0.1",port}});
-  const url = `http://127.0.0.1:${port}`;
+  const proxy = await faultProxy({target:`http://127.0.0.1:${upstream.address().port}`,listen:{host:"127.0.0.1",port:0}});
+  assert(proxy.address.port > 0);
+  assert.notEqual(proxy.address.port, upstream.address().port);
+  const url = `http://127.0.0.1:${proxy.address.port}`;
   try {
     proxy.gate.failJobs = true;
     assert.equal((await fetch(`${url}/api/v1/admin/actions/runners/jobs?labels=linux`)).status,503);
