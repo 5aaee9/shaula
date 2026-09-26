@@ -39,6 +39,8 @@ export async function workerBackup(fixture) {
   const key = `${fixture.prefix}-backup`;
   await fixture.createFleet(key, 1);
   const observed = await fixture.observe(key, "idle");
+  await until("original Create is durably settled before backup", () => workers(fixture, key)[0]?.state === "Idle");
+  console.log("Backup checkpoint: original idle resource observed");
   await fixture.capZero(key);
   const original = workers(fixture, key)[0];
   const identity = JSON.parse(original.process_identity);
@@ -66,8 +68,10 @@ export async function workerBackup(fixture) {
   assert.equal(commitment(await manifest(data)), commitment(files));
   assert.equal(await fixture.cli("ps", "-a", "--no-trunc", "-q", "--filter", `label=shaula.fleet=${key}`), observed.id);
   await restoreUnchanged(fixture, directory, "preserved-before-restore");
+  console.log("Backup checkpoint: complete set restored with original writers stopped");
   await fixture.startDaemon();
-  assert(workers(fixture, key)[0].worker_epoch > original.worker_epoch, "restore must rotate the fenced epoch");
+  await until("restore rotates the fenced epoch", () => workers(fixture, key)[0].worker_epoch > original.worker_epoch);
+  console.log("Backup checkpoint: fenced recovery epoch observed");
   await fixture.queue(key, 8);
   await fixture.observe(key, "active");
   await fixture.reclaimed(key, observed);
@@ -92,6 +96,7 @@ export async function backupDivergence(fixture) {
   const key = `${fixture.prefix}-post-checkpoint`;
   await fixture.createFleet(key, 1);
   const observed = await fixture.observe(key, "idle");
+  await until("late Create is durably settled before fencing", () => workers(fixture, key)[0]?.state === "Idle");
   await fixture.capZero(key);
   await fixture.stopDaemon();
   await fenceFixture(fixture);

@@ -20,13 +20,17 @@ import { until, serverImage, runnerImage } from "./support.mjs";
 process.umask(0o077);
 assert([undefined, "docker", "kubernetes"].includes(process.env.SHAULA_ACCEPTANCE_BACKEND), "unsupported acceptance backend");
 const fixture = process.env.SHAULA_ACCEPTANCE_BACKEND === "kubernetes" ? new KubernetesFixture() : new Fixture();
-const report = { kind: "shaula-forgejo-lifecycle/v2", platform: fixture.platform, serverImage, runnerImage, checks: {}, passed: false };
+const suite = process.env.SHAULA_ACCEPTANCE_SUITE || "all";
+assert(["all", "baseline", "backup", "pressure", "control", "backend-outage", "interrupted-create"].includes(suite));
+const selected = name => suite === "all" || suite === name;
+const report = { kind: "shaula-forgejo-lifecycle/v2", platform: fixture.platform, suite, serverImage, runnerImage, checks: {}, passed: false };
 let phase = "setup";
 try {
   await fixture.start();
   report.runtimeTuple = fixture.runtimeTuple;
   report.engineVersion = fixture.engine.Version;
   report.artifactDigest = fixture.digest;
+  if (selected("baseline")) {
   for (const scenario of ["success", "failure", "restart"]) {
     phase = scenario;
     console.log(`Running ${scenario}`);
@@ -90,32 +94,45 @@ try {
   phase = "hard-expiry";
   console.log(`Running ${phase}`);
   await expiry(fixture, report.checks);
+  }
   if (fixture.platform === "docker") {
+    if (selected("backup")) {
     phase = "worker-backup";
     console.log(`Running ${phase}`);
     report.workerBackup = await workerBackup(fixture);
     phase = "backup-post-checkpoint-effect";
     console.log(`Running ${phase}`);
     report.backupDivergence = await backupDivergence(fixture);
+    }
+    if (selected("pressure")) {
     phase = "worker-pressure";
     console.log(`Running ${phase}`);
     report.workerPressure = await workerPressure(fixture);
-    if (fixture.controlProxy) {
+    }
+    if (selected("control")) {
+      assert(fixture.controlProxy, "control fault suite requires the disposable-host proxy");
       phase = "worker-control-faults";
       console.log(`Running ${phase}`);
       report.controlFaults = await controlFaults(fixture);
+    }
+    if (selected("backend-outage")) {
+      assert(fixture.controlProxy, "state outage suite requires the disposable-host proxy");
       phase = "worker-backend-outage";
       console.log(`Running ${phase}`);
       report.backendOutage = await backendOutage(fixture);
     }
+    if (selected("interrupted-create")) {
     phase = "interrupted-create";
     console.log(`Running ${phase}`);
     report.interruptedCreate = await interruptedCreate(fixture);
+    }
   }
+  if (selected("baseline")) {
   phase = "lost-registration";
   console.log(`Running ${phase}`);
   await lostRegistration(fixture);
   report.checks.lostRegistration = "quarantined; no POST replay or resource Create; occupancy held";
+  }
   report.faults = { dockerDelete: fixture.dockerProxy.gate.failures, registrationDelete: fixture.registrationProxy.gate.failures,
     jobsRead: fixture.registrationProxy.gate.jobFailures, registrationResponseLost: fixture.registrationProxy.gate.droppedRegistrations };
   report.passed = true;
@@ -127,7 +144,8 @@ try {
   // never dump raw provider output, state, input or credential-bearing logs.
   try {
     report.failureEvidence = [];
-    for (const key of [...fixture.fleets].slice(0, 8)) {
+    // Later fault cases must not disappear behind the first baseline Fleets.
+    for (const key of [...fixture.fleets].slice(-8)) {
       const domain = ledger(fixture, key);
       const reasons = [];
       for (const generation of domain.generations.slice(0, 8)) {

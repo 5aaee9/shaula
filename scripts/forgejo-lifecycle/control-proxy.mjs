@@ -79,15 +79,20 @@ export async function serveProxy(port, upstream, config, onEvent = () => {}) {
               const chunks = [];
               response.on("data", chunk => chunks.push(chunk));
               response.on("end", () => {
-                held.push(() => {
+                const release = () => {
                   outgoing.writeHead(response.statusCode, response.headers);
                   outgoing.end(Buffer.concat(chunks));
-                });
-                counts.committed++; report();
+                };
+                // A slow upstream reply may arrive after the gate was reset.
+                // Do not re-hold it or charge its commit to the next scenario.
+                if (measured === counts) held.push(release); else release();
+                measured.committed++;
+                if (measured === counts) report();
               });
               return;
             }
-            counts.committed++; report();
+            measured.committed++;
+            if (measured === counts) report();
             if (mode === "drop_after") { response.resume(); outgoing.destroy(); return; }
           }
           outgoing.writeHead(response.statusCode, response.headers);

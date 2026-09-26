@@ -15,9 +15,13 @@ test("control faults preserve committed requests and hold uncommitted requests s
   };
   await configure({ id: "drop", kind: "spawned", mode: "drop_after", limit: 2 });
   const requests = [];
+  let releaseUpstream;
+  let delayed = false;
   const server = createServer(async (req, res) => {
     let body = ""; for await (const chunk of req) body += chunk;
-    requests.push(body); res.writeHead(200); res.end('{"kind":"ack"}');
+    requests.push(body);
+    if (delayed) await new Promise(resolve => { releaseUpstream = resolve; });
+    res.writeHead(200); res.end('{"kind":"ack"}');
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const port = await freePort();
@@ -55,6 +59,16 @@ test("control faults preserve committed requests and hold uncommitted requests s
     await until("bounded original plus duplicate deliveries", () => requests.length === start + 17);
     assert(requests.slice(start).every(value => value === log), "load must reuse the exact request without fabricating log entries");
     assert.equal(counts.logDuplicates, 16);
+    await configure({ id: "slow", kind: "spawned", mode: "hold_after", limit: 1 });
+    await until("slow response fault armed", () => counts.id === "slow");
+    delayed = true;
+    const late = send();
+    await until("upstream received slow request", () => releaseUpstream);
+    await configure({ id: "next-scenario" });
+    await until("old gate released before upstream reply", () => counts.id === "next-scenario");
+    releaseUpstream();
+    assert.equal((await late).status, 200, "released gate must not strand late upstream replies");
+    assert.equal(counts.committed, 0, "old responses cannot satisfy a later scenario's commit assertion");
   } finally {
     await proxy.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
     await rm(directory, { recursive: true });

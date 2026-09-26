@@ -36,6 +36,7 @@ export async function workerPressure(fixture) {
   });
   // One mutation permit must still let all three workers finish Create and wait.
   const liveKeys = keys.filter(key => admitted.some(r => r.name.startsWith(`${key}-`)));
+  await until("all admitted Creates are durably settled", () => liveKeys.every(key => workers(fixture, key)[0]?.state === "Idle"));
   const samples = [];
   const latencies = [];
   for (let i = 0; i < 20; i++) {

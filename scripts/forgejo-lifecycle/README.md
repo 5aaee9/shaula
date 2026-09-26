@@ -123,6 +123,12 @@ resources for reconciliation instead of force-removing an uncertain runner.
 These scripts require completed, reviewed run evidence before their scenarios
 can be marked accepted; their presence is not a full LW-11–15/28/30/32 pass.
 
+CI runs baseline Docker/Kubernetes and the `backup`, `pressure`, `control`,
+`backend-outage`, and `interrupted-create` suites in separate disposable jobs.
+`SHAULA_ACCEPTANCE_SUITE` selects one suite (`all` remains the local default).
+This lets a failed checkpoint retain its own evidence without suppressing the
+remaining matrix. The baseline jobs also run the complete Linux process tests.
+
 ## DX-30 diagnostics acceptance
 
 `diagnostics.mjs` exercises spec 0041 against a dedicated disposable Linux VM

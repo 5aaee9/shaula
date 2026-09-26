@@ -37,15 +37,23 @@ jobs:
         run: docker rm --force forgejo
 
   lifecycle:
-    name: Shaula Terraform lifecycle (${{ matrix.platform }})
+    name: Shaula Terraform lifecycle (${{ matrix.name }})
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        platform: [docker, kubernetes]
+        include:
+          - { name: docker, platform: docker, suite: baseline }
+          - { name: kubernetes, platform: kubernetes, suite: baseline }
+          - { name: worker backup, platform: docker, suite: backup }
+          - { name: worker pressure, platform: docker, suite: pressure }
+          - { name: worker control faults, platform: docker, suite: control }
+          - { name: worker state outage, platform: docker, suite: backend-outage }
+          - { name: worker interrupted create, platform: docker, suite: interrupted-create }
     env:
       SHAULA_ACCEPTANCE_BACKEND: ${{ matrix.platform }}
+      SHAULA_ACCEPTANCE_SUITE: ${{ matrix.suite }}
       SHAULA_ACCEPTANCE_CONTROL_FAULTS: "1"
       KUBECONFIG: ${{ github.workspace }}/.acceptance-kubeconfig
       SHAULA_ACCEPTANCE_KUBE_CONTEXT: kind-shaula-lifecycle
@@ -88,6 +96,7 @@ jobs:
             --working-directory="$PWD" --setenv="PATH=$PATH" --setenv="HOME=$HOME" \
             --setenv="KUBECONFIG=$KUBECONFIG" --setenv="SHAULA_ACCEPTANCE_KUBE_CONTEXT=$SHAULA_ACCEPTANCE_KUBE_CONTEXT" \
             --setenv="SHAULA_ACCEPTANCE_BACKEND=$SHAULA_ACCEPTANCE_BACKEND" \
+            --setenv="SHAULA_ACCEPTANCE_SUITE=$SHAULA_ACCEPTANCE_SUITE" \
             --setenv="SHAULA_ACCEPTANCE_CONTROL_FAULTS=$SHAULA_ACCEPTANCE_CONTROL_FAULTS" \
             "$(command -v nix)" develop --command bash scripts/lifecycle-acceptance.sh
       - name: Remove disposable Kubernetes cluster
