@@ -42,6 +42,14 @@ export async function expiry(fixture, report) {
     // therefore already have stopped the Runner despite this DELETE outage.
     // Busy-safe ordinary drain is not the contract being exercised here.
     assert((await fixture.cli("ps", "-a", "--no-trunc", "-q")).split("\n").includes(busy.id), "failed removal retains the exact container");
+    // The proxy observes DELETE failure before Terraform exits. Killing the
+    // daemon then tests an interrupted apply (which must quarantine), rather
+    // than retrying a completed failure across restart.
+    await until("failed Destroy checkpoint before restart", async () => {
+      const { items } = await fixture.api(`/generations?fleet_key=${key}`);
+      assert.equal(items.length, 1, "one generation owns the failed Destroy");
+      return items[0].state === "DestroyPending";
+    });
     await fixture.restart();
     fixture.dockerProxy.gate.block = false;
   }
