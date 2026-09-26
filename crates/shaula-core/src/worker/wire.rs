@@ -47,6 +47,7 @@ impl LaunchEnvelope {
             || self.workspace.file_name().and_then(|v| v.to_str())
                 != Some(&self.claim.generation_id.to_string())
             || self.operation_timeout.is_zero()
+            || self.operation_timeout > super::MAX_OPERATION_TIMEOUT
         {
             return Err(StateError::Invalid);
         }

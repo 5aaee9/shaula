@@ -92,6 +92,34 @@ fn unresolvable_engine_fails_bootstrap() {
 }
 
 #[test]
+fn execution_limits_reject_zero_and_overflow_before_runtime_construction() {
+    for timeout in [0, 86_401, u64::MAX] {
+        let mut config = base_config();
+        config.execution.operation_timeout_secs = timeout;
+        assert!(ValidatedBootstrap::validate(config)
+            .unwrap_err()
+            .contains("execution.operation_timeout_secs"));
+    }
+    for limit in [0, 1025, usize::MAX] {
+        for create in [false, true] {
+            let mut config = base_config();
+            if create {
+                config.execution.create_concurrency = limit;
+            } else {
+                config.execution.destroy_concurrency = limit;
+            }
+            assert!(ValidatedBootstrap::validate(config)
+                .unwrap_err()
+                .contains("execution concurrency"));
+        }
+    }
+    let mut config = base_config();
+    config.execution.operation_timeout_secs = 86_400;
+    config.execution.create_concurrency = 1024;
+    assert!(ValidatedBootstrap::validate(config).is_ok());
+}
+
+#[test]
 fn template_source_import_paths_are_explicit_trusted_absolute_directories() {
     let mut config = base_config();
     assert!(ValidatedBootstrap::validate(config.clone())

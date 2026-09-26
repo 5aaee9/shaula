@@ -9,6 +9,7 @@ import { labels, staleDemand, lostRegistration } from "./scenarios.mjs";
 import { permissions } from "./permissions.mjs";
 import { captureCredentials, leakScan } from "./leaks.mjs";
 import { expiry } from "./expiry.mjs";
+import { ledger } from "./diagnostics-evidence.mjs";
 import { until, serverImage, runnerImage } from "./support.mjs";
 
 process.umask(0o077);
@@ -92,6 +93,27 @@ try {
   report.failedPhase = phase;
   // No bodies, secret-bearing subprocess output or raw server logs in reports.
   report.reason = error.message;
+  // Only domain enums, command phases/exit codes and closed diagnostic codes;
+  // never dump raw provider output, state, input or credential-bearing logs.
+  try {
+    report.failureEvidence = [];
+    for (const key of [...fixture.fleets].slice(0, 8)) {
+      const domain = ledger(fixture, key);
+      const reasons = [];
+      for (const generation of domain.generations.slice(0, 8)) {
+        const detail = await fixture.api(`/generations/${generation.id}/diagnostics`);
+        reasons.push({ generation: generation.id, codes: detail.questions.flatMap(q => q.reasons.map(r => r.code)) });
+      }
+      report.failureEvidence.push({ domain, reasons });
+    }
+    if (fixture.platform === "kubernetes" && fixture.namespaceCreated) {
+      const pods = JSON.parse(await fixture.kube("get", "pods", "-o", "json")).items;
+      report.podStatus = pods.slice(0, 8).map(p => ({ phase: p.status.phase,
+        conditions: (p.status.conditions || []).map(c => ({ type: c.type, status: c.status, reason: c.reason })),
+        containers: [...(p.status.initContainerStatuses || []), ...(p.status.containerStatuses || [])]
+          .map(c => ({ ready: c.ready, waiting: c.state.waiting?.reason, exitCode: c.state.terminated?.exitCode })) }));
+    }
+  } catch { report.failureEvidenceUnavailable = true; }
   process.exitCode = 1;
 } finally {
   try { await fixture.close(); }

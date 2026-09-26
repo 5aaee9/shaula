@@ -10,6 +10,7 @@ use crate::state_backend::{StateCapability, StateClaim, StateError, StateResult}
 
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const MAX_CONTROL_BYTES: usize = 64 * 1024;
+pub const MAX_OPERATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(86_400);
 
 pub mod cleanup;
 pub mod journal;

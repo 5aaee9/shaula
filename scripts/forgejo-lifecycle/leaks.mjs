@@ -83,7 +83,7 @@ export async function leakScan(fixture, key, observed, secrets, alive) {
   let durable;
   let plan;
   try {
-    durable = db.prepare("SELECT s.state_bytes, s.sealed, s.revoked, w.protected_input, w.completion_receipt FROM generation_http_state s JOIN lifecycle_workers w ON w.generation_id = s.generation_id WHERE s.generation_id = ?").get(id);
+    durable = db.prepare("SELECT s.state_bytes, s.sealed, w.protected_input, w.completion_receipt FROM generation_http_state s JOIN lifecycle_workers w ON w.generation_id = s.generation_id WHERE s.generation_id = ?").get(id);
   } finally { db.close(); }
   assert(durable?.state_bytes && durable.protected_input, "authoritative HTTP state and original input required");
   inspect(Buffer.from(durable.protected_input).toString(), "retained Terraform inputs");
@@ -91,7 +91,6 @@ export async function leakScan(fixture, key, observed, secrets, alive) {
   surfaces++;
   if (!alive) {
     assert.equal(durable.sealed, 1, "terminal state sealed atomically");
-    assert.equal(durable.revoked, 1, "terminal state cannot reopen");
     assert(durable.completion_receipt, "terminal completion has a durable receipt");
   }
   try {

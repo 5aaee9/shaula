@@ -27,6 +27,7 @@ pub struct Fixture {
     pub backend: SqliteStateBackend,
     pub workers: Arc<Workers>,
     pub executor: Arc<shaula_executor::ExecExecutor>,
+    pub faults: Arc<super::faults::StateFaults>,
     pub control: Arc<SqliteControlPlane>,
     artifact: PathBuf,
     digest: String,
@@ -101,11 +102,14 @@ impl Fixture {
             .generation_advance(&id.to_string(), G::Creating, 2)
             .await?;
         let journal = Arc::new(SqliteWorkerJournal::new(backend.clone(), admissions));
-        let server = shaula_http::state_backend::StateServer::bind(
-            "127.0.0.1:0".parse()?,
-            Arc::new(backend.clone()),
-        )
-        .await?;
+        let faults = Arc::new(super::faults::StateFaults {
+            backend: backend.clone(),
+            reject_empty_writes: Default::default(),
+            rejected: Default::default(),
+        });
+        let server =
+            shaula_http::state_backend::StateServer::bind("127.0.0.1:0".parse()?, faults.clone())
+                .await?;
         let executor = Arc::new(shaula_executor::ExecExecutor::new(
             PathBuf::from(env!("CARGO_BIN_EXE_shaula")),
             PathBuf::from(std::env::var("SHAULA_TEST_CGROUP")?),
@@ -156,6 +160,7 @@ impl Fixture {
             backend,
             workers,
             executor,
+            faults,
             control,
             artifact,
             digest,

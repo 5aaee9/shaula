@@ -219,8 +219,16 @@ impl ValidatedBootstrap {
                 "runner.max_lifetime_secs must be positive and fit a millisecond timestamp".into(),
             );
         }
-        if config.execution.create_concurrency == 0 || config.execution.destroy_concurrency == 0 {
-            return Err("concurrency values must be positive".to_string());
+        if !(1..=1024).contains(&config.execution.create_concurrency)
+            || !(1..=1024).contains(&config.execution.destroy_concurrency)
+        {
+            return Err("execution concurrency values must be within 1..=1024".into());
+        }
+        if config.execution.operation_timeout_secs == 0
+            || Duration::from_secs(config.execution.operation_timeout_secs)
+                > shaula_core::worker::MAX_OPERATION_TIMEOUT
+        {
+            return Err("execution.operation_timeout_secs must be within 1..=86400".into());
         }
         if config.observability.otlp.protocol != "http/json" {
             return Err("observability.otlp.protocol must be http/json".to_string());

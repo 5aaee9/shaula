@@ -1,6 +1,8 @@
 //! Requires an explicitly delegated cgroup and pinned real Terraform. These
 //! tests exercise the packaged binary's job role, not a fake Runtime adapter.
 #![cfg(target_os = "linux")]
+#[path = "worker_process/faults.rs"]
+mod faults;
 #[path = "worker_process/fixture.rs"]
 mod fixture;
 use fixture::*;
@@ -129,5 +131,62 @@ async fn killed_worker_with_detached_provider_descendant_is_not_a_fence() -> Tes
         !fixture.state().await?.managed_empty(),
         "process death does not release provider resources"
     );
+    fixture.close().await
+}
+
+#[tokio::test]
+#[ignore = "requires SHAULA_TEST_CGROUP and SHAULA_TEST_TERRAFORM"]
+async fn failed_final_state_post_retains_emergency_evidence_and_blocks_reapply() -> TestResult {
+    use std::sync::atomic::Ordering;
+    let fixture = Fixture::new().await?;
+    let result = fixture.create().await?;
+    fixture
+        .faults
+        .reject_empty_writes
+        .store(true, Ordering::Release);
+    assert!(fixture.destroy(&result).await.is_err());
+    let rejected = fixture.faults.rejected.load(Ordering::Acquire);
+    assert!(
+        rejected > 0,
+        "actual Terraform attempted its final state POST"
+    );
+    let path = fixture.workspace.join("errored.tfstate");
+    let evidence = std::fs::read(&path)?;
+    let emergency = shaula_core::state_backend::StateDocument::parse(evidence.clone())?;
+    assert!(
+        emergency.managed_empty(),
+        "Destroy completed outside the database"
+    );
+    assert!(
+        !fixture.state().await?.managed_empty(),
+        "old database state stays authoritative"
+    );
+    assert!(
+        fixture
+            .control
+            .generation_advance(
+                &fixture.id.to_string(),
+                shaula_core::lifecycle::GenerationState::Destroyed,
+                10,
+            )
+            .await
+            .is_err(),
+        "no terminal/capacity release after failed upload"
+    );
+    fixture
+        .faults
+        .reject_empty_writes
+        .store(false, Ordering::Release);
+    assert!(
+        fixture.destroy(&result).await.is_err(),
+        "restored transport cannot silently choose between conflicting states"
+    );
+    assert_eq!(
+        std::fs::read(path)?,
+        evidence,
+        "emergency evidence survives retry"
+    );
+    assert_eq!(fixture.faults.rejected.load(Ordering::Acquire), rejected);
+    assert_eq!(fixture.create_count().await?, 1);
     fixture.close().await
 }

@@ -42,8 +42,8 @@ are distinct; no CI management credentials or SQLite connection enter the worker
 | Resource | Value / behavior |
 | --- | --- |
 | Worker admission | Explicit maximum and recovery reserve; hard maximum 1,024 |
-| Existing Terraform create/destroy concurrency | Existing execution settings, default 8 each |
-| Existing operation timeout | Existing execution setting, default 1,800 seconds |
+| Terraform create/destroy concurrency | Execution settings, default 8 each, range 1–1,024 |
+| Operation timeout | Execution setting, default 1,800 seconds, range 1–86,400; also enforced at Worker handoff |
 | Worker runtime | Current-thread Tokio, at most two blocking threads |
 | Launch/control envelope | 64 KiB |
 | Protected material | Separate authenticated transfer, at most 16 MiB |
