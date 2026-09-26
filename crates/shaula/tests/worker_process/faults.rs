@@ -1,7 +1,58 @@
 //! Test-only transport outage at the real Terraform final POST boundary.
 use shaula_core::state_backend::*;
+use shaula_core::worker::{wire::*, ControlCapability};
 use shaula_store::http_state::SqliteStateBackend;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
+use uuid::Uuid;
+
+pub struct ControlFaults {
+    pub workers: Arc<shaula_daemon::workers::Workers>,
+    pub lost_receipts: AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl WorkerControl for ControlFaults {
+    async fn authenticate(&self, generation: Uuid, token: &ControlCapability) -> StateResult<()> {
+        self.workers.authenticate(generation, token).await
+    }
+    async fn material(
+        &self,
+        generation: Uuid,
+        token: &ControlCapability,
+        id: Uuid,
+    ) -> StateResult<Vec<u8>> {
+        self.workers.material(generation, token, id).await
+    }
+    async fn logs(
+        &self,
+        generation: Uuid,
+        token: &ControlCapability,
+        request: LogRequest,
+    ) -> StateResult<LogResponse> {
+        self.workers.logs(generation, token, request).await
+    }
+    async fn call(
+        &self,
+        token: &ControlCapability,
+        request: ControlRequest,
+    ) -> StateResult<ControlResponse> {
+        let response = self.workers.call(token, request).await?;
+        if matches!(response, ControlResponse::Desired(Directive::Complete(_)))
+            && self
+                .lost_receipts
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
+                    remaining.checked_sub(1)
+                })
+                .is_ok()
+        {
+            // Durable completion has committed but the client sees a transport
+            // failure instead of its acknowledgement. Retry must not reopen it.
+            return Err(StateError::Unavailable);
+        }
+        Ok(response)
+    }
+}
 
 pub struct StateFaults {
     pub backend: SqliteStateBackend,

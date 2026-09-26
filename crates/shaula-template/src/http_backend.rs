@@ -199,10 +199,14 @@ fn reject_local_state(workspace: &Path) -> CoreResult<()> {
     Ok(())
 }
 
-/// Deliberately conservative policy, not a home-grown HCL parser. Native HCL
-/// backend/cloud block keywords are rejected even inside comments/strings.
-/// JSON keys are decoded first so Unicode escapes cannot hide an override.
+/// Parse native HCL so comments and string values cannot become false backend
+/// overrides. JSON keys are decoded so Unicode escapes cannot hide an override.
 fn reject_template_backends(dir: &Path, allow_system: bool) -> CoreResult<()> {
+    fn hcl_backend(body: hcl::edit::structure::Body) -> bool {
+        body.into_blocks().any(|block| {
+            matches!(block.ident.as_str(), "backend" | "cloud") || hcl_backend(block.body)
+        })
+    }
     fn json_backend(value: &serde_json::Value) -> bool {
         match value {
             serde_json::Value::Object(map) => map
@@ -234,10 +238,9 @@ fn reject_template_backends(dir: &Path, allow_system: bool) -> CoreResult<()> {
                 let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
                 if name.ends_with(".tf") {
                     let source = std::fs::read_to_string(&path).map_err(|_| invalid())?;
-                    if source
-                        .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-                        .any(|word| word == "backend" || word == "cloud")
-                    {
+                    crate::variables::guard::check(&source)?;
+                    let body = source.parse().map_err(|_| invalid())?;
+                    if hcl_backend(body) {
                         return Err(invalid());
                     }
                 } else if name.ends_with(".tf.json") {

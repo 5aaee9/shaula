@@ -37,6 +37,10 @@ async fn real_worker_create_wait_destroy_uses_sqlite_http_and_one_process() -> T
     assert!(state.managed_empty());
     assert!(state.serial() > result.state_serial as i64);
     fixture
+        .control_faults
+        .lost_receipts
+        .store(2, std::sync::atomic::Ordering::Release);
+    fixture
         .control
         .generation_advance(
             &fixture.id.to_string(),
@@ -44,7 +48,21 @@ async fn real_worker_create_wait_destroy_uses_sqlite_http_and_one_process() -> T
             10,
         )
         .await?;
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    for _ in 0..30 {
+        if fixture.executor.observe(&identity).await
+            == shaula_core::worker::ProcessObservation::Exited
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(
+        fixture
+            .control_faults
+            .lost_receipts
+            .load(std::sync::atomic::Ordering::Acquire),
+        0
+    );
     assert_eq!(
         fixture.executor.observe(&identity).await,
         shaula_core::worker::ProcessObservation::Exited

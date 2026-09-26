@@ -147,7 +147,8 @@ backup and proof that no post-checkpoint effects are being discarded.
 pinned Terraform HTTP/SQLite tests. Supply `SHAULA_TEST_CGROUP` and run the test
 parent inside that writable delegation; the script obtains Terraform from PATH.
 `scripts/lifecycle-acceptance.sh` additionally runs the existing real
-Forgejo/Docker lifecycle harness. The GitHub Actions lifecycle job creates a
-dedicated delegated systemd service for this purpose. This does not establish
-GitHub/Kubernetes acceptance, all resource platforms, backup/restore fault
+Forgejo lifecycle harness for Docker or an explicitly supplied disposable Kind
+context. The GitHub Actions matrix provisions both platforms and creates a
+dedicated delegated systemd service. A configured job alone does not establish
+GitHub or Kubernetes acceptance, all resource platforms, backup/restore fault
 coverage or the full LW-01–LW-32 matrix.

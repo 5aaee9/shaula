@@ -40,7 +40,7 @@ state or capability material. See the [deployment and recovery guide](lifecycle-
 Local evidence obtained for this implementation:
 
 - Windows strict workspace/all-target Clippy and rustfmt pass; unfiltered nextest
-  passes **1,020 tests**, with two platform/protocol tests skipped. The separately
+  passes **1,021 tests**, with two platform/protocol tests skipped. The separately
   requested name-filtered nextest command also ran and is not the full-suite gate.
 - Web lint/format checks and **203 Playwright tests** pass.
 - Linux/WSL, Rust 1.98.1 and pinned Terraform 1.9.8: eight explicit ignored tests
@@ -51,7 +51,9 @@ Local evidence obtained for this implementation:
   restart behavior, and legacy read-only gating with stale offline-plan rejection
   and replay. A failed final state POST after real Destroy produces retained
   emergency state, prevents terminal/capacity release and blocks reapply even
-  after the transport recovers. The local process fixture uses Terraform's built-in `terraform_data`;
+  after the transport recovers. Lost completion acknowledgements are retried by
+  the real Worker HTTP client until it receives the original durable receipt.
+  The local process fixture uses Terraform's built-in `terraform_data`;
   it is not Docker, Kubernetes or a cloud-provider acceptance result.
 - New Store tests exercise claim authentication, start handover, exact cleanup
   revision, atomic completion/receipt replay, recovery quarantine and migration
@@ -63,6 +65,10 @@ Local evidence obtained for this implementation:
   Linux all-target Clippy, treefmt and NixOS module evaluation pass. CI runs the
   real Forgejo harness for both Docker and a disposable Kind cluster; passing
   process tests alone do not make either platform job a pass.
+- Real Kubernetes CI exposed a pre-init rejection of the bundled template's
+  comment containing `backend`. HTTP workspace validation now uses the existing
+  bounded HCL parser to reject actual backend/cloud blocks. A regression covers
+  all six bundled templates, comments/strings, malformed source and overrides.
 
 **Release/merge acceptance is not yet complete.** The changed default path still
 needs formal package/NixOS evidence and actual updated-binary GitHub and Forgejo

@@ -28,6 +28,7 @@ pub struct Fixture {
     pub workers: Arc<Workers>,
     pub executor: Arc<shaula_executor::ExecExecutor>,
     pub faults: Arc<super::faults::StateFaults>,
+    pub control_faults: Arc<super::faults::ControlFaults>,
     pub control: Arc<SqliteControlPlane>,
     artifact: PathBuf,
     digest: String,
@@ -133,7 +134,11 @@ impl Fixture {
             )
             .with_reaper(reaper),
         );
-        let server = server.with_worker_control(workers.clone());
+        let control_faults = Arc::new(super::faults::ControlFaults {
+            workers: workers.clone(),
+            lost_receipts: Default::default(),
+        });
+        let server = server.with_worker_control(control_faults.clone());
         let (stop, shutdown) = tokio::sync::oneshot::channel();
         let server = tokio::spawn(server.serve(async {
             let _ = shutdown.await;
@@ -161,6 +166,7 @@ impl Fixture {
             workers,
             executor,
             faults,
+            control_faults,
             control,
             artifact,
             digest,

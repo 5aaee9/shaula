@@ -10,7 +10,7 @@ use shaula_core::registry::TemplateVariables;
 #[path = "variables_constraints.rs"]
 mod constraints;
 #[path = "variables_guard.rs"]
-mod guard;
+pub(crate) mod guard;
 #[path = "variables_numbers.rs"]
 mod numbers;
 #[path = "variables_schema.rs"]
