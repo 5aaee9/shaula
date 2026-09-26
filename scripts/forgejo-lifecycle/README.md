@@ -60,8 +60,12 @@ No real VM/cloud, real GitHub, busy-safe early idle drain, full supported-versio
 The Docker run additionally executes an offline full-data-set backup/restore,
 small-host Worker saturation and an accepted Docker Create whose response is
 withheld across daemon SIGKILL. Reports distinguish quiescent restoration from
-post-checkpoint divergence, and waiting-worker measurements from maximum-count
-or log-flood capacity. An interrupted Create must retain its actual external
+post-checkpoint divergence: the rehearsal creates a real later resource and
+requires the restore procedure to refuse replacing any newer authoritative file,
+then resumes that newer set to reclaim the exact resource. This guarded rehearsal
+is not an automatic production disaster-recovery command. Waiting-worker
+measurements are scoped to a four-worker configuration, not maximum-count
+capacity. An interrupted Create must retain its actual external
 resource and occupancy in quarantine; fixture teardown is not recovery evidence.
 
 On an explicitly disposable Linux host, `SHAULA_ACCEPTANCE_CONTROL_FAULTS=1`
@@ -73,6 +77,14 @@ is involved. The root proxy forwards authenticated bytes without logging them.
 It tests lost committed Spawn ACK responses, a crash after exec but before Create,
 DELETE committed before a delayed Create-start request, and a crash after the
 Create intent commits but before its response reaches the worker.
+It also makes every state method unavailable after a real Docker Create,
+requires retained emergency state across restart, and replays exact authenticated
+log requests under a 32-request in-flight bound during the capacity scenario.
+State must continue within that scenario's five-second response budget. Duplicate
+log requests preserve their original IDs and bytes and do not fabricate events.
+Failure teardown fences only the recorded child cgroups of this fixture before
+removing its disposable external resources; that teardown is never counted as
+normal lifecycle cleanup.
 
 Hard-expiry Docker deletion and CI-registration retry use separate checkpoints.
 Docker provider 3.0.2 stops a container before issuing DELETE, so a failed removal

@@ -8,6 +8,7 @@ import { join, resolve } from "node:path";
 import { issuer, scopes } from "./oidc.mjs";
 import { faultProxy } from "./faults.mjs";
 import { ControlProxy } from "./control-proxy.mjs";
+import { fenceFixture } from "./worker-fence.mjs";
 import { command, freePort, json, until, serverImage, runnerImage } from "./support.mjs";
 
 export class Fixture {
@@ -191,6 +192,7 @@ export class Fixture {
   }
   async close() {
     await this.stopDaemon();
+    await fenceFixture(this);
     await this.controlProxy?.close();
     // Only resources bearing this fixture's exact random Fleet keys. Teardown
     // is never evidence of successful Shaula cleanup; assertions precede it.

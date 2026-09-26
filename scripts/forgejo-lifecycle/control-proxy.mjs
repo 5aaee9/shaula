@@ -18,7 +18,10 @@ async function atomic(path, value) {
 export async function serveProxy(port, upstream, config, onEvent = () => {}) {
   let current = { id: "none" };
   let held = [];
-  let counts = { id: "none", matched: 0, committed: 0, pid: process.pid };
+  const counters = id => ({ id, matched: 0, committed: 0, pid: process.pid,
+    logDuplicates: 0, duplicateFailures: 0, stateRequests: 0, maxStateMs: 0 });
+  let counts = counters("none");
+  let duplicateInflight = 0;
   // Root-owned event file is intentionally non-secret; only counters/PID are
   // emitted over stdout. The caller never reads credential-bearing traffic.
   const report = () => onEvent({ ...counts });
@@ -27,7 +30,7 @@ export async function serveProxy(port, upstream, config, onEvent = () => {}) {
     if (next.id !== current.id) {
       for (const release of held.splice(0)) release();
       current = next;
-      counts = { id: next.id, matched: 0, committed: 0, pid: process.pid };
+      counts = counters(next.id);
       report();
     }
   };
@@ -39,27 +42,38 @@ export async function serveProxy(port, upstream, config, onEvent = () => {}) {
       let kind;
       let intent;
       if (new URL(incoming.url, "http://fixture.invalid").pathname.endsWith("/state")) kind = `state_${incoming.method.toLowerCase()}`;
-      if (incoming.url.endsWith("/control")) {
+      const logs = incoming.url.endsWith("/logs");
+      if (incoming.url.endsWith("/control") || logs) {
         const chunks = [];
         let size = 0;
         for await (const chunk of incoming) {
           size += chunk.length;
-          if (size > 65536) { outgoing.writeHead(413); outgoing.end(); return; }
+          if (size > (logs ? 512 * 1024 : 65536)) { outgoing.writeHead(413); outgoing.end(); return; }
           chunks.push(chunk);
         }
         body = Buffer.concat(chunks);
-        const message = JSON.parse(body.toString("utf8")).message;
-        kind = message.kind;
-        intent = message.payload?.intent;
+        if (logs) kind = "logs";
+        else {
+          const message = JSON.parse(body.toString("utf8")).message;
+          kind = message.kind;
+          intent = message.payload?.intent;
+        }
       }
-      const selected = kind === current.kind && (!current.intent || intent === current.intent)
+      const selected = (kind === current.kind || (current.kind === "state_all" && kind?.startsWith("state_"))) && (!current.intent || intent === current.intent)
         && counts.matched < (current.limit ?? 1);
       const mode = selected ? current.mode : undefined;
+      const measured = counts;
       if (selected) { counts.matched++; report(); }
       if (mode === "reject_before") { incoming.resume(); outgoing.writeHead(503); outgoing.end(); return; }
       const forward = () => {
+        const started = performance.now();
         const remote = request({ host: "127.0.0.1", port: upstream, path: incoming.url,
           method: incoming.method, headers: incoming.headers }, response => {
+          if (kind?.startsWith("state_")) response.on("end", () => {
+            measured.stateRequests++;
+            measured.maxStateMs = Math.max(measured.maxStateMs, Math.ceil(performance.now() - started));
+            if (measured === counts) report();
+          });
           if (selected && response.statusCode === 200) {
             if (mode === "hold_after") {
               const chunks = [];
@@ -81,6 +95,22 @@ export async function serveProxy(port, upstream, config, onEvent = () => {}) {
         });
         remote.on("error", () => { if (!outgoing.headersSent) outgoing.writeHead(502); outgoing.end(); });
         if (body) remote.end(body); else incoming.pipe(remote);
+        // Re-deliver the exact authenticated request ID/body. This stresses the
+        // real log replay/budget path without inventing events or exposing the
+        // capability. Only bounded duplicate requests are issued, all loopback.
+        if (mode === "flood_logs") for (let i = 0; i < 16 && duplicateInflight < 32; i++) {
+          duplicateInflight++;
+          measured.logDuplicates++;
+          const duplicate = request({ host: "127.0.0.1", port: upstream, path: incoming.url,
+            method: incoming.method, headers: incoming.headers }, response => {
+            if (response.statusCode !== 200) measured.duplicateFailures++;
+            response.resume();
+          });
+          duplicate.on("close", () => { duplicateInflight--; if (measured === counts) report(); });
+          duplicate.on("error", () => { measured.duplicateFailures++; });
+          duplicate.setTimeout(5000, () => duplicate.destroy());
+          duplicate.end(body);
+        }
       };
       if (mode === "hold_before") held.push(forward); else forward();
     } catch { outgoing.writeHead(503); outgoing.end(); }

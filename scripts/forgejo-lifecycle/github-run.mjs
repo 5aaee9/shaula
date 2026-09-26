@@ -6,6 +6,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { GithubFixture } from "./github-fixture.mjs";
 import { workers } from "./worker-pressure.mjs";
+import { fenceFixture } from "./worker-fence.mjs";
 import { until } from "./support.mjs";
 
 process.umask(0o077);
@@ -83,7 +84,7 @@ try {
   // never turn forced fixture teardown into a successful lifecycle receipt.
   try {
     if (completed) await fixture.close();
-    else { await fixture.stopDaemon(); await fixture.oidc?.close(); }
+    else { await fixture.stopDaemon(); await fenceFixture(fixture); await fixture.oidc?.close(); }
   } catch {
     report.passed = false;
     report.teardownFailed = true;

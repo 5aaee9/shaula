@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { join, relative } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { workers } from "./worker-pressure.mjs";
+import { fenceFixture } from "./worker-fence.mjs";
 import { until } from "./support.mjs";
 
 async function manifest(root, path = root, entries = []) {
@@ -20,6 +21,18 @@ async function manifest(root, path = root, entries = []) {
     }
   }
   return entries.sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+const commitment = files => createHash("sha256").update(JSON.stringify(files)).digest("hex");
+
+async function restoreUnchanged(fixture, backup, preserved) {
+  const data = join(fixture.directory, "data");
+  const current = commitment(await manifest(data));
+  const checkpoint = commitment(await manifest(join(backup, "data")));
+  if (current !== checkpoint) throw new Error("RestoreBlockedNewerEvidence");
+  await rename(data, join(fixture.directory, preserved));
+  await cp(join(backup, "data"), data, { recursive: true, dereference: false, verbatimSymlinks: true });
+  assert.equal(commitment(await manifest(data)), checkpoint, "restored complete set verified before any writer starts");
 }
 
 export async function workerBackup(fixture) {
@@ -45,16 +58,14 @@ export async function workerBackup(fixture) {
   await cp(data, join(directory, "data"), { recursive: true, dereference: false, verbatimSymlinks: true });
   await cp(join(fixture.directory, "config.json"), join(directory, "config.json"));
   const files = await manifest(data);
-  assert.deepEqual(await manifest(join(directory, "data")), files, "backup contains all state, inputs, artifacts and emergency evidence");
-  assert.deepEqual(await readFile(join(directory, "config.json")), await readFile(join(fixture.directory, "config.json")));
+  assert.equal(commitment(await manifest(join(directory, "data"))), commitment(files), "backup contains all state, inputs, artifacts and emergency evidence");
+  assert((await readFile(join(directory, "config.json"))).equals(await readFile(join(fixture.directory, "config.json"))), "matching private configuration");
   await writeFile(join(directory, "runtime.json"), JSON.stringify(fixture.runtimeTuple), { mode: 0o600 });
   // No daemon has run since the checkpoint. Recheck that no late local writer
   // changed authority, and that the exact external resource is still present.
-  assert.deepEqual(await manifest(data), files);
+  assert.equal(commitment(await manifest(data)), commitment(files));
   assert.equal(await fixture.cli("ps", "-a", "--no-trunc", "-q", "--filter", `label=shaula.fleet=${key}`), observed.id);
-  await rename(data, join(fixture.directory, "preserved-before-restore"));
-  await cp(join(directory, "data"), data, { recursive: true, dereference: false, verbatimSymlinks: true });
-  assert.deepEqual(await manifest(data), files, "exact restored set verified before starting any writer");
+  await restoreUnchanged(fixture, directory, "preserved-before-restore");
   await fixture.startDaemon();
   assert(workers(fixture, key)[0].worker_epoch > original.worker_epoch, "restore must rotate the fenced epoch");
   await fixture.queue(key, 8);
@@ -66,4 +77,35 @@ export async function workerBackup(fixture) {
     manifestVerified: true, originalDirectory: "preserved", restoredEpoch: workers(fixture, key)[0].worker_epoch,
     duplicateCreates: 0, duplicateRegistrations: 0, cleanup: "Destroyed; occupancy zero; resource and registration absent",
     scope: "quiescent same-host full-set restore; post-checkpoint divergent authority is not rolled back" };
+}
+
+export async function backupDivergence(fixture) {
+  const creates = fixture.dockerProxy.gate.containerCreates;
+  await fixture.stopDaemon();
+  await fenceFixture(fixture);
+  const data = join(fixture.directory, "data");
+  const backup = join(fixture.directory, "before-late-effect");
+  await mkdir(backup, { mode: 0o700 });
+  await cp(data, join(backup, "data"), { recursive: true, dereference: false, verbatimSymlinks: true });
+  const old = commitment(await manifest(join(backup, "data")));
+  await fixture.startDaemon();
+  const key = `${fixture.prefix}-post-checkpoint`;
+  await fixture.createFleet(key, 1);
+  const observed = await fixture.observe(key, "idle");
+  await fixture.capZero(key);
+  await fixture.stopDaemon();
+  await fenceFixture(fixture);
+  const newer = commitment(await manifest(data));
+  assert.notEqual(newer, old, "the real post-checkpoint Create changed authority");
+  await assert.rejects(restoreUnchanged(fixture, backup, "must-not-replace-newer"), /RestoreBlockedNewerEvidence/);
+  assert.equal(commitment(await manifest(data)), newer, "newer SQLite/material evidence remains byte-exact");
+  assert.equal(commitment(await manifest(join(backup, "data"))), old, "old checkpoint is preserved separately");
+  assert.equal(await fixture.cli("ps", "-a", "--no-trunc", "-q", "--filter", `label=shaula.fleet=${key}`), observed.id);
+  await fixture.startDaemon();
+  await fixture.queue(key, 8);
+  await fixture.observe(key, "active");
+  await fixture.reclaimed(key, observed);
+  assert.equal(fixture.dockerProxy.gate.containerCreates, creates + 1, "recovery never replays the post-checkpoint Create");
+  return { oldCheckpoint: old, retainedAuthority: newer, lateCreates: 1,
+    rollback: "refused before replacing any live file", recovery: "current authority resumed; exact resource reclaimed" };
 }

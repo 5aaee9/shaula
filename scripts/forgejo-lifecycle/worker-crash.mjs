@@ -8,10 +8,11 @@ export async function interruptedCreate(fixture) {
   const key = `${fixture.prefix}-interrupted-create`;
   const gate = fixture.dockerProxy.gate;
   const before = gate.containerCreates;
+  const held = gate.heldCreates;
   const registrations = fixture.registrationProxy.gate.registrationPosts;
   gate.holdCreateResponses = true;
   await fixture.createFleet(key, 1);
-  await until("Engine accepts Create before losing its response", () => gate.heldCreates === 1);
+  await until("Engine accepts Create before losing its response", () => gate.heldCreates === held + 1);
   const row = workers(fixture, key)[0];
   assert(row?.process_identity, "real worker identity must already be durable");
   const identity = JSON.parse(row.process_identity);

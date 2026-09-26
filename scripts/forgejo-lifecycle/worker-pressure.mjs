@@ -27,6 +27,7 @@ export async function workerPressure(fixture) {
   fixture.config.execution.create_concurrency = 1;
   fixture.config.execution.destroy_concurrency = 1;
   await fixture.restart(900);
+  if (fixture.controlProxy) await fixture.controlProxy.arm("logs", "flood_logs", 5000);
   const keys = Array.from({ length: 6 }, (_, i) => `${fixture.prefix}-pressure-${i}`);
   for (const key of keys) await fixture.createFleet(key, 1);
   const admitted = await until("three waiting workers fill the new-admission budget", async () => {
@@ -67,6 +68,12 @@ export async function workerPressure(fixture) {
   for (const key of keys.filter(key => !liveKeys.includes(key))) {
     assert.equal(workers(fixture, key).length, 0, "pending demand cannot escape its zero-capacity update");
   }
+  const transport = fixture.controlProxy ? { ...fixture.controlProxy.counts } : undefined;
+  if (transport) {
+    assert(transport.logDuplicates >= 32, "real Worker log requests saturated the replay path");
+    assert(transport.stateRequests > 0 && transport.maxStateMs < 5000, "state continues within the acceptance latency budget under log replay load");
+    await fixture.controlProxy.release();
+  }
   fixture.config.lifecycle.max_workers = 8;
   fixture.config.lifecycle.recovery_reserve = 2;
   fixture.config.execution.create_concurrency = 8;
@@ -77,5 +84,8 @@ export async function workerPressure(fixture) {
     maxWorkerRssKiB: Math.max(...samples.flat().map(s => s.rssKiB)),
     maxWorkerThreads: Math.max(...samples.flat().map(s => s.threads)),
     maxSixStatusReadsMs: Math.ceil(Math.max(...latencies)),
-    recoveryAtSaturation: "passed", scope: "small-host saturation; not maximum-count or log-flood acceptance" };
+    recoveryAtSaturation: "passed",
+    logLoad: transport && { duplicateDeliveries: transport.logDuplicates, refusedDuplicates: transport.duplicateFailures,
+      stateRequests: transport.stateRequests, maxStateMs: transport.maxStateMs, duplicateInflightLimit: 32 },
+    scope: "four-worker profile with real log replay pressure; not a 1,024-worker capacity claim" };
 }

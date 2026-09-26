@@ -38,6 +38,23 @@ test("control faults preserve committed requests and hold uncommitted requests s
     await configure({ id: "release" });
     assert.equal((await pending).status, 200);
     assert.equal(requests.length, 4);
+    await configure({ id: "outage", kind: "state_all", mode: "reject_before", limit: 10 });
+    await until("state outage armed", () => counts.id === "outage");
+    for (const method of ["GET", "POST", "LOCK", "UNLOCK"]) {
+      const response = await fetch(`http://127.0.0.1:${port}/internal/v1/generations/test/state?ID=fixture`, { method });
+      assert.equal(response.status, 503);
+    }
+    assert.equal(requests.length, 4, "all state methods fail before reaching SQLite");
+    assert.equal((await send()).status, 200, "control remains separate from the state outage");
+    await configure({ id: "load", kind: "logs", mode: "flood_logs", limit: 1 });
+    await until("log pressure armed", () => counts.id === "load");
+    const start = requests.length;
+    const log = JSON.stringify({ request_id: "same-log-id", message: { kind: "append", payload: "nonsecret fixture" } });
+    const response = await fetch(`http://127.0.0.1:${port}/internal/v1/generations/test/logs`, { method: "POST", body: log });
+    assert.equal(response.status, 200);
+    await until("bounded original plus duplicate deliveries", () => requests.length === start + 17);
+    assert(requests.slice(start).every(value => value === log), "load must reuse the exact request without fabricating log entries");
+    assert.equal(counts.logDuplicates, 16);
   } finally {
     await proxy.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
     await rm(directory, { recursive: true });

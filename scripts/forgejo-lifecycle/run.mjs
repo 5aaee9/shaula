@@ -11,8 +11,9 @@ import { captureCredentials, leakScan } from "./leaks.mjs";
 import { expiry } from "./expiry.mjs";
 import { workerPressure } from "./worker-pressure.mjs";
 import { interruptedCreate } from "./worker-crash.mjs";
-import { workerBackup } from "./worker-backup.mjs";
+import { workerBackup, backupDivergence } from "./worker-backup.mjs";
 import { controlFaults } from "./worker-control.mjs";
+import { backendOutage } from "./worker-emergency.mjs";
 import { ledger } from "./diagnostics-evidence.mjs";
 import { until, serverImage, runnerImage } from "./support.mjs";
 
@@ -93,6 +94,9 @@ try {
     phase = "worker-backup";
     console.log(`Running ${phase}`);
     report.workerBackup = await workerBackup(fixture);
+    phase = "backup-post-checkpoint-effect";
+    console.log(`Running ${phase}`);
+    report.backupDivergence = await backupDivergence(fixture);
     phase = "worker-pressure";
     console.log(`Running ${phase}`);
     report.workerPressure = await workerPressure(fixture);
@@ -100,6 +104,9 @@ try {
       phase = "worker-control-faults";
       console.log(`Running ${phase}`);
       report.controlFaults = await controlFaults(fixture);
+      phase = "worker-backend-outage";
+      console.log(`Running ${phase}`);
+      report.backendOutage = await backendOutage(fixture);
     }
     phase = "interrupted-create";
     console.log(`Running ${phase}`);
