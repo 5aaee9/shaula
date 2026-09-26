@@ -65,6 +65,13 @@ DestroyPending → Destroying → Destroyed 的正常 destroy 流**；仅当 des
 阻塞）时按原 60 秒规则 quarantine。即 quarantine_stale_cleanup 的语义从"60 秒
 后隔离"改为"60 秒后先尝试 destroy，不可证明才隔离"。
 
+> **rev 4（2026-09-25，Runner Operation）**：独立的 `quarantine_stale_cleanup` 已删除。越过 grace
+> 的 CleanupRequired 进入与 GitHub/Forgejo 共用的 Runner Operation Destroy：确定无法证明（provenance、
+> state identity、已准入 bindings 或 manifest 缺失、registration 身份矛盾）→ Quarantine；暂时
+> 观察不到（存储、artifact 缓存、远程 API）与 JobStillRunning → 保持状态并在后续 tick 重试；单个
+> Generation 的失败不再中止同批其他 Generation。从未开始 Create apply 的 Generation 见
+> [ARD-0040](../ard/0040-destroy-generations-that-never-started-a-create-apply.md)。
+
 ## 2.2 Idle 的幽灵 runner（rev 3，2026-09-12 事故修订）
 
 rev 1–2 只覆盖 `WaitingOnline`：runner 一旦被观察到 online 推进 `Idle` 后就

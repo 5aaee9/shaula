@@ -14,6 +14,7 @@
 //! plus a missing or non-online inventory entry advances to `Retiring`,
 //! entering the normal remove-then-destroy chain.
 
+use shaula_core::diagnostics::*;
 use shaula_core::error::CoreResult;
 use shaula_core::lifecycle::GenerationState;
 
@@ -28,7 +29,11 @@ impl FleetSupervisor {
     /// transition lands in this tick's own retire/counter pass. A failed
     /// inventory read only WARNs: the reconciliation is level-triggered
     /// and retries on the next tick.
-    pub(super) async fn reconcile_generation_readiness(&self, now: i64) -> CoreResult<()> {
+    pub(super) async fn reconcile_generation_readiness(
+        &self,
+        now: i64,
+        epoch: Option<i64>,
+    ) -> CoreResult<()> {
         let observed: Vec<_> = self
             .store
             .generations_for_fleet(&self.config.fleet_key)
@@ -55,14 +60,42 @@ impl FleetSupervisor {
         else {
             return Ok(());
         };
+        let mut observed: Vec<_> = observed
+            .into_iter()
+            .map(|generation| {
+                let mut capture = crate::diagnostic_capture::generation_capture(
+                    self.handoff.as_ref(),
+                    self.runtime_guard.as_ref(),
+                    &generation,
+                    Lane::Readiness,
+                    QuestionId::Readiness,
+                    now,
+                );
+                if let Some(d) = &mut capture.0 {
+                    d.observation.guard.session_epoch = Some(epoch);
+                    d.observation.guard.auth = Some((
+                        self.config.auth_profile_key.clone(),
+                        self.config.auth_revision,
+                    ));
+                }
+                (generation, capture)
+            })
+            .collect();
         let runners = match self.github.list_runners(scale_set_id).await {
             Ok(runners) => runners,
             Err(failure) => {
+                for (_, capture) in &mut observed {
+                    capture.reason(
+                        Code::ControlInventoryUnavailable,
+                        StageId::RunnerInventory,
+                        true,
+                    );
+                }
                 tracing::warn!(fleet = %self.config.fleet_key, summary = %failure.summary(), "readiness inventory unavailable");
                 return Ok(());
             }
         };
-        for generation in observed {
+        for (generation, mut diagnostic) in observed {
             let online = runners.iter().any(|runner| {
                 runner.scale_set_id == scale_set_id
                     && generation.github_runner_id == Some(runner.id)
@@ -71,6 +104,8 @@ impl FleetSupervisor {
             });
             if generation.state == GenerationState::Idle {
                 if online {
+                    diagnostic.pass(StageId::RunnerInventory);
+                    diagnostic.outcome(Outcome::Satisfied);
                     continue;
                 }
                 // A previously-online Idle generation whose runner is
@@ -92,6 +127,8 @@ impl FleetSupervisor {
                 continue;
             }
             if online {
+                diagnostic.pass(StageId::RunnerInventory);
+                diagnostic.outcome(Outcome::Satisfied);
                 // Idle joins the retirement channel (retire_excess's
                 // needs_removal set) in this same tick.
                 if let Err(e) = self
@@ -105,6 +142,11 @@ impl FleetSupervisor {
             }
             let age = now.saturating_sub(generation.created_at);
             if age > READINESS_TIMEOUT_MS {
+                diagnostic.reason(
+                    Code::LifecycleReadinessTimeout,
+                    StageId::RunnerInventory,
+                    true,
+                );
                 // Covers both "never registered" and "ephemeral runner
                 // served its job and self-deregistered": the inventory
                 // cannot distinguish them, and both must converge to
@@ -116,6 +158,13 @@ impl FleetSupervisor {
                 {
                     tracing::debug!(generation = %generation.id, summary = %e, "readiness cleanup transition rejected");
                 }
+            } else {
+                diagnostic.reason(
+                    Code::LifecycleAwaitingOnline,
+                    StageId::RunnerInventory,
+                    false,
+                );
+                diagnostic.outcome(Outcome::Progressing);
             }
             // Within the grace period (or offline mid-boot): keep waiting.
         }

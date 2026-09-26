@@ -132,3 +132,38 @@ async fn redirects_weak_versions_and_unknown_change_states_are_not_success() -> 
     task.abort();
     Ok(())
 }
+
+#[tokio::test]
+async fn diagnostics_unsupported_schema_and_route_are_not_missing_subjects() -> Result {
+    for (status, body) in [
+        (StatusCode::OK, serde_json::json!({"schemaVersion":2})),
+        (
+            StatusCode::NOT_FOUND,
+            serde_json::json!({"code":"RouteNotFound"}),
+        ),
+    ] {
+        let app = axum::Router::new().fallback(move || {
+            let body = body.clone();
+            async move { (status, Json(body)) }
+        });
+        let (client, task) = serve(app).await?;
+        assert!(matches!(
+            client.fleets().diagnostics("fleet").await,
+            Err(Error::Unsupported)
+        ));
+        task.abort();
+    }
+    let app = axum::Router::new().fallback(|| async {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"code":"DiagnosticsNotFound"})),
+        )
+    });
+    let (client, task) = serve(app).await?;
+    assert!(matches!(
+        client.fleets().diagnostics("fleet").await,
+        Err(Error::Http { status: 404, .. })
+    ));
+    task.abort();
+    Ok(())
+}

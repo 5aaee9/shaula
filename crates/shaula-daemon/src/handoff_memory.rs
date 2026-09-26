@@ -21,6 +21,17 @@ impl ControlPlaneStore for MemoryStore {
     ) -> CoreResult<Result<(), MutationError>> {
         Ok(Err(MutationError::NotFound))
     }
+    async fn commit_template_pool_noop(
+        &self,
+        _key: &str,
+        _incarnation: &str,
+        _revision: i64,
+        _actor: &shaula_core::registry::Actor,
+        _idempotency: Option<shaula_core::registry::IdempotencyInsert>,
+        _now: i64,
+    ) -> CoreResult<Result<(), MutationError>> {
+        Ok(Err(MutationError::NotFound))
+    }
     async fn fleet_get(&self, key: &str) -> CoreResult<Option<shaula_core::registry::FleetHead>> {
         Ok(Some(shaula_core::registry::FleetHead {
             key: key.into(),

@@ -49,6 +49,15 @@ async fn handler(
         token()
     } else if path == "/api/v1/access-tokens" {
         serde_json::json!({"items":[token()],"next_cursor":null})
+    } else if path.ends_with("/diagnostics") {
+        let kind = if path.contains("/fleets/") {
+            "fleet"
+        } else if path.contains("/jobs/") {
+            "job"
+        } else {
+            "generation"
+        };
+        serde_json::json!({"schemaVersion":1,"subject":{"kind":kind,"key":"key","fleetIncarnation":null},"generatedAt":"2026-09-26T00:00:00.000Z","questions":[],"related":[],"truncated":false})
     } else if path.contains("-changes/") {
         change
     } else if path.ends_with("/finalize") {
@@ -184,6 +193,9 @@ async fn every_inventory_route_is_exercised_through_public_sdk_methods() -> Resu
             (op["method"].as_str().unwrap_or_default().into(), path)
         })
         .collect();
+    client.fleets().diagnostics("key").await?;
+    client.generation_diagnostics("key").await?;
+    client.job_diagnostics("key").await?;
     let actual: BTreeSet<_> = calls
         .0
         .lock()
@@ -192,7 +204,7 @@ async fn every_inventory_route_is_exercised_through_public_sdk_methods() -> Resu
         .map(|(m, p, _, _)| (m.clone(), p.clone()))
         .collect();
     assert_eq!(actual, expected);
-    assert_eq!(actual.len(), 49);
+    assert_eq!(actual.len(), 52);
     task.abort();
     Ok(())
 }

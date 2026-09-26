@@ -2,6 +2,7 @@ pub mod args;
 mod command_name;
 mod config;
 mod edit;
+mod explain;
 mod history;
 mod login;
 mod resources;
@@ -93,6 +94,15 @@ pub fn output(args: &ClientArgs, command: &str, outcome: &Outcome) {
             println!("{encoded}");
         }
     } else {
+        if command.ends_with(".explain") {
+            if let Some(report) = outcome.data.as_ref().and_then(|d| {
+                d.decode::<shaula_client::types::diagnostics::DiagnosticReportV1>()
+                    .ok()
+            }) {
+                explain::table(&report);
+                return;
+            }
+        }
         println!("FIELD\tVALUE");
         if let Some(map) = serde_json::to_value(&envelope)
             .ok()
@@ -184,7 +194,15 @@ pub async fn run(args: ClientArgs, command: RemoteCommand) -> i32 {
     let streaming = command_name::streaming(&command);
     let result = dispatch(&args, command).await;
     let out = result.unwrap_or_else(Outcome::error);
-    if streaming {
+    if streaming
+        && name.ends_with(".explain")
+        && (matches!(args.output, Some(Output::Table))
+            || (args.output.is_none() && std::io::stdout().is_terminal()))
+    {
+        if out.code != 0 {
+            output(&args, &name, &out);
+        }
+    } else if streaming {
         if out.code != 0 && out.code != 130 {
             event("error", out.error.clone(), true);
         }
@@ -226,6 +244,36 @@ async fn dispatch(args: &ClientArgs, command: RemoteCommand) -> Result<Outcome, 
     } else {
         config::client(args, &config)?
     };
+    let explanation = match &command {
+        RemoteCommand::Fleets {
+            action:
+                ResourceAction::Explain {
+                    key,
+                    watch,
+                    timeout,
+                },
+        } => Some(("fleets", key, *watch, *timeout)),
+        RemoteCommand::Generations {
+            action:
+                HistoryAction::Explain {
+                    key,
+                    watch,
+                    timeout,
+                },
+        } => Some(("generations", key, *watch, *timeout)),
+        RemoteCommand::Jobs {
+            action:
+                HistoryAction::Explain {
+                    key,
+                    watch,
+                    timeout,
+                },
+        } => Some(("jobs", key, *watch, *timeout)),
+        _ => None,
+    };
+    if let Some((kind, key, watch, timeout)) = explanation {
+        return explain::run(&client, kind, key, watch, timeout, args.output).await;
+    }
     match command {
         RemoteCommand::Fleets { action } => resources::run(&client, "fleets", action).await,
         RemoteCommand::Templates { action } => resources::run(&client, "templates", action).await,

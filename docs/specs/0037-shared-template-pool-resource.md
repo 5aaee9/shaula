@@ -71,6 +71,13 @@ how Fleet revisions carry resolved template pins under spec 0029.
   inputs, or policy mints a new pool revision.
 - A pool revision change does not rewrite existing Generations. Generations
   keep the member pin they were admitted under.
+- An identical canonical PUT whose resolved members are unchanged is a durable
+  `200` no-op. The writer transaction rechecks the exact live incarnation/revision,
+  appends an audit fact and, when supplied, saves the idempotency response together.
+  It creates no Revision, member rows, Change or outbox entry. A newer PUT/cascade
+  or DELETE between classification and commit rejects the stale no-op; an accepted
+  historical replay remains the original result even after the head advances.
+  Mixed conditions and concurrent replay follow spec 0002 §5.
 
 ## 4. Fleet reference and admission
 

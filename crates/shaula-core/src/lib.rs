@@ -33,3 +33,4 @@ pub use error::CoreResult;
 pub use error::ReasonCode;
 
 pub mod access_tokens;
+pub mod diagnostics;

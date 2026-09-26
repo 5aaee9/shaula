@@ -151,3 +151,30 @@ impl SqliteControlPlane {
             }))
     }
 }
+
+impl super::SqliteControlPlane {
+    pub(super) async fn auth_credential_bytes_read(
+        &self,
+        key: &str,
+        revision: i64,
+    ) -> CoreResult<Option<Vec<u8>>> {
+        Ok(self
+            .store
+            .auth_revision_get(key, revision)
+            .await
+            .map_err(core_err)?
+            .map(|r| r.credential_bytes))
+    }
+    pub(super) async fn template_protected_bindings_read(
+        &self,
+        key: &str,
+        revision: i64,
+    ) -> CoreResult<Option<(String, String)>> {
+        Ok(self
+            .store
+            .template_revision_get(key, revision)
+            .await
+            .map_err(core_err)?
+            .and_then(|r| r.bindings_json.clone().zip(r.bindings_digest.clone())))
+    }
+}

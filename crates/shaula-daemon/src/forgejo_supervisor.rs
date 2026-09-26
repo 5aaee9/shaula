@@ -6,9 +6,11 @@ use std::sync::Arc;
 use shaula_core::capacity::CapacityPolicy;
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::fleet::FleetForgejoSection;
-use shaula_core::ports::forgejo::{ForgejoPoolPort, ForgejoRunnerRef};
+use shaula_core::ports::forgejo::ForgejoPoolPort;
 use shaula_core::ports::{AccessFailure, ApplyIntentSink, Clock, TemplateRuntimePort};
 use shaula_core::registry::{ControlPlaneStore, FleetRuntimeGuard, LifecycleStore};
+
+use crate::runner_operation::forgejo::is_owned_runner;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ForgejoReconcileReport {
@@ -30,6 +32,7 @@ pub struct ForgejoReconcileReport {
 
 /// Does not implement GitHub handoff, route proof, scale sets or listeners.
 pub struct ForgejoPoolSupervisor {
+    diagnostics: Option<shaula_core::diagnostics::Observer>,
     fleet_key: String,
     guard: FleetRuntimeGuard,
     auth: (String, i64),
@@ -84,8 +87,16 @@ impl ForgejoPoolSupervisor {
         capacity
             .validate()
             .map_err(|message| CoreError::new(ReasonCode::SpecInvalid, message))?;
+        let fleet_key = fleet_key.into();
+        let diagnostics = shaula_core::diagnostics::Observer::register(
+            deps.store.diagnostic_sink(),
+            shaula_core::diagnostics::Guard::fleet(&fleet_key, &deps.guard),
+            shaula_core::diagnostics::Lane::Supervisor,
+            shaula_core::diagnostics::QuestionId::ScaleUp,
+        );
         Ok(Self {
-            fleet_key: fleet_key.into(),
+            diagnostics,
+            fleet_key,
             guard: deps.guard,
             auth: deps.auth,
             capacity,
@@ -122,6 +133,19 @@ impl ForgejoPoolSupervisor {
     pub async fn tick(&self) -> CoreResult<ForgejoReconcileReport> {
         let _tick = self.tick_lock.lock().await;
         let now = self.clock.now_unix_ms();
+        let mut diagnostic = self.diagnostics.as_ref().and_then(|o| o.begin(now));
+        let result = self.tick_observed(now, &mut diagnostic).await;
+        crate::diagnostic_capture::finish(diagnostic, result.is_err());
+        result
+    }
+
+    async fn tick_observed(
+        &self,
+        now: i64,
+        diagnostic: &mut Option<shaula_core::diagnostics::ObservationTicket>,
+    ) -> CoreResult<ForgejoReconcileReport> {
+        use crate::diagnostic_capture::{note, passed};
+        use shaula_core::diagnostics::*;
         let Some(head) = self.current_head().await? else {
             return Ok(ForgejoReconcileReport {
                 stale_demand: true,
@@ -131,12 +155,37 @@ impl ForgejoPoolSupervisor {
             });
         };
         let deleting = head.deletion_marker;
+        passed(diagnostic, StageId::Authority);
+        if deleting {
+            note(
+                diagnostic,
+                Code::ControlDecommissioning,
+                StageId::Authority,
+                false,
+            );
+        }
         let expired = self.expire_runners(now).await?;
         let mut report = self.observe_demand(deleting, now).await?;
-        report.destroyed = expired;
+        report.destroyed = expired.destroyed;
+        if report.stale_demand {
+            note(
+                diagnostic,
+                Code::ControlDemandUnavailable,
+                StageId::Demand,
+                true,
+            );
+        } else {
+            passed(diagnostic, StageId::Demand);
+        }
         let runners = match self.forgejo.list_runners().await {
             Ok(runners) => runners,
             Err(failure) => {
+                note(
+                    diagnostic,
+                    Code::ControlInventoryUnavailable,
+                    StageId::Demand,
+                    true,
+                );
                 report.stale_inventory = true;
                 report.reason.get_or_insert(access_reason(&failure));
                 self.observe_status(&report, deleting, now).await?;
@@ -149,9 +198,25 @@ impl ForgejoPoolSupervisor {
         self.reconcile_generation_readiness(&runners, now).await?;
         if !report.stale_demand {
             // Never use a pre-Create inventory to clean up a new registration.
-            report.destroyed += self.destroy_excess(report.target, now).await?;
+            report.destroyed += self.destroy_excess(report.target, now).await?.destroyed;
             if !deleting && report.unknown_runners == 0 {
                 let (effective, occupancy) = self.store.capacity_counters(&self.fleet_key).await?;
+                crate::diagnostic_capture::capacity_decision(
+                    diagnostic,
+                    self.capacity,
+                    Some(i64::try_from(report.waiting_jobs).unwrap_or(i64::MAX)),
+                    shaula_core::capacity::CapacityCounters {
+                        effective_capacity: effective,
+                        resource_occupancy: occupancy,
+                    },
+                    DemandKind::ForgejoWaitingJobs,
+                    Some(now),
+                );
+                if let Some(d) = diagnostic {
+                    if let Some(cap) = &mut d.observation.question.capacity {
+                        cap.demand = Some(report.waiting_jobs.to_string());
+                    }
+                }
                 let creates = create_count(self.capacity, report.target, effective, occupancy);
                 for _ in 0..creates {
                     if self.create_one_generation(now).await? {
@@ -201,12 +266,6 @@ fn normalized_labels(labels: &[String]) -> CoreResult<Vec<String>> {
         .collect())
 }
 
-fn is_owned_runner(runner: &ForgejoRunnerRef, labels: &[String]) -> bool {
-    runner.ephemeral
-        && runner.is_known()
-        && labels.iter().all(|label| runner.labels.contains(label))
-}
-
 fn access_reason(failure: &AccessFailure) -> ReasonCode {
     match failure {
         AccessFailure::Unauthenticated => ReasonCode::Unauthenticated,
@@ -219,8 +278,6 @@ fn access_reason(failure: &AccessFailure) -> ReasonCode {
 
 #[path = "forgejo_supervisor_destroy.rs"]
 mod destroy;
-#[path = "forgejo_supervisor_expiry.rs"]
-mod expiry;
 #[path = "forgejo_supervisor_generation.rs"]
 mod generation;
 #[path = "forgejo_supervisor_jobs.rs"]

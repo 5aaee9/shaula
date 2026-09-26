@@ -28,6 +28,7 @@ pub mod m0022_forgejo_job_enrichment;
 pub mod m0023_principal_idempotency;
 pub mod m0024_personal_tokens;
 pub mod m0025_audit_credentials;
+pub mod m0026_diagnostics;
 
 use sea_orm_migration::prelude::*;
 
@@ -64,6 +65,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0023_principal_idempotency::Migration),
             Box::new(m0024_personal_tokens::Migration),
             Box::new(m0025_audit_credentials::Migration),
+            Box::new(m0026_diagnostics::Migration),
         ]
     }
 }

@@ -56,6 +56,11 @@ pub(super) async fn run(
     action: ResourceAction,
 ) -> Result<Outcome, Error> {
     let read = match action {
+        ResourceAction::Explain {
+            key,
+            watch,
+            timeout,
+        } => return super::explain::run(client, kind, &key, watch, timeout, None).await,
         ResourceAction::List => match kind {
             "fleets" => client.fleets().list().await?,
             "templates" => client.templates().list().await?,

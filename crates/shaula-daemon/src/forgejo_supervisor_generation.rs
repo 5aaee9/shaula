@@ -1,6 +1,7 @@
 //! Durable Forgejo Generation creation. Prepare retained inputs before registration.
 
 use sha2::{Digest, Sha256};
+use shaula_core::diagnostics::*;
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::fleet::FleetProviderKind;
 use shaula_core::lifecycle::GenerationState;
@@ -12,11 +13,23 @@ use super::ForgejoPoolSupervisor;
 
 impl ForgejoPoolSupervisor {
     pub(super) async fn create_one_generation(&self, now: i64) -> CoreResult<bool> {
-        let _permit = self
-            .create_limit
-            .acquire()
-            .await
-            .map_err(|_| CoreError::new(ReasonCode::Internal, "create scheduler stopped"))?;
+        use shaula_core::diagnostics::{Code, Guard, Lane, Observer, QuestionId};
+        let observer = Some(&self.guard).and_then(|guard| {
+            Observer::register(
+                self.store.diagnostic_sink(),
+                Guard::fleet(&self.fleet_key, guard),
+                Lane::Operation,
+                QuestionId::ScaleUp,
+            )
+        });
+        let _permit = crate::diagnostic_capture::acquire(
+            &self.create_limit,
+            observer,
+            Code::ExecutionCreateSlotWait,
+            now,
+        )
+        .await
+        .map_err(|_| CoreError::new(ReasonCode::Internal, "create scheduler stopped"))?;
         // Reserve occupancy under the same exclusive gate used by Fleet writes.
         // Never borrow a newer revision with a client built for an older one.
         let gate = self.gates.acquire_exclusive(&self.fleet_key).await;
@@ -159,7 +172,7 @@ impl ForgejoPoolSupervisor {
         let request = TemplateCreateRequest {
             workspace_path: workspace,
             artifact_dir,
-            pinned_artifact_digest: record.template_artifact_digest,
+            pinned_artifact_digest: record.template_artifact_digest.clone(),
             input,
             expected_bindings_digest: shaula_core::template::BindingsDigest(bindings_digest),
             managed_shape: manifest.managed_resource_shape,
@@ -168,8 +181,23 @@ impl ForgejoPoolSupervisor {
             apply_intent_sink: Some(apply_intent.clone()),
             forgejo_bootstrap: Some(bootstrap),
         };
+        let mut diagnostic = crate::diagnostic_capture::generation_capture(
+            self.store.as_ref(),
+            Some(&self.guard),
+            &record,
+            Lane::Operation,
+            QuestionId::Readiness,
+            now,
+        );
         match self.runtime.create(request).await {
             Ok(result) => {
+                diagnostic.pass(StageId::CreateEffect);
+                diagnostic.reason(
+                    Code::LifecycleAwaitingOnline,
+                    StageId::RunnerInventory,
+                    false,
+                );
+                diagnostic.outcome(Outcome::Progressing);
                 TelemetryHandle::new().record(MetricOperation::IaC, MetricResult::Ok, 1);
                 let result_json = serde_json::json!({
                     "result": result.result_envelope,
@@ -191,7 +219,20 @@ impl ForgejoPoolSupervisor {
                     .await?;
                 Ok(true)
             }
-            Err(_) => {
+            Err(error) => {
+                let known = matches!(
+                    error,
+                    shaula_core::ports::TemplateOutcomeError::PlanFailed { .. }
+                );
+                diagnostic.reason(
+                    if known {
+                        Code::LifecycleOperationFailed
+                    } else {
+                        Code::LifecycleApplyOutcomeUnknown
+                    },
+                    StageId::CreateEffect,
+                    known,
+                );
                 TelemetryHandle::new().record(MetricOperation::IaC, MetricResult::Failed, 1);
                 self.lifecycle
                     .generation_advance(

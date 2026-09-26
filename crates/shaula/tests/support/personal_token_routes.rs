@@ -3,7 +3,10 @@ use super::*;
 #[test]
 fn management_router_and_inventory_are_bidirectional() -> TestResult {
     use std::collections::BTreeSet;
-    let source = include_str!("../../../shaula-http/src/router/mod.rs");
+    let source = concat!(
+        include_str!("../../../shaula-http/src/router/mod.rs"),
+        include_str!("../../../shaula-http/src/router/diagnostics.rs")
+    );
     let inventory: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../docs/design/0039-route-inventory.json"
     ))?;
@@ -70,7 +73,7 @@ async fn all_inventory_routes_require_identity_and_scoped_routes_reject_identity
         "../../../../docs/design/0039-route-inventory.json"
     ))?;
     let operations = inventory["operations"].as_array().ok_or("operations")?;
-    assert_eq!(operations.len(), 49);
+    assert_eq!(operations.len(), 52);
     for operation in operations {
         let method = operation["method"]
             .as_str()

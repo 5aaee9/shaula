@@ -32,6 +32,11 @@ pub(super) async fn run(
     action: HistoryAction,
 ) -> Result<Outcome, Error> {
     match action {
+        HistoryAction::Explain {
+            key,
+            watch,
+            timeout,
+        } => super::explain::run(client, kind, &key, watch, timeout, None).await,
         HistoryAction::Get { id } => Ok(Outcome::data(match kind {
             "jobs" => client.job(&id).await?.data,
             "generations" => client.generation(&id).await?.data,

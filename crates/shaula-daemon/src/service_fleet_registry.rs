@@ -2,13 +2,13 @@
 
 use async_trait::async_trait;
 
-use super::{template_referenced, unprocessable, ControlPlane};
+use super::conditional_put::{fleet::Fleet, Request};
+use super::ControlPlane;
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
-use shaula_core::fleet::{normalize_fleet, validate_fleet_spec, FleetSpec};
-use shaula_core::registry::HealthPort;
+use shaula_core::fleet::FleetSpec;
 use shaula_core::registry::{
-    Actor, ChangeView, FleetRegistryPort, FleetResource, FleetStatus, MutationAccepted,
-    MutationError, Scope,
+    Actor, ChangeView, FleetRegistryPort, FleetResource, FleetStatus, HealthPort, MutationAccepted,
+    MutationError,
 };
 
 #[async_trait]
@@ -16,7 +16,6 @@ impl HealthPort for ControlPlane {
     async fn live(&self) -> bool {
         true
     }
-
     async fn ready(&self) -> bool {
         self.ready.load(std::sync::atomic::Ordering::SeqCst)
     }
@@ -24,6 +23,17 @@ impl HealthPort for ControlPlane {
 
 #[async_trait]
 impl FleetRegistryPort for ControlPlane {
+    async fn diagnostics(
+        &self,
+        actor: &Actor,
+        kind: shaula_core::diagnostics::SubjectKind,
+        key: &str,
+    ) -> shaula_core::diagnostics::DiagnosticsResult {
+        self.store
+            .diagnostic_read(kind, key, actor, self.now_ms())
+            .await
+    }
+
     #[tracing::instrument(name = "shaula.registry.fleet_put", skip_all, fields(key = %key))]
     async fn fleet_put(
         &self,
@@ -34,299 +44,17 @@ impl FleetRegistryPort for ControlPlane {
         if_match: Option<(String, i64)>,
         idempotency_key: Option<String>,
     ) -> CoreResult<Result<MutationAccepted, MutationError>> {
-        if !actor.has(Scope::FleetWrite) {
-            return Ok(Err(unprocessable(
-                ReasonCode::SpecInvalid,
-                "missing fleet.write scope",
-            )));
-        }
-        if let Err(e) = validate_fleet_spec(&spec) {
-            return Ok(Err(unprocessable(e.code, e.summary)));
-        }
-
-        // Canonical request facts for idempotency: body + precondition.
-        let canonical_body = serde_json::to_string(&spec)
-            .map_err(|e| CoreError::new(ReasonCode::Internal, e.to_string()))?;
-        let precondition = match (&if_match, if_none_match) {
-            (Some((incarnation, revision)), _) => format!("if-match:{incarnation}:{revision}"),
-            (None, true) => "if-none-match:*".to_string(),
-            (None, false) => "none".to_string(),
-        };
-
-        match self
-            .idempotency_replay(
+        self.conditional_put(
+            Request {
                 actor,
-                ("fleet", "v1:PUT"),
                 key,
-                &idempotency_key,
-                &canonical_body,
-                &precondition,
-            )
-            .await?
-        {
-            Err(conflict) => return Ok(Err(conflict)),
-            Ok(Some(accepted)) => return Ok(Ok(accepted)),
-            Ok(None) => {}
-        }
-
-        let existing = self.store.fleet_get(key).await?;
-        // A decommissioning fleet rejects every new revision with 410
-        // regardless of preconditions (0002 section 8: DELETE is irreversible).
-        if let Some(current) = &existing {
-            if current.deletion_marker || current.tombstone {
-                return Ok(Err(MutationError::Gone {
-                    tombstone: key.to_string(),
-                }));
-            }
-        }
-        match (&existing, if_none_match, &if_match) {
-            (None, true, _) => {}
-            (Some(current), true, _) => {
-                return Ok(Err(MutationError::PreconditionFailed {
-                    current: (current.incarnation.clone(), current.desired_revision),
-                }));
-            }
-            (None, false, _) => return Ok(Err(MutationError::PreconditionRequired)),
-            (Some(current), false, Some((incarnation, revision))) => {
-                if current.incarnation != *incarnation || current.desired_revision != *revision {
-                    return Ok(Err(MutationError::PreconditionFailed {
-                        current: (current.incarnation.clone(), current.desired_revision),
-                    }));
-                }
-                if current.tombstone {
-                    return Ok(Err(MutationError::Gone {
-                        tombstone: key.to_string(),
-                    }));
-                }
-            }
-            (Some(_), false, None) => return Ok(Err(MutationError::PreconditionRequired)),
-        }
-
-        // Fleet key count admission limit.
-        if existing.is_none() {
-            let active = self.store.fleet_count().await?;
-            if active >= self.max_active_fleets {
-                return Ok(Err(MutationError::TooManyRequests {
-                    retry_after_secs: 5,
-                }));
-            }
-        }
-
-        // Admission: an already-admitted Fleet keeps its retained pin
-        // when the reference (a bare key since spec 0023) is unchanged;
-        // only a NEW key resolves current Active (and then requires zero
-        // occupancy) — spec 0005 §6. Inputs are validated against both
-        // authorities (schema + alias policy). Extracted to
-        // `service_fleet_ops`.
-        let (template, template_pool, template_pool_ref, resolved_auth) =
-            match self.resolve_admission_materials(key, &spec).await? {
-                Ok(materials) => materials,
-                Err(e) => return Ok(Err(e)),
-            };
-
-        // Replacement gates: remote identity immutable per incarnation;
-        // template/auth-key replacement requires zero occupancy.
-        if let Some(_current) = &existing {
-            let Some(previous) = self.store.fleet_revision_latest(key).await? else {
-                return Ok(Err(MutationError::NotFound));
-            };
-            let previous_spec: FleetSpec = serde_json::from_str(&previous.spec_json)
-                .map_err(|e| CoreError::new(ReasonCode::Internal, e.to_string()))?;
-            let identity_changed = match (previous_spec.kind, spec.kind) {
-                (
-                    shaula_core::fleet::FleetProviderKind::Github,
-                    shaula_core::fleet::FleetProviderKind::Github,
-                ) => {
-                    previous_spec.github.target != spec.github.target
-                        || previous_spec.github.scale_set_name != spec.github.scale_set_name
-                        || previous_spec.github.runner_group != spec.github.runner_group
-                }
-                (
-                    shaula_core::fleet::FleetProviderKind::Forgejo,
-                    shaula_core::fleet::FleetProviderKind::Forgejo,
-                ) => previous_spec.forgejo != spec.forgejo,
-                _ => true,
-            };
-            if identity_changed {
-                return Ok(Err(MutationError::IdentityConflict));
-            }
-            // Template inputs are part of the immutable execution envelope.
-            // Changing them while generations are present would leave one
-            // Fleet serving runners created from different parameter sets.
-            // Treat an inputs change like a template or auth replacement and
-            // require zero occupancy before admitting the new revision.
-            let pool_changed = previous_spec.template_pool != spec.template_pool;
-            // Switching pools re-routes every future draw; treat a shared
-            // pool reference change exactly like a template replacement.
-            let pool_ref_changed = previous_spec.template_pool_ref != spec.template_pool_ref;
-            if template_referenced(&previous_spec) != template_referenced(&spec)
-                || previous_spec.template_inputs != spec.template_inputs
-                || pool_changed
-                || pool_ref_changed
-            {
-                let occupancy = self.store.generations_occupancy(key).await?;
-                if occupancy > 0 {
-                    return Ok(Err(MutationError::RetirementBlocked {
-                        reason: if previous_spec.template_inputs != spec.template_inputs {
-                            "template input replacement requires zero resource occupancy".into()
-                        } else if pool_changed || pool_ref_changed {
-                            "template pool replacement requires zero resource occupancy".into()
-                        } else {
-                            "replacement requires zero resource occupancy".into()
-                        },
-                    }));
-                }
-            }
-            if previous.auth_desired.0 != spec.auth_profile_ref() {
-                let occupancy = self.store.generations_occupancy(key).await?;
-                if occupancy > 0 {
-                    return Ok(Err(MutationError::RetirementBlocked {
-                        reason: "auth profile replacement requires zero resource occupancy".into(),
-                    }));
-                }
-            }
-        }
-
-        // No-op detection: same canonical spec AND same resolved pin is an
-        // identical re-assertion — a durable 200 with NO new
-        // Revision/Change (spec 0002 section 5.2/5.3). Same-Profile auth
-        // promotion is not part of the comparison (section 4.2); rotation
-        // propagates via the auth handoff retarget instead. The no-op is
-        // itself durable: the audit entry and, with an idempotency key,
-        // the 200 replay body are persisted, so a lost response replays
-        // and a key reuse with a different body conflicts.
-        if let Some((incarnation, revision)) = self
-            .detect_noop(key, existing.as_ref(), &spec, template.as_ref())
-            .await?
-        {
-            let accepted = MutationAccepted {
-                etag: format!("{incarnation}:{revision}"),
-                change: ChangeView {
-                    id: String::new(),
-                    resource_kind: "fleet".into(),
-                    resource_key: key.to_string(),
-                    revision,
-                    kind: "NoOp".into(),
-                    state: "NoOp".into(),
-                    reason: None,
-                },
-                no_op: true,
-            };
-            let idempotency = match idempotency_key.map(|idem| {
-                let request_hash =
-                    self.idempotency_hash("fleet", key, &idem, &canonical_body, &precondition);
-                let response_body = serde_json::to_string(&accepted)
-                    .map_err(|e| CoreError::new(ReasonCode::Internal, e.to_string()))?;
-                Ok(shaula_core::registry::IdempotencyInsert {
-                    operation: "v1:PUT".into(),
-                    principal: actor.name.clone(),
-                    id: format!("idem-noop-{}", self.new_id()),
-                    resource_kind: "fleet".to_string(),
-                    resource_key: key.to_string(),
-                    idempotency_key: idem,
-                    request_hash,
-                    response_status: 200,
-                    response_body: Some(response_body),
-                    now: self.now_ms(),
-                })
-            }) {
-                Some(Ok(value)) => Some(value),
-                Some(Err(e)) => return Err(e),
-                None => None,
-            };
-            let commit_result = self
-                .store
-                .commit_fleet_noop(
-                    key,
-                    &incarnation,
-                    revision,
-                    actor,
-                    idempotency,
-                    self.now_ms(),
-                )
-                .await?;
-            // A concurrent newer PUT or DELETE between classification and
-            // commit invalidates the no-op: surface the precondition, never
-            // record a stale 200 (spec 0002 section 5.3).
-            match commit_result {
-                Ok(()) => return Ok(Ok(accepted)),
-                Err(fence) => return Ok(Err(fence)),
-            }
-        }
-
-        let normalized = normalize_fleet(&spec, self.inputs_digest(&spec)?)?;
-        let spec_json = serde_json::to_string(&spec)
-            .map_err(|e| CoreError::new(ReasonCode::Internal, e.to_string()))?;
-        let revision = existing
-            .as_ref()
-            .map(|f| f.desired_revision + 1)
-            .unwrap_or(1);
-        let incarnation = existing
-            .as_ref()
-            .map(|f| f.incarnation.clone())
-            .unwrap_or_else(|| self.new_id());
-        let kind = if existing.is_some() {
-            "Replace"
-        } else {
-            "Create"
-        };
-        let draft = super::FleetMutationDraft {
-            authentication: actor.authentication.clone(),
-            key: key.to_string(),
-            incarnation: incarnation.clone(),
-            revision,
-            spec_json: spec_json.clone(),
-            template,
-            template_pool,
-            template_pool_ref,
-            auth_desired: Some((
-                resolved_auth.profile_key.as_str().to_string(),
-                resolved_auth.revision as i64,
-            )),
-            inputs_digest: normalized.inputs_digest.clone(),
-            actor: actor.name.clone(),
-            kind,
-            now: self.now_ms(),
-        };
-        let change_id = self.new_id();
-        let accepted = MutationAccepted {
-            etag: format!("{incarnation}:{revision}"),
-            change: draft.change_view(&change_id),
-            no_op: false,
-        };
-
-        // The idempotency record stores the full serialized response so a
-        // lost-response retry replays the exact original result (0002 section 5.2).
-        let idempotency = idempotency_key.map(|idem| {
-            let request_hash =
-                self.idempotency_hash("fleet", key, &idem, &canonical_body, &precondition);
-            let response_body = serde_json::to_string(&accepted)
-                .map_err(|e| CoreError::new(ReasonCode::Internal, e.to_string()))?;
-            Ok((idem, request_hash, 202, response_body))
-        });
-        let idempotency = match idempotency {
-            Some(Ok(value)) => Some(value),
-            Some(Err(e)) => return Err(e),
-            None => None,
-        };
-
-        let facts = draft.into_facts(accepted.change.clone(), idempotency);
-        // A lost fence race surfaces as a precondition failure so the
-        // client re-reads the current desired head; never overwrite.
-        // R6-02: the head-advancing commit takes the fleet's effect
-        // gate EXCLUSIVELY — a Create holding its short admission claim
-        // (durable ApplyStarting → spawn handover) commits BEFORE this
-        // PUT, so it can never spawn against the NEW desired revision;
-        // once the claim is released at the spawn handover, the PUT
-        // commits freely and the next reconcile tick converges.
-        let effect_gate = self.effect_gates.acquire_exclusive(key).await;
-        let committed = self.store.commit_fleet_mutation(facts).await;
-        drop(effect_gate);
-        super::metrics::record_admission(&committed);
-        if let Err(fence) = committed? {
-            return Ok(Err(fence));
-        }
-        Ok(Ok(accepted))
+                create: if_none_match,
+                expected: if_match,
+                idempotency_key,
+            },
+            || Fleet::prepare(spec),
+        )
+        .await
     }
 
     async fn fleet_get(

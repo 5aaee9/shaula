@@ -27,12 +27,23 @@ impl FleetSupervisor {
     /// fleet deletion marker before any external effect (0002 section 8).
     #[tracing::instrument(name = "shaula.iac.generation_create", skip_all, fields(fleet_key = %self.config.fleet_key))]
     pub(crate) async fn create_one_generation(&self, now: i64) -> CoreResult<bool> {
-        let _permit = self
-            .limits
-            .create
-            .acquire()
-            .await
-            .map_err(|_| CoreError::new(ReasonCode::Internal, "create scheduler stopped"))?;
+        use shaula_core::diagnostics::{Code, Guard, Lane, Observer, QuestionId};
+        let observer = self.runtime_guard.as_ref().and_then(|guard| {
+            Observer::register(
+                self.handoff.diagnostic_sink(),
+                Guard::fleet(&self.config.fleet_key, guard),
+                Lane::Operation,
+                QuestionId::ScaleUp,
+            )
+        });
+        let _permit = crate::diagnostic_capture::acquire(
+            &self.limits.create,
+            observer,
+            Code::ExecutionCreateSlotWait,
+            now,
+        )
+        .await
+        .map_err(|_| CoreError::new(ReasonCode::Internal, "create scheduler stopped"))?;
         // Route-proof gate (spec 0011 §5.3): a new Create/JIT effect runs
         // only on fresh authorization evidence; unprovable routes fail
         // closed without touching safe cleanup.
@@ -325,58 +336,23 @@ impl FleetSupervisor {
             apply_intent_sink: Some(apply_intent.clone()),
             forgejo_bootstrap: None,
         };
-        match self.runtime.create(request).await {
-            Ok(result) => {
-                // Start the hard lifetime at successful Create, not at tick/allocation.
-                let now = self.clock.as_ref().map_or(now, |clock| clock.now_unix_ms());
-                record_iac(MetricResult::Ok);
-                // Persist the result envelope TOGETHER WITH the REAL
-                // post-apply state identity: this is the ownership proof
-                // every later Destroy re-verifies at its effect boundary
-                // (F07, spec 0004 §5).
-                let body = serde_json::json!({
-                    "result": result.result_envelope,
-                    "state_lineage": result.state_lineage,
-                    "state_serial": result.state_serial,
-                })
-                .to_string();
-                self.store
-                    .generation_set_result(&generation_id, &body, "sha256:result", now)
-                    .await?;
-                apply_intent.complete(self.store.as_ref(), now).await?;
-                self.store
-                    .generation_advance(
-                        &generation_id,
-                        shaula_core::lifecycle::GenerationState::WaitingOnline,
-                        now,
-                    )
-                    .await?;
-                Ok(true)
-            }
-            Err(shaula_core::ports::TemplateOutcomeError::PlanFailed { .. }) => {
-                record_iac(MetricResult::Failed);
-                // No apply admitted; the generation never touched infra.
-                self.store
-                    .generation_advance(
-                        &generation_id,
-                        shaula_core::lifecycle::GenerationState::CleanupRequired,
-                        now,
-                    )
-                    .await?;
-                Ok(false)
-            }
-            Err(_) => {
-                record_iac(MetricResult::Failed);
-                // Apply may have started: never re-apply; cleanup path.
-                self.store
-                    .generation_advance(
-                        &generation_id,
-                        shaula_core::lifecycle::GenerationState::CleanupRequired,
-                        now,
-                    )
-                    .await?;
-                Ok(false)
-            }
-        }
+        let mut diagnostic = crate::diagnostic_capture::generation_capture(
+            self.handoff.as_ref(),
+            self.runtime_guard.as_ref(),
+            &record,
+            Lane::Operation,
+            QuestionId::Readiness,
+            now,
+        );
+        self.finish_generation_create(
+            &generation_id,
+            self.runtime.create(request).await,
+            &apply_intent,
+            now,
+            &mut diagnostic,
+        )
+        .await
     }
 }
+#[path = "supervisor_create_result.rs"]
+mod create_result;

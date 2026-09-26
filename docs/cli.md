@@ -119,3 +119,27 @@ input; 3 authentication; 4 scope; 5 conflict/precondition; 6 absent; 7 validatio
 8 tracking; 9 unavailable/uncertain; 10 secret delivery/recovery; 130 cancellation.
 See [implementation status](IMPLEMENTATION_STATUS.md) for verified coverage and
 remaining deployment acceptance; route coverage alone is not workflow parity.
+
+## Read reconciliation explanations
+
+```console
+shaula fleets explain linux-ci --output table
+shaula generations explain GENERATION_ID --output json
+shaula jobs explain JOB_ID
+shaula fleets explain linux-ci --watch --timeout 300 --output table
+```
+
+All three commands require `fleet.read` and perform only GETs. `--watch` reads
+again every five seconds until its timeout or interruption; it never retries
+Create, changes capacity, deletes resources, or executes a suggestion. HTTP 200
+with blocked/unknown evidence exits successfully: it means an explanation was
+read, not that the resource converged. Table output includes outcome, coverage,
+freshness, original observation time and reason codes. JSON preserves unknown
+codes and future response fields. Old routes/HTML or unsupported schema versions
+report unsupported diagnostics; the original `get`/status commands remain usable.
+
+The detail-page **Why** panel uses the same three endpoints. Only an expanded,
+visible detail page polls. Missing/expired evidence is explicit; a failed read
+does not replace a form or pending Change. Pool members and rollout pins require
+`template.read`; invocation navigation requires `logs.read` as well as
+`fleet.read`. The report carries no mutation ETag or executable remediation.

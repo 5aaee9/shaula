@@ -17,6 +17,15 @@ impl SupervisorWiring {
         let Some(head) = self.store.fleet_get(key).await? else {
             return Ok(None);
         };
+        use shaula_core::diagnostics::*;
+        let mut diagnostic = Capture::start(
+            self.store.diagnostic_sink(),
+            Guard::fleet(key, &FleetRuntimeGuard::from(&head)),
+            Lane::Assembly,
+            QuestionId::ScaleUp,
+            self.clock.now_unix_ms(),
+        );
+        diagnostic.reason(Code::ControlDependencyUnavailable, StageId::Authority, true);
         let Some(latest) = self.store.fleet_revision_latest(key).await? else {
             return Ok(None);
         };
@@ -58,7 +67,7 @@ impl SupervisorWiring {
         else {
             return Ok(None);
         };
-        Ok(Some(Arc::new(
+        let supervisor = Arc::new(
             ForgejoPoolSupervisor::new(
                 key,
                 section,
@@ -85,6 +94,8 @@ impl SupervisorWiring {
                 },
             )?
             .with_runner_max_lifetime(self.runner_max_lifetime),
-        )))
+        );
+        diagnostic.0 = None;
+        Ok(Some(supervisor))
     }
 }

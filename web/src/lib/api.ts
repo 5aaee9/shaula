@@ -5,6 +5,7 @@ export class ApiError extends Error {
     public status: number,
     public code: string,
     message: string,
+    public retryAfterSeconds?: number,
   ) {
     super(message);
   }
@@ -49,6 +50,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<R
       response.status,
       data.code || "RequestFailed",
       data.detail || `Request failed (${response.status}).`,
+      retryDelay(response.headers.get("retry-after")),
     );
   // Compression proxies can weaken ETag without changing the desired revision.
   // The origin supplies its opaque write version separately from that validator.
@@ -98,4 +100,10 @@ export function errorMessage(error: unknown): string {
       return "This resource changed since you opened it. Reopen it to review the latest version before trying again.";
   }
   return error instanceof Error ? error.message : "The request could not be completed.";
+}
+
+function retryDelay(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const seconds = /^\d+$/.test(value) ? Number(value) : (Date.parse(value) - Date.now()) / 1000;
+  return Number.isFinite(seconds) ? Math.max(0, seconds) : undefined;
 }

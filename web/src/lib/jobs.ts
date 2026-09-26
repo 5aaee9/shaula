@@ -27,6 +27,7 @@ export interface Job {
   };
   id: string;
   fleet_key: string;
+  fleet_incarnation?: string | null;
   protocol_job_id: string;
   owner_name: string | null;
   repository_name: string | null;
@@ -46,6 +47,7 @@ export interface Job {
 export interface Generation {
   id: string;
   fleet_key: string;
+  fleet_incarnation?: string | null;
   runner_name: string;
   generation_name: string;
   github_runner_id: number | null;

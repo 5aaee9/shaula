@@ -6,6 +6,12 @@ use std::sync::Arc;
 impl FleetSupervisor {
     #[must_use]
     pub fn with_runtime_guard(mut self, guard: FleetRuntimeGuard) -> Self {
+        self.diagnostics = shaula_core::diagnostics::Observer::register(
+            self.handoff.diagnostic_sink(),
+            shaula_core::diagnostics::Guard::fleet(&self.config.fleet_key, &guard),
+            shaula_core::diagnostics::Lane::Supervisor,
+            shaula_core::diagnostics::QuestionId::ScaleUp,
+        );
         self.runtime_guard = Some(guard);
         self
     }

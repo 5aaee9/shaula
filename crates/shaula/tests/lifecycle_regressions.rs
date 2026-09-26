@@ -185,10 +185,11 @@ async fn destroy_pending_is_reclassified_without_excess() {
         store.generation_advance("gen1", state, 4).await.unwrap();
     }
     supervisor.tick(10).await.unwrap();
-    // Missing Create proof is quarantined; it must neither strand nor reach Terraform.
+    // DestroyPending resumes without excess. The seeded row never admitted a
+    // Create apply, so it is destroyed without reaching Terraform (ARD-0039).
     assert_eq!(
         store.generation_get("gen1").await.unwrap().unwrap().state,
-        G::Quarantined
+        G::Destroyed
     );
 }
 
@@ -233,7 +234,8 @@ async fn cleanup_with_missing_auth_reference_is_quarantined() {
     // Give the settled listener one effect pass before exercising cleanup.
     supervisor.tick(4).await.unwrap();
     let report = supervisor.tick(60_003).await.unwrap();
-    assert_eq!(report.quarantined, 0);
+    // The Retirement pass itself reports the Quarantine it performed.
+    assert_eq!(report.quarantined, 1);
     assert_eq!(github.removals.load(Ordering::SeqCst), 0);
     assert_eq!(
         store
@@ -322,3 +324,6 @@ async fn route_proof_denial_blocks_ownership_and_creates_only() {
 
 #[path = "support/lifecycle_readiness.rs"]
 mod readiness_tests;
+
+#[path = "support/diagnostics_http.rs"]
+mod diagnostics_http;

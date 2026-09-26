@@ -16,6 +16,59 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Explainable reconciliation diagnostics (2026-09-26)
+
+PR #4's spec/ARD 0041 is merged. The local implementation adds a closed 41-code
+catalog, exact decimal capacity evidence, optional bounded decision capture,
+forward migration m0026, three `fleet.read` GET endpoints, typed Rust client,
+CLI explain/table/JSON/watch and Fleet/Generation/Job detail-page Why panels.
+Each query preserves capture time and version/identity fences. Projection loss
+returns incomplete explanations; authoritative-store failure remains 503.
+
+The sink has 1,024 queue entries, 64 KiB records, finite lanes, work-start
+sequences, process epochs and independent SQLite transactions. Dropped or failed
+writes invalidate currentness and later observations can recover. Reads do not
+call backends, select pool members or consume routing randomness. Reports retain
+at most 64 reasons, 128 evidence entries and 32 related identities within
+256 KiB, preserving primary causes and references. A separate periodic collector
+removes only disposable projection rows, including records past seven days or
+whose authoritative subject has been removed.
+
+Producer/predicate ownership:
+
+| Evidence | Implementation |
+| --- | --- |
+| Missing/stale/conflict/clock-invalid/unclassified | core diagnostics, Store hub/writer/read and daemon capture completion |
+| Auth/dependency/ownership/listener/demand/inventory/rate-limit/decommission | GitHub and Forgejo supervisor plus both assembly paths |
+| Target/policy ceiling/occupancy | original capacity input tuple in each supervisor |
+| Pool cap/no eligible/inline backpressure/selection | original pool admission transaction; protected member details filtered at read |
+| Create/destroy slot wait | actual semaphore acquisition path |
+| Apply outcome/bootstrap/readiness/operation result | typed runtime results, retained operation ledger and both readiness drivers |
+| Busy/safe-drain/registration/quarantine/hard-lifetime/completed | shared RunnerOperation plus ledger checkpoints; completion source distinguishes never-started, provider cleanup and operator attestation |
+| Follow resolution/inputs/backend/occupancy/commit | original single-template and shared-pool follow branches; pins require template.read |
+| Job association/dispatch boundary | retained backend-specific Jobs facts; no invented Generation association or same-name Fleet link |
+
+Local evidence includes real SQLite/Axum/OIDC authorization and fault tests,
+work-start ordering/epoch replacement/conflict/time expiry, write failure and
+recovery, a 100,000-Generation aggregate fixture, bounded report/reference tests,
+and identical lifecycle effect traces with diagnostics disabled/enabled/failed
+for both Runner Backends. Browser and CLI tests cover display and compatibility.
+These are local tests, not real provider acceptance.
+
+Verified locally on Windows:
+
+- `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Unfiltered `cargo nextest run --manifest-path Cargo.toml --workspace --no-fail-fast --status-level fail --final-status-level fail`: 1,004 passed, 2 skipped.
+- The separately requested `cargo nextest run --manifest-path Cargo.toml --workspace test` uses a name filter; it is supplementary to the unfiltered suite.
+- Web `npm run lint`, `npm run fmt:check`, `npm run build`, and the complete Playwright suite passed (202 tests); all 8 diagnostics browser tests were repeated after the final display adjustment.
+- All changed Rust files are at most 400 lines. Rust and Web catalogs both contain the same 41 reason codes.
+
+**Release gate still open: DX-30.** A selected isolated GitHub/Forgejo repository
+and resource platform/version tuple are required for real no-create,
+waiting-online, destroy-failure and rollout-lag scenarios. No production failure
+injection or deployment was performed. No claim is made that local mocks cover
+external platform behavior or all six resource platforms. Test totals above do not replace that release gate.
+
 ## Personal access tokens and remote CLI (2026-09-25)
 
 PR #3's spec/ARD 0039 is merged. Local implementation now includes owner-bound
@@ -77,6 +130,67 @@ Kanidm registration cannot mint the distinct primary API-JWT audience. Exhaustiv
 paired Web/CLI evidence for every WF-01–WF-14 failure branch is not claimed by the
 route coverage or existing component suite. Spec 0039's complete external/parity
 acceptance remains open until those results are recorded.
+## Shared conditional publication (C2, 2026-09-25)
+
+Fleet, Template Pool, Template Profile and both GitHub/Forgejo Auth PUT now enter
+one internal daemon Module (`conditional_put/`). Existing Registry Interfaces
+remain the callers' test surface. Typed resource Adapters retain canonical bytes,
+exact-pin/admission rules, protected-material comparison and transactional fences;
+Template Update keeps its preparation before entering Template publication.
+
+- Pool no-op now checks the exact live head, audits and saves an optional durable
+  `200` replay in one writer transaction, with no Revision/Change/outbox growth.
+- CAS/commit losers with an idempotency key perform a read-only replay recheck.
+  They never change the request ETag, re-admit or retry a write.
+- New mixed `If-None-Match: *` + `If-Match` PUTs return
+  `400 ConflictingPreconditions` after authorization, format and replay checks.
+  Matching history still replays; key/content conflicts remain `409`.
+
+Local verification: **16 new HTTP/Registry + real SQLite tests** pass, including
+five frozen historical hash fixtures, all five publication variants, bounded
+concurrency barriers, protected-material conflicts and transactional fault
+injection. Disabling the shared replay recheck caused three concurrency tests to
+fail; restoring it made them pass. Full workspace nextest: **952 passed, 2 skipped**.
+The required name-filtered `cargo nextest run --manifest-path Cargo.toml --workspace
+test` passes **749 tests, 205 filtered/skipped**. Rustfmt, strict workspace/all-target
+Clippy and whitespace checks pass; every C2-touched/new Rust file is <=400 lines.
+
+No schema migration, hash rewrite, public Registry parameter change, unified
+error channel or MutationFacts redesign was introduced. Read models and SQLite
+read projections were physically split only to respect the file-size rule.
+DELETE, Policy Update, Finalize, attestation and cascade orchestration stay intact.
+No real-platform or remote-CI acceptance was run for C2.
+
+Deferred, not silently resolved: identical full Auth PUT still creates a Candidate
+(the spec 0005 no-op discrepancy); principal/method idempotency scope still needs
+compatibility design; Template no-op versus Retirement remains an unverified race
+lead. C1 Create/restart/admission and C3/C5 are separate work.
+
+## Runner Operation: shared Destroy for both Runner Backends (2026-09-25)
+
+The GitHub Retirement Destroy, the Forgejo Destroy and the Runner Maximum Lifetime
+reaper were three copies of the same Generation effect; they are now one daemon Module
+(`crates/shaula-daemon/src/runner_operation`). Drivers keep candidate selection; the
+Module owns the state walk, destroy proofs and Quarantine rules. The Runner Backend
+seam holds only registration admission, removal and unrecorded-absence proof.
+
+Behavior changes (intended, see [ARD-0040](ard/0040-destroy-generations-that-never-started-a-create-apply.md)
+and spec 0024 §2.1 rev 4):
+
+- A Generation that never admitted a Create apply and whose registration is proven
+  removed or absent becomes `Destroyed` without Terraform on both backends (GitHub
+  previously quarantined it after 60 s and kept the capacity slot).
+- GitHub Destroy now quarantines missing bindings or an invalid manifest instead of
+  aborting the whole pass or destroying with an empty managed shape.
+- One Generation's failure no longer aborts the rest of a pass; the separate
+  `quarantine_stale_cleanup` step is removed.
+- An expired Generation without a registration identity is quarantined after its
+  resources are destroyed instead of retrying forever.
+
+Verification: `cargo nextest run --workspace` 936 passed (14 new Runner Operation matrix
+tests run each scenario against both adapters); `cargo clippy --workspace --all-targets
+-D warnings`; `cargo fmt --check`. Create, restart classification and the admission
+transaction (the remaining C1 steps) are unchanged; no real-platform run was performed.
 
 ## Forgejo management, real lifecycle and Jobs (2026-09-22)
 

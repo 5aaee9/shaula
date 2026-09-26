@@ -32,6 +32,11 @@ pub fn problem(status: StatusCode, code: &str, detail: impl Into<String>) -> Pro
 /// Maps registry mutation errors onto the status contract.
 pub fn mutation_problem(error: &MutationError) -> Problem {
     match error {
+        MutationError::ConflictingPreconditions => problem(
+            StatusCode::BAD_REQUEST,
+            "ConflictingPreconditions",
+            "If-Match and If-None-Match cannot be combined for a new mutation",
+        ),
         MutationError::PreconditionRequired => problem(
             StatusCode::PRECONDITION_REQUIRED,
             "PreconditionRequired",

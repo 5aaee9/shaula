@@ -49,6 +49,7 @@ pub(super) fn name(command: &RemoteCommand) -> String {
 }
 fn resource(action: &ResourceAction) -> &str {
     match action {
+        ResourceAction::Explain { .. } => "explain",
         ResourceAction::List => "list",
         ResourceAction::Get { .. } => "get",
         ResourceAction::Status { .. } => "status",
@@ -80,6 +81,7 @@ fn resource(action: &ResourceAction) -> &str {
 }
 fn history(action: &HistoryAction) -> &str {
     match action {
+        HistoryAction::Explain { .. } => "explain",
         HistoryAction::List { .. } => "list",
         HistoryAction::Get { .. } => "get",
         HistoryAction::Finalize { .. } => "finalize",
@@ -89,6 +91,12 @@ pub(super) fn streaming(command: &RemoteCommand) -> bool {
     matches!(
         command,
         RemoteCommand::Fleets {
+            action: ResourceAction::Explain { watch: true, .. }
+        } | RemoteCommand::Jobs {
+            action: HistoryAction::Explain { watch: true, .. }
+        } | RemoteCommand::Generations {
+            action: HistoryAction::Explain { watch: true, .. }
+        } | RemoteCommand::Fleets {
             action: ResourceAction::Status { watch: true, .. }
         } | RemoteCommand::AuthProfiles {
             action: ResourceAction::Status { watch: true, .. }

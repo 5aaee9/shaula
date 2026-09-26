@@ -37,6 +37,15 @@ impl SupervisorWiring {
         let Some(head) = self.store.fleet_get(key).await? else {
             return Ok(None);
         };
+        use shaula_core::diagnostics::*;
+        let mut diagnostic = Capture::start(
+            self.store.diagnostic_sink(),
+            Guard::fleet(key, &FleetRuntimeGuard::from(&head)),
+            Lane::Assembly,
+            QuestionId::ScaleUp,
+            self.clock.now_unix_ms(),
+        );
+        diagnostic.reason(Code::ControlDependencyUnavailable, StageId::Authority, true);
         // `revision` is the caller-captured desired head: a supervisor
         // built against a stale head must not run (the runtime guard's
         // fence CAS is the second line of defence).
@@ -313,6 +322,7 @@ impl SupervisorWiring {
             self.cache.insert(cache_key.clone(), Arc::new(supervisor));
         }
         let supervisor = self.cache[&cache_key].clone();
+        diagnostic.0 = None;
         Ok(Some(supervisor))
     }
 }

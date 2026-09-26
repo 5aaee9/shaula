@@ -88,3 +88,73 @@ async fn cli_login_context_whoami_and_explicit_remote_logout() -> TestResult {
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn diagnostics_cli_unknown_is_success_and_watch_never_mutates() -> TestResult {
+    use sea_orm::{ConnectionTrait, Database};
+    let fixture = Fixture::new().await?;
+    let database = Database::connect(format!(
+        "sqlite://{}?mode=rw",
+        fixture._dir.path().join("db").display()
+    ))
+    .await?;
+    database.execute_unprepared("INSERT INTO fleets(key,incarnation,created_at,updated_at) VALUES('diagnostic','inc',1,1)").await?;
+    let TokenIssue::Issued { secret, .. } = fixture
+        .primary("ops")?
+        .access_tokens()
+        .issue(&request(vec!["fleet.read".into()]), "explain-cli".into())
+        .await?
+    else {
+        return Err("secret".into());
+    };
+    let origin = fixture.origin.clone();
+    let directory = tempfile::tempdir()?;
+    let config = directory.path().join("client.toml");
+    let outputs = tokio::task::spawn_blocking(move || -> std::io::Result<_> {
+        let mut outputs = Vec::new();
+        for format in ["json", "table"] {
+            for watch in [false, true] {
+                let mut command = Command::new(env!("CARGO_BIN_EXE_shaula"));
+                command.args([
+                    "--client-config",
+                    &config.to_string_lossy(),
+                    "--server",
+                    &origin,
+                    "--allow-loopback-http",
+                    "--output",
+                    format,
+                    "fleets",
+                    "explain",
+                    "diagnostic",
+                ]);
+                command
+                    .env("SHAULA_ACCESS_TOKEN", secret.expose())
+                    .env_remove("SHAULA_CONTEXT");
+                if watch {
+                    command.args(["--watch", "--timeout", "1s"]);
+                }
+                outputs.push((format, command.output()?));
+            }
+        }
+        Ok(outputs)
+    })
+    .await??;
+    for (format, output) in outputs {
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        let body = String::from_utf8(output.stdout)?;
+        assert!(!body.contains("shaula_pat_v1_"));
+        if format == "table" {
+            assert!(body.contains("Unknown"));
+            assert!(body.contains("QUESTION"));
+        } else {
+            for line in body.lines() {
+                let _: serde_json::Value = serde_json::from_str(line)?;
+            }
+        }
+    }
+    Ok(())
+}

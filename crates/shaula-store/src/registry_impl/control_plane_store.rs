@@ -9,6 +9,29 @@ use shaula_core::registry::{
 
 #[async_trait]
 impl ControlPlaneStore for SqliteControlPlane {
+    async fn demand_with_time(&self, key: &str) -> CoreResult<Option<(i64, Option<i64>)>> {
+        Ok(self
+            .store
+            .demand_get(key)
+            .await
+            .map_err(core_err)?
+            .map(|d| (d.total_assigned_jobs, Some(d.updated_at))))
+    }
+    fn diagnostic_sink(
+        &self,
+    ) -> Option<std::sync::Arc<dyn shaula_core::diagnostics::DiagnosticSink>> {
+        Some(self.store.diagnostics.clone())
+    }
+    async fn diagnostic_read(
+        &self,
+        kind: shaula_core::diagnostics::SubjectKind,
+        key: &str,
+        actor: &shaula_core::registry::Actor,
+        now: i64,
+    ) -> shaula_core::diagnostics::DiagnosticsResult {
+        use shaula_core::diagnostics::DiagnosticsReadPort;
+        self.store.diagnostics(kind, key, actor, now).await
+    }
     async fn ensure_artifact_cached(&self, digest: &str) -> CoreResult<()> {
         if !self.artifact_available(digest).await? {
             return Err(shaula_core::error::CoreError::new(
@@ -143,24 +166,14 @@ impl ControlPlaneStore for SqliteControlPlane {
             .map_err(core_err)
     }
     async fn auth_credential_bytes(&self, key: &str, revision: i64) -> CoreResult<Option<Vec<u8>>> {
-        Ok(self
-            .store
-            .auth_revision_get(key, revision)
-            .await
-            .map_err(core_err)?
-            .map(|r| r.credential_bytes))
+        self.auth_credential_bytes_read(key, revision).await
     }
     async fn template_protected_bindings(
         &self,
         key: &str,
         revision: i64,
     ) -> CoreResult<Option<(String, String)>> {
-        Ok(self
-            .store
-            .template_revision_get(key, revision)
-            .await
-            .map_err(core_err)?
-            .and_then(|r| r.bindings_json.clone().zip(r.bindings_digest.clone())))
+        self.template_protected_bindings_read(key, revision).await
     }
     async fn demand_get(&self, fleet_key: &str) -> CoreResult<Option<i64>> {
         Ok(self
@@ -359,6 +372,19 @@ impl ControlPlaneStore for SqliteControlPlane {
         facts: MutationFacts,
     ) -> CoreResult<Result<(), MutationError>> {
         self.commit_template_pool_mutation_impl(facts).await
+    }
+
+    async fn commit_template_pool_noop(
+        &self,
+        key: &str,
+        incarnation: &str,
+        revision: i64,
+        actor: &shaula_core::registry::Actor,
+        idempotency: Option<shaula_core::registry::IdempotencyInsert>,
+        now: i64,
+    ) -> CoreResult<Result<(), MutationError>> {
+        self.commit_template_pool_noop_impl(key, incarnation, revision, actor, idempotency, now)
+            .await
     }
 
     async fn commit_template_pool_delete(

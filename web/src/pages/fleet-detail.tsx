@@ -1,3 +1,4 @@
+import { Diagnostics } from "@/components/diagnostics";
 import { AuthRouteDetails } from "@/components/auth-route-details";
 import {
   Table,
@@ -119,6 +120,13 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
         </div>
       </div>
       {status.error && <ErrorNotice error={status.error} retry={() => void status.refetch()} />}
+      <Diagnostics
+        kind="fleet"
+        resourceKey={fleetKey}
+        incarnation={data.metadata.incarnation}
+        revision={data.metadata.revision}
+        scopes={scopes}
+      />
       <ChangeNotice change={change} />
       {status.data && (
         <>

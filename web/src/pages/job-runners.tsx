@@ -1,3 +1,4 @@
+import { Diagnostics } from "@/components/diagnostics";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -162,6 +163,12 @@ export function RunnerDetail({ scopes }: { scopes: string[] }) {
               keeps the fleet's decommission open.
             </p>
           )}
+          <Diagnostics
+            kind="generation"
+            resourceKey={generation.id}
+            incarnation={generation.fleet_incarnation}
+            scopes={scopes}
+          />
           <section className="details-section">
             <h2>Runner</h2>
             <dl className="details-grid">

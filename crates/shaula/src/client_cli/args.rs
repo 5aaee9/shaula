@@ -93,6 +93,14 @@ pub enum RemoteCommand {
 }
 #[derive(Subcommand)]
 pub enum ResourceAction {
+    Explain {
+        key: String,
+        #[arg(long)]
+        watch: bool,
+        #[arg(long, default_value = "300s", value_parser = seconds)]
+        timeout: u64,
+    },
+
     List,
     Get {
         key: String,
@@ -220,6 +228,14 @@ pub struct Filters {
 }
 #[derive(Subcommand)]
 pub enum HistoryAction {
+    Explain {
+        key: String,
+        #[arg(long)]
+        watch: bool,
+        #[arg(long, default_value = "300s", value_parser = seconds)]
+        timeout: u64,
+    },
+
     List {
         id: Option<String>,
         #[command(flatten)]

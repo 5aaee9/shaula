@@ -1,3 +1,4 @@
+import { Diagnostics } from "@/components/diagnostics";
 import { Link, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Empty, ErrorNotice, KeyValue, Loading, StatusBadge } from "@/components/status";
@@ -41,6 +42,12 @@ export function JobDetail({ scopes }: { scopes: string[] }) {
               </Button>
             )}
           </div>
+          <Diagnostics
+            kind="job"
+            resourceKey={job.id}
+            incarnation={job.fleet_incarnation}
+            scopes={scopes}
+          />
           {job.forgejo ? (
             <ForgejoJobFacts job={job} />
           ) : (

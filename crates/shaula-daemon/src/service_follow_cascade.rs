@@ -10,6 +10,7 @@ use shaula_core::fleet::FleetSpec;
 use shaula_core::registry::{Actor, MutationError, Scope};
 
 use super::ControlPlane;
+use shaula_core::diagnostics::*;
 
 #[path = "service_follow_pool.rs"]
 mod pool;
@@ -54,6 +55,13 @@ impl ControlPlane {
         let Some(head) = self.store.fleet_get(key).await? else {
             return Ok(false);
         };
+        let mut diagnostic = Capture::start(
+            self.store.diagnostic_sink(),
+            Guard::fleet(key, &shaula_core::registry::FleetRuntimeGuard::from(&head)),
+            Lane::Follow,
+            QuestionId::Rollout,
+            now,
+        );
         // Decommissioning fleets converge through their own cleanup path.
         if head.tombstone || head.deletion_marker {
             return Ok(false);
@@ -68,6 +76,7 @@ impl ControlPlane {
         // template follow cascade must not reinterpret the empty top-level
         // reference or rewrite a pool revision.
         if spec.template_pool.is_some() {
+            diagnostic.outcome(Outcome::NotApplicable);
             return Ok(false);
         }
         // Shared-pool fleets (spec 0037 §5 stage 2): the spec carries only
@@ -84,7 +93,7 @@ impl ControlPlane {
             .filter(|value| !value.is_empty())
         {
             return self
-                .maybe_upgrade_pool_follower(key, &head, &latest, pool_key, now)
+                .maybe_upgrade_pool_follower(key, &head, &latest, pool_key, now, &mut diagnostic)
                 .await;
         }
         // ARD-0029: every live fleet follows its profile's Active revision;
@@ -94,15 +103,40 @@ impl ControlPlane {
         let pin = match self.resolve_template_ref(&spec.template_profile_ref).await {
             Ok(pin) => pin,
             Err(error) => {
+                diagnostic.reason(
+                    Code::RolloutNoActiveRevision,
+                    StageId::DependencyResolution,
+                    true,
+                );
                 // No Active revision (retired/unpublished profile) is a
                 // routine skip, not an error.
                 tracing::debug!(fleet = %key, summary = %error.summary, "follow resolution unavailable");
                 return Ok(false);
             }
         };
+        if let Some(d) = &mut diagnostic.0 {
+            d.observation.question.rollout = Some(DiagnosticRollout {
+                desired_revision: head.desired_revision.to_string(),
+                observed_revision: head.observed_revision.to_string(),
+                previous_pin: latest
+                    .template_profile_key
+                    .clone()
+                    .zip(latest.template_revision)
+                    .map(|(key, revision)| DiagnosticPin {
+                        key,
+                        revision: revision.to_string(),
+                    }),
+                candidate_pin: Some(DiagnosticPin {
+                    key: pin.0.clone(),
+                    revision: pin.1.to_string(),
+                }),
+            });
+        }
+        diagnostic.pass(StageId::DependencyResolution);
         let lagging = latest.template_profile_key.as_deref() != Some(pin.0.as_str())
             || latest.template_revision != Some(pin.1);
         if !lagging {
+            diagnostic.outcome(Outcome::Satisfied);
             return Ok(false);
         }
         // Re-validate retained inputs against the NEW pin's finite alias
@@ -123,6 +157,11 @@ impl ControlPlane {
             ));
         }
         if let Err(e) = super::validate_inputs(&spec.template_inputs, &policy, Some(&schema)) {
+            diagnostic.reason(
+                Code::RolloutInputsIncompatible,
+                StageId::InputCompatibility,
+                true,
+            );
             tracing::warn!(fleet = %key, summary = %e.summary, "follow upgrade skipped: inputs incompatible with active revision");
             return Ok(false);
         }
@@ -130,16 +169,24 @@ impl ControlPlane {
             .validate_template_backend(&pin.0, pin.1, &pin.2, &spec, &spec.template_inputs)
             .await
         {
+            diagnostic.reason(
+                Code::RolloutBackendIncompatible,
+                StageId::InputCompatibility,
+                true,
+            );
             tracing::warn!(fleet = %key, summary = %error.summary, "follow upgrade skipped: incompatible runner backend");
             return Ok(false);
         }
         // Cheap pre-check; the commit transaction re-checks occupancy under
         // the write lock (R9-04/R10-08), so a racing Create cannot slip in.
+        diagnostic.pass(StageId::InputCompatibility);
         if self.store.generations_occupancy(key).await? > 0 {
+            diagnostic.reason(Code::RolloutWaitingZeroOccupancy, StageId::Occupancy, true);
             tracing::debug!(fleet = %key, "follow upgrade deferred: fleet occupied");
             return Ok(false);
         }
 
+        diagnostic.pass(StageId::Occupancy);
         let draft = super::FleetMutationDraft {
             authentication: Default::default(),
             key: key.to_string(),
@@ -177,6 +224,7 @@ impl ControlPlane {
             // A lost fence race or a just-created generation defers to the
             // next tick rather than failing the pass.
             Err(fence) => {
+                diagnostic.reason(Code::RolloutCommitDeferred, StageId::CommitFence, true);
                 tracing::debug!(fleet = %key, reason = %fence_summary(&fence), "follow upgrade not committed");
                 Ok(false)
             }
@@ -193,8 +241,14 @@ impl ControlPlane {
         latest: &shaula_core::registry::store_port::FleetRevisionRow,
         pool_key: &str,
         now: i64,
+        diagnostic: &mut Capture,
     ) -> CoreResult<bool> {
         let Some(pool_head) = self.store.template_pool_get(pool_key).await? else {
+            diagnostic.reason(
+                Code::RolloutNoActiveRevision,
+                StageId::DependencyResolution,
+                true,
+            );
             return Ok(false);
         };
         // A deleted pool keeps routing the fleet's frozen revision — the
@@ -208,7 +262,22 @@ impl ControlPlane {
             .template_pool_ref
             .clone()
             .unwrap_or_else(|| (pool_key.to_string(), 0));
+        if let Some(d) = &mut diagnostic.0 {
+            d.observation.question.rollout = Some(DiagnosticRollout {
+                desired_revision: head.desired_revision.to_string(),
+                observed_revision: head.observed_revision.to_string(),
+                previous_pin: Some(DiagnosticPin {
+                    key: frozen.0.clone(),
+                    revision: frozen.1.to_string(),
+                }),
+                candidate_pin: Some(DiagnosticPin {
+                    key: pool_key.into(),
+                    revision: pool_head.desired_revision.to_string(),
+                }),
+            });
+        }
         if frozen.1 >= pool_head.desired_revision {
+            diagnostic.outcome(Outcome::Satisfied);
             return Ok(false);
         }
         // A shared pool is provider-neutral, but every member must match
@@ -222,15 +291,23 @@ impl ControlPlane {
         let spec: FleetSpec = serde_json::from_str(&latest.spec_json)
             .map_err(|error| CoreError::new(ReasonCode::Internal, error.to_string()))?;
         if let Err(error) = self.validate_pool_backends(&pool.members, &spec).await {
+            diagnostic.reason(
+                Code::RolloutBackendIncompatible,
+                StageId::InputCompatibility,
+                true,
+            );
             tracing::warn!(fleet = %key, summary = %error.summary, "pool follow upgrade skipped: incompatible runner backend");
             return Ok(false);
         }
         // Cheap pre-check; the commit transaction re-checks occupancy
         // under the write lock (R9-04/R10-08).
+        diagnostic.pass(StageId::InputCompatibility);
         if self.store.generations_occupancy(key).await? > 0 {
+            diagnostic.reason(Code::RolloutWaitingZeroOccupancy, StageId::Occupancy, true);
             tracing::debug!(fleet = %key, "pool follow upgrade deferred: fleet occupied");
             return Ok(false);
         }
+        diagnostic.pass(StageId::Occupancy);
         let draft = super::FleetMutationDraft {
             authentication: Default::default(),
             key: key.to_string(),
@@ -260,6 +337,7 @@ impl ControlPlane {
                 Ok(true)
             }
             Err(fence) => {
+                diagnostic.reason(Code::RolloutCommitDeferred, StageId::CommitFence, true);
                 tracing::debug!(fleet = %key, reason = %fence_summary(&fence), "pool follow upgrade not committed");
                 Ok(false)
             }

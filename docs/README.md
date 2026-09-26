@@ -41,6 +41,7 @@
 | Profile publication、retirement、sensitive reads、attestation | [spec 0005](specs/0005-profile-http-control-plane.md)；非敏感 binding 读取投影与 Update 可编辑绑定见 [spec 0038](specs/0038-template-detail-and-editable-bindings.md) |
 | Rust crate ownership 与依赖方向 | [spec 0007](specs/0007-rust-workspace-architecture.md) |
 | UI 行为 | [spec 0008](specs/0008-embedded-web-ui.md) |
+| Fleet / Generation / Job 的证据驱动诊断（本地实现；真实平台验收待完成） | [spec 0041](specs/0041-explainable-reconciliation-diagnostics.md) / [ARD-0041](ard/0041-project-diagnostics-from-reconciliation-evidence.md) |
 | Workflow Jobs、Apply/Destroy 日志保留与 Setup Info 内容 | [spec 0019](specs/0019-workflow-jobs-and-operation-logs.md) / [ARD-0023](ard/0023-retain-operation-logs-and-present-workflow-jobs.md)；已有本地实现，真实平台验收边界见 implementation status |
 | 官方容器镜像、宿主 bootstrap 与启动门槛 | [spec 0020](specs/0020-official-container-runner-bootstrap.md) / [ARD-0024](ard/0024-bootstrap-official-runner-images-outside-containers.md) |
 | Fleet Template inputs 可视化编辑 | [spec 0014](specs/0014-visual-template-inputs.md) / [ADR-0018](ard/0018-render-fleet-inputs-from-approved-template-options.md) |
@@ -51,7 +52,7 @@
 | AWS EC2、user-data cloud-init 与官方 Ubuntu AMI 信任 | [spec 0027](specs/0027-aws-runner-template.md) / [ARD-0034](ard/0034-provision-aws-runners-with-ec2-user-data.md)；Draft + `proposed`，尚未接受 |
 | Fleet 跟随最新 Active 模板 Revision（follow-only 引用与 level-triggered 级联升级） | [spec 0023](specs/0023-fleet-template-follow-latest.md) / [ARD-0028](ard/0028-follow-latest-active-template-revision.md) / [ARD-0029](ard/0029-drop-pinned-template-revisions.md) |
 | Generation readiness 对账（WaitingOnline → Idle / CleanupRequired 的库存驱动） | [spec 0024](specs/0024-generation-readiness-reconciliation.md) / [ARD-0030](ard/0030-drive-generation-readiness-from-inventory.md) |
-| JIT mint 不确定性恢复（精确名查找分类：落地即移除、缺失即清理、歧义隔离） | [spec 0025](specs/0025-jit-mint-uncertainty-recovery.md) / [ARD-0031](ard/0031-classify-uncertain-jit-mints-by-exact-name-lookup.md) |
+| JIT mint 不确定性恢复（精确名查找分类：落地即移除、缺失即清理、歧义隔离） | [spec 0025](specs/0025-jit-mint-uncertainty-recovery.md) / [ARD-0031](ard/0031-classify-uncertain-jit-mints-by-exact-name-lookup.md)；从未开始 Create apply 的 Generation 直接 `Destroyed` 见 [ARD-0040](ard/0040-destroy-generations-that-never-started-a-create-apply.md) |
 | Forgejo Runner Backend（provider 维度、Pool 切片、未验证关联、Busy-safe removal） | [spec 0026](specs/0026-forgejo-runner-backend.md) / [ARD-0033](ard/0033-admit-forgejo-through-a-pool-backend-first.md)；Draft + `proposed`，尚未接受 |
 | Fleet authentication/template Profile 服务端列表选择 | [spec 0016](specs/0016-fleet-profile-selection.md) / [ARD-0020](ard/0020-load-fleet-profile-choices-from-registry.md) |
 | Template 静态校验后的自动激活与旧 Ready 升级 | [spec 0017](specs/0017-automatic-template-activation.md) / [ARD-0021](ard/0021-activate-templates-after-static-validation.md) |

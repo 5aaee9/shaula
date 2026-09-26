@@ -1,6 +1,7 @@
 //! Portable wire contracts. No server, database or runtime dependencies.
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+pub mod diagnostics;
 mod history;
 mod logs;
 mod requests;

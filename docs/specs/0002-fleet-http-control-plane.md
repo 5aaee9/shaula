@@ -279,6 +279,13 @@ v1 不提供 `PATCH`、writable status、raw Runner lifecycle、manual reconcile
 - immutable identity 变化返回 `409 Conflict`。
 - syntactically valid but inadmissible Spec 返回 `422 Unprocessable Content`。
 
+Fleet、Template Pool、Template Profile 与 Auth Profile 的完整 PUT 若同时携带
+`If-None-Match: *` 和 `If-Match`，新请求返回 `400 ConflictingPreconditions`，
+不进入资源准入或写入。次序是授权、请求格式校验、既有幂等核对，再拒绝双条件：
+匹配的历史结果仍可重放，同键不同内容仍返回 `409 IdempotencyConflict`。
+HTTP Adapter 不得提前拒绝所有双条件请求而切断历史重放。该规则不改变 DELETE、
+attestation、Finalize 或 Target Policy Update 的协议。
+
 Desired ETag 只包含 opaque Fleet incarnation/revision，不含 status、secret 或同 Profile Auth promotion revision。Status churn 和同 Profile promotion 不造成虚假 desired-state conflict；跨 Profile replacement 是真实 Fleet mutation并推进 ETag。
 
 Versioned resource GET 和 mutation 的 `202` / no-op `200` response 同时返回 `Shaula-Resource-Version`，其值为 origin strong ETag 的完整 quoted value（例如 `"opaque-id:7"`）。该 header 承载用于条件写入的 opaque resource version；压缩代理可能将 representation `ETag` 改成 `W/"opaque-id:7"`，但 MUST 原样转发 `Shaula-Resource-Version`。Client 优先把读取 snapshot 的 `Shaula-Resource-Version` 原样放入 `If-Match`；旧 server 缺少该 header 时，仅可 fallback 到 strong ETag。不得去掉 `W/` 将 weak ETag 当作 strong validator。缺少可用版本时拒绝发起 replacement / decommission；stale version 仍返回 `412`。
@@ -294,6 +301,13 @@ Transaction 内 replay lookup 在 concurrency check 前：
 - 新 key 才执行 conditional validation 与 commit。
 
 No-op PUT 在同一 transaction 中 append audit 并保存 `200 OK` replay response，不创建 Revision/Change。新 idempotency key 仍先检查 ETag 再比较 no-op，避免 stale client 借 no-op 绕过 concurrency。
+
+上述四类完整 PUT 在首次幂等查询未命中、后续前置条件失败或内部／提交错误时，
+可以按原请求身份做一次只读幂等补查；仅匹配的持久结果允许重放。
+同键内容冲突仍拒绝，补查不可用仍是内部错误，没有持久结果则保留原错误。
+不得更换 ETag、重新准入或重试写入；transaction 内的 head CAS、Resource Occupancy、
+依赖保护和唯一幂等键约束仍是最终授权者。Template Update 保留自身准备步骤后，
+进入相同的 Template 发布流程。
 
 ### 5.3 Asynchronous responses
 

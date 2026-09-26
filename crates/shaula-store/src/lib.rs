@@ -46,6 +46,7 @@ mod tests {
     mod auth_v2;
     mod auth_v2_context;
     mod auth_validation_results;
+    mod diagnostics;
     mod fleet_convergence;
     mod fleet_inputs_fence;
     mod forgejo_auth_rotation;
@@ -82,3 +83,5 @@ mod tests {
 }
 
 mod personal_tokens;
+
+mod diagnostics;

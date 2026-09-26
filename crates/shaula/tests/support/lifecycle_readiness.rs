@@ -99,7 +99,7 @@ async fn idle_generation_whose_runner_vanished_from_inventory_retires() {
     // than reaching Terraform).
     assert_eq!(
         store.generation_get("gen1").await.unwrap().unwrap().state,
-        G::Quarantined
+        G::Destroyed
     );
     assert_eq!(github.removals.load(Ordering::SeqCst), 1);
 }
@@ -153,7 +153,7 @@ async fn idle_generation_with_offline_runner_retires() {
     supervisor.tick(10).await.unwrap();
     assert_eq!(
         store.generation_get("gen1").await.unwrap().unwrap().state,
-        G::Quarantined
+        G::Destroyed
     );
     assert_eq!(github.removals.load(Ordering::SeqCst), 1);
 }

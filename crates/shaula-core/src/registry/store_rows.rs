@@ -1,3 +1,5 @@
+//! Admission read models, re-exported through the existing storage interface.
+
 /// Desired-state head of one fleet incarnation.
 #[derive(Debug, Clone)]
 pub struct FleetHead {

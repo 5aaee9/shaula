@@ -60,6 +60,14 @@ resource!(Pools, pools, "template-pools");
 resource!(AuthProfiles, auth_profiles, "github-auth-profiles");
 
 impl Fleets<'_> {
+    pub async fn diagnostics(
+        &self,
+        key: &str,
+    ) -> Result<TypedResource<types::diagnostics::DiagnosticReportV1>, Error> {
+        self.0
+            .diagnostics(types::diagnostics::SubjectKind::Fleet, key)
+            .await
+    }
     pub async fn status(&self, key: &str) -> Result<Resource<Document>, Error> {
         self.0
             .read(&["api", "v1", "fleets", key, "status"], &[])

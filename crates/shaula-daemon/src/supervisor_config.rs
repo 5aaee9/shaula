@@ -37,6 +37,7 @@ impl FleetSupervisor {
             limits,
         } = deps;
         Self {
+            diagnostics: None,
             runner_max_lifetime: shaula_core::runner_lifetime::DEFAULT_MAX_LIFETIME,
             clock: None,
             limits,

@@ -4,6 +4,7 @@
 
 pub(crate) mod access_tokens;
 pub mod auth_installation_link;
+mod diagnostics;
 pub mod fleet_routes;
 mod input_contract;
 mod jobs;
@@ -260,6 +261,7 @@ async fn record_http_outcome(
 pub fn build_router(state: AppState) -> Router {
     use axum::extract::DefaultBodyLimit;
     Router::new()
+        .merge(diagnostics::routes())
         .route("/api/v1/access-tokens", get(access_tokens::list).post(access_tokens::issue))
         .route("/api/v1/access-tokens/current", get(access_tokens::current).delete(access_tokens::revoke_current))
         .route("/api/v1/access-tokens/{id}", get(access_tokens::get).delete(access_tokens::revoke))

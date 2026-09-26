@@ -7,56 +7,13 @@ use std::sync::Arc;
 
 use futures::future::join_all;
 use sha2::Digest;
-use shaula_core::capacity::{
-    create_count, target, AssignedDemand, CapacityCounters, CapacityPolicy,
-};
+use shaula_core::capacity::{create_count, target, AssignedDemand, CapacityCounters};
 use shaula_core::error::CoreResult;
 use shaula_core::ports::{GitHubAccessPort, LookupOutcome, TemplateRuntimePort};
 use shaula_core::registry::LifecycleStore;
 
-/// Static per-fleet configuration frozen at supervisor construction.
-#[derive(Clone)]
-pub struct FleetSupervisorConfig {
-    pub fleet_key: String,
-    pub capacity: CapacityPolicy,
-    pub work_root: std::path::PathBuf,
-    pub operation_timeout: std::time::Duration,
-    /// Content-addressed artifact root (profile.yaml read from here).
-    pub artifact_root: std::path::PathBuf,
-    /// Durable apply-start sink backing at-most-once applies.
-    pub apply_intent_sink: std::sync::Arc<dyn shaula_core::ports::ApplyIntentSink>,
-    /// Fleet labels; empty falls back to the scale-set-name System
-    /// label matching the Go SDK default.
-    pub labels: Vec<shaula_core::github::Label>,
-    /// R10-09: the Auth Revision Ref this supervisor was admitted with —
-    /// frozen into every JIT intent so recovery can prove WHICH
-    /// admission-time authority minted the token.
-    pub auth_profile_key: String,
-    pub auth_revision: i64,
-}
-
-/// One reconcile pass outcome, for telemetry and tests.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct ReconcileReport {
-    pub handoff_acknowledged: bool,
-    /// G3: the handoff settled THIS tick — no effects may run until the
-    /// wiring re-reads the acknowledged context (next pass).
-    pub settled_this_tick: bool,
-    pub scale_set_bound: bool,
-    pub created: u32,
-    pub destroyed: u32,
-    pub quarantined: u32,
-    pub blocked: bool,
-    pub reason: Option<shaula_core::error::ReasonCode>,
-    pub listener_ready: bool,
-    /// Spec 0002 §4.4: a deletion-marked fleet completes its Decommission
-    /// Change only when every owned Generation is terminal. Set on the
-    /// tick where the last non-terminal generation is proven gone.
-    pub decommission_complete: bool,
-    pub session_epoch: Option<i64>,
-}
-
 pub struct FleetSupervisor {
+    diagnostics: Option<shaula_core::diagnostics::Observer>,
     runner_max_lifetime: std::time::Duration,
     clock: Option<Arc<dyn shaula_core::ports::Clock>>,
     limits: LifecycleLimits,
@@ -78,17 +35,29 @@ pub struct FleetSupervisor {
 impl FleetSupervisor {
     /// One level-triggered reconcile pass.
     pub async fn tick(&self, now: i64) -> CoreResult<ReconcileReport> {
+        let mut diagnostic = self.diagnostics.as_ref().and_then(|o| o.begin(now));
         let epoch = self
             .store
             .session_get(&self.config.fleet_key)
             .await?
             .map(|s| s.epoch);
-        let result = self.reconcile(now, epoch).await;
+        let result = self.reconcile(now, epoch, &mut diagnostic).await;
+        crate::diagnostic_capture::finish(diagnostic, result.is_err());
         self.observe_reconcile(&result, epoch, now).await?;
         result
     }
 
-    async fn reconcile(&self, now: i64, epoch: Option<i64>) -> CoreResult<ReconcileReport> {
+    async fn reconcile(
+        &self,
+        now: i64,
+        epoch: Option<i64>,
+        diagnostic: &mut Option<shaula_core::diagnostics::ObservationTicket>,
+    ) -> CoreResult<ReconcileReport> {
+        use crate::diagnostic_capture::{note, passed};
+        use shaula_core::diagnostics::{Code, StageId};
+        if let Some(d) = diagnostic {
+            d.observation.guard.session_epoch = Some(epoch);
+        }
         let mut report = ReconcileReport {
             session_epoch: epoch,
             ..ReconcileReport::default()
@@ -105,7 +74,9 @@ impl FleetSupervisor {
 
         // Hard lifetime is independent of demand, listener health and auth handoff.
         // It destroys only resources proved by this generation's original pins.
-        report.destroyed = self.expire_runners(now).await?;
+        let expired = self.expire_runners(now).await?;
+        report.destroyed = expired.destroyed;
+        report.quarantined = expired.quarantined;
 
         // 1. Auth handoff: read-only classification then acknowledge.
         let bound_scale_set_id = self
@@ -156,6 +127,12 @@ impl FleetSupervisor {
                 }
                 _ => {}
             }
+            note(
+                diagnostic,
+                Code::ControlAuthContextPending,
+                StageId::Authority,
+                true,
+            );
             return Ok(report);
         }
 
@@ -171,15 +148,32 @@ impl FleetSupervisor {
         if !self.execution_ready || observed.as_ref() != Some(&execution_ref) {
             tracing::debug!(fleet = %self.config.fleet_key, execution_ready = self.execution_ready, observed_matches = observed.as_ref() == Some(&execution_ref), "reconcile blocked: execution context not ready");
             report.blocked = true;
+            note(
+                diagnostic,
+                Code::ControlAuthContextPending,
+                StageId::Authority,
+                true,
+            );
             return Ok(report);
         }
 
+        if let Some(d) = diagnostic {
+            d.observation.guard.auth = Some(execution_ref);
+        }
+
         if head.is_some_and(|head| head.deletion_marker) {
+            note(
+                diagnostic,
+                Code::ControlDecommissioning,
+                StageId::Authority,
+                false,
+            );
             if let Some(listener) = &self.listener {
                 listener.stop().await?;
             }
-            report.destroyed += self.retire_excess(i64::MAX, now).await?;
-            report.quarantined = self.quarantine_stale_cleanup(now).await?;
+            let retired = self.retire_excess(i64::MAX, now).await?;
+            report.destroyed += retired.destroyed;
+            report.quarantined += retired.quarantined;
             // Completion predicate (spec 0002 §4.4): every owned
             // Generation terminal (Destroyed). A still-Retiring or
             // Quarantined generation keeps the Decommission Change
@@ -196,6 +190,16 @@ impl FleetSupervisor {
         match self.ensure_ownership(now).await? {
             OwnershipOutcome::Ready => report.scale_set_bound = true,
             OwnershipOutcome::Blocked(reason) => {
+                note(
+                    diagnostic,
+                    if reason == shaula_core::error::ReasonCode::RateLimited {
+                        Code::ControlRateLimited
+                    } else {
+                        Code::ControlOwnershipUnproven
+                    },
+                    StageId::Authority,
+                    true,
+                );
                 report.blocked = true;
                 report.reason = Some(reason);
                 if let Some(listener) = &self.listener {
@@ -206,6 +210,7 @@ impl FleetSupervisor {
                 return Ok(report);
             }
         }
+        passed(diagnostic, StageId::Authority);
         if let Some(listener) = &self.listener {
             let id = self
                 .store
@@ -219,12 +224,21 @@ impl FleetSupervisor {
             report.listener_ready = installed_epoch.is_some();
             if installed_epoch.is_some() {
                 report.session_epoch = installed_epoch;
+                if let Some(d) = diagnostic {
+                    d.observation.guard.session_epoch = Some(installed_epoch);
+                }
             }
             let listener_reason = listener.reason().await;
             if !report.listener_ready || listener_reason.is_some() {
                 tracing::debug!(fleet = %self.config.fleet_key, listener_ready = report.listener_ready, reason = ?listener_reason, "reconcile blocked: listener not ready");
                 report.blocked = true;
                 report.reason = listener_reason;
+                note(
+                    diagnostic,
+                    Code::ControlListenerNotReady,
+                    StageId::Demand,
+                    true,
+                );
                 return Ok(report);
             }
         }
@@ -232,19 +246,38 @@ impl FleetSupervisor {
         // 2.5 Readiness reconciliation (spec 0024): WaitingOnline
         // generations join Idle/cleanup before this tick's capacity pass,
         // so a completed ephemeral runner frees its slot immediately.
-        self.reconcile_generation_readiness(now).await?;
+        self.reconcile_generation_readiness(now, report.session_epoch)
+            .await?;
 
         // 3. Capacity convergence.
-        let demand = self
+        let demand_evidence = self
             .handoff
-            .demand_get(&self.config.fleet_key)
-            .await?
-            .unwrap_or(0);
+            .demand_with_time(&self.config.fleet_key)
+            .await?;
+        let demand = demand_evidence.map(|(value, _)| value).unwrap_or(0);
         let (effective, occupancy) = self.capacity_counters().await?;
         let counters = CapacityCounters {
             effective_capacity: effective,
             resource_occupancy: occupancy,
         };
+        if self.listener.is_none() {
+            note(
+                diagnostic,
+                Code::ControlListenerNotReady,
+                StageId::Demand,
+                false,
+            );
+        } else {
+            passed(diagnostic, StageId::Demand);
+        }
+        crate::diagnostic_capture::capacity_decision(
+            diagnostic,
+            self.config.capacity,
+            demand_evidence.map(|v| v.0),
+            counters,
+            shaula_core::diagnostics::DemandKind::GithubTotalAssignedJobs,
+            demand_evidence.and_then(|v| v.1),
+        );
         let creates = create_count(
             &self.config.capacity,
             &AssignedDemand {
@@ -272,7 +305,9 @@ impl FleetSupervisor {
         );
 
         let excess = (effective - current_target).max(0);
-        report.destroyed += self.retire_excess(excess, now).await?;
+        let retired = self.retire_excess(excess, now).await?;
+        report.destroyed += retired.destroyed;
+        report.quarantined += retired.quarantined;
 
         // Start the whole deficit together. Each operation acquires the
         // shared create semaphore inside `create_one_generation`, so this
@@ -287,12 +322,6 @@ impl FleetSupervisor {
                 report.created += 1;
             }
         }
-
-        // Cleanup reconcile: a CleanupRequired generation whose old child
-        // cannot be proven terminated never auto-destroys; it transitions
-        // to Quarantined so an explicit, auditable operator procedure can
-        // take over (spec 0001 §11.2 — no silent forget).
-        report.quarantined = self.quarantine_stale_cleanup(now).await?;
 
         Ok(report)
     }
@@ -328,50 +357,10 @@ pub use readiness_impl::READINESS_TIMEOUT_MS;
 
 #[path = "supervisor_destroy.rs"]
 mod destroy_impl;
-#[path = "supervisor_expiry.rs"]
-mod expiry_impl;
 
-impl std::fmt::Debug for FleetSupervisorConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FleetSupervisorConfig")
-            .field("fleet_key", &self.fleet_key)
-            .finish_non_exhaustive()
-    }
-}
-
-impl FleetSupervisor {
-    /// Go SDK parity: a scale set must have labels; when the fleet
-    /// declares none, default to a single System label carrying the
-    /// scale-set name (upstream `ensureLabels`).
-    pub fn fallback_labels(&self) -> Vec<shaula_core::github::Label> {
-        if self.config.labels.is_empty() {
-            return vec![
-                shaula_core::github::Label::system(self.identity.scale_set_name.clone()).unwrap_or(
-                    shaula_core::github::Label {
-                        name: self.identity.scale_set_name.clone(),
-                        label_type: "System".to_string(),
-                    },
-                ),
-            ];
-        }
-        self.config.labels.clone()
-    }
-}
-
-/// Constructor dependencies for [`FleetSupervisor::new`].
-pub struct FleetSupervisorDeps {
-    pub limits: LifecycleLimits,
-    pub store: Arc<dyn LifecycleStore>,
-    pub handoff: Arc<dyn shaula_core::registry::ControlPlaneStore>,
-    pub github: Arc<dyn GitHubAccessPort>,
-    pub runtime: Arc<dyn TemplateRuntimePort>,
-}
-
-#[derive(Clone)]
-pub struct LifecycleLimits {
-    pub create: Arc<tokio::sync::Semaphore>,
-    pub destroy: Arc<tokio::sync::Semaphore>,
-}
+#[path = "supervisor_types.rs"]
+mod types;
+pub use types::{FleetSupervisorConfig, FleetSupervisorDeps, LifecycleLimits, ReconcileReport};
 
 #[path = "supervisor_ownership_outcome.rs"]
 mod ownership_outcome;

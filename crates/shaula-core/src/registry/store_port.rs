@@ -13,36 +13,27 @@ use crate::registry::attestation_port::{
 use crate::registry::auth_port::{AuthPromotion, AuthPromotionOutcome, FleetContextAck};
 use crate::registry::{Actor, ChangeView, IdempotencyLookup, MutationError};
 
-/// One accepted effective mutation with all its durable facts.
-#[derive(Debug, Clone)]
-pub struct MutationFacts {
-    pub idempotency_operation: &'static str,
-    pub authentication: super::AuthenticationContext,
-    pub resource_kind: &'static str,
-    pub resource_key: String,
-    pub incarnation: String,
-    pub revision: i64,
-    /// Canonical spec JSON (fleet) or empty for decommission markers.
-    pub spec_json: String,
-    pub template: Option<(String, i64, String, String)>,
-    pub template_pool: Vec<crate::template_pool::ResolvedTemplatePoolMember>,
-    /// Shared-pool routing context frozen on fleet revisions (spec 0037
-    /// §4): (pool key, pool revision). Unused by template/auth commits.
-    pub template_pool_ref: Option<crate::template_pool::FleetPoolRef>,
-    pub auth_desired: Option<(String, i64)>,
-    pub inputs_digest: String,
-    pub actor: String,
-    pub now: i64,
-    pub change: ChangeView,
-    pub outbox_topic: String,
-    pub outbox_payload: String,
-    /// Idempotency record to store with the same transaction.
-    pub idempotency: Option<(String, String, i32, String)>,
-}
+pub use super::mutation_facts::MutationFacts;
 
 /// Read side of the desired-state store used by admission.
 #[async_trait]
 pub trait ControlPlaneStore: crate::registry::AuthExecutionStore + Send + Sync {
+    async fn demand_with_time(&self, key: &str) -> CoreResult<Option<(i64, Option<i64>)>> {
+        Ok(self.demand_get(key).await?.map(|v| (v, None)))
+    }
+    fn diagnostic_sink(&self) -> Option<std::sync::Arc<dyn crate::diagnostics::DiagnosticSink>> {
+        None
+    }
+
+    async fn diagnostic_read(
+        &self,
+        _kind: crate::diagnostics::SubjectKind,
+        _key: &str,
+        _actor: &Actor,
+        _now: i64,
+    ) -> crate::diagnostics::DiagnosticsResult {
+        Err(crate::diagnostics::DiagnosticsReadError::Unavailable)
+    }
     /// Production restores missing cache material from the DB before any read/effect.
     /// Filesystem-only test adapters have no external cache authority to restore.
     async fn ensure_artifact_cached(&self, _digest: &str) -> CoreResult<()> {
@@ -110,6 +101,17 @@ pub trait ControlPlaneStore: crate::registry::AuthExecutionStore + Send + Sync {
     ) -> CoreResult<Result<(), MutationError>> {
         Ok(Err(MutationError::NotFound))
     }
+    /// Commits a pool no-op's audit and optional replay atomically after
+    /// rechecking its exact live head. No revision/change/outbox is created.
+    async fn commit_template_pool_noop(
+        &self,
+        key: &str,
+        incarnation: &str,
+        revision: i64,
+        actor: &Actor,
+        idempotency: Option<crate::registry::IdempotencyInsert>,
+        now: i64,
+    ) -> CoreResult<Result<(), MutationError>>;
     /// Tombstones a pool after the reference check: rejected while any
     /// non-decommissioned fleet revision still references the pool.
     async fn commit_template_pool_delete(
@@ -342,9 +344,7 @@ pub trait ControlPlaneStore: crate::registry::AuthExecutionStore + Send + Sync {
     ) -> CoreResult<Result<AttestationCommit, MutationError>>;
 }
 
-#[path = "store_rows.rs"]
-mod store_rows;
-pub use store_rows::*;
+pub use super::store_rows::{FleetHead, FleetRevisionRow, ProfileHead, TemplateRevisionRow};
 
 /// One immutable auth revision row lives in [`super::auth_port`].
 pub use super::auth_port::{

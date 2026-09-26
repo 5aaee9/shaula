@@ -1,11 +1,13 @@
 //! Inventory readiness and restart classification; a lost Create is never replayed.
 
+use shaula_core::diagnostics::*;
 use shaula_core::error::CoreResult;
 use shaula_core::lifecycle::GenerationState;
 use shaula_core::ports::forgejo::ForgejoRunnerRef;
 use shaula_core::registry::GenerationRecord;
 
 use super::ForgejoPoolSupervisor;
+use crate::runner_operation::forgejo::observe_identity;
 
 const READINESS_TIMEOUT_MS: i64 = 15 * 60 * 1000;
 
@@ -37,6 +39,14 @@ impl ForgejoPoolSupervisor {
                 GenerationState::WaitingOnline | GenerationState::Idle | GenerationState::Busy => {}
                 _ => continue,
             }
+            let mut diagnostic = crate::diagnostic_capture::generation_capture(
+                self.store.as_ref(),
+                Some(&self.guard),
+                &generation,
+                Lane::Readiness,
+                QuestionId::Readiness,
+                now,
+            );
             let Some(identity) = self
                 .lifecycle
                 .generation_forgejo_runner(&generation.id)
@@ -55,7 +65,14 @@ impl ForgejoPoolSupervisor {
                 };
                 detail = match self.forgejo.get_runner(id).await {
                     Ok(detail) => detail,
-                    Err(_) => continue,
+                    Err(_) => {
+                        diagnostic.reason(
+                            Code::ControlInventoryUnavailable,
+                            StageId::RunnerInventory,
+                            false,
+                        );
+                        continue;
+                    }
                 };
                 observed = observe_identity(&generation, &identity, detail.as_slice());
             }
@@ -75,6 +92,8 @@ impl ForgejoPoolSupervisor {
                         && runner.is_idle()
                         && super::is_owned_runner(runner, &self.labels)
                     {
+                        diagnostic.pass(StageId::RunnerInventory);
+                        diagnostic.outcome(Outcome::Satisfied);
                         Some(GenerationState::Idle)
                     } else if generation.state == GenerationState::Idle && runner.is_active() {
                         Some(GenerationState::Busy)
@@ -82,8 +101,24 @@ impl ForgejoPoolSupervisor {
                         && now.saturating_sub(generation.created_at) >= READINESS_TIMEOUT_MS
                         && !runner.is_active()
                     {
+                        diagnostic.reason(
+                            Code::LifecycleReadinessTimeout,
+                            StageId::RunnerInventory,
+                            true,
+                        );
                         Some(GenerationState::CleanupRequired)
                     } else {
+                        if generation.state == GenerationState::WaitingOnline {
+                            diagnostic.reason(
+                                Code::LifecycleAwaitingOnline,
+                                StageId::RunnerInventory,
+                                false,
+                            );
+                            diagnostic.outcome(Outcome::Progressing);
+                        } else if runner.is_idle() || runner.is_active() {
+                            diagnostic.pass(StageId::RunnerInventory);
+                            diagnostic.outcome(Outcome::Satisfied);
+                        }
                         None
                     }
                 }
@@ -141,31 +176,4 @@ impl ForgejoPoolSupervisor {
             .generation_advance(&generation.id, next, now)
             .await
     }
-}
-
-/// An ID match with changed UUID/name is NOT absence. A colliding name/UUID is
-/// also contradictory evidence, even when the expected ID is missing.
-pub(super) fn observe_identity<'a>(
-    generation: &GenerationRecord,
-    identity: &(i64, String),
-    runners: &'a [ForgejoRunnerRef],
-) -> Result<Option<&'a ForgejoRunnerRef>, ()> {
-    let mut observed = None;
-    for runner in runners {
-        if i64::try_from(runner.id).ok() == Some(identity.0)
-            || runner.uuid == identity.1
-            || runner.name == generation.runner_name
-        {
-            if observed.is_some()
-                || i64::try_from(runner.id).ok() != Some(identity.0)
-                || runner.uuid != identity.1
-                || runner.name != generation.runner_name
-                || !runner.ephemeral
-            {
-                return Err(());
-            }
-            observed = Some(runner);
-        }
-    }
-    Ok(observed)
 }
