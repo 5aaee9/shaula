@@ -12,6 +12,10 @@ relates_to: ["0014", "0024", "0040"]
 
 本 ARD 提议已接受架构的生产接线和迁移选择，不重新接受一次 Worker/state 架构，不取代 spec 0010 的唯一协议所有权，也不宣称任何尚未执行的验收已通过。状态保持 `proposed`，由维护者审阅决定。
 
+PR #6 已补生产实现，具体实现、Linux 宿主限制、实际测试与尚缺发布证据见
+[implementation status](../IMPLEMENTATION_STATUS.md) 和 [运行指南](../lifecycle-workers.md)。
+下文 Context 描述固定 baseline，不是新实现仍缺这些入口的声明。
+
 ## Context
 
 当前项目已经有不少关键构件：独立回环 `StateServer`、SQLite state/lock 事务、分 Generation 的 state capability、显式 HTTP Runtime、saved-plan 检查，以及现有 Terraform descendants 的 fence supervisor。但 `serve.rs` 仍把 `TemplateRuntime::new` 注入 Generation supervisor，`main.rs` 没有 `job`。最新 CLI 已包含远程管理命令，因此“公开 CLI 只有 serve/version”不是当前基线事实。

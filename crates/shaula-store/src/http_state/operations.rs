@@ -130,6 +130,14 @@ impl StateBackend for SqliteStateBackend {
             values,
         )).await.map_err(unavailable)?;
         exactly_one(result.rows_affected())?;
+        if !document.managed_empty() {
+            tx.execute(sql(
+                "UPDATE lifecycle_workers SET resource_state_seen = 1 WHERE generation_id = ?",
+                vec![access.generation_id.to_string().into()],
+            ))
+            .await
+            .map_err(unavailable)?;
+        }
         tx.commit().await.map_err(unavailable)?;
         Ok(revision)
     }

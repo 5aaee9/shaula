@@ -39,7 +39,7 @@ fn exact_capacity_exposes_occupancy_without_relabeling_demand_as_zero() {
 #[test]
 fn catalog_is_closed_unique_and_safe_and_unknown_client_values_are_conservative() {
     let codes: std::collections::BTreeSet<_> = Code::ALL.iter().map(|c| c.as_str()).collect();
-    assert_eq!(codes.len(), 41);
+    assert_eq!(codes.len(), 47);
     for code in Code::ALL {
         assert!(code
             .as_str()

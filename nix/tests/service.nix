@@ -58,6 +58,10 @@ pkgs.testers.runNixOSTest {
         8443
       ];
       services.shaula = {
+        settings.lifecycle = {
+          max_workers = 8;
+          recovery_reserve = 2;
+        };
         enable = true;
         package = shaula;
         terraformPackage = terraform;

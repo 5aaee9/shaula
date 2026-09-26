@@ -5,6 +5,25 @@ use shaula_core::net::verify_loopback;
 
 pub use shaula_core::net::verify_loopback as loopback_policy;
 
+/// The composition root closes management mutations before quiescing effects.
+/// Recovery-only startup keeps authenticated reads and login available.
+pub fn with_mutation_gate(
+    router: axum::Router,
+    health: std::sync::Arc<dyn shaula_core::registry::HealthPort>,
+    reason: &'static str,
+) -> axum::Router {
+    router.layer(axum::middleware::from_fn(move |request: axum::extract::Request, next: axum::middleware::Next| {
+        let health = health.clone();
+        async move {
+            use axum::response::IntoResponse;
+            if request.uri().path().starts_with("/api/") && !request.method().is_safe() && !health.ready().await {
+                return crate::problem::problem(axum::http::StatusCode::SERVICE_UNAVAILABLE, reason, "management mutations are unavailable until lifecycle readiness is restored").into_response();
+            }
+            next.run(request).await
+        }
+    }))
+}
+
 /// Static server configuration validated before the API becomes ready.
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
@@ -43,6 +62,14 @@ pub async fn serve(
     // Announce readiness only AFTER the bind actually succeeded — an
     // early print would advertise a listener that is about to fail.
     println!("shaula listening on {addr}");
+    serve_bound(router, listener, shutdown).await
+}
+
+pub async fn serve_bound(
+    router: axum::Router,
+    listener: tokio::net::TcpListener,
+    shutdown: tokio::sync::watch::Receiver<bool>,
+) -> Result<(), String> {
     axum::serve(listener, router)
         .with_graceful_shutdown(async move {
             let mut shutdown = shutdown;

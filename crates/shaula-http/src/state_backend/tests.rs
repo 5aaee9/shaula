@@ -13,6 +13,9 @@ use uuid::Uuid;
 
 use super::*;
 
+#[path = "control_tests.rs"]
+mod control_tests;
+
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 const DOCUMENT: &[u8] =
     br#"{"version":4,"lineage":"lineage","serial":0,"resources":[],"outputs":{}}"#;

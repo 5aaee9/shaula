@@ -7,6 +7,7 @@
 | 内容 | 指南 |
 | --- | --- |
 | Nix 构建环境、打包与 NixOS 服务部署 | [Nix / NixOS](nix.md) |
+| Exec Worker 宿主条件、运行预算、离线 state 迁移与恢复 | [Lifecycle Workers](lifecycle-workers.md) |
 | 登录、HTTPS、API 身份与访问授权 | [OIDC 部署](oidc-deployment.md) |
 | 个人 Access Token、远程 CLI 与机器输出 | [CLI](cli.md) |
 | Jobs 状态、apply / destroy 日志与保留策略 | [Jobs 与执行日志](jobs-and-operation-logs.md) |
@@ -63,14 +64,14 @@
 | 个人 Access Token、独立 Rust client、远程 CLI 与 API 对等矩阵 | [spec 0039](specs/0039-user-access-tokens-and-cli.md) / [ARD-0039](ard/0039-user-access-tokens-and-api-client.md) / [parity matrix](specs/0039-cli-parity-matrix.md)；不恢复 GitHub PAT 支持 |
 | Browser session 到期后的 Provider 续期、页面保留 | [spec 0013](specs/0013-provider-backed-browser-session-renewal.md) / [ADR-0017](ard/0017-renew-browser-sessions-in-the-authentication-guard.md) |
 | Worker/Executor、内部 control/state HTTP、locks/CAS、恢复与备份 | [spec 0010](specs/0010-lifecycle-worker-and-http-state-backend.md)；理由见 [ADR-0014](ard/0014-run-lifecycle-workers-with-a-database-http-state-backend.md) |
-| Worker/HTTP-state 生产接线、legacy cutover 与集成验收 | [spec 0042](specs/0042-production-lifecycle-worker-integration.md) / [ARD-0042](ard/0042-integrate-exec-workers-with-authoritative-http-state.md)；Draft + `proposed`，协议仍由 spec 0010 维护，不代表已经接入生产 |
+| Worker/HTTP-state 生产接线、legacy cutover 与集成验收 | [spec 0042](specs/0042-production-lifecycle-worker-integration.md) / [ARD-0042](ard/0042-integrate-exec-workers-with-authoritative-http-state.md)；实现与尚缺验收见 implementation status，协议仍由 spec 0010 维护 |
 | 多账户 GitHub App authentication、动态仓库 selector、installation routing | [spec 0011](specs/0011-multi-account-github-authentication.md) / [ADR-0015](ard/0015-route-one-github-app-profile-to-multiple-accounts.md)；已有本地实现，运行时集成边界见 implementation status，真实 GitHub 路由验收与生产迁移未执行 |
 
 ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec 中维护。已 superseded 的 ARD 不是当前实现选项。通用规则由所属 spec 定义，平台文档只增加差异和验收，不维护另一套通用状态机。
 
 ### 已确定的基线
 
-以下 worker/state 条目是 spec 0010 的目标契约，不是当前启动路径的功能清单。当前集成缺口统一见 [implementation status](IMPLEMENTATION_STATUS.md)；远程 CLI 不依赖该 Worker 集成。
+以下 worker/state 条目是 spec 0010 的目标契约，具体实现和验收边界统一见 [implementation status](IMPLEMENTATION_STATUS.md)；远程 CLI 不依赖该 Worker 集成。
 
 - 一个 daemon 管理多个 Fleet；每个 Generation 由独立 `shaula job` Lifecycle Worker 执行完整生命周期。v1 只有 `exec` Executor Driver，未来 Kubernetes Job executor 不等于 Kubernetes Runner Resource。
 - Terraform state 通过 daemon 内部 HTTP backend 写入 SQLite；LOCK/UNLOCK、锁持有者校验和 state 写入是数据库事务契约，不以本地 `terraform.tfstate` 为主状态。
@@ -92,7 +93,7 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 | --- | --- | --- | --- |
 | D1 | 协议验收 | GitHub App × organization/repository 的真实 GitHub 验收，包含多 org 和个人动态仓库路由；PAT 支持已由 spec 0018 明确取消，不再待决定 | 0001 §6.3 / 0011 / 0018 |
 | D2 | 运行策略 | Changes、幂等记录、audit、tombstones、retired credentials、artifacts、state snapshots、emergency state 与 Workspace 的 retention 时限；原始凭据的外部撤销时机。Operation Log/Jobs 历史的独立默认值已由 spec 0019 冻结，不扩展为上述恢复材料的 GC 规则 | 0005 §7 / 0019 §5 |
-| D3 | 运行策略 | operation/recovery timeout、retry budget、reaper interval、worker/backend body/rate/backlog/concurrency 的最终默认值与硬上限；OIDC 已有具体值见部署说明，Operation Log/Setup Info 的默认值见 spec 0019，不重新标为待定 | 0001 §5 / 0009 / 0019 |
+| D3 | 运行策略 | Worker/backend 已实现数值见 [运行预算](lifecycle-workers.md#budgets-implemented-by-this-revision)，最大规模负载与恢复饥饿验收仍未冻结；OIDC、Operation Log/Setup Info 已有值不重新标为待定 | 0001 §5 / 0009 / 0019 / 0042 LW-30 |
 | D4 | 持久格式，阻塞发布冻结 | `bindings_digest` 是否继续作为独立 commitment，以及 exact Revision/incarnation 绑定、编码和兼容迁移；本轮不新增 bd2/HMAC 格式，不重写旧记录 | 0004 §3 / 0005 §5 |
 | D5 | 跨版本协议验收 | `forgejo_token` schema、四 scope 的权限映射和只读激活探测已在 Forgejo 16.0.4 核验，见 [最小权限](forgejo-permissions.md)；其它支持版本/定制权限部署尚需运行同一矩阵，不属于 GitHub credential fallback | 0026 §7 |
 | D6 | 运行策略 | Forgejo 轮询的规模边界与默认值：jobs 无分页且 labels 在服务端内存过滤，inventory 按可变活动时间分页；需要最终 interval/backoff/条数上限、idle deadline 与可支持的实例规模上限 | 0026 §3 / §4 |

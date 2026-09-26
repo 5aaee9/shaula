@@ -73,6 +73,20 @@ impl SqliteControlPlane {
             }));
         }
 
+        if crate::http_state::SqliteStateBackend::operator_seal_on(
+            &tx,
+            generation_id,
+            operation_id,
+            now,
+        )
+        .await
+        .is_err()
+        {
+            return Ok(Err(MutationError::Conflict {
+                summary: "lifecycle worker must be verifiably fenced before operator finalization"
+                    .into(),
+            }));
+        }
         Store::operation_insert_on(
             &tx,
             shaula_core::registry::OperationInsert {

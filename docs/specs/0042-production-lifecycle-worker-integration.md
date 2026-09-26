@@ -1,12 +1,12 @@
 # Production Lifecycle Worker and HTTP State Integration
 
-- Status: Draft — implementation proposal; not a claim of completed integration
+- Status: Implementation in PR #6; full acceptance pending (see implementation status)
 - Date: 2026-09-26
 - Repository baseline: `93d607bb488d52b2e12e8537adc009fd3b1aad3d`
 - Decision: [ARD-0042](../ard/0042-integrate-exec-workers-with-authoritative-http-state.md)
 - Protocol owner: [spec 0010](0010-lifecycle-worker-and-http-state-backend.md)
 
-本文定义如何把已接受的 Worker/HTTP-state 契约接入真实 `shaula serve`，以及旧部署如何安全切换。MUST、MUST NOT、SHOULD 是拟议实现要求，不是已实现或已验收声明。本文只拥有 composition、cutover 和集成验收；内部 wire/auth/lock/CAS、生命周期恢复不变量仍由 spec 0010 唯一维护。实现不得以本文省略某条协议为由放宽它。
+本文定义如何把已接受的 Worker/HTTP-state 契约接入真实 `shaula serve`，以及旧部署如何安全切换。MUST、MUST NOT、SHOULD 是实现要求，不是已验收声明。PR #6 的实现与证据边界见 [implementation status](../IMPLEMENTATION_STATUS.md)，部署步骤见 [运行指南](../lifecycle-workers.md)。本文只拥有 composition、cutover 和集成验收；内部 wire/auth/lock/CAS、生命周期恢复不变量仍由 spec 0010 唯一维护。实现不得以本文省略某条协议为由放宽它。
 
 ## 1. 已核对的缺口与完成定义
 
@@ -45,7 +45,7 @@
 
 ## 3. Composition 与 crate 边界
 
-预期调用关系（职责关系，不代表新增 API 已存在）：
+生产接线的职责关系（验收状态单独记录）：
 
 ```text
 shaula serve
@@ -86,7 +86,7 @@ Executor 仅暴露 `launch`、`observe`、`stop_and_fence` 一类进程能力，
 
 ### 4.2 Bootstrap 提案
 
-下列是拟议配置，不是当前可用配置：
+下列配置已实现；Worker 数值为部署方显式选择的示例：
 
 ```yaml
 lifecycle:
@@ -274,4 +274,4 @@ LW-06–LW-08 需要真实 pinned Terraform + SQLite + HTTP，不能仅手写 HT
 
 外部协议以 HashiCorp 的 [HTTP backend](https://developer.hashicorp.com/terraform/language/backend/http) 和 [state locking](https://developer.hashicorp.com/terraform/language/state/locking) 文档为参考，检索日期 2026-09-26；它们不替代仓库固定 Terraform 版本的运行验证。
 
-仍需冻结的跨文档运行策略/发布 tuple 只见 [docs 决策清单](../README.md#仍需决定或冻结)。本文和 ARD 的合并不改变 `IMPLEMENTATION_STATUS.md` 的未集成结论；实现与迁移证据必须在后续实现 PR 中更新。
+仍需冻结的跨文档运行策略/发布 tuple 只见 [docs 决策清单](../README.md#仍需决定或冻结)。实现与迁移证据由 `IMPLEMENTATION_STATUS.md` 记录；本文或 ARD 的合并不能替代 §11 的验收。

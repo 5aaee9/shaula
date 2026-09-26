@@ -26,6 +26,7 @@ pub struct SqliteControlPlane {
     artifact_cache:
         Option<std::sync::Arc<dyn shaula_core::registry::template_library::ArtifactCache>>,
     auth_observations: auth_observations::RouteObservations,
+    worker_admissions: Option<std::sync::Arc<crate::http_state::WorkerAdmissions>>,
 }
 
 impl SqliteControlPlane {
@@ -35,11 +36,62 @@ impl SqliteControlPlane {
             artifact_root,
             artifact_cache: None,
             auth_observations: auth_observations::RouteObservations::default(),
+            worker_admissions: None,
         }
     }
 
     pub fn store(&self) -> &Store {
         &self.store
+    }
+
+    pub fn with_worker_admissions(
+        mut self,
+        admissions: std::sync::Arc<crate::http_state::WorkerAdmissions>,
+    ) -> Self {
+        self.worker_admissions = Some(admissions);
+        self
+    }
+
+    async fn admit_worker_on(
+        &self,
+        tx: &sea_orm::DatabaseTransaction,
+        id: &str,
+    ) -> shaula_core::error::CoreResult<Option<shaula_core::worker::WorkerAdmission>> {
+        match &self.worker_admissions {
+            Some(admissions) => admissions
+                .admit_on(tx, id)
+                .await
+                .map(Some)
+                .map_err(worker_error),
+            None => Ok(None),
+        }
+    }
+
+    fn publish_worker(
+        &self,
+        admission: Option<shaula_core::worker::WorkerAdmission>,
+    ) -> shaula_core::error::CoreResult<()> {
+        if let (Some(admissions), Some(admission)) = (&self.worker_admissions, admission) {
+            admissions.publish(admission).map_err(worker_error)?;
+        }
+        Ok(())
+    }
+
+    async fn complete_worker_generation(
+        &self,
+        id: &str,
+        now: i64,
+    ) -> shaula_core::error::CoreResult<bool> {
+        let completed = crate::http_state::SqliteStateBackend::new(self.store.clone())
+            .complete_generation(id, now)
+            .await
+            .map_err(worker_error)?;
+        if completed {
+            if let Some(admissions) = &self.worker_admissions {
+                admissions.discard(id);
+            }
+        }
+        Ok(completed)
     }
 
     pub fn with_artifact_cache(
@@ -56,6 +108,13 @@ impl SqliteControlPlane {
             None => Ok(true),
         }
     }
+}
+
+fn worker_error(_: shaula_core::state_backend::StateError) -> CoreError {
+    CoreError::new(
+        ReasonCode::StorageUnavailable,
+        "lifecycle worker admission unavailable",
+    )
 }
 
 mod artifact_reads;

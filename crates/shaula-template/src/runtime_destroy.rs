@@ -186,12 +186,22 @@ impl TemplateRuntime {
             .start_apply_saved_plan(workspace, &request.environment)
             .await
             .map_err(|_| exec_err("destroy.apply"))?;
+        if let Some(sink) = &request.apply_intent_sink {
+            sink.spawn_handover(&provenance)
+                .await
+                .map_err(|_| exec_err("destroy.handover"))?;
+        }
         drop(_admission_claim);
-        apply_spawn
+        let apply_result = apply_spawn
             .wait()
             .await
-            .and_then(|output| flow.require_success(output, "apply"))
-            .map_err(|_| exec_err("destroy.apply"))?;
+            .and_then(|output| flow.require_success(output, "apply"));
+        if let Some(sink) = &request.apply_intent_sink {
+            sink.command_ended(&provenance)
+                .await
+                .map_err(|_| exec_err("destroy.completion"))?;
+        }
+        apply_result.map_err(|_| exec_err("destroy.apply"))?;
 
         self.verify_http_workspace(workspace, true)?;
         let after = flow

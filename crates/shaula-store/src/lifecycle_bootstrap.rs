@@ -14,7 +14,8 @@ impl Store {
         }
         let json = serde_json::to_string(provenance)
             .map_err(|_| crate::StoreError::Corrupt("bootstrap provenance invalid".into()))?;
-        let changed = self.connection().execute(Statement::from_sql_and_values(
+        let tx = self.begin().await?;
+        let changed = tx.execute(Statement::from_sql_and_values(
             DbBackend::Sqlite,
             "UPDATE runner_operations SET state='BootstrapStarting',updated_at=?
              WHERE id=? AND generation_id=? AND kind='Create' AND state='ApplyStarting'
@@ -24,7 +25,17 @@ impl Store {
                  AND f.desired_revision=g.fleet_revision AND f.deletion_marker=0 AND f.tombstone=0)",
             [now.into(), provenance.attempt_id.clone().into(), provenance.generation_id.clone().into(), json.into()],
         )).await?;
-        Ok(changed.rows_affected() == 1)
+        if changed.rows_affected() == 1 {
+            crate::http_state::SqliteStateBackend::worker_bootstrap_on(&tx, provenance)
+                .await
+                .map_err(|_| {
+                    crate::StoreError::Corrupt("worker bootstrap authority unavailable".into())
+                })?;
+            tx.commit().await?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }
 

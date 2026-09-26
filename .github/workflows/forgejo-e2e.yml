@@ -62,5 +62,7 @@ jobs:
           sudo systemctl restart docker
       - name: Exercise lifecycle, permissions, Jobs, faults and credential boundaries
         run: |
-          nix develop --command node --test scripts/forgejo-lifecycle/*.test.mjs
-          nix develop --command node scripts/forgejo-lifecycle/run.mjs
+          sudo systemd-run --unit=shaula-acceptance --wait --pipe --collect \
+            --property=Delegate=yes --property="User=$(id -un)" \
+            --working-directory="$PWD" --setenv="PATH=$PATH" --setenv="HOME=$HOME" \
+            nix develop --command bash scripts/lifecycle-acceptance.sh

@@ -1,6 +1,7 @@
 //! Artifact/workspace management and the Terraform subprocess runtime.
 
 pub mod artifact;
+pub mod cleanup;
 pub mod engine;
 pub mod http_backend;
 pub mod manifest;

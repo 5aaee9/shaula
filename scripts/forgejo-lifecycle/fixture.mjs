@@ -65,6 +65,7 @@ export class Fixture {
     this.url = `http://127.0.0.1:${this.port}`;
     this.config = {
       version: 1, storage: { data_dir: join(this.directory, "data") },
+      lifecycle: { executor: "exec", max_workers: 8, recovery_reserve: 2, cgroup_root: process.env.SHAULA_TEST_CGROUP },
       http: { listen: `127.0.0.1:${this.port}`, bindings_server_key: randomBytes(32).toString("hex"),
         authorization: [{ issuer: this.oidc.url, subject: "fixture", scopes: scopes.split(" ") }] },
       execution: { engines: { terraform: { executable: this.terraform } }, operation_timeout_secs: 90 },

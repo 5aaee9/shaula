@@ -74,6 +74,10 @@ Add Shaula as a flake input and import its module into your NixOS configuration:
   services.shaula = {
     enable = true;
     bindingsKeyFile = "/run/secrets/shaula-bindings-key";
+    settings.lifecycle = {
+      max_workers = 64;
+      recovery_reserve = 8;
+    };
     oidc = {
       provider = "https://identity.example.com/realms/operations";
       clientId = "shaula-web";
@@ -106,6 +110,13 @@ secret values. `DynamicUser`, private state/runtime directory permissions,
 `stateDirectory` defaults to `shaula`, giving `/var/lib/shaula`; systemd retains
 it across service restarts and OS reboots. The module owns `storage.data_dir`
 and `execution.engines`; use `stateDirectory` and `terraformPackage` instead.
+
+The lifecycle limits above are explicit sizing examples, not capacity defaults.
+The service now requires delegated Linux cgroup v2 with `cgroup.kill`; the module
+sets `Delegate=yes`. Existing deployments must follow the
+[offline lifecycle-state cutover and recovery guide](lifecycle-workers.md)
+before mutation readiness is enabled. Returning a migrated directory to an old
+local-state binary is unsupported.
 
 The package also installs default Docker, Kubernetes, Proxmox, AWS, Tencent Cloud and
 Alibaba Cloud template sources under `share/shaula/templates`. `services.shaula.templateSourceDirectories` defaults to

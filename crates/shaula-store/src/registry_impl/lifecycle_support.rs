@@ -43,6 +43,9 @@ impl super::SqliteControlPlane {
             .map_err(core_err)?
         {
             Ok(()) => {
+                crate::http_state::SqliteStateBackend::worker_effect_on(&tx, provenance)
+                    .await
+                    .map_err(super::worker_error)?;
                 tx.commit().await.map_err(|e| {
                     CoreError::new(
                         ReasonCode::StorageUnavailable,

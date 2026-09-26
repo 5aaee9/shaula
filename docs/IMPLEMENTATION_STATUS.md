@@ -1,9 +1,9 @@
 # Implementation Status (Phase Boundary)
 
-Status: Partial implementation; multi-account GitHub authentication (spec 0011 /
-ADR-0015), the HTTP state backend adapter and the explicit Runtime adapter are
-implemented with local verification; production lifecycle-worker integration,
-real-GitHub multi-account acceptance and the production migration pending.
+Status: Partial acceptance. The production lifecycle-worker/HTTP-state path and
+explicit offline migration are implemented in PR #6, with local Linux process
+and Windows regression evidence below. The complete spec 0042 acceptance matrix,
+real-GitHub multi-account acceptance and production migration remain pending.
 Evidence baseline: `b007fbc` (HTTP-backend increment), the Nix packaging and
 NixOS deployment increment of 2026-09-07, and the multi-account authentication
 increment of 2026-09-07; historical review reports dated 2026-09-06.
@@ -15,6 +15,57 @@ The earlier documentation-only pass could not run Cargo. The HTTP-backend pass
 used an owner-approved temporary Nix Rust environment. The repository now provides
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
+
+## Production lifecycle workers and HTTP state (2026-09-26, PR #6)
+
+Both GitHub and Forgejo production supervisors now use
+`serve -> ExecExecutor -> shaula job -> HTTP Runtime -> SQLite`. Workers own
+sequential Create/wait/Destroy; CI credentials, Fleet gates and terminal authority
+remain in the daemon. The executor requires delegated Linux cgroup v2 with
+`cgroup.kill`, records host/boot/process identity and fences descendants before
+replacement. Unsupported hosts fail closed. Fresh atomic admission includes the
+Claim, separate capability verifiers and empty initial state. Completion seals
+state, records a replayable receipt and releases occupancy in one transaction.
+
+Migration m0027 adds durable deployment/worker/fence/import facts. The offline
+`maintenance lifecycle-state inspect/apply` commands bind plans to original
+database provenance, exact materials, engine and fence evidence. Stale plans fail;
+per-Generation import receipts permit resumption. Unclassified legacy deployments
+serve authenticated reads without acquisition or management mutations. Unknown
+fences, missing state/materials and emergency evidence preserve quarantine and
+occupancy. A receipt-authorized reaper deletes only verified ordinary workspace
+files. Six worker diagnostic codes extend the catalog to 47 without exposing
+state or capability material. See the [deployment and recovery guide](lifecycle-workers.md).
+
+Local evidence obtained for this implementation:
+
+- Windows strict workspace/all-target Clippy and rustfmt pass; unfiltered nextest
+  passes **1,018 tests**, with two platform/protocol tests skipped. The separately
+  requested name-filtered nextest command also ran and is not the full-suite gate.
+- Web lint/format checks and **203 Playwright tests** pass.
+- Linux/WSL, Rust 1.98.1 and pinned Terraform 1.9.8: seven explicit ignored tests
+  pass. These cover actual HTTP lock/query/state persistence in SQLite, actual
+  `job` Create/wait/Destroy with workspace reaping, killed Worker with a detached
+  descendant, fenced epoch replacement and missing-workspace reconstruction with
+  no second Create, real `serve` startup/shutdown/restart, mandatory OIDC/PAT
+  restart behavior, and legacy read-only gating with stale offline-plan rejection
+  and replay. The local process fixture uses Terraform's built-in `terraform_data`;
+  it is not Docker, Kubernetes or a cloud-provider acceptance result.
+- New Store tests exercise claim authentication, start handover, exact cleanup
+  revision, atomic completion/receipt replay, recovery quarantine and migration
+  commitments. Reaper tests retain emergency/unknown material and reject symlinks
+  and cross-Generation receipts.
+
+**Release/merge acceptance is not yet complete.** The changed default path still
+needs formal package/NixOS evidence and actual updated-binary GitHub and Forgejo
+lifecycles covering Docker/Kubernetes (LW-32). Full composition fault coverage for
+LW-11–15, backup/restore with late external effects (LW-28), and saturation/RSS/
+recovery-reserve behavior (LW-30) are not established by the local tests above.
+Historical platform receipts and old-binary workflows do not satisfy this gate.
+The implementation changes the default production path and requires explicit
+worker limits; it must not be deployed as an adapter-only, backward-compatible
+change. Earlier sections below describe their dated baselines and do not override
+this new path or these outstanding release conditions.
 
 ## Explainable reconciliation diagnostics (2026-09-26)
 

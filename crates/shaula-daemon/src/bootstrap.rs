@@ -9,6 +9,7 @@ use super::config::BootstrapConfig;
 /// Validated bootstrap, frozen for the process lifetime.
 #[derive(Clone)]
 pub struct ValidatedBootstrap {
+    pub lifecycle: Option<super::config::LifecycleConfig>,
     pub access_tokens: shaula_core::access_tokens::TokenPolicy,
     pub data_dir: PathBuf,
     pub database_path: PathBuf,
@@ -143,6 +144,9 @@ impl ValidatedBootstrap {
     }
 
     pub fn validate(config: BootstrapConfig) -> Result<Self, String> {
+        if let Some(lifecycle) = &config.lifecycle {
+            lifecycle.validate()?;
+        }
         config.operation_logs.validate()?;
         if let Some(delivery) = &config.setup_info {
             delivery.validate()?;
@@ -238,6 +242,7 @@ impl ValidatedBootstrap {
             resolve_engine_executable(&config.execution.engines.terraform.executable)?;
 
         Ok(Self {
+            lifecycle: config.lifecycle,
             data_dir,
             database_path,
             work_root,
