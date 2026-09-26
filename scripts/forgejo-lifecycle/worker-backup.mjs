@@ -72,7 +72,7 @@ export async function workerBackup(fixture) {
   await fixture.startDaemon();
   await until("restore rotates the fenced epoch", () => workers(fixture, key)[0].worker_epoch > original.worker_epoch);
   console.log("Backup checkpoint: fenced recovery epoch observed");
-  await fixture.queue(key, 8);
+  await fixture.queue(key, 40, false, [key], false);
   await fixture.observe(key, "active");
   await fixture.reclaimed(key, observed);
   assert.equal(fixture.dockerProxy.gate.containerCreates, creates, "restore never repeats Create");
@@ -107,7 +107,7 @@ export async function backupDivergence(fixture) {
   assert.equal(commitment(await manifest(join(backup, "data"))), old, "old checkpoint is preserved separately");
   assert.equal(await fixture.cli("ps", "-a", "--no-trunc", "-q", "--filter", `label=shaula.fleet=${key}`), observed.id);
   await fixture.startDaemon();
-  await fixture.queue(key, 8);
+  await fixture.queue(key, 40, false, [key], false);
   await fixture.observe(key, "active");
   await fixture.reclaimed(key, observed);
   assert.equal(fixture.dockerProxy.gate.containerCreates, creates + 1, "recovery never replays the post-checkpoint Create");

@@ -31,7 +31,7 @@ export async function controlFaults(fixture) {
   assert.equal(fixture.registrationProxy.gate.registrationPosts, registrations + 1);
   await proxy.release();
   await fixture.capZero(key);
-  await fixture.queue(key, 8);
+  await fixture.queue(key, 40, false, [key], false);
   await fixture.observe(key, "active");
   await fixture.reclaimed(key, idle);
   results.spawnAckLost = { lostReplies: 2, creates: 1, cleanup: "Destroyed" };
