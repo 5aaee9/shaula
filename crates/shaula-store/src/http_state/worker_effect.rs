@@ -97,7 +97,7 @@ impl SqliteStateBackend {
             .map_err(unavailable)?;
         }
         tx.execute(sql(
-            "UPDATE lifecycle_workers SET handover = ?, active_command = ? WHERE generation_id = ?",
+            "UPDATE lifecycle_workers SET handover = ?, active_command = ?, cleanup_revision = NULL WHERE generation_id = ?",
             vec![
                 proof.attempt_id.clone().into(),
                 proof.attempt_id.clone().into(),

@@ -7,6 +7,128 @@ use shaula_core::{
 use std::sync::Arc;
 
 #[tokio::test]
+async fn completed_cleanup_survives_restart_before_ci_registration_removal() -> TestResult {
+    for after_cleanup in ["unchanged", "late-write", "active-command", "lock"] {
+        let f = Fixture::new().await?;
+        let (admission, access, state_access) = super::worker::admit(&f).await?;
+        let id = admission.claim.generation_id.to_string();
+        f.backend.worker_launch_pending(&access).await?;
+        f.backend
+            .worker_register(
+                &access,
+                &ProcessIdentity {
+                    host_boot: "host:boot".into(),
+                    process_id: 99,
+                    started: "42".into(),
+                    containment: "/cgroup/attempt".into(),
+                },
+            )
+            .await?;
+        let admissions = Arc::new(WorkerAdmissions::new(4, 1)?);
+        let journal = SqliteWorkerJournal::new(f.backend.clone(), admissions.clone());
+        journal.retain_input(&access, b"{}".to_vec()).await?;
+        f.backend.note_create_starting(&admission.claim).await?;
+        let lineage = f
+            .backend
+            .read(&state_access)
+            .await?
+            .ok_or("state missing")?
+            .document
+            .lineage()
+            .to_owned();
+        f.backend.lock(&state_access, lock("apply")?).await?;
+        f.backend
+            .write(
+                &state_access,
+                lock("apply")?.id(),
+                state(1, &lineage, true)?,
+            )
+            .await?;
+        f.backend
+            .write(
+                &state_access,
+                lock("apply")?.id(),
+                state(2, &lineage, false)?,
+            )
+            .await?;
+        f.backend.unlock(&state_access, lock("apply")?.id()).await?;
+        journal.verify_cleanup(&access).await?;
+        f.store.connection().execute(sql(
+            "UPDATE runner_generations SET state = 'Destroying', resources_destroyed_at = 10 WHERE id = ?",
+            vec![id.clone().into()],
+        )).await?;
+        if after_cleanup == "late-write" {
+            f.backend.lock(&state_access, lock("late-write")?).await?;
+            f.backend
+                .write(
+                    &state_access,
+                    lock("late-write")?.id(),
+                    state(3, &lineage, false)?,
+                )
+                .await?;
+            f.backend
+                .unlock(&state_access, lock("late-write")?.id())
+                .await?;
+        }
+        if after_cleanup == "active-command" {
+            f.store.connection().execute(sql(
+                "UPDATE lifecycle_workers SET active_command = 'unresolved' WHERE generation_id = ?",
+                vec![id.clone().into()],
+            )).await?;
+        }
+        if after_cleanup == "lock" {
+            f.backend.lock(&state_access, lock("late-lock")?).await?;
+        }
+        let record = f
+            .backend
+            .recovery_records()
+            .await?
+            .into_iter()
+            .find(|r| r.generation_id == id)
+            .ok_or("record absent")?;
+        f.backend
+            .recover_worker(&record, FenceOutcome::Fenced, &admissions, false)
+            .await?;
+        let fresh = admissions.take(admission.claim.generation_id)?;
+        assert_eq!(fresh.claim.worker_epoch, 2);
+        assert!(f.backend.read(&state_access).await.is_err());
+        // The daemon has now removed the CI registration. No second Terraform
+        // Destroy is needed, but only the exact verified empty revision counts.
+        let completed = f.backend.complete_generation(&id, 20).await;
+        if after_cleanup != "unchanged" {
+            assert!(completed.is_err());
+            assert_eq!(
+                f.store
+                    .generation_get(&id)
+                    .await?
+                    .ok_or("generation missing")?
+                    .state,
+                "Destroying"
+            );
+        } else {
+            assert!(completed?);
+            assert_eq!(
+                f.store
+                    .generation_get(&id)
+                    .await?
+                    .ok_or("generation missing")?
+                    .state,
+                "Destroyed"
+            );
+            let fresh_state = StateAccess {
+                generation_id: fresh.claim.generation_id,
+                capability: fresh.state,
+            };
+            assert!(matches!(
+                f.backend.lock(&fresh_state, lock("late")?).await,
+                Err(StateError::Sealed)
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn worker_recovery_rotates_both_capabilities_and_audits_orphan_lock() -> TestResult {
     let f = Fixture::new().await?;
     let (admission, access, state) = super::worker::admit(&f).await?;

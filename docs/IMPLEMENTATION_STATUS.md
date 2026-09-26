@@ -40,7 +40,7 @@ state or capability material. See the [deployment and recovery guide](lifecycle-
 Local evidence obtained for this implementation:
 
 - Windows strict workspace/all-target Clippy and rustfmt pass; unfiltered nextest
-  passes **1,021 tests**, with two platform/protocol tests skipped. The separately
+  passes **1,022 tests**, with two platform/protocol tests skipped. The separately
   requested name-filtered nextest command also ran and is not the full-suite gate.
 - Web lint/format checks and **203 Playwright tests** pass.
 - Linux/WSL, Rust 1.98.1 and pinned Terraform 1.9.8: eight explicit ignored tests
@@ -69,6 +69,14 @@ Local evidence obtained for this implementation:
   comment containing `backend`. HTTP workspace validation now uses the existing
   bounded HCL parser to reject actual backend/cloud blocks. A regression covers
   all six bundled templates, comments/strings, malformed source and overrides.
+- Forgejo/Docker CI on `ea0dc96` passed successful/failed workflow cleanup,
+  daemon SIGKILL/restart, Jobs retention, label selection, stale demand, minimum
+  permissions, credential scans and idle expiry. Its busy hard-expiry scenario
+  exposed lost cleanup proof after a second restart while registration deletion
+  was retried. Recovery now retains only the exact verified revision after a
+  confirmed fence with no superseding command/lock; a new apply invalidates it.
+  A regression rejects later revisions and unresolved commands/locks. The full
+  Docker job must pass again before this is considered platform acceptance.
 
 **Release/merge acceptance is not yet complete.** The changed default path still
 needs formal package/NixOS evidence and actual updated-binary GitHub and Forgejo

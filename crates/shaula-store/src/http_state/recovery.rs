@@ -85,6 +85,15 @@ impl SqliteStateBackend {
             .ok_or(StateError::Unavailable)?
             .try_get::<Option<Vec<u8>>>("", "lock_info")
             .map_err(unavailable)?;
+        // Resource cleanup may finish before CI registration removal. Its
+        // exact empty-state proof survives a fenced restart while that removal
+        // is retried, provided no later command, lock or revision superseded it.
+        let cleanup_revision = worker.cleanup_revision.filter(|revision| {
+            *revision == state.revision
+                && worker.handover.is_none()
+                && worker.active_command.is_none()
+                && lock.is_none()
+        });
         tx.execute(sql("INSERT INTO lifecycle_fences(worker_attempt, generation_id, worker_epoch, process_identity, orphan_lock, outcome) VALUES (?, ?, ?, ?, ?, ?)", vec![record.worker_attempt.clone().into(), record.generation_id.clone().into(), record.worker_epoch.into(), record.process_identity.clone().into(), lock.into(), (if fenced { "fenced" } else { "unknown" }).into()])).await.map_err(unavailable)?;
         if !fenced
             || preserve_evidence
@@ -126,7 +135,7 @@ impl SqliteStateBackend {
         // Orphan lock removal and credential rotation are a single commit,
         // after the exact old containment was proved empty and audited above.
         tx.execute(sql("UPDATE generation_http_state SET worker_epoch = ?, worker_attempt = ?, capability_hash = ?, revoked = 0, lock_id = NULL, lock_info = NULL WHERE generation_id = ?", vec![admission.claim.worker_epoch.into(), admission.claim.worker_attempt.to_string().into(), admission.state.verifier().into(), record.generation_id.clone().into()])).await.map_err(unavailable)?;
-        tx.execute(sql("UPDATE lifecycle_workers SET control_hash = ?, phase = 'admitted', process_identity = NULL, cleanup_only = 1, handover = NULL, active_command = NULL, cleanup_revision = NULL WHERE generation_id = ?", vec![admission.control.verifier().into(), record.generation_id.clone().into()])).await.map_err(unavailable)?;
+        tx.execute(sql("UPDATE lifecycle_workers SET control_hash = ?, phase = 'admitted', process_identity = NULL, cleanup_only = 1, handover = NULL, active_command = NULL, cleanup_revision = ? WHERE generation_id = ?", vec![admission.control.verifier().into(), cleanup_revision.into(), record.generation_id.clone().into()])).await.map_err(unavailable)?;
         // Recovery never re-enters Create/JIT. Existing CI removal gates still
         // decide when the cleanup-only replacement may actually destroy.
         tx.execute(sql("UPDATE runner_generations SET state = 'CleanupRequired' WHERE id = ? AND state IN ('CreatePending','Creating','WaitingOnline')", vec![record.generation_id.clone().into()])).await.map_err(unavailable)?;
