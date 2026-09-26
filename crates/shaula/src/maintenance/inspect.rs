@@ -76,12 +76,16 @@ pub(super) fn inspect(
     };
     let effects: serde_json::Value =
         serde_json::from_str(&generation.effects).map_err(|_| "operation history invalid")?;
-    let original = effects
+    let creates: Vec<_> = effects
         .as_array()
-        .and_then(|ops| {
-            ops.iter()
-                .find(|op| op.get("kind").and_then(|v| v.as_str()) == Some("Create"))
-        })
+        .ok_or("operation history is not an array")?
+        .iter()
+        .filter(|op| op.get("kind").and_then(|v| v.as_str()) == Some("Create"))
+        .collect();
+    // Multiple historical Create records require explicit reconciliation; an
+    // arbitrary first record is not proof of the original material tuple.
+    let original = (creates.len() == 1)
+        .then(|| creates[0])
         .and_then(|op| op.get("provenance"))
         .and_then(|v| v.as_str())
         .and_then(|json| serde_json::from_str::<PlanProvenance>(json).ok());
@@ -94,7 +98,6 @@ pub(super) fn inspect(
     let input = bytes[3].clone();
     let valid = fenced
         && bytes[2].is_none()
-        && files.iter().all(|(_, hash)| !hash.starts_with("invalid:"))
         && archive.as_deref() == Some(&generation.template_artifact_digest)
         && state.as_ref().is_some_and(|state| {
             backup.as_ref().is_none_or(|backup| {

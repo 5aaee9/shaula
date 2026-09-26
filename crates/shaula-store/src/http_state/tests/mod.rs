@@ -17,6 +17,7 @@ mod cutover;
 mod migration;
 mod recovery;
 mod worker;
+mod worker_limits;
 mod worker_recovery;
 
 pub(super) type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;

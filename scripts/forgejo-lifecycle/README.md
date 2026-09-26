@@ -2,7 +2,7 @@
 
 This harness starts **actual `shaula serve`**, isolated SQLite and a disposable HTTPS OIDC issuer. It publishes the bundled artifact and credential through authenticated HTTP; the production supervisor and Terraform own Runner Create/Destroy. No fake runtime or direct Runner start/registration substitutes for the lifecycle. Permission-only probes separately create/delete registrations to test scoped API authorization.
 
-Prerequisites: Linux, real Docker Engine (not Podman), Node 22.13+, OpenSSL, tar, Terraform **1.9.8**, and a built Shaula binary. The caller must be in the Docker host network namespace (enter the RootlessKit child user/mount/network namespace for rootless Docker). Only generated test workflows run. Do not expose fixture ports on a production host.
+Prerequisites: Linux with writable cgroup v2 delegation and `cgroup.kill`, real Docker Engine (not Podman), Node 22.13+, OpenSSL, tar, Terraform **1.9.8**, and a built Shaula binary. The test parent must run inside the delegation; `scripts/lifecycle-acceptance.sh` derives `SHAULA_TEST_CGROUP` from that parent. The caller must be in the Docker host network namespace (enter the RootlessKit child user/mount/network namespace for rootless Docker). Only generated test workflows run. Do not expose fixture ports on a production host.
 
 ```sh
 npm ci --prefix web
@@ -28,6 +28,7 @@ Docker 29 may need `DOCKER_MIN_API_VERSION=1.24` for provider 3.0.2; change only
 - `max_lifetime_secs: 15`: reclaim waiting and active resources. Hard expiry still works with failed demand reads. Independently fail Docker DELETE and registration DELETE, restart at each checkpoint, retain occupancy until both converge. These are **not idle-safe drain** tests.
 - Lose a real successful registration response: the undeclared runner has no joint label ownership proof, so quarantine with occupancy held; no repeated POST, no resource Create. This does **not** prove that name-only ownership is safe, or cover all artificial ExactlyOne/None/Multiple classifications on a live server.
 - Check actual per-Runner and management credentials against argv/env, metadata, runner/daemon logs, Jobs/Generation/Operation Log APIs, and Terraform inputs. Decode saved plans rather than grep compressed bytes. Bundled Forgejo v1 templates do not emit Setup Info; its rendering/redaction remains covered by local tests.
+- Read authoritative HTTP state and retained inputs from owner-only SQLite in read-only mode. Require atomic sealed/revoked state and a completion receipt after reclamation; allow receipt-authorized workspace reaping and reject normal local/backup/emergency state files.
 
 Fault proxies only alter management jobs reads, registration responses and DELETE outcomes. Acquisition traffic passes unchanged. No production acquisition proxy is introduced.
 

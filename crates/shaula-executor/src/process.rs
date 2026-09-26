@@ -124,19 +124,42 @@ impl Executor for ExecExecutor {
                 command.env(name, value);
             }
         }
-        let mut child = command.spawn().map_err(|_| StateError::Unavailable)?;
-        let pid = child.id().ok_or(StateError::Unavailable)?;
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(_) => {
+                let _ = std::fs::remove_dir(&group);
+                return Err(StateError::Unavailable);
+            }
+        };
         // job cannot execute effects before reading the envelope and completing
         // its daemon handshake. Assign before releasing that inherited pipe.
-        std::fs::write(group.join("cgroup.procs"), pid.to_string())
-            .map_err(|_| StateError::Unavailable)?;
-        let identity = ProcessIdentity {
-            host_boot: containment::boot()?,
-            process_id: pid,
-            started: containment::started(pid)?,
-            containment: group.to_str().ok_or(StateError::Invalid)?.to_owned(),
+        let ownership = (|| {
+            let pid = child.id().ok_or(StateError::Unavailable)?;
+            std::fs::write(group.join("cgroup.procs"), pid.to_string())
+                .map_err(|_| StateError::Unavailable)?;
+            let identity = ProcessIdentity {
+                host_boot: containment::boot()?,
+                process_id: pid,
+                started: containment::started(pid)?,
+                containment: group.to_str().ok_or(StateError::Invalid)?.to_owned(),
+            };
+            let handoff = child.stdin.take().ok_or(StateError::Unavailable)?;
+            Ok((identity, handoff))
+        })();
+        let (identity, handoff) = match ownership {
+            Ok(ownership) => ownership,
+            Err(error) => {
+                // No launch envelope has been sent, so job has no authority to
+                // spawn descendants. Reap the direct child even if assignment
+                // or identity capture failed, instead of leaving a zombie.
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                if containment::empty(&group).is_ok_and(|empty| empty) {
+                    let _ = std::fs::remove_dir(&group);
+                }
+                return Err(error);
+            }
         };
-        let handoff = child.stdin.take().ok_or(StateError::Unavailable)?;
         children.insert(
             claim.worker_attempt,
             Process {

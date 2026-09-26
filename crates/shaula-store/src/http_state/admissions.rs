@@ -61,7 +61,18 @@ impl WorkerAdmissions {
         if !mode.try_get::<bool>("", "activated").map_err(unavailable)? {
             return Err(StateError::Conflict);
         }
-        let count = tx.query_one(sql("SELECT COUNT(*) AS count FROM lifecycle_workers WHERE phase NOT IN ('completed', 'quarantined')", vec![])).await.map_err(unavailable)?.ok_or(StateError::Unavailable)?.try_get::<i64>("", "count").map_err(unavailable)?;
+        // An unknown quarantined executor may still be alive. Its occupancy
+        // cannot be recycled into another worker merely by renaming its phase.
+        let count = tx
+            .query_one(sql(
+                "SELECT COUNT(*) AS count FROM lifecycle_workers WHERE phase != 'completed'",
+                vec![],
+            ))
+            .await
+            .map_err(unavailable)?
+            .ok_or(StateError::Unavailable)?
+            .try_get::<i64>("", "count")
+            .map_err(unavailable)?;
         if count >= self.create_limit as i64 {
             return Err(StateError::Unavailable);
         }
