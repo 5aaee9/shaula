@@ -13,14 +13,15 @@ The user also asked for members to follow the latest Active template revision
 rather than pin.
 
 We promote the pool to a named, revisioned `TemplatePool` resource under
-`/v1/template-pools`, parallel to TemplateProfile and Fleet. A Fleet references
+`/api/v1/template-pools`, parallel to TemplateProfile and Fleet. A Fleet references
 a pool by `template_pool_ref` (mutually exclusive with `template_profile_ref`);
 the inline `template_pool` field is dropped for new Fleets. Members keep the
 spec 0029 shape — key, bare `template_profile_ref`, weight, bounded inputs,
 optional cap — but `template_profile_ref` is now a bare key that **follows the
 profile's latest Active revision** under spec 0023, resolved to concrete member
 rows at pool admission and stored as immutable `(pool_key, pool_revision)`
-records.
+records. The HTTP request shape, conditional writes and migration contract
+are maintained in [spec 0037](../specs/0037-shared-template-pool-resource.md).
 
 Sharing raises two questions that inline pools never had. First, propagation:
 a member's Active activation must mint one new pool revision, and each
@@ -30,8 +31,8 @@ synchronous push. Occupied Fleets lag deliberately; a pool is never blocked by
 an occupied Fleet because the pool owns no runners. Second, caps:
 capacity is bounded at two levels — a Fleet's `max_runners` bounds the whole
 Fleet, and `member.max_runners` bounds one member's Generations **pool-wide**
-across all referencing Fleets, enforced inside the same atomic transaction that
-draws the member and inserts the Generation. A member at cap is **excluded
+across all Fleets referencing the **same pool revision**, enforced inside the
+same atomic transaction that draws the member and inserts the Generation. A member at cap is **excluded
 from the eligible draw set** with weights renormalized over the survivors; only
 when *no* member is eligible does admission backpressure. `failure_policy`
 (backpressure/redistribute) governs *health* failures, not cap exclusion, and
@@ -54,14 +55,15 @@ Alternatives considered and rejected:
 Implications:
 
 - A new top-level resource (table, revisions, immutable member rows keyed by
-  `(pool_key, pool_revision)`), `/v1/template-pools` CRUD with If-Match /
+  `(pool_key, pool_revision)`), `/api/v1/template-pools` CRUD with If-Match /
   If-None-Match / tombstone, and a `template_pool_ref` field + pool↔template
   mutual exclusion on Fleet.
 - The generation admission path resolves `pool_member_key` against
   pool-revision member rows rather than fleet-revision rows; occupancy and the
-  member cap are counted across referencing Fleets.
+  member cap are counted across Fleets referencing that same pool revision.
 - A second cascade (template→pool→fleet) joins the existing template→fleet
-  cascade, both occupancy-gated and level-triggered.
+  cascade. Both are level-triggered; template→pool has no occupancy gate,
+  while pool→fleet and template→fleet wait for the individual Fleet to drain.
 - A Fleet PUT keeps the fleet's frozen `(pool_key, pool_revision)` when the
   pool key is unchanged: catch-up is the cascade's job, so a non-routing
   change (e.g. capacity) is admitted under occupancy and is never an implicit

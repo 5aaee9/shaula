@@ -26,8 +26,16 @@ CAS 等不可变与防护机制全部保留为内部实现，用户侧不存在 
 - spec_json 原样保存 bare key；每次升级只更新 Fleet Revision 行的 resolved pin。
   Generation 仍从其准入时的 Fleet Revision 冻结完整上下文，per-generation
   不可变性不变。
-- Fleet PUT 语义不变：spec 未变化按既有规则 NoOp；升级不经过 PUT（PUT 不会成为
-  隐式升级通道）。更换模板 key 是普通 reference 变化，走原零占用门禁。
+- 单模板 Fleet PUT 在模板 key **及 `template_inputs` 均未变化**时保留原 resolved
+  pin；原样重提按既有规则 NoOp，仅修改容量等非路由字段也不会隐式升级模板。
+- **修改 `template_inputs`** 是显式 replacement：即使模板 key 相同，也解析该
+  Profile 当前 Active revision，并按新 revision 的 input policy/schema 校验。
+  这让新版 input contract 的输入可被接纳，但不绕过原零占用、ownership 与 mutation
+  fence 门禁，也不改写既有 Generation。更换模板 key 同样解析当前 Active 并走
+  replacement 门禁；未修改 key/inputs 时的自动追赶仍由 §3 cascade 完成。
+- 共享池 Fleet 的 `template_pool_ref` 另由 [spec 0037 §4](0037-shared-template-pool-resource.md#4-fleet-reference-and-admission)
+  定义：同 pool key 的 PUT 保留已冻结 pool revision，成员 inputs 属于独立池资源；
+  不把上述单模板 inputs replacement 规则套用为共享池的隐式升级通道。
 
 ## 3. Level-triggered cascade
 
@@ -67,6 +75,9 @@ pin（resolved revision、artifact digest），滞后中的 Fleet 显示"等待�
   Changes 可见 actor=`shaula-daemon` 的 Replace。
 - 占用非零的 Fleet 不升级；最后一个 Generation Destroyed 后自动补升级。
 - 新 pin 的 inputs policy/schema 与 Fleet 现有 inputs 不兼容时跳过并 WARN，不升级。
+- 模板 key/inputs 未变时，原样 PUT 和仅容量变更保留旧 pin，即使 Profile 已有新 Active。
+- 同 key 修改 inputs 时解析新 Active 并重新校验；非法输入拒绝，资源仍占用时不得
+  提交 replacement，成功提交后旧 Generation 的原 pin 仍不可变。
 - 携带历史 `{key, revision}` spec 的 Fleet 读取归一化为 bare key 并正常跟随。
 - 服务重启不丢失升级义务（level-triggered 不依赖事件）；并发 publish 与 cascade
   由 mutation fence CAS 拒绝落后一方，不产生分叉 head。

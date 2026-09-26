@@ -6,7 +6,7 @@
   [spec 0023](0023-fleet-template-follow-latest.md), and
   [spec 0002](0002-fleet-http-control-plane.md).
 - Supersedes: the fleet-inline `template_pool` field defined by spec 0029 §2 for
-  new Fleets. Fleets admitted under spec 0029 remain valid; see §6 migration.
+  new Fleets. Fleets admitted under spec 0029 remain valid; see §8 migration.
 
 ## 1. Problem and boundary
 
@@ -30,23 +30,40 @@ shares the *member definition*, not the queue.
 ## 2. TemplatePool resource
 
 A TemplatePool is a named, revisioned resource under
-`/v1/template-pools/{key}` following the same lifecycle as TemplateProfile and
-Fleet: create/replace via PUT with `If-None-Match: *`, replace via PUT with
-`If-Match`, delete via DELETE with tombstone semantics.
+`/api/v1/template-pools/{key}` following the same conditional-write boundary
+as TemplateProfile and Fleet: create via PUT with `If-None-Match: *`, replace
+via PUT with `If-Match`, delete via DELETE with `If-Match` and tombstone
+semantics. Reads require `template.read`, PUT requires `template.publish`,
+and DELETE requires `template.retire`.
 
-```yaml
-key: hkg-builders
-members:
-  - key: proxmox-hkg
-    template_profile_ref: pve-mega-hkg-h3c   # bare key, follow latest Active
-    weight: 20
-    template_inputs: { ... }                # optional, bounded per member
-    max_runners: 6                          # optional cap on this member
-  - key: docker-tkyo
-    template_profile_ref: proxmox-tyo-wanix
-    weight: 10
-failure_policy: backpressure                # or redistribute
+PUT accepts the `TemplatePoolSpec` JSON directly. The pool key comes from the
+URL, not a top-level `key` field; a GET response envelope (`key`, `spec`,
+`metadata`, `resolved`) is not a PUT request. Unknown spec/member fields are
+rejected. For `/api/v1/template-pools/hkg-builders`, the request shape is:
+
+```json
+{
+  "members": [
+    {
+      "key": "proxmox-hkg",
+      "template_profile_ref": "pve-mega-hkg-h3c",
+      "weight": 20,
+      "template_inputs": {},
+      "max_runners": 6
+    },
+    {
+      "key": "docker-tkyo",
+      "template_profile_ref": "proxmox-tyo-wanix",
+      "weight": 10
+    }
+  ],
+  "failure_policy": "backpressure"
+}
 ```
+
+The Profile keys are illustrative; each member must provide any inputs
+required by its actual Active revision contract. An empty input object does
+not waive that validation.
 
 - `members`: 1–32 entries; `key` unique stable identifier; `weight` integer
   1–10000. Same contract as spec 0029 §2.
@@ -83,7 +100,7 @@ how Fleet revisions carry resolved template pins under spec 0029.
 
 - `FleetSpec.template_pool_ref: string` names a TemplatePool. It is mutually
   exclusive with `template_profile_ref`; exactly one of the two is required.
-  The inline `template_pool` object is rejected for new Fleets (§6).
+  The inline `template_pool` object is rejected for new Fleets (§8).
 - A Fleet PUT that references a pool records `(pool_key, pool_revision)` on
   the committed Fleet revision — the fleet's frozen routing context, the same
   role the resolved template pin plays for single-template fleets. Which
@@ -93,9 +110,9 @@ how Fleet revisions carry resolved template pins under spec 0029.
   - **An unchanged pool key retains the fleet's already-frozen revision.**
     Catch-up to a newer pool revision is the cascade's deferred job (§5), not
     PUT's: a PUT that changes only capacity (or any non-routing field) must
-    not re-freeze and must not require zero occupancy. This mirrors how an
-    unchanged `template_profile_ref` retains its pin — PUT is not an implicit
-    upgrade channel (spec 0023 §2).
+    not re-freeze and must not require zero occupancy. This mirrors how a
+    single-template reference **and inputs** retain their pin when unchanged
+    (spec 0023 §2); this does not include an explicit inputs replacement.
 - Occupancy and ownership barriers are unchanged: changing **which** pool (or
   template) a Fleet references follows the existing zero-occupancy/replacement
   gate. The gate's pool-vs-non-pool verdict is a property of the admitted
@@ -105,8 +122,9 @@ how Fleet revisions carry resolved template pins under spec 0029.
 
 ## 5. Level-triggered cascade for shared pools
 
-Two cascades keep resolved pins fresh, both driven by the daemon scan tick and
-both gated on the referencing Fleet's resource occupancy (spec 0023 §3):
+Two cascades keep resolved pins fresh, both driven by the daemon scan tick.
+Only the second stage waits for the referencing Fleet's zero-occupancy
+boundary (spec 0023 §3); the pool revision itself has no occupancy gate:
 
 1. **Template Active change → pool revision.** When a member's profile
    activates a new revision, the pool re-resolves that member and mints a new
@@ -174,9 +192,9 @@ exclusion applies under both policies.
 - A pool revision's member rows resolve to the members' current Active
   revisions at admission; the stored spec keeps bare `template_profile_ref`
   keys.
-- Two Fleets referencing the same pool draw members independently per their own
-  occupancy, while `member.max_runners` is enforced across both Fleets' combined
-  Generations in one transaction.
+- Two Fleets referencing the same pool revision draw members independently per
+  their own occupancy, while `member.max_runners` is enforced across both Fleets'
+  combined Generations in one transaction.
 - A member template's Active activation mints one new pool revision; each
   referencing Fleet catches up on its own zero-occupancy boundary, not
   simultaneously.
@@ -187,3 +205,7 @@ exclusion applies under both policies.
   resolvable for historical Generations.
 - New Fleet PUTs reject an inline `template_pool` and accept
   `template_pool_ref`; existing inline-pool Fleets keep working unchanged.
+- Pool PUT accepts only the direct JSON spec at `/api/v1/template-pools/{key}`;
+  a top-level `key` or GET envelope is rejected as an unknown field.
+- A member Active change can create a new pool revision while a referencing
+  Fleet is occupied; only that Fleet's catch-up waits for zero occupancy.
