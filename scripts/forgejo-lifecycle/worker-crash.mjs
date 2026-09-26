@@ -19,12 +19,13 @@ export async function interruptedCreate(fixture) {
   assert(containers, "provider really committed the resource");
   assert.equal(containers.split("\n").length, 1);
   await fixture.stopDaemon();
-  // Parent-pipe closure must terminate the actual worker/provider subtree.
-  await until("daemon SIGKILL fences descendants", async () =>
+  // A dead daemon alone is not a fence: restart must kill the recorded tree
+  // before rotating any authority, even while the provider is awaiting HTTP.
+  await fixture.startDaemon();
+  await until("restart fences descendants after daemon SIGKILL", async () =>
     (await readFile(`${identity.containment}/cgroup.events`, "utf8")).includes("populated 0"));
   gate.holdCreateResponses = false;
   for (const release of gate.heldResponses.splice(0)) release();
-  await fixture.startDaemon();
   await until("uncertain accepted Create is quarantined", async () =>
     (await fixture.api(`/generations?fleet_key=${key}`)).items.some(g => g.state === "Quarantined"));
   await fixture.capZero(key);

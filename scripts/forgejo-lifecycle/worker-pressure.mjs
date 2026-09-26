@@ -41,7 +41,8 @@ export async function workerPressure(fixture) {
     const rows = keys.flatMap(key => workers(fixture, key));
     assert.equal(rows.length, 3, "saturation must not allocate an unbounded durable queue");
     const sample = await Promise.all(rows.map(row => usage(JSON.parse(row.process_identity).process_id)));
-    assert(sample.every(s => s.threads <= 3 && s.rssKiB > 0 && s.rssKiB < 256 * 1024), "waiting worker resource bound");
+    // Event-loop + parent-pipe watchdog + at most two Tokio blocking threads.
+    assert(sample.every(s => s.threads <= 4 && s.rssKiB > 0 && s.rssKiB < 256 * 1024), "waiting worker resource bound");
     samples.push(sample);
     const start = performance.now();
     await Promise.all(keys.map(key => fixture.api(`/fleets/${key}/status`)));
