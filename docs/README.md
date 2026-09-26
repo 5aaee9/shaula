@@ -41,11 +41,12 @@
 | Profile publication、retirement、sensitive reads、attestation | [spec 0005](specs/0005-profile-http-control-plane.md)；非敏感 binding 读取投影与 Update 可编辑绑定见 [spec 0038](specs/0038-template-detail-and-editable-bindings.md) |
 | Rust crate ownership 与依赖方向 | [spec 0007](specs/0007-rust-workspace-architecture.md) |
 | UI 行为 | [spec 0008](specs/0008-embedded-web-ui.md) |
-| Fleet / Generation / Job 的证据驱动诊断（本地实现；真实平台验收待完成） | [spec 0041](specs/0041-explainable-reconciliation-diagnostics.md) / [ARD-0041](ard/0041-project-diagnostics-from-reconciliation-evidence.md) |
+| Fleet / Generation / Job 的证据驱动诊断 | [spec 0041](specs/0041-explainable-reconciliation-diagnostics.md) / [ARD-0041](ard/0041-project-diagnostics-from-reconciliation-evidence.md)；本地实现与验收边界见 [implementation status](IMPLEMENTATION_STATUS.md#explainable-reconciliation-diagnostics-2026-09-26)，已保留所选 Forgejo/Docker 组合的 [DX-30 evidence](evidence/0041-dx30-hyperv-2026-09-26/README.md)，不代表全部后端通过 |
 | Workflow Jobs、Apply/Destroy 日志保留与 Setup Info 内容 | [spec 0019](specs/0019-workflow-jobs-and-operation-logs.md) / [ARD-0023](ard/0023-retain-operation-logs-and-present-workflow-jobs.md)；已有本地实现，真实平台验收边界见 implementation status |
 | 官方容器镜像、宿主 bootstrap 与启动门槛 | [spec 0020](specs/0020-official-container-runner-bootstrap.md) / [ARD-0024](ard/0024-bootstrap-official-runner-images-outside-containers.md) |
 | Fleet Template inputs 可视化编辑 | [spec 0014](specs/0014-visual-template-inputs.md) / [ADR-0018](ard/0018-render-fleet-inputs-from-approved-template-options.md) |
-| Weighted Template Pool（单 Scale Set 多模板、加权 acquisition；Proposed） | [spec 0029](specs/0029-weighted-template-pool.md) / [ARD-0036](ard/0036-weighted-template-pool.md) |
+| Weighted Template Pool（按 Generation 加权选模板，不改变 GitHub acquisition 或 job 分配） | [spec 0029](specs/0029-weighted-template-pool.md) / [ARD-0036](ard/0036-weighted-template-pool.md)；已接受的随机选择规则，inline 形态仅兼容历史 Fleet |
+| Shared TemplatePool（新 Fleet 的 `template_pool_ref`、共享成员限额与两级 follow） | [spec 0037](specs/0037-shared-template-pool-resource.md) / [ARD-0037](ard/0037-shared-template-pool-resource.md)；实现与真实平台验收分开记录 |
 | 数据库模板库、默认文件导入与 Terraform 变量发现 | [spec 0015](specs/0015-template-library-and-variable-discovery.md) / [ARD-0019](ard/0019-store-template-sources-and-discover-terraform-variables.md) |
 | 内置模板同步与已发布模板 Update | [spec 0021](specs/0021-default-template-updates.md) / [ARD-0025](ard/0025-sync-default-templates-and-explicitly-update-published-revisions.md)；Update 可编辑非敏感 binding 与 Template 详情页见 [spec 0038](specs/0038-template-detail-and-editable-bindings.md) / [ARD-0038](ard/0038-template-detail-page-and-editable-non-secret-bindings.md) |
 | Proxmox VM clone、NoCloud 和基础镜像信任 | [spec 0022](specs/0022-proxmox-runner-template.md) / [ARD-0026](ard/0026-provision-proxmox-runners-with-nocloud.md) |
@@ -58,7 +59,8 @@
 | Template 静态校验后的自动激活与旧 Ready 升级 | [spec 0017](specs/0017-automatic-template-activation.md) / [ARD-0021](ard/0021-activate-templates-after-static-validation.md) |
 | 仅支持 v2 GitHub App authentication、历史格式停用与部署检查 | [spec 0018](specs/0018-github-app-only-authentication.md) / [ARD-0022](ard/0022-retire-legacy-github-authentication.md) |
 | GitHub authentication 连接列表、搜索、详情发现 | [spec 0012](specs/0012-github-authentication-inventory.md) / [ADR-0016](ard/0016-list-authentication-connections-from-the-profile-registry.md) |
-| 管理 HTTP 的 OIDC、session、CSRF | [spec 0009](specs/0009-mandatory-openid-connect.md) |
+| 管理 HTTP 的 OIDC、session、CSRF | [spec 0009](specs/0009-mandatory-openid-connect.md)，API/health 的个人 Token 扩展见 spec 0039 |
+| 个人 Access Token、独立 Rust client、远程 CLI 与 API 对等矩阵 | [spec 0039](specs/0039-user-access-tokens-and-cli.md) / [ARD-0039](ard/0039-user-access-tokens-and-api-client.md) / [parity matrix](specs/0039-cli-parity-matrix.md)；不恢复 GitHub PAT 支持 |
 | Browser session 到期后的 Provider 续期、页面保留 | [spec 0013](specs/0013-provider-backed-browser-session-renewal.md) / [ADR-0017](ard/0017-renew-browser-sessions-in-the-authentication-guard.md) |
 | Worker/Executor、内部 control/state HTTP、locks/CAS、恢复与备份 | [spec 0010](specs/0010-lifecycle-worker-and-http-state-backend.md)；理由见 [ADR-0014](ard/0014-run-lifecycle-workers-with-a-database-http-state-backend.md) |
 | 多账户 GitHub App authentication、动态仓库 selector、installation routing | [spec 0011](specs/0011-multi-account-github-authentication.md) / [ADR-0015](ard/0015-route-one-github-app-profile-to-multiple-accounts.md)；已有本地实现，运行时集成边界见 implementation status，真实 GitHub 路由验收与生产迁移未执行 |
@@ -67,11 +69,13 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 
 ### 已确定的基线
 
+以下 worker/state 条目是 spec 0010 的目标契约，不是当前启动路径的功能清单。当前集成缺口统一见 [implementation status](IMPLEMENTATION_STATUS.md)；远程 CLI 不依赖该 Worker 集成。
+
 - 一个 daemon 管理多个 Fleet；每个 Generation 由独立 `shaula job` Lifecycle Worker 执行完整生命周期。v1 只有 `exec` Executor Driver，未来 Kubernetes Job executor 不等于 Kubernetes Runner Resource。
 - Terraform state 通过 daemon 内部 HTTP backend 写入 SQLite；LOCK/UNLOCK、锁持有者校验和 state 写入是数据库事务契约，不以本地 `terraform.tfstate` 为主状态。
-- daemon 保管 GitHub 控制面凭据，worker 通过受授权控制通道请求 JIT、观察与安全删除；管理 HTTP 保持 OIDC，内部 worker/state HTTP 使用分权的 Generation/worker 专用凭据。
+- daemon 保管 GitHub 控制面凭据，worker 通过受授权控制通道请求 JIT、观察与安全删除；管理 HTTP 保持强制 OIDC 启动/浏览器登录，API/health 另接受 spec 0039 的 owner-bound 个人 Token；内部 worker/state HTTP 使用分权的 Generation/worker 专用凭据。
 - Runner Generation 不可变；Create 与 Destroy 是唯一基础设施 mutation，Busy-safe removal、原始 inputs/artifact、worker fencing 和故障时保留证据不因进程拆分而取消。Busy-safe 的明确例外是 [spec 0001 §5.3](specs/0001-shaula-runner-scale-set.md#53-runner-最大存活时间)：统一硬超时到期允许中断任务，但不放宽所有权和 fencing。
-- Kubernetes、Docker、Proxmox、AWS、腾讯云与阿里云是 bundled Template Platforms；GitHub authentication 只支持 schema 2 GitHub App、显式 TargetPolicy 和 Revision-scoped account bindings，不做运行时 credential fallback。PAT、旧 allowlist 和固定 installation publication 已按 spec 0018 停用。Forgejo 后端的 token 型 profile 是独立 kind，与 GitHub authentication 不共用 schema，也不构成 PAT 的复活（[spec 0026](specs/0026-forgejo-runner-backend.md)，Draft）。
+- Kubernetes、Docker、Proxmox、AWS、腾讯云与阿里云是 bundled Template Platforms；GitHub authentication 只支持 schema 2 GitHub App、显式 TargetPolicy 和 Revision-scoped account bindings，不做运行时 credential fallback。GitHub PAT、旧 allowlist 和固定 installation publication 已按 spec 0018 停用。Forgejo 后端的 token 型 profile 是独立 kind，与 GitHub authentication 不共用 schema，也不构成 GitHub PAT 的复活（[spec 0026](specs/0026-forgejo-runner-backend.md)，Draft）。
 - Fleet Decommission 保留空 Scale Set；Profile DELETE 是异步 retirement，不因正在使用而改成同步删除或 force delete。
 - Template 当前候选静态校验通过后自动激活，已有 Ready 在扫描时重新校验并激活；独立 `template.attest` 的 exact conformance 记录作为运行验证证据保留，不再控制激活，见 spec 0017。
 - 默认 Docker Runner 不挂载 host socket；JIT 同 Runner Execution Domain 的进程检查风险、Kubernetes name-based deletion 风险和同 OS identity IaC children 的 ambient host-admin 风险按相应 ARD 记录。
@@ -100,7 +104,7 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 
 ### 多账户认证与后续扩展
 
-多账户 GitHub authentication 已按 [spec 0011](specs/0011-multi-account-github-authentication.md) 与 [ADR-0015](ard/0015-route-one-github-app-profile-to-multiple-accounts.md) 接受并完成本地实现：一份 App credential、多个明确账户/Target selector、个人未来仓库的按需验证。它替代单 installation、同 key policy 不可变的旧基线条款。[spec 0018](specs/0018-github-app-only-authentication.md) 进一步取消 PAT、v1 publication/replay、旧格式升级和 reference-only execution。历史 rows/credential bytes 保留且不自动转换；部署前必须确认没有仍依赖旧格式的 active/desired 或 retained execution 引用。真实验收与部署证据以 [implementation status](IMPLEMENTATION_STATUS.md) 为准。
+多账户 GitHub authentication 已按 [spec 0011](specs/0011-multi-account-github-authentication.md) 与 [ADR-0015](ard/0015-route-one-github-app-profile-to-multiple-accounts.md) 接受并完成本地实现：一份 App credential、多个明确账户/Target selector、个人未来仓库的按需验证。它替代单 installation、同 key policy 不可变的旧基线条款。[spec 0018](specs/0018-github-app-only-authentication.md) 进一步取消 GitHub PAT、v1 publication/replay、旧格式升级和 reference-only execution。历史 rows/credential bytes 保留且不自动转换；部署前必须确认没有仍依赖旧格式的 active/desired 或 retained execution 引用。真实验收与部署证据以 [implementation status](IMPLEMENTATION_STATUS.md) 为准。
 
 以下需要新的决定和对应验收，不阻塞按现有基线实现：额外 high-trust Runner-socket Profile、Docker memory-only JIT、pre-JIT provider-backed namespace preflight、每 Profile 独立 OS identity/sandbox、OpenTofu advertisement、远程 Executor Driver、多主/HA、自动删除 Scale Set、Quarantine force-recovery、Forgejo Runner Backend（spec 0026 Draft，Pool 切片先行，见 ARD-0033）。它们不能作为匿名认证、跳过 locking 或丢弃可能残留资源的理由。
 
@@ -109,3 +113,4 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 - 修改规则时更新其唯一 owner、受影响 ARD 和实现状态；其他 spec 链接 owner，不能留下相反的 MUST。
 - 一条“已实现”记录应给出源代码/测试入口；“本地测试存在”“本地运行通过”“真实服务验收通过”分别记录。
 - 文档检查覆盖链接、旧契约残留和场景要求；它不替代 cargo、fault injection、真实 Terraform/GitHub/平台验收。
+- [2026-09-26 代码/规范同步审阅](evidence/spec-ard-sync-2026-09-26.md) 记录固定提交的修订依据与未执行检查；它不是新的实现状态权威。

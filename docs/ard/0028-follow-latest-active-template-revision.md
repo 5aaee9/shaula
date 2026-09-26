@@ -2,12 +2,18 @@
 status: accepted
 date: 2026-09-10
 amends: [0025]
+amended-by: [0029]
 ---
 
 # Follow latest Active template revision
 
-Fleet 的模板引用增加 follow-latest 模式：bare key 引用的 Fleet 由 daemon 在 Profile
-激活新 Revision 后自动升级 pin，pinned 引用行为不变。协议和验收统一维护在
+> [ARD-0029](0029-drop-pinned-template-revisions.md) 已移除用户可选 pinned 模式，
+> bare key / follow latest 是当前唯一引用语义；本文保留引入 follow 的理由，不再提供
+> pinned 作为实现选项。
+
+本决定最初给 Fleet 的模板引用增加 follow-latest 模式：bare key 引用的 Fleet 由 daemon
+在 Profile 激活新 Revision 后自动升级 pin；当时保留的 pinned 形式随后由 ARD-0029
+取消。协议和验收统一维护在
 [spec 0023](../specs/0023-fleet-template-follow-latest.md)。
 
 ARD-0025 让已发布模板的 Update 保留所有 Fleet pin（spec 0021 §4），升级完全依赖用户
@@ -25,6 +31,10 @@ desired/observed）和 replacement 的零占用门禁仍需要单调的权威标
 升级，延后队列若用事件实现需要额外的持久化与去重；周期 scan 天然在占用归零后重试，
 重启与事件丢失都不丢升级义务。升级提交复用 `commit_fleet_mutation` 与 effect gate，
 不与并发 PUT/Create 产生新的竞争窗口。
+
+单模板 Fleet 原样重提或仅改容量保留 pin；显式修改 inputs 则在原 replacement
+门禁下解析当前 Active 并重新校验。这不是用无变化 PUT 触发升级；准确条件由
+[spec 0023 §2](../specs/0023-fleet-template-follow-latest.md#2-reference-semantics) 统一维护。
 
 Auth Profile 侧自 staged activation 起即为 follow latest（promotion 同事务 retarget
 全部存活 Fleet 的 handoff desired），本决定把 Template 侧对齐到同一策略，不改动 Auth。

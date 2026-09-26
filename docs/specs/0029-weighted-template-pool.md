@@ -12,12 +12,13 @@ independent Fleets with the same label therefore cannot be weighted by Shaula;
 the unselected Fleet never observes that request and GitHub provides no
 cross-Scale-Set reroute operation.
 
-This specification defines a **Template Pool** specification shape on the
+This specification defines the original **inline Template Pool** shape on a
 Fleet resource: one Fleet owns one GitHub Scale Set and a weighted set of
-Template members. New Fleets select either `template_profile_ref` or
-`template_pool`, never both. Existing single-template Fleets keep their
-behavior; a pool is created as a new Fleet rather than converting either of
-the existing same-label Scale Sets in place.
+Template members. Its `template_pool` form remains supported for previously
+admitted Fleets only. New Fleets select either `template_profile_ref` or
+`template_pool_ref` under [spec 0037](0037-shared-template-pool-resource.md),
+never a new inline `template_pool`. Sharing that resource does not combine
+existing same-label Scale Sets or their queues.
 
 ## 2. Pool contract
 
@@ -61,12 +62,17 @@ Actual Jobs associations continue to require observed Runner identity.
 
 Listener persist-before-ACK and acquisition remain unchanged; weights MUST NOT
 filter pending request IDs or provide a selective NACK/delay mechanism.
-`backpressure` is the default failure policy: when a member is unavailable or
+For the **legacy inline pool**, `backpressure` is the default failure policy:
+when a member is unavailable or
 at its optional cap, pause new pool Creates until the condition clears.
 `redistribute` explicitly permits random selection among eligible members with
 probability proportional to their weights; the reduced eligible set and reason
 must be observable. Neither policy withholds acquisition messages or cancels
-already admitted Generations. No policy silently changes weights.
+already admitted Generations. No policy silently changes weights. Shared
+TemplatePool resources instead use [spec 0037 §6](0037-shared-template-pool-resource.md#6-capacity-ceilings-and-the-eligible-draw-set):
+member caps are counted across Fleets referencing the same pool revision, and
+saturated members are excluded under both policies; cap saturation is not
+the legacy inline backpressure rule.
 
 ## 4. Capacity and observations
 
@@ -89,11 +95,14 @@ the existing Busy-safe removal gate remains authoritative.
 
 ## 5. Migration and non-goals
 
-Existing Fleets cannot be converted in place by adding a field. Migration must
-create a new Pool Scale Set, validate all route revisions, drain and safely
-retire the old Fleets, then switch workflows to the Pool label. Keeping the old
-Scale Sets online with the same label during migration retains GitHub's
-arbitrary assignment race.
+Combining two existing same-label Fleets into one scheduling domain cannot
+be done by adding a weight field. That migration creates one Fleet/Scale Set
+using a shared pool, validates all member revisions, drains and safely retires
+the old Fleets, then switches workflows to the new Scale Set label. Keeping
+the old Scale Sets online with the same label retains GitHub's arbitrary
+assignment race. Migrating one retained inline-pool Fleet to a shared pool is
+a separate replacement operation governed by [spec 0037 §8](0037-shared-template-pool-resource.md#8-migration-and-non-goals);
+it must not rewrite existing Generation pins or bypass the zero-occupancy gate.
 
 This specification does not promise strict 1:2 job placement, does not add a
 GitHub weight/priority API, and does not make two independent Scale Sets a
