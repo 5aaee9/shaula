@@ -142,6 +142,7 @@ impl Executor for ExecExecutor {
                 process_id: pid,
                 started: containment::started(pid)?,
                 containment: group.to_str().ok_or(StateError::Invalid)?.to_owned(),
+                root_id: Some(containment::root_id(&self.root)?),
             };
             let handoff = child.stdin.take().ok_or(StateError::Unavailable)?;
             Ok((identity, handoff))
@@ -209,7 +210,7 @@ impl Executor for ExecExecutor {
         let Ok(path) = containment::path(&self.root, identity) else {
             return ProcessObservation::Unknown;
         };
-        match containment::rebooted(identity) {
+        match containment::ended(&self.root, identity) {
             Ok(true) => return ProcessObservation::Exited,
             Err(_) => return ProcessObservation::Unknown,
             Ok(false) => {}
@@ -227,14 +228,14 @@ impl Executor for ExecExecutor {
     }
 
     async fn stop_and_fence(&self, identity: &ProcessIdentity) -> FenceOutcome {
-        match containment::rebooted(identity) {
+        let Ok(path) = containment::path(&self.root, identity) else {
+            return FenceOutcome::Unknown;
+        };
+        match containment::ended(&self.root, identity) {
             Ok(true) => return FenceOutcome::Fenced,
             Err(_) => return FenceOutcome::Unknown,
             Ok(false) => {}
         }
-        let Ok(path) = containment::path(&self.root, identity) else {
-            return FenceOutcome::Unknown;
-        };
         if !containment::kill(&path).await {
             return FenceOutcome::Unknown;
         }

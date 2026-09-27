@@ -92,6 +92,38 @@ pub(crate) async fn kill(path: &Path) -> bool {
     false
 }
 
+/// cgroup v2 directory inode: the kernel's per-boot, never-reused cgroup ID.
+pub(crate) fn root_id(root: &Path) -> StateResult<u64> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::metadata(root)
+            .map(|meta| meta.ino())
+            .map_err(|_| StateError::Unavailable)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = root;
+        Err(StateError::Unavailable)
+    }
+}
+
+/// Whether the recorded tree provably ended without inspecting its group:
+/// a reboot of the same host, or on the same boot a replaced delegated root.
+/// systemd removes a delegated unit subtree after control-group termination;
+/// the kernel removes a cgroup only once every descendant is empty, and the
+/// service user cannot move processes above its delegated root. The caller
+/// must first bind the identity to this root with [`path`].
+pub(crate) fn ended(root: &Path, identity: &ProcessIdentity) -> StateResult<bool> {
+    if rebooted(identity)? {
+        return Ok(true);
+    }
+    match identity.root_id {
+        Some(recorded) => Ok(root_id(root)? != recorded),
+        None => Ok(false),
+    }
+}
+
 /// Only a reboot of the SAME host proves old local processes cannot execute.
 pub(crate) fn rebooted(identity: &ProcessIdentity) -> StateResult<bool> {
     let current = boot()?;

@@ -21,6 +21,7 @@ async fn completed_cleanup_survives_restart_before_ci_registration_removal() -> 
                     process_id: 99,
                     started: "42".into(),
                     containment: "/cgroup/attempt".into(),
+                    root_id: None,
                 },
             )
             .await?;
@@ -152,6 +153,7 @@ async fn worker_recovery_rotates_both_capabilities_and_audits_orphan_lock() -> T
                 process_id: 99,
                 started: "42".into(),
                 containment: "/cgroup/attempt".into(),
+                root_id: None,
             },
         )
         .await?;

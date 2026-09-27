@@ -120,7 +120,14 @@ missing state in an old Generation never enables another Create.
 ## Recovery, completion and rollback
 
 On restart, the daemon fences the recorded old containment before issuing a new
-epoch. Unverifiable ownership, missing state/material or emergency files retain
+epoch. After an ungraceful exit, systemd's control-group termination removes the
+whole delegated subtree, including those groups. Each identity therefore records
+the delegated root's kernel cgroup ID: on the same boot a different root ID proves
+the old tree stopped, because the kernel removes a cgroup only when its subtree is
+empty and the service user cannot move processes above its delegated root. A group
+that vanished while the root was not replaced, and identities recorded before root
+IDs, remain Unknown. `scripts/lifecycle-systemd-restart.sh` exercises this with a
+real transient unit. Unverifiable ownership, missing state/material or emergency files retain
 uncertainty and occupancy. A later successful fence does not itself release a
 quarantine: resources still need the existing audited operator resolution.
 Do not manually clear locks, remove evidence or reset lifecycle tables to unblock

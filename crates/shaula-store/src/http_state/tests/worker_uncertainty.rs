@@ -19,6 +19,7 @@ async fn fenced_partial_create_cannot_self_certify_state_completeness() -> TestR
                     process_id: 99,
                     started: "42".into(),
                     containment: "/cgroup/attempt".into(),
+                    root_id: None,
                 },
             )
             .await?;

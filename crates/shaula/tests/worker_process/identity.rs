@@ -9,16 +9,16 @@ use shaula_executor::ExecExecutor;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+pub(super) type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
-fn executor() -> TestResult<ExecExecutor> {
+pub(super) fn executor() -> TestResult<ExecExecutor> {
     Ok(ExecExecutor::new(
         PathBuf::from(env!("CARGO_BIN_EXE_shaula")),
         PathBuf::from(std::env::var("SHAULA_TEST_CGROUP")?),
     )?)
 }
 
-async fn launched(executor: &ExecExecutor) -> TestResult<ProcessIdentity> {
+pub(super) async fn launched(executor: &ExecExecutor) -> TestResult<ProcessIdentity> {
     Ok(executor
         .launch(&StateClaim {
             generation_id: Uuid::new_v4(),

@@ -11,6 +11,8 @@ mod fixture;
 mod identity;
 #[path = "worker_process/pre_exec.rs"]
 mod pre_exec;
+#[path = "worker_process/restart.rs"]
+mod restart;
 use fixture::*;
 use shaula_core::{ports::*, registry::LifecycleStore, worker::Executor};
 use std::time::Duration;

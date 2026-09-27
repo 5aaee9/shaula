@@ -67,6 +67,7 @@ async fn initial_state_precedes_init_and_duplicate_launch_is_refused() -> TestRe
         process_id: 123,
         started: "start".into(),
         containment: "guardian".into(),
+        root_id: None,
     };
     f.backend.worker_register(&access, &identity).await?;
     f.backend.worker_register(&access, &identity).await?;

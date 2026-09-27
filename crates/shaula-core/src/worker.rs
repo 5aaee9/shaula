@@ -107,6 +107,12 @@ pub struct ProcessIdentity {
     pub process_id: u32,
     pub started: String,
     pub containment: String,
+    /// Kernel ID of the delegated root enclosing `containment`. The kernel
+    /// removes a cgroup only when its whole subtree is empty, so a different
+    /// root ID on the same boot proves the old tree stopped. Absent on
+    /// identities recorded before it existed; those never use this proof.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_id: Option<u64>,
 }
 
 impl ProcessIdentity {
@@ -179,5 +185,24 @@ mod tests {
         let debug = format!("{admission:?}");
         assert!(!debug.contains(admission.control.expose()));
         assert!(!debug.contains(admission.state.expose()));
+    }
+
+    #[test]
+    fn identities_recorded_before_root_ids_still_parse_unchanged() -> StateResult<()> {
+        let legacy =
+            r#"{"host_boot":"m:b","process_id":7,"started":"42","containment":"/c/shaula-x"}"#;
+        let identity: ProcessIdentity =
+            serde_json::from_str(legacy).map_err(|_| StateError::Invalid)?;
+        assert_eq!(identity.root_id, None);
+        assert_eq!(
+            serde_json::to_string(&identity).map_err(|_| StateError::Invalid)?,
+            legacy
+        );
+        let current: ProcessIdentity = serde_json::from_str(
+            r#"{"host_boot":"m:b","process_id":7,"started":"42","containment":"/c/shaula-x","root_id":9}"#,
+        )
+        .map_err(|_| StateError::Invalid)?;
+        assert_eq!(current.root_id, Some(9));
+        Ok(())
     }
 }
