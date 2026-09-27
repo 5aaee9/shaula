@@ -35,7 +35,7 @@ pub struct Fixture {
     digest: String,
     db: sea_orm::DatabaseConnection,
     input: ShaulaInputEnvelope,
-    sink: Arc<LedgerApplyIntentSink>,
+    pub sink: Arc<LedgerApplyIntentSink>,
     server: tokio::task::JoinHandle<std::io::Result<()>>,
     stop: tokio::sync::oneshot::Sender<()>,
 }
@@ -142,6 +142,7 @@ impl Fixture {
         let control_faults = Arc::new(super::faults::ControlFaults {
             workers: workers.clone(),
             lost_receipts: Default::default(),
+            hold_spawned: Default::default(),
         });
         let server = server.with_worker_control(control_faults.clone());
         let (stop, shutdown) = tokio::sync::oneshot::channel();
@@ -272,6 +273,24 @@ impl Fixture {
     pub async fn create_count(&self) -> TestResult<i64> {
         let row = self.db.query_one(Statement::from_sql_and_values(DbBackend::Sqlite, "SELECT COUNT(*) AS count FROM runner_operations WHERE generation_id = ? AND kind = 'Create'", vec![self.id.to_string().into()])).await?.ok_or("count absent")?;
         Ok(row.try_get("", "count")?)
+    }
+    /// (unresolved spawn handover, durable create_started)
+    pub async fn handover(&self) -> TestResult<(bool, bool)> {
+        let row = self.db.query_one(Statement::from_sql_and_values(DbBackend::Sqlite, "SELECT w.handover IS NOT NULL AS handover, s.create_started FROM lifecycle_workers w JOIN generation_http_state s ON s.generation_id = w.generation_id WHERE w.generation_id = ?", vec![self.id.to_string().into()])).await?.ok_or("worker absent")?;
+        Ok((
+            row.try_get("", "handover")?,
+            row.try_get("", "create_started")?,
+        ))
+    }
+    /// A Fleet DELETE commit as the store records it, under the effect gate.
+    pub async fn commit_delete(&self) -> TestResult {
+        let _gate = self.sink.gates.acquire_exclusive("fleet").await;
+        self.db
+            .execute_unprepared(
+                "UPDATE fleets SET desired_revision = 2, deletion_marker = 1 WHERE key = 'fleet'",
+            )
+            .await?;
+        Ok(())
     }
     pub async fn close(self) -> TestResult {
         self.workers.shutdown(Duration::from_secs(1)).await?;

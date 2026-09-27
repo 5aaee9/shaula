@@ -1,6 +1,8 @@
 //! Requires an explicitly delegated cgroup and pinned real Terraform. These
 //! tests exercise the packaged binary's job role, not a fake Runtime adapter.
 #![cfg(target_os = "linux")]
+#[path = "worker_process/competition.rs"]
+mod competition;
 #[path = "worker_process/faults.rs"]
 mod faults;
 #[path = "worker_process/fixture.rs"]

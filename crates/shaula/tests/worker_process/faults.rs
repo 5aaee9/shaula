@@ -6,9 +6,15 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use uuid::Uuid;
 
+/// Signals `entered`, then withholds the message until `release`.
+pub type Hold = (Arc<tokio::sync::Notify>, Arc<tokio::sync::Notify>);
+
 pub struct ControlFaults {
     pub workers: Arc<shaula_daemon::workers::Workers>,
     pub lost_receipts: AtomicUsize,
+    /// Delays the next Spawned acknowledgement: the apply has spawned but the
+    /// daemon has not yet resolved its handover.
+    pub hold_spawned: std::sync::Mutex<Option<Hold>>,
 }
 
 #[async_trait::async_trait]
@@ -37,6 +43,17 @@ impl WorkerControl for ControlFaults {
         token: &ControlCapability,
         request: ControlRequest,
     ) -> StateResult<ControlResponse> {
+        if matches!(request.message, ControlMessage::Spawned(_)) {
+            let hold = self
+                .hold_spawned
+                .lock()
+                .map_err(|_| StateError::Unavailable)?
+                .take();
+            if let Some((entered, release)) = hold {
+                entered.notify_one();
+                release.notified().await;
+            }
+        }
         let response = self.workers.call(token, request).await?;
         if matches!(response, ControlResponse::Desired(Directive::Complete(_)))
             && self
