@@ -30,7 +30,9 @@ async fn launch(fixture: &Startup) -> TestResult<Running> {
         .no_proxy()
         .timeout(Duration::from_secs(1))
         .build()?;
-    for _ in 0..150 {
+    // Startup hashes the unoptimized debug executable for the job role,
+    // which alone can approach 15 seconds on a shared CI runner.
+    for _ in 0..600 {
         if client
             .get(format!("http://127.0.0.1:{}/livez", fixture.port))
             .bearer_auth(token(fixture))
