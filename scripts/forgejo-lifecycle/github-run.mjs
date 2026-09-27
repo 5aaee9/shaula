@@ -65,15 +65,17 @@ try {
   assert(version, "Fleet retirement requires its exact current version");
   await current.body?.cancel();
   await fixture.api(`/fleets/${key}`, "DELETE", undefined, 202, { "if-match": version });
-  await until("test Fleet and Scale Set retirement completed", async () => {
+  // A retired Fleet is a terminal tombstone (410); Decommission never deletes
+  // the Scale Set itself (spec 0001).
+  await until("test Fleet retirement reached its terminal tombstone", async () => {
     const response = await fetch(`${fixture.url}/api/v1/fleets/${key}`, {
       headers: { authorization: `Bearer ${fixture.oidc.token}` }, signal: AbortSignal.timeout(5000),
     });
     await response.body?.cancel();
-    return response.status === 404;
+    return response.status === 410;
   });
   fixture.containers.delete(ids);
-  report.cleanup = "Destroyed; occupancy zero; Docker resource and volumes absent; Fleet retired";
+  report.cleanup = "Destroyed; occupancy zero; Docker resource and volumes absent; Fleet tombstoned (410)";
   report.passed = completed = true;
 } catch (error) {
   report.failedPhase = phase;
