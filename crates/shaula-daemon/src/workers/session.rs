@@ -78,6 +78,15 @@ impl State {
         }
     }
 
+    /// Accepted exactly once. A repeated Prepared under a new request id is a
+    /// Conflict and must not overwrite the recorded outcome.
+    pub fn prepared(&mut self, result: Result<(), TemplateOutcomeError>) -> StateResult<()> {
+        let sender = self.prepared.take().ok_or(StateError::Conflict)?;
+        self.prepared_ok = result.is_ok();
+        let _ = sender.send(result);
+        Ok(())
+    }
+
     pub fn material(&mut self, value: &impl serde::Serialize) -> StateResult<MaterialRef> {
         let bytes = serde_json::to_vec(value).map_err(|_| StateError::Invalid)?;
         if bytes.len() > MAX_STATE_BYTES {
@@ -87,5 +96,36 @@ impl State {
         let digest = format!("sha256:{}", hex::encode(Sha256::digest(&bytes)));
         self.material = Some((id, bytes));
         Ok(MaterialRef { id, digest })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn failed() -> TemplateOutcomeError {
+        TemplateOutcomeError::PlanFailed {
+            phase: "prepare".into(),
+        }
+    }
+
+    #[test]
+    fn repeated_prepared_is_rejected_without_changing_the_outcome() {
+        let (sender, mut receiver) = oneshot::channel();
+        let mut state = State::new(sender);
+        assert!(state.prepared(Ok(())).is_ok());
+        assert!(matches!(
+            state.prepared(Err(failed())),
+            Err(StateError::Conflict)
+        ));
+        assert!(state.prepared_ok);
+        assert!(matches!(receiver.try_recv(), Ok(Ok(()))));
+
+        let (sender, mut receiver) = oneshot::channel();
+        let mut state = State::new(sender);
+        assert!(state.prepared(Err(failed())).is_ok());
+        assert!(matches!(state.prepared(Ok(())), Err(StateError::Conflict)));
+        assert!(!state.prepared_ok);
+        assert!(matches!(receiver.try_recv(), Ok(Err(_))));
     }
 }

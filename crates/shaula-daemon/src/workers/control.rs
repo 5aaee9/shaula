@@ -90,11 +90,7 @@ impl WorkerControl for Workers {
         }
         match request.message {
             ControlMessage::Handshake { protocol } if protocol == PROTOCOL_VERSION => {}
-            ControlMessage::Prepared(result) => {
-                state.prepared_ok = result.is_ok();
-                let sender = state.prepared.take().ok_or(StateError::Conflict)?;
-                let _ = sender.send(result);
-            }
+            ControlMessage::Prepared(result) => state.prepared(result)?,
             ControlMessage::ApplyStarting(proof) => {
                 if proof.generation_id != request.claim.generation_id.to_string()
                     || state.guard.is_some()
