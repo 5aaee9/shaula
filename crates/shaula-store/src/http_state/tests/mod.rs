@@ -18,6 +18,7 @@ mod migration;
 mod recovery;
 mod worker;
 mod worker_limits;
+mod worker_pre_exec;
 mod worker_recovery;
 mod worker_uncertainty;
 

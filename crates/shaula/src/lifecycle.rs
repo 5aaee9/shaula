@@ -123,6 +123,12 @@ impl Lifecycle {
                 Ok(None) if matches!(record.phase.as_str(), "admitted" | "fenced") => {
                     FenceOutcome::Fenced
                 }
+                // Pre-exec crash: classified by the exact containment, never
+                // by an empty in-memory child list.
+                Ok(None) if record.phase == "launch_pending" => match record.claim() {
+                    Ok(claim) => executor.fence_unregistered(&claim).await,
+                    Err(_) => FenceOutcome::Unknown,
+                },
                 _ => FenceOutcome::Unknown,
             };
             let workspace = std::path::Path::new(&record.workspace_path);

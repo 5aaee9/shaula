@@ -26,7 +26,7 @@ impl RecoveryRecord {
             .map(|value| serde_json::from_str(value).map_err(|_| StateError::Unavailable))
             .transpose()
     }
-    fn claim(&self) -> StateResult<StateClaim> {
+    pub fn claim(&self) -> StateResult<StateClaim> {
         Ok(StateClaim {
             generation_id: Uuid::parse_str(&self.generation_id).map_err(|_| StateError::Invalid)?,
             worker_epoch: self.worker_epoch,

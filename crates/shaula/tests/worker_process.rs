@@ -5,6 +5,8 @@
 mod faults;
 #[path = "worker_process/fixture.rs"]
 mod fixture;
+#[path = "worker_process/pre_exec.rs"]
+mod pre_exec;
 use fixture::*;
 use shaula_core::{ports::*, registry::LifecycleStore, worker::Executor};
 use std::time::Duration;

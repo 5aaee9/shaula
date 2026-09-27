@@ -156,6 +156,10 @@ pub trait Executor: Send + Sync {
     async fn handoff(&self, envelope: wire::LaunchEnvelope) -> StateResult<()>;
     async fn observe(&self, identity: &ProcessIdentity) -> ProcessObservation;
     async fn stop_and_fence(&self, identity: &ProcessIdentity) -> FenceOutcome;
+    /// Restart-only fence for a launch_pending attempt whose identity never
+    /// became durable. Handoff follows registration, so no envelope was sent;
+    /// any process must still be proved absent from its exact containment.
+    async fn fence_unregistered(&self, claim: &StateClaim) -> FenceOutcome;
     /// Only after a durable fenced or cleaned terminal record replaces the
     /// kernel directory as restart evidence. Never deletes a populated group.
     async fn release_fenced(&self, identity: &ProcessIdentity) -> StateResult<()>;

@@ -75,6 +75,23 @@ pub(crate) fn empty(path: &Path) -> StateResult<bool> {
     }
 }
 
+/// Kills every member of `path` and waits for the kernel to report it empty.
+/// A successful kill write alone is not a fence.
+pub(crate) async fn kill(path: &Path) -> bool {
+    if !empty(path).is_ok_and(|empty| empty)
+        && std::fs::write(path.join("cgroup.kill"), "1").is_err()
+    {
+        return false;
+    }
+    for _ in 0..100 {
+        if empty(path).is_ok_and(|empty| empty) {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    false
+}
+
 /// Only a reboot of the SAME host proves old local processes cannot execute.
 pub(crate) fn rebooted(identity: &ProcessIdentity) -> StateResult<bool> {
     let current = boot()?;

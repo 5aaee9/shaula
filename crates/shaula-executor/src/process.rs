@@ -235,28 +235,41 @@ impl Executor for ExecExecutor {
         let Ok(path) = containment::path(&self.root, identity) else {
             return FenceOutcome::Unknown;
         };
-        if !containment::empty(&path).is_ok_and(|empty| empty)
-            && std::fs::write(path.join("cgroup.kill"), "1").is_err()
-        {
+        if !containment::kill(&path).await {
             return FenceOutcome::Unknown;
         }
-        for _ in 0..100 {
-            if containment::empty(&path).is_ok_and(|empty| empty) {
-                let mut children = self.children.lock().await;
-                let attempt = children
-                    .iter()
-                    .find(|(_, p)| p.identity == *identity)
-                    .map(|(id, _)| *id);
-                if let Some(attempt) = attempt {
-                    if let Some(mut process) = children.remove(&attempt) {
-                        let _ = process.child.wait().await;
-                    }
-                }
-                // Keep the empty cgroup as restart-verifiable fence evidence.
-                return FenceOutcome::Fenced;
+        let mut children = self.children.lock().await;
+        let attempt = children
+            .iter()
+            .find(|(_, p)| p.identity == *identity)
+            .map(|(id, _)| *id);
+        if let Some(attempt) = attempt {
+            if let Some(mut process) = children.remove(&attempt) {
+                let _ = process.child.wait().await;
             }
-            tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        FenceOutcome::Unknown
+        // Keep the empty cgroup as restart-verifiable fence evidence.
+        FenceOutcome::Fenced
+    }
+
+    async fn fence_unregistered(&self, claim: &StateClaim) -> FenceOutcome {
+        // launch creates this exact group before spawning. Its absence means
+        // nothing was spawned on this boot; a process left in the daemon's own
+        // group never received an envelope and exits on handoff EOF.
+        let path = self.root.join(format!("shaula-{}", claim.worker_attempt));
+        match std::fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return FenceOutcome::Fenced
+            }
+            Ok(meta) if meta.is_dir() => {}
+            _ => return FenceOutcome::Unknown,
+        }
+        if !containment::kill(&path).await {
+            return FenceOutcome::Unknown;
+        }
+        // No durable identity names this group, so it is not restart evidence.
+        // A leftover empty group is harmless; the replacement uses a new attempt.
+        let _ = std::fs::remove_dir(&path);
+        FenceOutcome::Fenced
     }
 }
