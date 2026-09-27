@@ -5,6 +5,8 @@
 mod faults;
 #[path = "worker_process/fixture.rs"]
 mod fixture;
+#[path = "worker_process/identity.rs"]
+mod identity;
 #[path = "worker_process/pre_exec.rs"]
 mod pre_exec;
 use fixture::*;
