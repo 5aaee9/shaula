@@ -54,9 +54,11 @@ published artifact digest is retained in its receipt.
   isolated-host authorization and Browser dispatch. The repository inventory
   baseline has no Runner instances and one old offline `shaula-docker-local`
   Scale Set. That old set is not acceptance evidence for this binary.
-- Full LW-11–15 composition coverage still needs exact classification of the
-  pre-exec crash window and PID-reuse/guardian cases for the claimed host tuple.
-  Existing Store and real-child tests remain separate evidence.
+- The pre-exec crash window is now classified from the attempt's exact cgroup,
+  and LW-11/12/14 composition cases have local real-cgroup tests (see
+  IMPLEMENTATION_STATUS). They are not hosted-CI receipts: the explicit process
+  tests are not run by CI. Real-GitHub Auth Handoff/Create competition remains
+  part of LW-32 above.
 
 The backup receipt is a controlled same-host, full-set runbook rehearsal with
 explicit fencing and divergence refusal, not a general automatic rollback tool.

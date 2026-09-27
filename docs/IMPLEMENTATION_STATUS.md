@@ -122,11 +122,26 @@ Local evidence obtained for this implementation:
   RSS 30,544 KiB/two threads, and successful recovery at saturation. During 1,104
   bounded log replays, 67 state requests complete with maximum latency 331 ms.
   This is not maximum-count or arbitrary production-capacity acceptance.
+- LW-11/12/14 composition (2026-09-27). A daemon crash after `launch_pending`
+  but before identity registration was always classified Unknown, permanently
+  quarantining a Generation that never received a launch envelope. Restart now
+  fences that attempt's exact `shaula-{attempt}` cgroup and quarantines only when
+  it cannot prove it empty. A repeated `Prepared` under a new request id can no
+  longer overwrite the recorded preparation outcome. New real-cgroup tests cover
+  a job blocked on handoff, attempt exactness and stray group members (LW-11); an
+  unresolved Create spawn handover blocking the exclusive Fleet effect gate used
+  by DELETE and Auth Handoff, and a Create refused with no operation, handover or
+  apply after a committed DELETE (LW-12, mutation-checked); and reused PIDs,
+  foreign-host and previous-boot identities, tampered containment and vanished
+  groups never producing a fence (LW-14). On WSL2 6.18.33.2 with cgroup v2 via a
+  delegated systemd user scope, Rust 1.98.1 and Terraform 1.9.8, all 18 explicit
+  process tests pass; Windows Clippy/rustfmt and 796 nextest tests pass. The
+  daemon-side mapping from `launch_pending` to this fence has no end-to-end
+  `serve` crash test; LW-12 uses the real Worker and gates, not real GitHub.
 
 **Release/merge acceptance is not yet complete.** The changed default path still
 needs actual updated-binary GitHub lifecycle evidence (LW-32) and final CI on the
-tested head. The remaining LW-11–15 composition cases include Auth Handoff and
-the exact pre-exec/PID-reuse/guardian boundaries. The final CI rerun after the
+tested head, including real-GitHub Auth Handoff against a live Create. The final CI rerun after the
 ready-runner observation fix remains pending. The scoped LW-28 rehearsal
 above does not establish arbitrary production rollback or cross-host recovery.
 Historical platform receipts and old-binary workflows do not satisfy this gate.
