@@ -3,7 +3,8 @@
 These receipts exercise actual `serve -> job -> Terraform -> Docker/Forgejo`
 with SQLite HTTP state on disposable GitHub-hosted Linux machines. Browser was
 used to inspect job results and the target GitHub repository's Runner inventory.
-They do not establish a real GitHub Runner lifecycle or the complete LW matrix.
+The real GitHub/Docker lifecycle is recorded separately below; none of these
+receipts establish the complete LW matrix.
 
 ## Verified receipts
 
@@ -50,18 +51,62 @@ published artifact digest is retained in its receipt.
   `589da3a` applies the accepted-run/40-second observation to the backup and
   control suites too. Its final complete CI rerun remains pending; the earlier
   successful receipt is preserved with its original commit, not relabelled.
-- Real GitHub lifecycle and Auth Handoff/Create competition remain pending the
-  isolated-host authorization and Browser dispatch. The repository inventory
-  baseline has no Runner instances and one old offline `shaula-docker-local`
-  Scale Set. That old set is not acceptance evidence for this binary.
 - The pre-exec crash window is now classified from the attempt's exact cgroup,
   and LW-11/12/14 composition cases have local real-cgroup tests (see
   IMPLEMENTATION_STATUS). They are not hosted-CI receipts: the explicit process
-  tests are not run by CI. Real-GitHub Auth Handoff/Create competition remains
-  part of LW-32 above.
+  tests are not run by CI. LW-12 covers Auth Handoff at the Fleet effect gate
+  with a real Worker; no real-GitHub Auth Handoff rotation was performed.
+
+## Real GitHub lifecycle (LW-32, GitHub/Docker), 2026-09-27
+
+[github-lifecycle.json](github-lifecycle.json) is the passing receipt. It ran
+`scripts/forgejo-lifecycle/github-run.mjs` on the operator-approved host with an
+isolated data directory, OIDC issuer, port and `Delegate=yes` transient unit; the
+production `shaula.service` and its database were not touched. The existing
+GitHub App (`shaula-indexyz`) was published to that isolated instance only. The
+workflow was dispatched with `gh workflow run` rather than Browser, and its
+conclusion and final Runner inventory were checked through the GitHub API.
+
+- [Run 36343054697](https://github.com/5aaee9/shaula/actions/runs/36343054697)
+  on `e3e8c42`: `success`. The job log shows Runner
+  `shaula-shaula-lifecycle-0ac399de-github-cbd11b1d` on machine `d42b6101fd36`
+  (the Generation's container), no Docker socket and no retained JIT input.
+- The Generation became Busy from the real JobStarted, the daemon was SIGKILLed
+  and restarted while the job ran, and recovery used cleanup-only epoch 2 with no
+  Create or JIT replay. It reached Destroyed with zero occupancy; the container
+  and its volumes were absent, the Jobs record was retained and verified, and the
+  test Fleet ended as a 410 tombstone. The repository then had zero Runners.
+- Tuple: NixOS kernel 6.18.42, cgroup v2, Terraform 1.9.8, Docker 29.6.2, bundled
+  Docker provider lock; binary `sha256:abcd4ef8…c91caf` built from that commit.
+
+Three earlier attempts each exposed a defect, fixed before the passing run:
+
+1. `0b3e7a0`: JIT pinned the absolute work folder `/_work`; the official
+   container runs as a non-root user and exited at start, so the job stayed
+   queued. Fixed in `0b6ecfe` (runner-relative `_work`). The same run showed that
+   systemd removes a delegated unit's whole cgroup subtree after an ungraceful
+   exit, erasing fence evidence; identities now record the delegated root's cgroup
+   ID (`569bb6b`), verified by `scripts/lifecycle-systemd-restart.sh` under both a
+   user manager (WSL2) and the host's system manager.
+2. `955b5c1`: the job succeeded and cleanup completed, but GitHub Generations
+   never entered Busy (spec 0001 lifecycle). Fixed in `2b26f6e`.
+3. `2b26f6e`: Busy, restart and cleanup passed; the harness waited for 404 while
+   a retired Fleet is a 410 tombstone. Harness fixed in `e3e8c42`.
+
+Scope and remaining observations:
+
+- GitHub/Kubernetes was not run and is not claimed. Forgejo Docker/Kubernetes
+  evidence is the hosted CI above.
+- The JobCompleted for the restarted session was not redelivered, so the Jobs
+  projection still shows `running` for the completed job. The Generation itself
+  retired through the readiness fallback for a vanished Busy runner.
+- Decommission does not delete a Scale Set (spec 0001). The four temporary Scale
+  Sets named `shaula-lifecycle-*-github` remain in the repository and need removal
+  with App credentials; runs 1 and 2 also left their Fleets unretired in their
+  now-deleted isolated databases.
 
 The backup receipt is a controlled same-host, full-set runbook rehearsal with
 explicit fencing and divergence refusal, not a general automatic rollback tool.
 The load profile is four Workers with one recovery reserve; no 1,024-Worker or
 other deployment-size capacity claim is made. Production has not been deployed
-or modified for these tests, and PR #6 remains unmerged.
+or modified for these tests.

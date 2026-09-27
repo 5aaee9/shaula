@@ -1,0 +1,39 @@
+{
+  "kind": "shaula-github-lifecycle/v1",
+  "repository": "5aaee9/shaula",
+  "passed": true,
+  "runtimeTuple": {
+    "sourceCommit": "e3e8c423c181017bb3b803697d0d8a5f7189519a",
+    "binaryDigest": "sha256:abcd4ef8a8d8fcd1a772bb65546eed5e950c3f9c21325cb903b0688643c91caf",
+    "kernel": "6.18.42",
+    "containment": "linux-cgroup-v2",
+    "terraformVersion": "1.9.8",
+    "providerLockDigest": "sha256:541a79ea1f8f922d68c5e0b00dbaaf8d78c3a43bd172d32a8a209ce12c7c951a",
+    "dockerVersion": "29.6.2"
+  },
+  "artifactDigest": "sha256:b5bd0bcf03c5e92528543e4134e708d2614c252ca5f0974e605a62c8b92e186e",
+  "fleet": "shaula-lifecycle-0ac399de-github",
+  "generation": "cbd11b1d-b390-4814-809f-fc65c0379ade",
+  "workerEpochs": [
+    1,
+    2
+  ],
+  "jobs": [
+    {
+      "id": "92e1284d-fdf7-4fa6-b899-ce40fff18e66",
+      "backend": "github",
+      "observedStatus": "running",
+      "associationStatus": "verified"
+    }
+  ],
+  "cleanup": "Destroyed; occupancy zero; Docker resource and volumes absent; Fleet tombstoned (410)",
+  "githubRun": {
+    "id": 36343054697,
+    "url": "https://github.com/5aaee9/shaula/actions/runs/36343054697",
+    "headSha": "e3e8c423c181017bb3b803697d0d8a5f7189519a",
+    "conclusion": "success",
+    "runnerName": "shaula-shaula-lifecycle-0ac399de-github-cbd11b1d",
+    "machineName": "d42b6101fd36",
+    "finalRepositoryRunners": 0
+  }
+}

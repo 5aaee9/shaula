@@ -139,9 +139,26 @@ Local evidence obtained for this implementation:
   daemon-side mapping from `launch_pending` to this fence has no end-to-end
   `serve` crash test; LW-12 uses the real Worker and gates, not real GitHub.
 
-**Release/merge acceptance is not yet complete.** The changed default path still
-needs actual updated-binary GitHub lifecycle evidence (LW-32) and final CI on the
-tested head, including real-GitHub Auth Handoff against a live Create. The final CI rerun after the
+- LW-32 GitHub/Docker (2026-09-27) passes on the real repository at `e3e8c42`:
+  an isolated instance on the operator host ran the updated binary with the real
+  GitHub App; the dispatched workflow succeeded on the Generation's container,
+  the Generation became Busy, a daemon SIGKILL/restart mid-job recovered with
+  cleanup-only epoch 2 and no Create/JIT replay, and cleanup ended Destroyed
+  with zero occupancy, no container/volumes, retained Jobs, a tombstoned Fleet
+  and zero repository Runners. Three earlier attempts exposed and fixed: the JIT
+  absolute `/_work` folder that stopped official container runners at start;
+  systemd removing the delegated cgroup subtree after an ungraceful exit, now
+  proved through the recorded root cgroup ID (tested under user and system
+  managers); GitHub Generations never entering Busy (spec 0001); and a harness
+  expecting 404 instead of the 410 tombstone. GitHub/Kubernetes was not run and
+  is not claimed. After a restart the lost JobCompleted leaves the Jobs view at
+  `running`; the Generation still retires via the vanished-runner fallback. See
+  the [GitHub lifecycle receipt](evidence/0042-worker-acceptance-2026-09-26/README.md#real-github-lifecycle-lw-32-githubdocker-2026-09-27).
+
+**Release/merge acceptance.** The LW-32 GitHub/Docker gate now has a passing
+receipt on the updated binary; final CI on the tested head is still required.
+GitHub/Kubernetes and a real-GitHub Auth Handoff rotation remain unexercised and
+unclaimed. The final CI rerun after the
 ready-runner observation fix remains pending. The scoped LW-28 rehearsal
 above does not establish arbitrary production rollback or cross-host recovery.
 Historical platform receipts and old-binary workflows do not satisfy this gate.
