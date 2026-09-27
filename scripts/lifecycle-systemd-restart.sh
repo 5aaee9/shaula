@@ -17,7 +17,7 @@ trap 'systemctl "${mode[@]}" stop "$unit" 2>/dev/null || true; systemctl "${mode
 identity="$state/identity.json"
 run() {
   systemd-run "${mode[@]}" --quiet --unit="$unit" -p Delegate=yes -p KillMode=control-group \
-    --setenv=SHAULA_RESTART_ROLE="$1" --setenv=SHAULA_RESTART_IDENTITY="$identity" \
+    --setenv=PATH="$PATH" --setenv=SHAULA_RESTART_ROLE="$1" --setenv=SHAULA_RESTART_IDENTITY="$identity" \
     "${@:2}" /bin/sh -c 'export SHAULA_TEST_CGROUP="/sys/fs/cgroup$(sed -n "s/^0:://p" /proc/self/cgroup)"; exec "$0" restart::systemd_restart_role --exact --ignored --nocapture' "$bin"
 }
 run launch
