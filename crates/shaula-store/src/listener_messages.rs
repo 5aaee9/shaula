@@ -125,6 +125,7 @@ impl Store {
         .await?;
         self.listener_observations_tx(&tx, fleet, context.epoch, message, now)
             .await?;
+        self.listener_activity_tx(&tx, fleet, message, now).await?;
         self.jobs_ingest_tx(&tx, fleet, context, message, now)
             .await?;
         self.outbox_enqueue(

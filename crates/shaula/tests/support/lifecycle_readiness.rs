@@ -167,3 +167,48 @@ async fn readiness_keeps_young_absent_generation_waiting() {
     supervisor.tick(5 * 60 * 1000).await.unwrap();
     assert_eq!(generation_state(store.as_ref()).await, G::WaitingOnline);
 }
+
+/// Spec 0001: an observed running job makes a GitHub Generation Busy. It is
+/// never an excess scale-down candidate while its runner stays online, even
+/// with zero demand.
+#[tokio::test]
+async fn busy_generation_with_online_runner_is_not_retired_at_zero_demand() {
+    let (store, github, supervisor, digest) = setup().await;
+    seed_idle(store.as_ref(), &digest).await;
+    store.generation_advance("gen1", G::Busy, 3).await.unwrap();
+    supervisor.tick(5).await.unwrap(); // settle the Pending handoff.
+    github
+        .runners
+        .lock()
+        .unwrap()
+        .push(shaula_core::ports::RunnerRef {
+            id: 12,
+            name: "runner1".into(),
+            scale_set_id: 42,
+            status: "online".into(),
+        });
+    store.demand_snapshot("f1", 0, 6).await.unwrap();
+    supervisor.tick(10).await.unwrap();
+    assert_eq!(
+        store.generation_get("gen1").await.unwrap().unwrap().state,
+        G::Busy
+    );
+    assert_eq!(github.removals.load(Ordering::SeqCst), 0);
+}
+
+/// A lost JobCompleted cannot pin a Busy Generation: once its ephemeral
+/// runner has deregistered, readiness retires it like an Idle one.
+#[tokio::test]
+async fn busy_generation_whose_runner_vanished_retires() {
+    let (store, github, supervisor, digest) = setup().await;
+    seed_idle(store.as_ref(), &digest).await;
+    store.generation_advance("gen1", G::Busy, 3).await.unwrap();
+    supervisor.tick(5).await.unwrap(); // settle the Pending handoff.
+    store.demand_snapshot("f1", 1, 6).await.unwrap();
+    supervisor.tick(10).await.unwrap();
+    assert_eq!(
+        store.generation_get("gen1").await.unwrap().unwrap().state,
+        G::Destroyed
+    );
+    assert_eq!(github.removals.load(Ordering::SeqCst), 1);
+}
