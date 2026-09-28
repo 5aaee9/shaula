@@ -5,11 +5,15 @@
 use std::path::PathBuf;
 
 use serde::Deserialize;
+#[path = "config_lifecycle.rs"]
+mod lifecycle;
+pub use lifecycle::LifecycleConfig;
 
 /// Bootstrap file shape (`shaula serve --config <path>`).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BootstrapConfig {
+    pub lifecycle: Option<LifecycleConfig>,
     pub version: u32,
     pub storage: StorageConfig,
     /// Trusted read-only directories synchronized as the complete source catalog.

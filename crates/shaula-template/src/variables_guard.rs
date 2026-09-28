@@ -56,7 +56,7 @@ fn heredoc_end(bytes: &[u8], at: usize, delimiter: &[u8]) -> Option<usize> {
     .then_some(end)
 }
 
-pub(super) fn check(text: &str) -> CoreResult<()> {
+pub(crate) fn check(text: &str) -> CoreResult<()> {
     let bytes = text.as_bytes();
     let mut modes = vec![Mode::Code(None)];
     let mut operators = 0;

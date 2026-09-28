@@ -35,7 +35,7 @@ pub struct TemplateCreateRequest {
 // execute A" is unrepresentable (C3/R10).
 
 /// Definite result of a Create apply.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TemplateCreateResult {
     pub result_envelope: ShaulaResultEnvelope,
     /// The REAL post-apply state identity from `state pull` (spec 0004
@@ -52,7 +52,7 @@ pub struct TemplateCreateResult {
 /// Create). Destroy refuses to run against a state whose lineage is
 /// missing or different — a replaced state can never become its own
 /// baseline (spec 0004 §5, ownership proof).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OriginalStateIdentity {
     pub lineage: String,
     pub serial: u64,
@@ -114,9 +114,25 @@ pub trait ApplyIntentSink: Send + Sync {
     async fn authorize_bootstrap(&self, _: &PlanProvenance) -> Result<ApplyClaim, String> {
         Err("container bootstrap authorization unavailable".into())
     }
+
+    /// Explicit IPC acknowledgement of the fenced spawn. Local callers keep
+    /// using their RAII claim; a remote owner releases its claim only here.
+    async fn spawn_handover(&self, _: &PlanProvenance) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// Called only after the command's fenced wait has completed. Failure to
+    /// deliver this proof preserves the daemon's active-command uncertainty.
+    async fn command_ended(&self, _: &PlanProvenance) -> Result<(), String> {
+        Ok(())
+    }
+
+    async fn bootstrap_ended(&self, _: &PlanProvenance) -> Result<(), String> {
+        Ok(())
+    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DestroyClassification {
     /// Applied delete-only plan successfully and state is empty.
     Applied,
@@ -126,7 +142,7 @@ pub enum DestroyClassification {
 
 /// Uncertainty classification for template effects: the caller never infers
 /// "did not happen" from a process disappearing.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TemplateOutcomeError {
     /// Plan could not be built/admitted; no apply started.
     PlanFailed { phase: String },
@@ -141,6 +157,16 @@ pub enum TemplateOutcomeError {
 /// only fixed envelopes and bounded policy inputs.
 #[async_trait]
 pub trait TemplateRuntimePort: Send + Sync {
+    /// Rebuild only from retained exact inputs after the old worker is fenced.
+    async fn prepare_recovery(
+        &self,
+        _request: &TemplateDestroyRequest,
+        _protected_input: &[u8],
+    ) -> Result<(), TemplateOutcomeError> {
+        Err(TemplateOutcomeError::StateUnavailable {
+            phase: "recovery.unsupported".into(),
+        })
+    }
     /// Prepares the workspace BEFORE any remote effect (R9-07, spec 0004
     /// §6): materialize the pinned artifact and run the LOCKED init.
     /// `init` is long, local and retryable; the JIT token is short-lived,

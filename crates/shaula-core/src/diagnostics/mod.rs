@@ -1,6 +1,7 @@
 //! Disposable explanations, never lifecycle authority.
 pub use shaula_api_types::diagnostics::*;
 mod catalog;
+mod catalog_definition;
 mod observation;
 mod question;
 pub use catalog::Code;

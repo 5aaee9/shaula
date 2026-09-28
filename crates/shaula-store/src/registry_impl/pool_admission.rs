@@ -300,7 +300,9 @@ impl SqliteControlPlane {
             .await
             .map_err(core_err)?;
         let template_inputs = selected.template_inputs;
+        let worker = self.admit_worker_on(&tx, &record.id).await?;
         tx.commit().await.map_err(|e| core_err(e.into()))?;
+        self.publish_worker(worker)?;
         if let Some(pool) = diagnostic
             .0
             .as_mut()
@@ -357,10 +359,13 @@ impl SqliteControlPlane {
             tx.rollback().await.ok();
             return Ok(false);
         }
+        let id = record.id.clone();
         crate::Store::generation_insert_on(&tx, record)
             .await
             .map_err(core_err)?;
+        let worker = self.admit_worker_on(&tx, &id).await?;
         tx.commit().await.map_err(|e| core_err(e.into()))?;
+        self.publish_worker(worker)?;
         if let Some(pool) = diagnostic
             .0
             .as_mut()

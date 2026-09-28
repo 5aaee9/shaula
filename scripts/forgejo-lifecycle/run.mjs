@@ -9,62 +9,75 @@ import { labels, staleDemand, lostRegistration } from "./scenarios.mjs";
 import { permissions } from "./permissions.mjs";
 import { captureCredentials, leakScan } from "./leaks.mjs";
 import { expiry } from "./expiry.mjs";
+import { workerPressure } from "./worker-pressure.mjs";
+import { interruptedCreate } from "./worker-crash.mjs";
+import { workerBackup, backupDivergence } from "./worker-backup.mjs";
+import { controlFaults } from "./worker-control.mjs";
+import { backendOutage } from "./worker-emergency.mjs";
+import { ledger } from "./diagnostics-evidence.mjs";
 import { until, serverImage, runnerImage } from "./support.mjs";
 
 process.umask(0o077);
 assert([undefined, "docker", "kubernetes"].includes(process.env.SHAULA_ACCEPTANCE_BACKEND), "unsupported acceptance backend");
 const fixture = process.env.SHAULA_ACCEPTANCE_BACKEND === "kubernetes" ? new KubernetesFixture() : new Fixture();
-const report = { kind: "shaula-forgejo-lifecycle/v2", platform: fixture.platform, serverImage, runnerImage, checks: {}, passed: false };
+const suite = process.env.SHAULA_ACCEPTANCE_SUITE || "all";
+assert(["all", "baseline", "backup", "pressure", "control", "backend-outage", "interrupted-create"].includes(suite));
+const selected = name => suite === "all" || suite === name;
+const report = { kind: "shaula-forgejo-lifecycle/v2", platform: fixture.platform, suite, serverImage, runnerImage, checks: {}, passed: false };
 let phase = "setup";
 try {
   await fixture.start();
+  report.runtimeTuple = fixture.runtimeTuple;
   report.engineVersion = fixture.engine.Version;
   report.artifactDigest = fixture.digest;
-  for (const scenario of ["success", "failure", "restart"]) {
-    phase = scenario;
-    console.log(`Running ${scenario}`);
-    const key = `${fixture.prefix}-${scenario}`;
-    await fixture.queue(key, scenario === "success" ? 40 : scenario === "restart" ? 20 : 8, scenario === "failure");
-    await fixture.createFleet(key);
-    const observed = await fixture.observe(key, "active");
-    const job = await until(`${key}: retained running job`, async () => {
-      const page = await fixture.api(`/jobs?fleet_key=${key}`);
-      return page.items.find(j => j.observed_status === "running");
-    });
-    assert.equal(job.backend, "forgejo");
-    assert.equal(job.scale_set_id, undefined, "Forgejo must not synthesize a Scale Set identity");
-    assert.equal(job.association_status, "unverified");
-    const detail = await fixture.api(`/jobs/${job.id}`);
-    assert.equal(detail.generations.length, 0, "snapshot timing must not create verified runner links");
-    let secrets;
-    if (scenario === "success") {
-      secrets = await captureCredentials(fixture, observed);
-      report.leakScanBeforeCompletion = await leakScan(fixture, key, observed, secrets, true);
-    }
-    if (scenario === "restart") await fixture.restart();
-    await until(`${key}: workflow conclusion`, async () => {
-      const runs = await fixture.forgejo(`/repos/${fixture.user}/${key}/actions/runs`);
-      return runs.workflow_runs.some(run => run.status === (scenario === "failure" ? "failure" : "success"));
-    });
-    await fixture.reclaimed(key, observed);
-    await until(`${key}: exact task result after snapshot disappearance`, async () => {
-      const retained = await fixture.api(`/jobs/${job.id}`);
-      assert.equal(retained.association_status, "unverified");
-      assert.equal(retained.generations.length, 0);
-      if (!retained.forgejo.result) return false;
-      assert.equal(retained.reported_result, scenario === "failure" ? "failure" : "success");
-      assert.equal(retained.forgejo.result.task_id, job.forgejo.task_id);
-      assert(retained.forgejo_observations.some(event => event.source === "task_history"));
-      assert(retained.forgejo.result.run_url.startsWith(`${fixture.target}/${fixture.user}/${key}/actions/runs/`));
-      return retained.observed_status === "completed" && retained.forgejo.in_snapshot === false;
-    });
-    if (secrets) {
-      report.leakScanAfterCompletion = await leakScan(fixture, key, observed, secrets, false);
-      report.setupInfo = "not emitted by bundled Forgejo v1 templates";
-      report.checks.leakScan = "passed";
-    }
-    report.checks.forgejoJobsProjection = "exact task results; runner associations remain Unverified";
-    report.checks[scenario] = "passed";
+  if (selected("baseline")) {
+    for (const scenario of ["success", "failure", "restart"]) {
+      phase = scenario;
+      console.log(`Running ${scenario}`);
+      const key = `${fixture.prefix}-${scenario}`;
+      // All three cases assert a retained running Job. Leave that state visible
+      // across real Kubernetes inspection and the daemon's next Jobs poll.
+      await fixture.queue(key, 40, scenario === "failure");
+      await fixture.createFleet(key);
+      const observed = await fixture.observe(key, "active");
+      const job = await until(`${key}: retained running job`, async () => {
+        const page = await fixture.api(`/jobs?fleet_key=${key}`);
+        return page.items.find(j => j.observed_status === "running");
+      });
+      assert.equal(job.backend, "forgejo");
+      assert.equal(job.scale_set_id, undefined, "Forgejo must not synthesize a Scale Set identity");
+      assert.equal(job.association_status, "unverified");
+      const detail = await fixture.api(`/jobs/${job.id}`);
+      assert.equal(detail.generations.length, 0, "snapshot timing must not create verified runner links");
+      let secrets;
+      if (scenario === "success") {
+        secrets = await captureCredentials(fixture, observed);
+        report.leakScanBeforeCompletion = await leakScan(fixture, key, observed, secrets, true);
+      }
+      if (scenario === "restart") await fixture.restart();
+      await until(`${key}: workflow conclusion`, async () => {
+        const runs = await fixture.forgejo(`/repos/${fixture.user}/${key}/actions/runs`);
+        return runs.workflow_runs.some(run => run.status === (scenario === "failure" ? "failure" : "success"));
+      });
+      await fixture.reclaimed(key, observed);
+      await until(`${key}: exact task result after snapshot disappearance`, async () => {
+        const retained = await fixture.api(`/jobs/${job.id}`);
+        assert.equal(retained.association_status, "unverified");
+        assert.equal(retained.generations.length, 0);
+        if (!retained.forgejo.result) return false;
+        assert.equal(retained.reported_result, scenario === "failure" ? "failure" : "success");
+        assert.equal(retained.forgejo.result.task_id, job.forgejo.task_id);
+        assert(retained.forgejo_observations.some(event => event.source === "task_history"));
+        assert(retained.forgejo.result.run_url.startsWith(`${fixture.target}/${fixture.user}/${key}/actions/runs/`));
+        return retained.observed_status === "completed" && retained.forgejo.in_snapshot === false;
+      });
+      if (secrets) {
+        report.leakScanAfterCompletion = await leakScan(fixture, key, observed, secrets, false);
+        report.setupInfo = "not emitted by bundled Forgejo v1 templates";
+        report.checks.leakScan = "passed";
+      }
+      report.checks.forgejoJobsProjection = "exact task results; runner associations remain Unverified";
+      report.checks[scenario] = "passed";
   }
   for (const [name, check] of [["labels", labels], ["staleDemand", staleDemand]]) {
     phase = name;
@@ -81,10 +94,45 @@ try {
   phase = "hard-expiry";
   console.log(`Running ${phase}`);
   await expiry(fixture, report.checks);
-  phase = "lost-registration";
-  console.log(`Running ${phase}`);
-  await lostRegistration(fixture);
-  report.checks.lostRegistration = "quarantined; no POST replay or resource Create; occupancy held";
+  }
+  if (fixture.platform === "docker") {
+    if (selected("backup")) {
+      phase = "worker-backup";
+      console.log(`Running ${phase}`);
+      report.workerBackup = await workerBackup(fixture);
+      phase = "backup-post-checkpoint-effect";
+      console.log(`Running ${phase}`);
+      report.backupDivergence = await backupDivergence(fixture);
+    }
+    if (selected("pressure")) {
+      phase = "worker-pressure";
+      console.log(`Running ${phase}`);
+      report.workerPressure = await workerPressure(fixture);
+    }
+    if (selected("control") && (suite !== "all" || fixture.controlProxy)) {
+      assert(fixture.controlProxy, "control fault suite requires the disposable-host proxy");
+      phase = "worker-control-faults";
+      console.log(`Running ${phase}`);
+      report.controlFaults = await controlFaults(fixture);
+    }
+    if (selected("backend-outage") && (suite !== "all" || fixture.controlProxy)) {
+      assert(fixture.controlProxy, "state outage suite requires the disposable-host proxy");
+      phase = "worker-backend-outage";
+      console.log(`Running ${phase}`);
+      report.backendOutage = await backendOutage(fixture);
+    }
+    if (selected("interrupted-create")) {
+      phase = "interrupted-create";
+      console.log(`Running ${phase}`);
+      report.interruptedCreate = await interruptedCreate(fixture);
+    }
+  }
+  if (selected("baseline")) {
+    phase = "lost-registration";
+    console.log(`Running ${phase}`);
+    await lostRegistration(fixture);
+    report.checks.lostRegistration = "quarantined; no POST replay or resource Create; occupancy held";
+  }
   report.faults = { dockerDelete: fixture.dockerProxy.gate.failures, registrationDelete: fixture.registrationProxy.gate.failures,
     jobsRead: fixture.registrationProxy.gate.jobFailures, registrationResponseLost: fixture.registrationProxy.gate.droppedRegistrations };
   report.passed = true;
@@ -92,6 +140,28 @@ try {
   report.failedPhase = phase;
   // No bodies, secret-bearing subprocess output or raw server logs in reports.
   report.reason = error.message;
+  // Only domain enums, command phases/exit codes and closed diagnostic codes;
+  // never dump raw provider output, state, input or credential-bearing logs.
+  try {
+    report.failureEvidence = [];
+    // Later fault cases must not disappear behind the first baseline Fleets.
+    for (const key of [...fixture.fleets].slice(-8)) {
+      const domain = ledger(fixture, key);
+      const reasons = [];
+      for (const generation of domain.generations.slice(0, 8)) {
+        const detail = await fixture.api(`/generations/${generation.id}/diagnostics`);
+        reasons.push({ generation: generation.id, codes: detail.questions.flatMap(q => q.reasons.map(r => r.code)) });
+      }
+      report.failureEvidence.push({ domain, reasons });
+    }
+    if (fixture.platform === "kubernetes" && fixture.namespaceCreated) {
+      const pods = JSON.parse(await fixture.kube("get", "pods", "-o", "json")).items;
+      report.podStatus = pods.slice(0, 8).map(p => ({ phase: p.status.phase,
+        conditions: (p.status.conditions || []).map(c => ({ type: c.type, status: c.status, reason: c.reason })),
+        containers: [...(p.status.initContainerStatuses || []), ...(p.status.containerStatuses || [])]
+          .map(c => ({ ready: c.ready, waiting: c.state.waiting?.reason, exitCode: c.state.terminated?.exitCode })) }));
+    }
+  } catch { report.failureEvidenceUnavailable = true; }
   process.exitCode = 1;
 } finally {
   try { await fixture.close(); }

@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { command } from "./support.mjs";
 
 export async function captureCredentials(fixture, observed) {
@@ -76,21 +77,41 @@ export async function leakScan(fixture, key, observed, secrets, alive) {
     inspect(await fixture.kube("logs", observed.id), "runner log");
   }
   const workspace = join(fixture.directory, "data", "runners", key, id);
-  inspect(await readFile(join(workspace, "shaula.tfvars.json"), "utf8"), "Terraform inputs");
-  await privateFile(workspace);
-  await privateFile(join(workspace, "tfplan"));
-  await privateFile(join(workspace, "terraform.tfstate"));
-  // Decode the real saved binary plan rather than grepping compressed bytes.
-  let protectedTokenCopies = protectedState(await command(fixture.terraform, ["show", "-json", "tfplan"], { cwd: workspace }), fixture, observed, secrets);
-  protectedTokenCopies += protectedState(await readFile(join(workspace, "terraform.tfstate"), "utf8"), fixture, observed, secrets);
-  surfaces += 2;
-  const backup = join(workspace, "terraform.tfstate.backup");
+  const database = join(fixture.directory, "data", "shaula.db");
+  await privateFile(database);
+  const db = new DatabaseSync(database, { readOnly: true });
+  let durable;
+  let plan;
   try {
-    const body = await readFile(backup, "utf8");
-    await privateFile(backup);
-    protectedTokenCopies += protectedState(body, fixture, observed, secrets);
+    durable = db.prepare("SELECT s.state_bytes, s.sealed, w.protected_input, w.completion_receipt FROM generation_http_state s JOIN lifecycle_workers w ON w.generation_id = s.generation_id WHERE s.generation_id = ?").get(id);
+  } finally { db.close(); }
+  assert(durable?.state_bytes && durable.protected_input, "authoritative HTTP state and original input required");
+  inspect(Buffer.from(durable.protected_input).toString(), "retained Terraform inputs");
+  let protectedTokenCopies = protectedState(Buffer.from(durable.state_bytes).toString(), fixture, observed, secrets);
+  surfaces++;
+  if (!alive) {
+    assert.equal(durable.sealed, 1, "terminal state sealed atomically");
+    assert(durable.completion_receipt, "terminal completion has a durable receipt");
+  }
+  try {
+    await privateFile(workspace);
+    inspect(await readFile(join(workspace, "shaula.tfvars.json"), "utf8"), "Terraform inputs");
+    await privateFile(join(workspace, "tfplan"));
+    // Decode the real saved plan while it exists; a terminal receipt permits
+    // the production reaper to remove the ordinary workspace concurrently.
+    plan = await command(fixture.terraform, ["show", "-json", "tfplan"], { cwd: workspace });
+  } catch (error) {
+    if (alive || !durable.completion_receipt || error.code === "ERR_ASSERTION") throw error;
+    // A decode failure alone is not evidence that the reaper removed it.
+    await assert.rejects(stat(join(workspace, "tfplan")), { code: "ENOENT" });
+  }
+  if (plan !== undefined) {
+    protectedTokenCopies += protectedState(plan, fixture, observed, secrets);
     surfaces++;
-  } catch (error) { if (error.code !== "ENOENT") throw error; }
+  }
+  for (const name of ["terraform.tfstate", "terraform.tfstate.backup", "errored.tfstate"]) {
+    await assert.rejects(stat(join(workspace, name)), { code: "ENOENT" }, "normal HTTP execution must not produce local/emergency state");
+  }
   let cursor;
   do {
     const page = await fixture.api(`/generations/${id}/invocations${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);

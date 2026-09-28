@@ -15,6 +15,7 @@ impl Startup {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let config = serde_json::json!({"version":1,"storage":{"data_dir":directory.path().join("data")},
+            "lifecycle":{"executor":"exec","max_workers":4,"recovery_reserve":1},
             "http":{"listen":format!("127.0.0.1:{port}"),"bindings_server_key":"test-bindings-key-0123456789abcdef",
                 "authorization":[{"issuer":provider.issuer,"subject":"ops","scopes":provider::SCOPES.split_whitespace().collect::<Vec<_>>()}]},
             "execution":{"engines":{"terraform":{"executable":env!("CARGO_BIN_EXE_shaula")}}}});

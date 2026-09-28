@@ -17,3 +17,4 @@ pub mod supervisor;
 pub mod access_tokens;
 
 mod diagnostic_capture;
+pub mod workers;

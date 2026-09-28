@@ -2534,12 +2534,14 @@ dependencies = [
  "shaula-client",
  "shaula-core",
  "shaula-daemon",
+ "shaula-executor",
  "shaula-forgejo",
  "shaula-http",
  "shaula-observability",
  "shaula-scaleset",
  "shaula-store",
  "shaula-template",
+ "shaula-worker",
  "tar",
  "tempfile",
  "tokio",
@@ -2548,6 +2550,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -2619,6 +2622,20 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "shaula-executor"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "hex",
+ "serde_json",
+ "sha2 0.10.9",
+ "shaula-core",
+ "tokio",
  "uuid",
  "zeroize",
 ]
@@ -2763,6 +2780,22 @@ dependencies = [
  "url",
  "uuid",
  "win32job",
+ "zeroize",
+]
+
+[[package]]
+name = "shaula-worker"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "hex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "shaula-core",
+ "tokio",
+ "uuid",
  "zeroize",
 ]
 

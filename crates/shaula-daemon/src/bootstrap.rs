@@ -9,6 +9,7 @@ use super::config::BootstrapConfig;
 /// Validated bootstrap, frozen for the process lifetime.
 #[derive(Clone)]
 pub struct ValidatedBootstrap {
+    pub lifecycle: Option<super::config::LifecycleConfig>,
     pub access_tokens: shaula_core::access_tokens::TokenPolicy,
     pub data_dir: PathBuf,
     pub database_path: PathBuf,
@@ -143,6 +144,9 @@ impl ValidatedBootstrap {
     }
 
     pub fn validate(config: BootstrapConfig) -> Result<Self, String> {
+        if let Some(lifecycle) = &config.lifecycle {
+            lifecycle.validate()?;
+        }
         config.operation_logs.validate()?;
         if let Some(delivery) = &config.setup_info {
             delivery.validate()?;
@@ -215,8 +219,16 @@ impl ValidatedBootstrap {
                 "runner.max_lifetime_secs must be positive and fit a millisecond timestamp".into(),
             );
         }
-        if config.execution.create_concurrency == 0 || config.execution.destroy_concurrency == 0 {
-            return Err("concurrency values must be positive".to_string());
+        if !(1..=1024).contains(&config.execution.create_concurrency)
+            || !(1..=1024).contains(&config.execution.destroy_concurrency)
+        {
+            return Err("execution concurrency values must be within 1..=1024".into());
+        }
+        if config.execution.operation_timeout_secs == 0
+            || Duration::from_secs(config.execution.operation_timeout_secs)
+                > shaula_core::worker::MAX_OPERATION_TIMEOUT
+        {
+            return Err("execution.operation_timeout_secs must be within 1..=86400".into());
         }
         if config.observability.otlp.protocol != "http/json" {
             return Err("observability.otlp.protocol must be http/json".to_string());
@@ -238,6 +250,7 @@ impl ValidatedBootstrap {
             resolve_engine_executable(&config.execution.engines.terraform.executable)?;
 
         Ok(Self {
+            lifecycle: config.lifecycle,
             data_dir,
             database_path,
             work_root,

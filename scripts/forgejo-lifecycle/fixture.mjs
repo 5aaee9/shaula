@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { mkdtemp, writeFile, readFile, open, mkdir } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { tmpdir, release } from "node:os";
 import { join, resolve } from "node:path";
 import { issuer, scopes } from "./oidc.mjs";
 import { faultProxy } from "./faults.mjs";
+import { ControlProxy } from "./control-proxy.mjs";
+import { fenceFixture } from "./worker-fence.mjs";
 import { command, freePort, json, until, serverImage, runnerImage } from "./support.mjs";
 
 export class Fixture {
@@ -28,6 +31,15 @@ export class Fixture {
   }
   async start() {
     assert(this.socket.startsWith("unix:///"), "acceptance requires an explicit local Docker socket");
+    const binaryHash = createHash("sha256");
+    for await (const chunk of createReadStream(this.binary)) binaryHash.update(chunk);
+    this.runtimeTuple = {
+      sourceCommit: await command("git", ["rev-parse", "HEAD"]),
+      binaryDigest: `sha256:${binaryHash.digest("hex")}`,
+      kernel: release(), containment: "linux-cgroup-v2",
+      terraformVersion: JSON.parse(await command(this.terraform, ["version", "-json"])).terraform_version,
+      providerLockDigest: `sha256:${createHash("sha256").update(await readFile(resolve(`templates/${this.platform}/.terraform.lock.hcl`))).digest("hex")}`,
+    };
     this.engine = JSON.parse(await this.cli("version", "--format", "{{json .Server}}"));
     assert(this.engine.Components?.some(c => c.Name === "Engine" && c.Details?.Os === "linux"), "real Linux Docker Engine required (not Podman)");
     this.directory = await mkdtemp(join(tmpdir(), `${this.prefix}-`));
@@ -36,7 +48,7 @@ export class Fixture {
     assert.match(gateway, /^\d+\.\d+\.\d+\.\d+$/);
     // Run the harness in the Docker host network namespace. A rootless daemon
     // needs nsenter; the probe fails explicitly rather than changing templates.
-    const port = await freePort();
+    const port = await freePort(gateway);
     this.direct = `http://${gateway}:${port}`;
     await this.cli("pull", serverImage);
     await this.cli("pull", runnerImage);
@@ -55,9 +67,8 @@ export class Fixture {
     this.token = await this.cli("exec", "--user", "git", this.server, "forgejo", "admin", "user", "generate-access-token",
       "--username", this.user, "--token-name", "disposable", "--scopes", "all", "--raw");
     assert(/^[a-f0-9]{40}$/.test(this.token), "generated administrator token format");
-    const relayPort = await freePort();
-    this.target = `http://${gateway}:${relayPort}`;
-    this.registrationProxy = await faultProxy({ target: this.direct, listen: { port: relayPort, host: gateway } });
+    this.registrationProxy = await faultProxy({ target: this.direct, listen: { port: 0, host: gateway } });
+    this.target = `http://${gateway}:${this.registrationProxy.address.port}`;
     this.proxySocket = join(this.directory, "docker.sock");
     this.dockerProxy = await faultProxy({ socketPath: this.socket.slice(7), listen: this.proxySocket });
     this.oidc = await issuer(this.directory);
@@ -65,11 +76,16 @@ export class Fixture {
     this.url = `http://127.0.0.1:${this.port}`;
     this.config = {
       version: 1, storage: { data_dir: join(this.directory, "data") },
+      lifecycle: { executor: "exec", max_workers: 8, recovery_reserve: 2, cgroup_root: process.env.SHAULA_TEST_CGROUP },
       http: { listen: `127.0.0.1:${this.port}`, bindings_server_key: randomBytes(32).toString("hex"),
         authorization: [{ issuer: this.oidc.url, subject: "fixture", scopes: scopes.split(" ") }] },
       execution: { engines: { terraform: { executable: this.terraform } }, operation_timeout_secs: 90 },
       runner: { max_lifetime_secs: 300 },
     };
+    if (process.env.SHAULA_ACCEPTANCE_CONTROL_FAULTS === "1" && this.platform === "docker") {
+      this.controlProxy = new ControlProxy();
+      await this.controlProxy.start(this);
+    }
     await this.startDaemon();
     await this.publish();
   }
@@ -134,11 +150,18 @@ export class Fixture {
     body.spec.capacity = { min_runners: 0, max_runners: 0 };
     await this.api(`/fleets/${key}`, "PUT", body.spec, 202, { "if-match": response.headers.get("shaula-resource-version") || response.headers.get("etag") });
   }
-  async queue(key, seconds = 8, failure = false, labels = [key]) {
+  async queue(key, seconds = 8, failure = false, labels = [key], requireWaiting = true) {
     await this.forgejo("/user/repos", "POST", { name: key, private: true, auto_init: true, default_branch: "main" }, 201);
     const yaml = `name: lifecycle\non: [push]\njobs:\n  build:\n    runs-on: [${labels.join(", ")}]\n    steps:\n      - run: |\n          sleep ${seconds}\n          exit ${failure ? 1 : 0}\n`;
     await this.forgejo(`/repos/${this.user}/${key}/contents/.forgejo/workflows/check.yaml`, "POST", { content: Buffer.from(yaml).toString("base64"), message: "disposable lifecycle acceptance", branch: "main" }, 201);
-    await until("queued demand", async () => (await this.forgejo(`/admin/actions/runners/jobs?labels=${labels.join(",")}`) ?? []).some(j => j.status === "waiting"));
+    if (requireWaiting) {
+      await until("queued demand", async () => (await this.forgejo(`/admin/actions/runners/jobs?labels=${labels.join(",")}`) ?? []).some(j => j.status === "waiting"));
+    } else {
+      // A ready runner can acquire the task before the first management poll.
+      // Verify the actual run exists, then the caller observes Busy and cleanup.
+      await until("workflow accepted by Forgejo", async () =>
+        (await this.forgejo(`/repos/${this.user}/${key}/actions/runs`)).workflow_runs.length === 1);
+    }
   }
   async containerVolumes(id) {
     const [container] = JSON.parse(await this.cli("inspect", id));
@@ -176,6 +199,8 @@ export class Fixture {
   }
   async close() {
     await this.stopDaemon();
+    await fenceFixture(this);
+    await this.controlProxy?.close();
     // Only resources bearing this fixture's exact random Fleet keys. Teardown
     // is never evidence of successful Shaula cleanup; assertions precede it.
     for (const key of this.fleets) {

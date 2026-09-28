@@ -3,6 +3,7 @@
 //! credential-grade. Routes are intentionally not exposed as a public router.
 
 mod auth;
+mod control;
 mod handler;
 
 use std::{future::Future, io, net::SocketAddr, sync::Arc, time::Duration};
@@ -13,7 +14,9 @@ use tokio::{net::TcpListener, sync::Semaphore};
 
 pub const STATE_ROUTE: &str = "/internal/v1/generations/{generation_id}/state";
 const MAX_REQUESTS: usize = 16;
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+// SQLite's writer budget is 60 seconds. Keep the HTTP deadline above it so
+// ordinary contention does not systematically turn committed writes uncertain.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(70);
 
 #[derive(Clone)]
 struct App {
@@ -57,6 +60,14 @@ impl StateServer {
 
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.listener.local_addr()
+    }
+
+    pub fn with_worker_control(
+        mut self,
+        control: Arc<dyn shaula_core::worker::wire::WorkerControl>,
+    ) -> Self {
+        self.router = self.router.merge(control::router(control));
+        self
     }
 
     pub async fn serve(

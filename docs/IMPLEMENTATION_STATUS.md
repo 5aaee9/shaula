@@ -1,9 +1,9 @@
 # Implementation Status (Phase Boundary)
 
-Status: Partial implementation; multi-account GitHub authentication (spec 0011 /
-ADR-0015), the HTTP state backend adapter and the explicit Runtime adapter are
-implemented with local verification; production lifecycle-worker integration,
-real-GitHub multi-account acceptance and the production migration pending.
+Status: Partial acceptance. The production lifecycle-worker/HTTP-state path and
+explicit offline migration are implemented in PR #6, with local Linux process
+and Windows regression evidence below. The complete spec 0042 acceptance matrix,
+real-GitHub multi-account acceptance and production migration remain pending.
 Evidence baseline: `b007fbc` (HTTP-backend increment), the Nix packaging and
 NixOS deployment increment of 2026-09-07, and the multi-account authentication
 increment of 2026-09-07; historical review reports dated 2026-09-06.
@@ -15,6 +15,157 @@ The earlier documentation-only pass could not run Cargo. The HTTP-backend pass
 used an owner-approved temporary Nix Rust environment. The repository now provides
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
+
+## Production lifecycle workers and HTTP state (2026-09-26, PR #6)
+
+Both GitHub and Forgejo production supervisors now use
+`serve -> ExecExecutor -> shaula job -> HTTP Runtime -> SQLite`. Workers own
+sequential Create/wait/Destroy; CI credentials, Fleet gates and terminal authority
+remain in the daemon. The executor requires delegated Linux cgroup v2 with
+`cgroup.kill`, records host/boot/process identity and fences descendants before
+replacement. Unsupported hosts fail closed. Fresh atomic admission includes the
+Claim, separate capability verifiers and empty initial state. Completion seals
+state, records a replayable receipt and releases occupancy in one transaction.
+
+Migration m0027 adds durable deployment/worker/fence/import facts. The offline
+`maintenance lifecycle-state inspect/apply` commands bind plans to original
+database provenance, exact materials, engine and fence evidence. Stale plans fail;
+per-Generation import receipts permit resumption. Unclassified legacy deployments
+serve authenticated reads without acquisition or management mutations. Unknown
+fences, missing state/materials and emergency evidence preserve quarantine and
+occupancy. A receipt-authorized reaper deletes only verified ordinary workspace
+files. Six worker diagnostic codes extend the catalog to 47 without exposing
+state or capability material. See the [deployment and recovery guide](lifecycle-workers.md).
+
+Local evidence obtained for this implementation:
+
+- Windows strict workspace/all-target Clippy and rustfmt pass; unfiltered nextest
+  passes **1,027 tests**, with two platform/protocol tests skipped. The separately
+  requested name-filtered nextest command also ran and is not the full-suite gate.
+- Web lint/format checks and **203 Playwright tests** pass.
+- Linux/WSL, Rust 1.98.1 and pinned Terraform 1.9.8: eight explicit ignored tests
+  pass. These cover actual HTTP lock/query/state persistence in SQLite, actual
+  `job` Create/wait/Destroy with workspace reaping, killed Worker with a detached
+  descendant, fenced epoch replacement and missing-workspace reconstruction with
+  no second Create, real `serve` startup/shutdown/restart, mandatory OIDC/PAT
+  restart behavior, and legacy read-only gating with stale offline-plan rejection
+  and replay. A failed final state POST after real Destroy produces retained
+  emergency state, prevents terminal/capacity release and blocks reapply even
+  after the transport recovers. Lost completion acknowledgements are retried by
+  the real Worker HTTP client until it receives the original durable receipt.
+  The local process fixture uses Terraform's built-in `terraform_data`;
+  it is not Docker, Kubernetes or a cloud-provider acceptance result.
+- New Store tests exercise claim authentication, start handover, exact cleanup
+  revision, atomic completion/receipt replay, recovery quarantine and migration
+  commitments. Reaper tests retain emergency/unknown material and reject symlinks
+  and cross-Generation receipts.
+- Concurrent admission preserves the recovery reserve and counts unknown
+  quarantined executors against the worker limit. Bootstrap rejects zero or
+  excessive concurrency/operation timeouts before constructing runtime budgets.
+  Linux all-target Clippy, treefmt and NixOS module evaluation pass. CI runs the
+  real Forgejo harness for both Docker and a disposable Kind cluster; passing
+  process tests alone do not make either platform job a pass.
+- Real Kubernetes CI exposed a pre-init rejection of the bundled template's
+  comment containing `backend`. HTTP workspace validation now uses the existing
+  bounded HCL parser to reject actual backend/cloud blocks. A regression covers
+  all six bundled templates, comments/strings, malformed source and overrides.
+- Forgejo/Docker CI on `ea0dc96` passed successful/failed workflow cleanup,
+  daemon SIGKILL/restart, Jobs retention, label selection, stale demand, minimum
+  permissions, credential scans and idle expiry. Its busy hard-expiry scenario
+  exposed lost cleanup proof after a second restart while registration deletion
+  was retried. Recovery now retains only the exact verified revision after a
+  confirmed fence with no superseding command/lock; a new apply invalidates it.
+  A regression rejects later revisions and unresolved commands/locks. The full
+  [Docker job on a5b8095](https://github.com/5aaee9/shaula/actions/runs/36260661214/job/108455702249)
+  subsequently passed, including both retries across separate daemon restarts,
+  eventual resource/registration removal, terminal Generation and zero occupancy.
+- Forgejo/Kubernetes completed the entire harness on `4e9452f` in
+  [CI run 36260195383](https://github.com/5aaee9/shaula/actions/runs/36260195383/job/108454421786):
+  successful/failed workflows, restart, labels, stale demand, idle and busy hard
+  expiry, lost-registration quarantine and credential scans. The tested tuple
+  is Kind 0.33.0 / Kubernetes 1.37.0, Terraform 1.9.8 with the bundled provider
+  lock, Forgejo 16.0.4 and pinned runner 13.1.0. This does not establish GitHub
+  acceptance. A subsequent run completed an eight-second failed workflow before
+  the harness observed its running Job; running-projection cases now last 40
+  seconds and retain the original assertions. Reports additionally bind the
+  exact binary digest, checkout commit, kernel and provider-lock digest.
+- On `b444b88`, [Forgejo Docker and Kubernetes both passed](https://github.com/5aaee9/shaula/actions/runs/36260855850),
+  and [formal Nix package/NixOS E2E and 203 Playwright tests passed](https://github.com/5aaee9/shaula/actions/runs/36260855817).
+  The x86_64-linux package suite passed 1,017 tests plus the real Terraform HTTP
+  tests; the NixOS VMs exercised service start/stop/restart/reboot, OIDC/PAT and
+  missing-credential/provider failure behavior. This does not validate aarch64.
+- Subsequent review reproduced two state-completeness gaps. Recovery, Destroy
+  admission and cleanup verification now require the daemon's independently
+  retained successful Create identity, not just a fenced process and some state.
+  Offline inspect and import also reject foreign/rolled-back state relative to
+  that original identity. Missing proof preserves quarantine and occupancy;
+  a previous successful Create still permits delete-only recovery retries.
+  Reaper inventory now enforces its entry budget for flat and nested directories,
+  and transient cleanup errors receive bounded retries with secret-free warnings.
+  On `f09cdaf`, Windows full/filtered suites pass 1,027/793 tests respectively,
+  strict Windows/Linux Clippy and rustfmt pass, and all eight Linux process tests
+  pass again, including a real Worker completion with an injected cleanup failure.
+  These later changes require their own final CI results; earlier platform passes
+  are evidence for their named commits, not automatic acceptance of later code.
+
+- The independent hosted-Linux jobs at `935a5a0` passed actual lost Spawn ACK,
+  exec-before-Create crash, DELETE/Create-start competition, crash after committed
+  Create intent, and daemon SIGKILL after the Engine accepted Create. They also
+  passed a fenced full-set backup/restore with exact subsequent cleanup, plus
+  rejection of an older checkpoint after a real later external Create. Original
+  structured receipts and precise boundaries are in the
+  [Worker acceptance evidence](evidence/0042-worker-acceptance-2026-09-26/README.md).
+  The corrected real state-outage job at `6697ee3` also passes: emergency state
+  remains byte-exact after restart and no Create is replayed when HTTP recovers.
+  The four-Worker pressure profile passes on the same head: six competing Fleets,
+  three admissions and one recovery reserve, one mutation permit, peak Worker
+  RSS 30,544 KiB/two threads, and successful recovery at saturation. During 1,104
+  bounded log replays, 67 state requests complete with maximum latency 331 ms.
+  This is not maximum-count or arbitrary production-capacity acceptance.
+- LW-11/12/14 composition (2026-09-27). A daemon crash after `launch_pending`
+  but before identity registration was always classified Unknown, permanently
+  quarantining a Generation that never received a launch envelope. Restart now
+  fences that attempt's exact `shaula-{attempt}` cgroup and quarantines only when
+  it cannot prove it empty. A repeated `Prepared` under a new request id can no
+  longer overwrite the recorded preparation outcome. New real-cgroup tests cover
+  a job blocked on handoff, attempt exactness and stray group members (LW-11); an
+  unresolved Create spawn handover blocking the exclusive Fleet effect gate used
+  by DELETE and Auth Handoff, and a Create refused with no operation, handover or
+  apply after a committed DELETE (LW-12, mutation-checked); and reused PIDs,
+  foreign-host and previous-boot identities, tampered containment and vanished
+  groups never producing a fence (LW-14). On WSL2 6.18.33.2 with cgroup v2 via a
+  delegated systemd user scope, Rust 1.98.1 and Terraform 1.9.8, all 18 explicit
+  process tests pass; Windows Clippy/rustfmt and 796 nextest tests pass. The
+  daemon-side mapping from `launch_pending` to this fence has no end-to-end
+  `serve` crash test; LW-12 uses the real Worker and gates, not real GitHub.
+
+- LW-32 GitHub/Docker (2026-09-27) passes on the real repository at `e3e8c42`:
+  an isolated instance on the operator host ran the updated binary with the real
+  GitHub App; the dispatched workflow succeeded on the Generation's container,
+  the Generation became Busy, a daemon SIGKILL/restart mid-job recovered with
+  cleanup-only epoch 2 and no Create/JIT replay, and cleanup ended Destroyed
+  with zero occupancy, no container/volumes, retained Jobs, a tombstoned Fleet
+  and zero repository Runners. Three earlier attempts exposed and fixed: the JIT
+  absolute `/_work` folder that stopped official container runners at start;
+  systemd removing the delegated cgroup subtree after an ungraceful exit, now
+  proved through the recorded root cgroup ID (tested under user and system
+  managers); GitHub Generations never entering Busy (spec 0001); and a harness
+  expecting 404 instead of the 410 tombstone. GitHub/Kubernetes was not run and
+  is not claimed. After a restart the lost JobCompleted leaves the Jobs view at
+  `running`; the Generation still retires via the vanished-runner fallback. See
+  the [GitHub lifecycle receipt](evidence/0042-worker-acceptance-2026-09-26/README.md#real-github-lifecycle-lw-32-githubdocker-2026-09-27).
+
+**Release/merge acceptance.** The LW-32 GitHub/Docker gate now has a passing
+receipt on the updated binary; final CI on the tested head is still required.
+GitHub/Kubernetes and a real-GitHub Auth Handoff rotation remain unexercised and
+unclaimed. The final CI rerun after the
+ready-runner observation fix remains pending. The scoped LW-28 rehearsal
+above does not establish arbitrary production rollback or cross-host recovery.
+Historical platform receipts and old-binary workflows do not satisfy this gate.
+The implementation changes the default production path and requires explicit
+worker limits; it must not be deployed as an adapter-only, backward-compatible
+change. Earlier sections below describe their dated baselines and do not override
+this new path or these outstanding release conditions.
 
 ## Explainable reconciliation diagnostics (2026-09-26)
 

@@ -186,7 +186,11 @@ async fn spawn_mock(
         )
         .route(
             "/actions-service/_apis/runtime/runnerscalesets/42/generatejitconfig",
-            post(|| async {
+            post(|Json(body): Json<serde_json::Value>| async move {
+                // Official runner images run as a non-root user that cannot
+                // create a directory at the filesystem root; the work folder
+                // must stay relative to the runner root.
+                assert_eq!(body["workFolder"], "_work");
                 Json(serde_json::json!({
                     "runner": {"id": 9001, "name": "shaula-gen-1", "runnerScaleSetId": 42},
                     "encodedJITConfig": "super-secret-jit"

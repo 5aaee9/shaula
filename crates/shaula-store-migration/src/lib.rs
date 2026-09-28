@@ -29,6 +29,7 @@ pub mod m0023_principal_idempotency;
 pub mod m0024_personal_tokens;
 pub mod m0025_audit_credentials;
 pub mod m0026_diagnostics;
+pub mod m0027_lifecycle_workers;
 
 use sea_orm_migration::prelude::*;
 
@@ -66,6 +67,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0024_personal_tokens::Migration),
             Box::new(m0025_audit_credentials::Migration),
             Box::new(m0026_diagnostics::Migration),
+            Box::new(m0027_lifecycle_workers::Migration),
         ]
     }
 }

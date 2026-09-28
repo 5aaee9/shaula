@@ -42,7 +42,7 @@ impl FleetSupervisor {
             .filter(|generation| {
                 matches!(
                     generation.state,
-                    GenerationState::WaitingOnline | GenerationState::Idle
+                    GenerationState::WaitingOnline | GenerationState::Idle | GenerationState::Busy
                 )
             })
             .collect();
@@ -102,7 +102,12 @@ impl FleetSupervisor {
                     && generation.runner_name == runner.name
                     && runner.status.eq_ignore_ascii_case("online")
             });
-            if generation.state == GenerationState::Idle {
+            // Busy follows the same rule: a lost JobCompleted must not pin a
+            // Generation whose ephemeral runner has already deregistered.
+            if matches!(
+                generation.state,
+                GenerationState::Idle | GenerationState::Busy
+            ) {
                 if online {
                     diagnostic.pass(StageId::RunnerInventory);
                     diagnostic.outcome(Outcome::Satisfied);

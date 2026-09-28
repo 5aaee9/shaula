@@ -2,13 +2,30 @@
 //! scheduler: no lease expiry, force unlock, state purge or implicit migration.
 
 mod admin;
+mod admissions;
+mod cleanup;
+mod create_proof;
+pub use cleanup::CompletedWorkspace;
+mod cutover;
 mod operations;
+mod operator;
+mod recovery;
 mod row;
+mod worker;
+mod worker_completion;
+mod worker_effect;
+pub use recovery::RecoveryRecord;
+
+pub use cutover::{LegacyGeneration, MigrationClassification};
+mod worker_journal;
 
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseTransaction, Statement, Value};
 use shaula_core::state_backend::{StateError, StateResult};
 
 use crate::Store;
+
+pub use admissions::WorkerAdmissions;
+pub use worker_journal::SqliteWorkerJournal;
 
 /// Use only behind the private listener. Administrative methods are local
 /// daemon calls, never worker HTTP routes.

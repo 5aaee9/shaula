@@ -7,7 +7,6 @@ use shaula_core::ports::Clock;
 use shaula_daemon::bootstrap::ValidatedBootstrap;
 use shaula_store::registry_impl::SqliteControlPlane;
 use shaula_store::Store;
-use shaula_template::TemplateRuntime;
 use tracing::Instrument;
 
 use crate::{
@@ -20,6 +19,12 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
     // telemetry can initialize once with the CONFIGURED service name and
     // still precede every migration or remote effect (spec 0001 §13).
     let bootstrap = ValidatedBootstrap::load(std::path::Path::new(config_path))?;
+    if bootstrap.lifecycle.is_none() {
+        return Err(
+            "explicit lifecycle configuration is required; see production worker migration guide"
+                .into(),
+        );
+    }
     let _telemetry =
         shaula_observability::init(&bootstrap.service_name, bootstrap.otlp_endpoint.as_deref());
     // Telemetry is live: the startup span covers recovery and listener
@@ -52,6 +57,9 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
     let diagnostics = diagnostics::Diagnostics::new(store.clone(), &bootstrap).await;
     let jobs = std::sync::Arc::new(store.clone());
     let logs = diagnostics.logs.clone();
+    let mut worker_lifecycle =
+        crate::lifecycle::Lifecycle::start(store.clone(), &bootstrap, logs.clone()).await?;
+    let production_ready = !worker_lifecycle.migration_required;
 
     let clock: std::sync::Arc<dyn Clock> = std::sync::Arc::new(SystemClock);
     let artifact_library = std::sync::Arc::new(artifact_library::DbArtifactPublisher::new(
@@ -64,6 +72,7 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
         .map_err(|error| error.summary)?;
     let control_plane_store = std::sync::Arc::new(
         SqliteControlPlane::new(store, bootstrap.artifact_root.clone())
+            .with_worker_admissions(worker_lifecycle.admissions.clone())
             .with_artifact_cache(artifact_library.clone()),
     );
 
@@ -79,14 +88,7 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
 
     // Start the scheduler before serving HTTP. Remote Fleet work runs in
     // independent tasks; readiness cannot wait for a GitHub/IaC round trip.
-    let mut runtime = TemplateRuntime::new(bootstrap.terraform_executable.clone());
-    if let Some(logs) = &logs {
-        runtime = runtime
-            .with_operation_logs(logs.clone())
-            .with_operation_log_reader(logs.clone());
-    }
-    let runtime = std::sync::Arc::new(runtime);
-    let runtime_logs = runtime.clone();
+    let runtime = worker_lifecycle.workers.clone();
     let lifecycle: std::sync::Arc<dyn shaula_core::registry::LifecycleStore> =
         control_plane_store.clone();
     let wiring = wiring::SupervisorWiring::new(
@@ -108,9 +110,6 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
     .with_runner_max_lifetime(bootstrap.runner_max_lifetime)
     .with_setup_info_issuer(diagnostics.issuer.clone());
     let (shutdown_tx, wiring_shutdown) = tokio::sync::watch::channel(false);
-    let diagnostics_task = tokio::spawn(diagnostics.run(shutdown_tx.subscribe()));
-    let mut wiring_task = tokio::spawn(wiring.run(wiring_shutdown));
-    service.set_ready(true);
 
     // HTTP server (loopback-only; validated at config parse and bind).
     let (host, port) = bootstrap
@@ -154,7 +153,31 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
         }),
         artifact_publisher: artifact_library,
     };
-    let app = shaula_http::router::build_router(state);
+    let app = shaula_http::server::with_mutation_gate(
+        shaula_http::router::build_router(state),
+        service.clone(),
+        if production_ready {
+            "DaemonNotReady"
+        } else {
+            "MigrationRequired"
+        },
+    );
+    let management_listener = tokio::net::TcpListener::bind(http_config.listen_addr())
+        .await
+        .map_err(|_| "management listener bind failed")?;
+    let diagnostics_task = tokio::spawn(diagnostics.run(shutdown_tx.subscribe()));
+    let mut wiring_task = tokio::spawn(async move {
+        if production_ready {
+            wiring.run(wiring_shutdown).await;
+        } else {
+            let mut shutdown = wiring_shutdown;
+            let _ = shutdown.changed().await;
+        }
+    });
+    let workers = worker_lifecycle.workers.clone();
+    let worker_stop = shutdown_tx.subscribe();
+    let mut worker_supervision = tokio::spawn(async move { workers.supervise(worker_stop).await });
+    service.set_ready(production_ready);
 
     // Level-triggered scan loop: consumes outbox markers and runs static
     // validation over Template Candidates. The task is SUPERVISED: each
@@ -166,6 +189,10 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
     let scan_cascade = service.clone();
     let mut scan_shutdown = shutdown_tx.subscribe();
     let mut scan_handle = tokio::spawn(async move {
+        if !production_ready {
+            let _ = scan_shutdown.changed().await;
+            return;
+        }
         let mut ticker = tokio::time::interval(shaula_daemon::daemon::SCAN_INTERVAL);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
@@ -249,15 +276,17 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
     // ("shaula listening" is printed by the server AFTER a successful
     // bind — never before the outcome is known.)
     let server_shutdown = shutdown_tx.subscribe();
-    let mut server = tokio::spawn(shaula_http::server::serve(
+    let mut server = tokio::spawn(shaula_http::server::serve_bound(
         app,
-        http_config.listen_addr(),
+        management_listener,
         server_shutdown,
     ));
     // Listeners and workers are launched: startup is complete.
     drop(_startup);
 
     let mut scheduler_stopped = false;
+    let mut private_stopped = false;
+    let mut worker_stopped = false;
     let server_result = tokio::select! {
         _ = &mut wiring_task => {
             scheduler_stopped = true;
@@ -265,6 +294,16 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
             None
         }
         result = &mut server => Some(result),
+        _ = &mut worker_lifecycle.server => {
+            private_stopped = true;
+            service.set_ready(false);
+            None
+        }
+        _ = &mut worker_supervision => {
+            worker_stopped = true;
+            service.set_ready(false);
+            None
+        }
         _ = tokio::signal::ctrl_c() => {
             println!("shaula shutting down");
             None
@@ -279,6 +318,7 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
     // is proven before the ownership lock drops.
     let shutdown_span = tracing::info_span!("shaula.daemon.shutdown");
     let _shutdown = shutdown_span.enter();
+    service.set_ready(false);
     let _ = shutdown_tx.send(true);
     let drain = shaula_daemon::daemon::SCAN_INTERVAL;
     let server_join = match server_result {
@@ -302,12 +342,19 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
     };
     // Wiring cancels its scan and awaits every owned Fleet task on shutdown.
     // Do not abort that owner while it is proving child quiescence.
+    let worker_fence = worker_lifecycle
+        .workers
+        .shutdown(Duration::from_secs(5))
+        .await;
     let wiring_final = if scheduler_stopped {
         None
     } else {
         Some(wiring_task.await)
     };
-    runtime_logs.drain_operation_logs().await;
+    let worker_shutdown = worker_lifecycle.close(private_stopped).await;
+    if !worker_stopped {
+        let _ = worker_supervision.await;
+    }
     let _ = diagnostics_task.await;
     drop(_lock);
 
@@ -319,6 +366,14 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
     // bounded window to export what is buffered (spec 0001 §12, §13).
     drop(_shutdown);
     _telemetry.flush(Duration::from_secs(2)).await;
+    worker_shutdown?;
+    worker_fence.map_err(|_| "worker fence remained uncertain")?;
+    if worker_stopped {
+        return Err("worker supervision stopped unexpectedly".into());
+    }
+    if private_stopped {
+        return Err("private lifecycle listener stopped unexpectedly".into());
+    }
     if scheduler_stopped {
         return Err("supervisor scheduler stopped unexpectedly".into());
     }

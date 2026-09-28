@@ -5,7 +5,30 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { faultProxy } from "./faults.mjs";
-import { freePort } from "./support.mjs";
+import { freePort, until } from "./support.mjs";
+
+test("accepted Docker Create can outlive its withheld response", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "shaula-create-response-"));
+  const socketPath = join(dir, "engine.sock");
+  let committed = 0;
+  const upstream = createServer((req, res) => {
+    req.resume(); committed++; res.writeHead(201); res.end('{"Id":"fixture"}');
+  });
+  await new Promise(resolve => upstream.listen(socketPath, resolve));
+  const endpoint = join(dir, "proxy.sock");
+  const proxy = await faultProxy({ socketPath, listen: endpoint });
+  let received = false;
+  try {
+    proxy.gate.holdCreateResponses = true;
+    const response = call(endpoint, "/v1.41/containers/create?name=test", "POST").then(status => { received = true; return status; });
+    await until("committed response withheld", () => proxy.gate.heldCreates === 1);
+    assert.equal(committed, 1);
+    assert.equal(received, false);
+    for (const release of proxy.gate.heldResponses.splice(0)) release();
+    assert.equal(await response, 201);
+    assert.equal(proxy.gate.containerCreates, 1);
+  } finally { await proxy.close(); await new Promise(resolve => upstream.close(resolve)); await rm(dir, { recursive: true }); }
+});
 
 function call(socketPath, path, method) {
   return new Promise((resolve, reject) => {
@@ -42,9 +65,10 @@ test("demand failure and a lost registration response never intercept task acqui
     } else { res.writeHead(204); res.end(); }
   });
   await new Promise(resolve => upstream.listen(0,"127.0.0.1",resolve));
-  const port = await freePort();
-  const proxy = await faultProxy({target:`http://127.0.0.1:${upstream.address().port}`,listen:{host:"127.0.0.1",port}});
-  const url = `http://127.0.0.1:${port}`;
+  const proxy = await faultProxy({target:`http://127.0.0.1:${upstream.address().port}`,listen:{host:"127.0.0.1",port:0}});
+  assert(proxy.address.port > 0);
+  assert.notEqual(proxy.address.port, upstream.address().port);
+  const url = `http://127.0.0.1:${proxy.address.port}`;
   try {
     proxy.gate.failJobs = true;
     assert.equal((await fetch(`${url}/api/v1/admin/actions/runners/jobs?labels=linux`)).status,503);

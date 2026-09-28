@@ -106,6 +106,13 @@ impl TemplateRuntime {
 
 #[async_trait]
 impl TemplateRuntimePort for TemplateRuntime {
+    async fn prepare_recovery(
+        &self,
+        request: &TemplateDestroyRequest,
+        input: &[u8],
+    ) -> Result<(), TemplateOutcomeError> {
+        self.recover_workspace(request, input).await
+    }
     /// R9-07 (spec 0004 §6): materialize + LOCKED init before any remote
     /// effect — init is long, local and retryable; the JIT token minted
     /// afterwards is short-lived.
@@ -135,6 +142,7 @@ impl TemplateRuntimePort for TemplateRuntime {
 }
 #[path = "runtime_backend.rs"]
 mod backend;
+
 #[path = "runtime_bootstrap.rs"]
 mod bootstrap;
 #[path = "runtime_create.rs"]
@@ -143,6 +151,8 @@ mod create_flow;
 mod destroy_flow;
 #[path = "runtime_logging.rs"]
 mod logging;
+#[path = "runtime_recovery.rs"]
+mod recovery;
 
 /// Convenience wrapper for constructing the workspace before a Create.
 pub fn prepare_workspace(

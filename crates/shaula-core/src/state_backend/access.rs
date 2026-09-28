@@ -6,7 +6,7 @@ use super::{StateError, StateResult};
 use crate::secret::SecretString;
 
 /// Backend ownership, not a process-death proof or a Terraform lock ID.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StateClaim {
     pub generation_id: Uuid,
     pub worker_epoch: i64,

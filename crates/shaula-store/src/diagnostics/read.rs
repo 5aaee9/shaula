@@ -7,6 +7,7 @@ use shaula_core::{
 
 mod budget;
 mod ledger;
+mod worker;
 
 #[async_trait::async_trait]
 impl DiagnosticsReadPort for Store {
@@ -137,6 +138,7 @@ impl Store {
                 }
             }
         }
+        worker::enrich(&tx, kind, key, &mut questions, now).await?;
         for q in &mut questions {
             if q.reasons.is_empty() && q.outcome == Outcome::Unknown {
                 q.reason(

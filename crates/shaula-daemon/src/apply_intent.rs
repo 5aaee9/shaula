@@ -117,6 +117,18 @@ impl TrackedApplyIntentSink {
 
 #[async_trait::async_trait]
 impl ApplyIntentSink for TrackedApplyIntentSink {
+    async fn spawn_handover(&self, provenance: &PlanProvenance) -> Result<(), String> {
+        self.inner.spawn_handover(provenance).await
+    }
+
+    async fn command_ended(&self, provenance: &PlanProvenance) -> Result<(), String> {
+        self.inner.command_ended(provenance).await
+    }
+
+    async fn bootstrap_ended(&self, provenance: &PlanProvenance) -> Result<(), String> {
+        self.inner.bootstrap_ended(provenance).await
+    }
+
     async fn authorize_bootstrap(&self, provenance: &PlanProvenance) -> Result<ApplyClaim, String> {
         self.inner.authorize_bootstrap(provenance).await
     }

@@ -189,6 +189,11 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
         next: shaula_core::lifecycle::GenerationState,
         now: i64,
     ) -> CoreResult<()> {
+        if next == shaula_core::lifecycle::GenerationState::Destroyed
+            && self.complete_worker_generation(id, now).await?
+        {
+            return Ok(());
+        }
         self.store
             .generation_advance(id, next, None, now)
             .await
@@ -266,6 +271,13 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
     }
 
     async fn generation_state_identity(&self, id: &str) -> CoreResult<Option<(String, u64)>> {
+        if let Some(identity) = crate::http_state::SqliteStateBackend::new(self.store.clone())
+            .recovered_state_identity(id)
+            .await
+            .map_err(super::worker_error)?
+        {
+            return Ok(Some(identity));
+        }
         self.store
             .generation_state_identity(id)
             .await

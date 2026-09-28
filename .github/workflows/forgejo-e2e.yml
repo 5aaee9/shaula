@@ -37,9 +37,26 @@ jobs:
         run: docker rm --force forgejo
 
   lifecycle:
-    name: Shaula Terraform lifecycle
+    name: Shaula Terraform lifecycle (${{ matrix.name }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: docker, platform: docker, suite: baseline }
+          - { name: kubernetes, platform: kubernetes, suite: baseline }
+          - { name: worker backup, platform: docker, suite: backup }
+          - { name: worker pressure, platform: docker, suite: pressure }
+          - { name: worker control faults, platform: docker, suite: control }
+          - { name: worker state outage, platform: docker, suite: backend-outage }
+          - { name: worker interrupted create, platform: docker, suite: interrupted-create }
+    env:
+      SHAULA_ACCEPTANCE_BACKEND: ${{ matrix.platform }}
+      SHAULA_ACCEPTANCE_SUITE: ${{ matrix.suite }}
+      SHAULA_ACCEPTANCE_CONTROL_FAULTS: "1"
+      KUBECONFIG: ${{ github.workspace }}/.acceptance-kubeconfig
+      SHAULA_ACCEPTANCE_KUBE_CONTEXT: kind-shaula-lifecycle
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -60,7 +77,31 @@ jobs:
           printf '[Service]\nEnvironment=DOCKER_MIN_API_VERSION=1.24\n' | sudo tee /etc/systemd/system/docker.service.d/shaula-acceptance.conf >/dev/null
           sudo systemctl daemon-reload
           sudo systemctl restart docker
+      # Exact upstream bytes, installed only on this disposable hosted runner.
+      # Kind's compiled default node image is pinned by this release binary.
+      - name: Create isolated Kubernetes acceptance cluster
+        if: matrix.platform == 'kubernetes'
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64 \
+            --output "$RUNNER_TEMP/kind"
+          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
+          chmod 0755 "$RUNNER_TEMP/kind"
+          "$RUNNER_TEMP/kind" create cluster --name shaula-lifecycle --kubeconfig "$KUBECONFIG" --wait 180s
+          kubectl --kubeconfig "$KUBECONFIG" --context "$SHAULA_ACCEPTANCE_KUBE_CONTEXT" get nodes
       - name: Exercise lifecycle, permissions, Jobs, faults and credential boundaries
         run: |
-          nix develop --command node --test scripts/forgejo-lifecycle/*.test.mjs
-          nix develop --command node scripts/forgejo-lifecycle/run.mjs
+          sudo systemd-run --unit=shaula-acceptance --wait --pipe --collect \
+            --property=Delegate=yes --property="User=$(id -un)" \
+            --working-directory="$PWD" --setenv="PATH=$PATH" --setenv="HOME=$HOME" \
+            --setenv="KUBECONFIG=$KUBECONFIG" --setenv="SHAULA_ACCEPTANCE_KUBE_CONTEXT=$SHAULA_ACCEPTANCE_KUBE_CONTEXT" \
+            --setenv="SHAULA_ACCEPTANCE_BACKEND=$SHAULA_ACCEPTANCE_BACKEND" \
+            --setenv="SHAULA_ACCEPTANCE_SUITE=$SHAULA_ACCEPTANCE_SUITE" \
+            --setenv="SHAULA_ACCEPTANCE_CONTROL_FAULTS=$SHAULA_ACCEPTANCE_CONTROL_FAULTS" \
+            "$(command -v nix)" develop --command bash scripts/lifecycle-acceptance.sh
+      - name: Remove disposable Kubernetes cluster
+        if: always() && matrix.platform == 'kubernetes'
+        run: |
+          if test -x "$RUNNER_TEMP/kind"; then
+            "$RUNNER_TEMP/kind" delete cluster --name shaula-lifecycle
+          fi

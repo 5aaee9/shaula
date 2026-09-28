@@ -19,6 +19,7 @@ pub mod jobs;
 mod lifecycle_bootstrap;
 pub mod lifecycle_repo;
 mod listener_acquisitions;
+mod listener_activity;
 mod listener_messages;
 mod listener_observations;
 pub mod operation_logs;
@@ -59,6 +60,7 @@ mod tests {
     mod forgejo_pool_fences;
     mod forgejo_pool_support;
     mod forgejo_weighted;
+    mod listener_activity;
     mod listener_lifecycle;
     pub(crate) mod listener_messages;
     mod listener_recovery;

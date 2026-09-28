@@ -1,4 +1,5 @@
 //! Production serve restart and OIDC outage boundaries for local PATs.
+#![cfg(target_os = "linux")]
 #[path = "support/oidc_startup.rs"]
 mod support;
 use shaula_client::{
@@ -13,6 +14,7 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 fn configure(fixture: &Startup, enabled: bool, grant: bool) -> TestResult {
     let path = fixture.directory.path().join("bootstrap.json");
     let mut config: serde_json::Value = serde_json::from_slice(&std::fs::read(&path)?)?;
+    config["lifecycle"]["cgroup_root"] = std::env::var("SHAULA_TEST_CGROUP")?.into();
     config["http"]["access_tokens"] = serde_json::json!({"enabled":enabled});
     config["http"]["authorization"] = if grant {
         serde_json::json!([{"issuer":fixture.provider.issuer,"subject":"ops","scopes":Scope::ALL.iter().map(|s|s.as_str()).collect::<Vec<_>>()}])
@@ -30,7 +32,7 @@ async fn start(fixture: &Startup) -> Result<Running, Box<dyn std::error::Error>>
             .stderr(Stdio::null())
             .spawn()?,
     );
-    for _ in 0..100 {
+    for _ in 0..600 {
         if child.0.try_wait()?.is_some() {
             return Err("serve exited during startup".into());
         }
@@ -51,6 +53,7 @@ fn stop(mut child: Running) -> TestResult {
 }
 
 #[tokio::test]
+#[ignore = "requires SHAULA_TEST_CGROUP; run scripts/lifecycle-worker-tests.sh"]
 async fn pat_survives_runtime_provider_outage_but_not_disabled_or_removed_grant_restart(
 ) -> TestResult {
     let fixture = Startup::new();

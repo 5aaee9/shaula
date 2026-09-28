@@ -22,6 +22,10 @@ let
       ];
     };
   base = {
+    settings.lifecycle = {
+      max_workers = 8;
+      recovery_reserve = 2;
+    };
     enable = true;
     bindingsKeyFile = "/run/secrets/bindings";
     oidc = {
@@ -44,6 +48,8 @@ assert valid.services.shaula.package.drvPath == shaula.drvPath;
 assert valid.services.shaula.terraformPackage.drvPath == terraform.drvPath;
 assert valid.services.shaula.templateSourceDirectories == [ "${shaula}/share/shaula/templates" ];
 assert valid.systemd.services.shaula.serviceConfig.KillSignal == "SIGINT";
+assert valid.systemd.services.shaula.serviceConfig.Delegate;
+assert !valid.systemd.services.shaula.serviceConfig.ProtectControlGroups;
 assert rejects { bindingsKeyFile = "/nix/store/not-a-secret"; } "absolute runtime paths";
 assert rejects { oidc.clientSecretFile = "relative-secret"; } "absolute runtime paths";
 assert rejects {

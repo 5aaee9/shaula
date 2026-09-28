@@ -187,7 +187,9 @@ impl ScalesetClient {
             "{}/{scale_set_id}/generatejitconfig",
             wire::SCALE_SET_ENDPOINT
         );
-        let body = serde_json::json!({ "name": runner_name, "workFolder": "/_work" });
+        // Relative to the runner root: official container images run as a
+        // non-root user that cannot create a directory at the filesystem root.
+        let body = serde_json::json!({ "name": runner_name, "workFolder": "_work" });
         let response = self.new_effect_request(&path, body).await;
         let outcome = definite_or_uncertain::<wire::RunnerScaleSetJitRunnerConfig>(response)
             .await

@@ -27,6 +27,10 @@ mod fleet_tasks;
 #[cfg(test)]
 #[path = "../../shaula-http/tests/support/mod.rs"]
 pub(crate) mod http_oidc;
+mod job;
+mod lifecycle;
+mod lifecycle_cleanup;
+mod maintenance;
 mod oidc_args;
 mod serve;
 mod wiring;
@@ -63,6 +67,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Offline, ownership-locked state-format migration.
+    Maintenance {
+        #[command(subcommand)]
+        command: maintenance::Command,
+    },
     #[command(flatten)]
     Remote(client_cli::args::RemoteCommand),
     /// Run the HTTP control plane and all active fleets.
@@ -77,8 +86,15 @@ enum Command {
     Version,
 }
 
+fn main() {
+    if std::env::args_os().nth(1).is_some_and(|arg| arg == "job") {
+        std::process::exit(job::dispatch());
+    }
+    run_cli();
+}
+
 #[tokio::main]
-async fn main() {
+async fn run_cli() {
     if let Some(code) = shaula_template::ssh_helper::dispatch() {
         std::process::exit(code);
     }
@@ -113,6 +129,12 @@ async fn main() {
         }
     };
     match cli.command {
+        Command::Maintenance { command } => {
+            if let Err(error) = maintenance::run(command).await {
+                eprintln!("shaula maintenance: {error}");
+                std::process::exit(1);
+            }
+        }
         Command::Remote(command) => std::process::exit(client_cli::run(cli.client, command).await),
         Command::Version => {
             println!("shaula {}", env!("CARGO_PKG_VERSION"));

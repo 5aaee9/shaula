@@ -16,6 +16,7 @@ let
       template_source_dirs = cfg.templateSourceDirectories;
       http.listen = "127.0.0.1:8080";
       execution.engines.terraform.executable = lib.getExe cfg.terraformPackage;
+      lifecycle.executor = "exec";
     } cfg.settings
   );
   runtimeSecret = path: lib.hasPrefix "/" path && !(lib.hasPrefix "/nix/store/" path);
@@ -139,6 +140,10 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       {
+        assertion = cfg.settings ? lifecycle.max_workers && cfg.settings ? lifecycle.recovery_reserve;
+        message = "Shaula lifecycle.max_workers and lifecycle.recovery_reserve require explicit deployment limits.";
+      }
+      {
         assertion = runtimeSecret cfg.bindingsKeyFile && runtimeSecret cfg.oidc.clientSecretFile;
         message = "Shaula secret files must be absolute runtime paths outside /nix/store; pass strings, not Nix paths.";
       }
@@ -199,7 +204,8 @@ in
         ProtectHome = true;
         ProtectKernelTunables = true;
         ProtectKernelModules = true;
-        ProtectControlGroups = true;
+        Delegate = true;
+        ProtectControlGroups = false;
         RestrictSUIDSGID = true;
         LockPersonality = true;
         RestrictAddressFamilies = [

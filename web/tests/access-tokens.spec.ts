@@ -77,7 +77,10 @@ test("issuance has no default scopes, reveals once, and clears secret on navigat
     secret,
   );
   await page.getByRole("link", { name: "Fleets", exact: true }).click();
+  await expect(page).toHaveURL(/\/fleets$/);
+  await expect(page.getByText(secret, { exact: true })).toHaveCount(0);
   await page.getByRole("link", { name: "Access tokens", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/access-tokens$/);
   await expect(page.getByText(secret, { exact: true })).toHaveCount(0);
 });
 
