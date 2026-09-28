@@ -1,6 +1,6 @@
 # User Access Tokens, Rust API Client and Web-equivalent CLI
 
-- Status: **Draft / proposed**。本文定义目标契约，不表示实现、测试或发布验收已完成。
+- Status: **Accepted contract** (2026-09-27)。已实现并部署；实现、测试与尚缺的外部验收见 [实现状态](../IMPLEMENTATION_STATUS.md#personal-access-tokens-and-remote-cli-2026-09-25)。
 - Date: 2026-09-25
 - Repository baseline: `5aaee9/shaula@118a732405069908d62fce7a9639c1079d9d348e`
 - Decision: [ARD-0039](../ard/0039-user-access-tokens-and-api-client.md)

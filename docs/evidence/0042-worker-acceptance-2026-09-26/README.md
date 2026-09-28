@@ -49,8 +49,9 @@ published artifact digest is retained in its receipt.
 - Backup at `6697ee3` reproduced that same queued-status race after restoration;
   the Generation had already reached Destroyed with its completion receipt.
   `589da3a` applies the accepted-run/40-second observation to the backup and
-  control suites too. Its final complete CI rerun remains pending; the earlier
-  successful receipt is preserved with its original commit, not relabelled.
+  control suites too. The complete suite passed on merged `main` `d10d03c`
+  ([run 36373010010](https://github.com/5aaee9/shaula/actions/runs/36373010010)).
+  The receipts above are preserved with their original commits, not relabelled.
 - The pre-exec crash window is now classified from the attempt's exact cgroup,
   and LW-11/12/14 composition cases have local real-cgroup tests (see
   IMPLEMENTATION_STATUS). They are not hosted-CI receipts: the explicit process

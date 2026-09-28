@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-09-26
 relates_to: ["0014", "0024", "0040"]
 ---
@@ -10,7 +10,7 @@ relates_to: ["0014", "0024", "0040"]
 - Existing protocol/architecture: [spec 0010](../specs/0010-lifecycle-worker-and-http-state-backend.md) / [ADR-0014](0014-run-lifecycle-workers-with-a-database-http-state-backend.md)
 - Repository baseline: `93d607bb488d52b2e12e8537adc009fd3b1aad3d`
 
-本 ARD 提议已接受架构的生产接线和迁移选择，不重新接受一次 Worker/state 架构，不取代 spec 0010 的唯一协议所有权，也不宣称任何尚未执行的验收已通过。状态保持 `proposed`，由维护者审阅决定。
+本 ARD 提议已接受架构的生产接线和迁移选择，不重新接受一次 Worker/state 架构，不取代 spec 0010 的唯一协议所有权，也不宣称任何尚未执行的验收已通过。维护者已于 2026-09-27 接受本决定；接受本身不代表 spec 0042 的全部验收已通过。
 
 PR #6 已补生产实现，具体实现、Linux 宿主限制、实际测试与尚缺发布证据见
 [implementation status](../IMPLEMENTATION_STATUS.md) 和 [运行指南](../lifecycle-workers.md)。

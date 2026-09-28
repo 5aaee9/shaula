@@ -1,6 +1,6 @@
 # Spec 0039 Appendix: API / Web / Rust Client / CLI Parity
 
-- Status: **Draft / proposed**；这是目标覆盖清单，不是已实现/测试通过报告。
+- Status: **Accepted** (2026-09-27)；这是规范性覆盖清单。逐项实现与测试证据见 [实现状态](../IMPLEMENTATION_STATUS.md#personal-access-tokens-and-remote-cli-2026-09-25)，本表本身不是测试通过报告。
 - Baseline: `118a732405069908d62fce7a9639c1079d9d348e`，2026-09-25 核对。
 - Parent contract: [spec 0039](0039-user-access-tokens-and-cli.md)
 - Sources: [代码索引](../design/0039-implementation-notes.md#source-index)

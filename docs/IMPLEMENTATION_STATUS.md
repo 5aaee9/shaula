@@ -2,8 +2,11 @@
 
 Status: Partial acceptance. The production lifecycle-worker/HTTP-state path and
 explicit offline migration are implemented in PR #6, with local Linux process
-and Windows regression evidence below. The complete spec 0042 acceptance matrix,
-real-GitHub multi-account acceptance and production migration remain pending.
+and Windows regression evidence below. PR #6 is merged, and the LW-32
+GitHub/Docker lifecycle passed on the real repository (2026-09-27). The rest of
+the spec 0042 acceptance matrix (GitHub/Kubernetes, real Auth Handoff rotation,
+maximum-scale load), real-GitHub multi-account acceptance and production migration remain
+pending. Open work is summarized in [Remaining staged work](#remaining-staged-work-updated-2026-09-27).
 Evidence baseline: `b007fbc` (HTTP-backend increment), the Nix packaging and
 NixOS deployment increment of 2026-09-07, and the multi-account authentication
 increment of 2026-09-07; historical review reports dated 2026-09-06.
@@ -156,10 +159,13 @@ Local evidence obtained for this implementation:
   the [GitHub lifecycle receipt](evidence/0042-worker-acceptance-2026-09-26/README.md#real-github-lifecycle-lw-32-githubdocker-2026-09-27).
 
 **Release/merge acceptance.** The LW-32 GitHub/Docker gate now has a passing
-receipt on the updated binary; final CI on the tested head is still required.
+receipt on the updated binary. Final CI on merged `main` (`d10d03c`, which
+contains the ready-runner observation fix and the `589da3a` harness change)
+passed: [Forgejo/worker suites](https://github.com/5aaee9/shaula/actions/runs/36373010010)
+(Forgejo Docker and Kubernetes, worker control faults, interrupted Create,
+state outage, backup and pressure) and [Nix package/NixOS E2E plus Playwright](https://github.com/5aaee9/shaula/actions/runs/36373010091).
 GitHub/Kubernetes and a real-GitHub Auth Handoff rotation remain unexercised and
-unclaimed. The final CI rerun after the
-ready-runner observation fix remains pending. The scoped LW-28 rehearsal
+unclaimed. The scoped LW-28 rehearsal
 above does not establish arbitrary production rollback or cross-host recovery.
 Historical platform receipts and old-binary workflows do not satisfy this gate.
 The implementation changes the default production path and requires explicit
@@ -1210,7 +1216,8 @@ end-to-end workflows.
   probing; a second live process fails closed), migration-before-serve
   ordering, supervised scan loop with graceful shutdown, Day-0 JSON
   telemetry (`shaula-observability`: EnvFilter + JSON layer, bounded
-  in-process metric counters; no operation spans or OTLP export yet).
+  in-process metric counters; OTLP/HTTP metric and span export was added
+  later in `744b75b`).
 
 ## Durable data compatibility policy (R8-03)
 
@@ -1369,56 +1376,42 @@ acceptance, **not** a Runner Profile/GitHub/Kubernetes/Docker conformance attest
 
 Commands, service configuration and acceptance boundaries are in [the Nix guide](nix.md).
 
-## Staged (next phases; not yet wired or externally validated)
+## Remaining staged work (updated 2026-09-27)
 
-- `shaula job`, exec Driver, protected launch handoff, worker control capability /
-  client, GitHub gate, Create-start handover, command budgets and restart fencing
-  are not yet implemented. `serve` does not yet bind `StateServer` or issue worker
-  claims; production still uses the daemon-owned local-state lifecycle. No new
-  backend behavior is silently enabled for an existing Generation. The adapter
-  tests above do not establish complete compliance with
-  [spec 0010](specs/0010-lifecycle-worker-and-http-state-backend.md) /
-  [ADR-0014](ard/0014-run-lifecycle-workers-with-a-database-http-state-backend.md).
-  Complete worker/provider crash and backend-outage recovery, atomic terminal
-  completion, backup/restore and an explicit legacy state importer remain release
-  gates. `m0007` creates a schema, not a legacy-state migration.
-- Mandatory management OIDC is implemented with local test coverage; acceptance
-  against the actual deployment's registered Provider and API client remains a
-  release gate. See the dedicated OIDC evidence section below.
-- The per-Fleet capacity/ownership/cleanup supervisor and Auth validator are
-  started by the binary. The listener repair above adds separately scheduled
-  sessions and persist-before-ACK message ingestion/acquisition. WaitingOnline
-  generations are driven by the spec 0024 readiness reconciliation
-  (inventory-online → Idle; readiness timeout → CleanupRequired, covering
-  ephemeral JIT runners that self-deregister after their single job).
-  Fleet decommission converges end-to-end in wiring tests: the deletion-
-  marked fleet's cleanup supervisor binds the last admitted spec revision
-  (DELETE writes no spec row), retires all owned generations and lands
-  tombstone + `Decommissioned` + Change `Succeeded` in one transaction.
-  Complete busy-state classification, operation recovery and real-platform
-  decommission acceptance remain open. Store and scripted-listener
-  tests alone do not prove these complete external workflows.
-- End-to-end real-GitHub validation and the Go-oracle differential suite
-  (`references/scaleset`, pinned commit) have not been executed.
-- Bundled-profile conformance remains a runtime evidence gap, independent of
-  automatic static activation under spec 0017. The Docker provider
-  now has a real Terraform-generated lock for `kreuzwerker/docker` 3.0.2 and
-  a historical privately imported shim image pin. Current official image pins
-  and host bootstrap supersede that source; Kubernetes full runtime acceptance
-  remains staged. `scripts/docker-conformance/` supplies
-  an external local-state Terraform smoke harness with protected diagnostics
-  and explicit GitHub removal evidence; it never asserts full conformance or
-  produces an activation attestation. The [2026-09-08 real smoke](evidence/docker-smoke-2026-09-08/README.md)
-  created one container as the Shaula OS identity, observed GitHub online,
-  completed an actual job, confirmed safe GitHub removal, and verified Terraform
-  Destroy/empty state/container absence. This does not implement the independent
-  exec Driver or worker/HTTP-backend recovery. Full exact-tuple conformance is
-  still required to claim that tested runtime guarantee. See the [harness instructions](docker-conformance.md).
-- OTLP export pipeline and OTel SDK instrumentation (bounded in-process
-  counters and their call sites exist; no span/export pipeline yet);
-  remaining endpoint surface (notably pagination and artifact metadata GET),
-  and Profile reference clearance/retention/GC. Template/Auth revision and
-  attestation reads already have handlers in
+This section lists only work that is still open after PR #6. Dated sections
+above describe their own baselines and remain historical records.
+
+- **Worker/HTTP-state path: implemented.** `shaula job`, the exec Driver,
+  protected launch handoff, worker control capability/client, GitHub gate,
+  Create-start handover, command budgets, restart fencing, `StateServer`
+  binding, atomic terminal completion, backup/restore and the explicit offline
+  legacy-state importer are wired into `serve` (see the PR #6 section at the
+  top). The open spec 0042 acceptance gates are the ones listed there:
+  GitHub/Kubernetes and a real-GitHub Auth Handoff rotation (LW-32), an end-to-end `serve` crash test of the `launch_pending`
+  mapping, maximum-scale load (LW-30/D3), and arbitrary production rollback or
+  cross-host recovery beyond the scoped LW-28 rehearsal.
+- **Telemetry: implemented.** `shaula-observability` exports bounded metrics and
+  operation spans over OTLP/HTTP (`744b75b`, ARD-0032) when an endpoint is
+  configured. No OpenTelemetry SDK is linked; export failures are counted as
+  degraded and never block lifecycle work.
+- Mandatory management OIDC is implemented and the deployed browser/PAT path
+  passed (spec 0039 section above). A registered-Provider API-JWT client
+  acceptance remains open because the deployed Kanidm registration cannot mint
+  the distinct API audience.
+- Fleet decommission converges end-to-end in wiring tests and in the real
+  GitHub/Docker and Forgejo Docker/Kubernetes lifecycles. Real-platform
+  decommission on the remaining platforms is still unclaimed.
+- The Go-oracle differential suite (`references/scaleset`, pinned commit) has not
+  been executed. Real GitHub multi-account routing (D1) is not yet accepted.
+- Bundled-profile exact-tuple conformance (R1/R3) remains a runtime evidence gap,
+  independent of automatic static activation under spec 0017. Real receipts exist
+  for Docker (the [2026-09-08 smoke](evidence/docker-smoke-2026-09-08/README.md)
+  and the worker lifecycles) and Forgejo on Kind; Kubernetes security-context,
+  RBAC and resource-limit acceptance is still open. See the [harness instructions](docker-conformance.md).
+- Remaining endpoint surface: list pagination (only Jobs invocation/log reads
+  accept cursors) and an artifact metadata GET. Protected Profile bytes and
+  revision history are retained indefinitely; retention/GC is part of D2.
+  Template/Auth revision and attestation reads exist in
   `crates/shaula-http/src/router/profile_reads.rs`; their existence is not
   evidence that the entire specified read representation is complete.
 

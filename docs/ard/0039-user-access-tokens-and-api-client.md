@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-09-25
 amends: [0010, 0012, 0013]
 ---
@@ -124,7 +124,7 @@ Access Token 是 bearer credential，持有者可在其有效权限内使用；T
 
 接受本 ARD 时同步修订 spec 0007（crate ownership）、spec 0008（Web Token 页与 CLI 对等）、spec 0009（新增凭据种类及有限 opaque 例外），并为 ARD-0013 添加 amended-by 引用。spec 0002/0005 的幂等协议与实现须统一到 principal-scoped namespace；spec 0019/0028 的既有日志/finalize 安全语义保持不变。
 
-`docs/README.md` 增加新规范的权威入口，`CONTEXT.md` 增加 Personal Access Token / primary authentication / credential provenance 术语，`oidc-deployment.md` 解释授权配置与撤权边界，`IMPLEMENTATION_STATUS.md` 分项记录实际实现和证据。不能把本 proposed ARD 当成已经落地的凭据系统。
+`docs/README.md` 增加新规范的权威入口，`CONTEXT.md` 增加 Personal Access Token / primary authentication / credential provenance 术语，`oidc-deployment.md` 解释授权配置与撤权边界，`IMPLEMENTATION_STATUS.md` 分项记录实际实现和证据。接受本 ARD 不等于外部验收已完成；实际证据以实现状态为准。
 
 ## Validation and acceptance
 
