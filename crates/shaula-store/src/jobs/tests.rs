@@ -216,3 +216,66 @@ async fn exact_numeric_runner_evidence_is_required_and_completion_needs_start() 
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn running_job_on_destroyed_runner_is_stale_until_completion_is_observed() -> TestResult {
+    use sea_orm::ConnectionTrait;
+    let (store, context) = crate::tests::listener_messages::ready().await?;
+    generation(&store, "generation", "runner-42").await?;
+    let mut started = message(1, "opaque");
+    started.job_started.push(JobStartedMessage {
+        runner_request_id: 71,
+        job_id: "opaque".into(),
+        runner_id: 42,
+        runner_name: "runner-42".into(),
+        metadata: Default::default(),
+    });
+    store
+        .listener_ingest("fleet", &context, &started, 20)
+        .await?;
+    let running = |status: &str| JobsQuery {
+        status: Some(status.into()),
+        ..Default::default()
+    };
+    let job = store.list_jobs(running("running")).await?.items;
+    assert_eq!(job.len(), 1);
+    assert_eq!(job[0].freshness, "unknown");
+    store
+        .connection()
+        .execute_unprepared("UPDATE runner_generations SET state='Destroyed' WHERE id='generation'")
+        .await?;
+    assert!(store.list_jobs(running("running")).await?.items.is_empty());
+    let stale = &store.list_jobs(running("unknown")).await?.items[0];
+    assert_eq!(stale.observed_status, ObservedStatus::Unknown);
+    assert_eq!(stale.freshness, "stale");
+    let detail = store.get_job(&stale.id).await?.ok_or("job missing")?;
+    assert_eq!(detail.job.observed_status, ObservedStatus::Unknown);
+    assert!(
+        detail
+            .observations
+            .iter()
+            .any(|o| o.kind == shaula_core::jobs::ObservationKind::Started),
+        "last known Started is retained"
+    );
+    let generation = store
+        .get_generation("generation")
+        .await?
+        .ok_or("generation missing")?;
+    assert_eq!(generation.jobs[0].observed_status, ObservedStatus::Unknown);
+    let mut completed = message(2, "opaque");
+    completed.job_completed.push(JobCompletedMessage {
+        runner_request_id: 71,
+        job_id: "opaque".into(),
+        runner_id: 42,
+        runner_name: "runner-42".into(),
+        metadata: Default::default(),
+        result: Some("succeeded".into()),
+    });
+    store
+        .listener_ingest("fleet", &context, &completed, 30)
+        .await?;
+    let done = &store.list_jobs(JobsQuery::default()).await?.items[0];
+    assert_eq!(done.observed_status, ObservedStatus::Completed);
+    assert_eq!(done.freshness, "unknown");
+    Ok(())
+}

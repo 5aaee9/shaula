@@ -8,11 +8,33 @@ use shaula_core::jobs::{
 use super::{decode, query::PageQuery, rows};
 use crate::{Store, StoreResult};
 
-const JOBS: &str = "SELECT j.id,j.fleet_key,j.summary_json,j.status,j.repository,j.job_name,
-    j.created_at,j.updated_at,NULL AS poll_time,NULL AS poll_failed FROM workflow_jobs j
+/// A GitHub job last observed `running` whose every verified Generation is
+/// Destroyed can no longer be running there; its Completed was never observed
+/// (e.g. lost across a listener restart). Spec 0019 §2.2: report the status as
+/// unknown/stale and keep the retained observations, never invent a completion.
+macro_rules! runner_retired {
+    () => {
+        "(j.status='running'
+        AND EXISTS(SELECT 1 FROM workflow_job_observations o JOIN runner_generations g
+            ON g.id=json_extract(o.data_json,'$.generation_id') WHERE o.job_record_id=j.id
+            AND json_extract(o.data_json,'$.association_status')='verified' AND g.state='Destroyed')
+        AND NOT EXISTS(SELECT 1 FROM workflow_job_observations o JOIN runner_generations g
+            ON g.id=json_extract(o.data_json,'$.generation_id') WHERE o.job_record_id=j.id
+            AND json_extract(o.data_json,'$.association_status')='verified' AND g.state<>'Destroyed'))"
+    };
+}
+
+const JOBS: &str = concat!(
+    "SELECT j.id,j.fleet_key,j.summary_json,CASE WHEN ",
+    runner_retired!(),
+    " THEN 'unknown' ELSE j.status END AS status,j.repository,j.job_name,
+    j.created_at,j.updated_at,NULL AS poll_time,NULL AS poll_failed,",
+    runner_retired!(),
+    " AS runner_retired FROM workflow_jobs j
     UNION ALL SELECT j.id,j.fleet_key,j.summary_json,j.status,j.repository,j.job_name,
-    j.created_at,j.updated_at,p.observed_at AS poll_time,p.failed AS poll_failed
-    FROM forgejo_workflow_jobs j LEFT JOIN forgejo_job_polls p ON p.scope_key=j.scope_key";
+    j.created_at,j.updated_at,p.observed_at AS poll_time,p.failed AS poll_failed,0 AS runner_retired
+    FROM forgejo_workflow_jobs j LEFT JOIN forgejo_job_polls p ON p.scope_key=j.scope_key"
+);
 
 const GENERATIONS: &str = "SELECT g.id,g.fleet_key,g.runner_name,g.generation_name,g.state,g.subphase,
     g.template_profile_key,g.template_revision,g.created_at,g.updated_at,i.fleet_incarnation,fi.runner_id AS forgejo_runner_id,
@@ -153,11 +175,11 @@ impl JobsReadPort for Store {
             return Ok(None);
         };
         let generation = generation_summary(row).map_err(unavailable)?;
-        let found = rows(&tx, "SELECT j.summary_json FROM workflow_jobs j WHERE j.id IN (
+        let found = rows(&tx, concat!("SELECT j.summary_json,", runner_retired!(), " AS runner_retired FROM workflow_jobs j WHERE j.id IN (
             SELECT o.job_record_id FROM workflow_job_observations o JOIN workflow_generation_identity i
             ON i.scope_key=o.scope_key AND i.github_runner_id=o.runner_id WHERE i.generation_id=?
             AND (json_extract(o.data_json,'$.generation_id')=? OR json_extract(o.data_json,'$.association_status')='ambiguous'))
-            ORDER BY j.created_at DESC,j.id DESC LIMIT 200", vec![id.into(), id.into()]).await.map_err(unavailable)?;
+            ORDER BY j.created_at DESC,j.id DESC LIMIT 200"), vec![id.into(), id.into()]).await.map_err(unavailable)?;
         let jobs = found
             .iter()
             .map(job_summary)
@@ -170,6 +192,13 @@ impl JobsReadPort for Store {
 fn job_summary(row: &QueryResult) -> StoreResult<JobSummary> {
     let mut job: JobSummary = decode(&row.try_get::<String>("", "summary_json")?)?;
     super::forgejo_read::freshness(&mut job, row);
+    if row
+        .try_get::<Option<i64>>("", "runner_retired")?
+        .is_some_and(|flag| flag != 0)
+    {
+        job.observed_status = shaula_core::jobs::ObservedStatus::Unknown;
+        job.freshness = "stale".into();
+    }
     Ok(job)
 }
 
