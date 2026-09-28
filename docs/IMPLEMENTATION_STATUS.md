@@ -139,8 +139,15 @@ Local evidence obtained for this implementation:
   groups never producing a fence (LW-14). On WSL2 6.18.33.2 with cgroup v2 via a
   delegated systemd user scope, Rust 1.98.1 and Terraform 1.9.8, all 18 explicit
   process tests pass; Windows Clippy/rustfmt and 796 nextest tests pass. The
-  daemon-side mapping from `launch_pending` to this fence has no end-to-end
-  `serve` crash test; LW-12 uses the real Worker and gates, not real GitHub.
+  daemon-side mapping from `launch_pending` to this fence is now covered through
+  a real `serve` restart (2026-09-27, `serve_lifecycle.rs`): the exact residue of
+  a SIGKILL after `launch_pending` (durable row, real unenveloped `shaula job`
+  plus a stray member in `shaula-{attempt}`) is fenced, a confirmed `fenced`
+  record is written and the Generation is not quarantined. Removing the mapping
+  makes it fail. The residue is seeded, not produced by killing a live daemon
+  inside that microsecond window (no production fault hook exists); it passes
+  on WSL2 6.18.33.2 with a delegated user scope alongside the other serve tests.
+  LW-12 uses the real Worker and gates, not real GitHub.
 
 - LW-32 GitHub/Docker (2026-09-27) passes on the real repository at `e3e8c42`:
   an isolated instance on the operator host ran the updated binary with the real
@@ -1388,8 +1395,7 @@ above describe their own baselines and remain historical records.
   binding, atomic terminal completion, backup/restore and the explicit offline
   legacy-state importer are wired into `serve` (see the PR #6 section at the
   top). The open spec 0042 acceptance gates are the ones listed there:
-  GitHub/Kubernetes and a real-GitHub Auth Handoff rotation (LW-32), an end-to-end `serve` crash test of the `launch_pending`
-  mapping, maximum-scale load (LW-30/D3), and arbitrary production rollback or
+  GitHub/Kubernetes and a real-GitHub Auth Handoff rotation (LW-32), maximum-scale load (LW-30/D3), and arbitrary production rollback or
   cross-host recovery beyond the scoped LW-28 rehearsal.
 - **Telemetry: implemented.** `shaula-observability` exports bounded metrics and
   operation spans over OTLP/HTTP (`744b75b`, ARD-0032) when an endpoint is

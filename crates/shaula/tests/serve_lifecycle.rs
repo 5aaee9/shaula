@@ -169,3 +169,114 @@ async fn serve_unclassified_legacy_is_read_only_and_keeps_occupancy() -> TestRes
     );
     Ok(())
 }
+
+/// LW-11 through the real daemon: a SIGKILL after `launch_pending` committed
+/// and the attempt's process was spawned, but before its identity became
+/// durable, leaves exactly this residue. The restarted `serve` must classify it
+/// from the attempt's containment (killing the unenveloped job and any stray
+/// member), record a confirmed fence and rotate instead of quarantining.
+#[tokio::test]
+#[ignore = "requires SHAULA_TEST_CGROUP"]
+async fn serve_restart_fences_a_pre_registration_crash_by_exact_containment() -> TestResult {
+    use shaula_core::{
+        lifecycle::GenerationState as G,
+        registry::{FleetRuntimeGuard, GenerationRecord, LifecycleStore},
+        worker::{ControlAccess, Executor, ProcessObservation},
+    };
+    use shaula_store::{
+        http_state::{SqliteStateBackend, WorkerAdmissions},
+        registry_impl::SqliteControlPlane,
+    };
+    use std::sync::Arc;
+
+    let fixture = Startup::new();
+    configure(&fixture)?;
+    stop(launch(&fixture).await?).await?;
+    let data = fixture.directory.path().join("data");
+    let path = data.join("shaula.db");
+    let db = Database::connect(format!("sqlite://{}?mode=rw", path.display())).await?;
+    db.execute_unprepared("INSERT INTO fleets(key,incarnation,desired_revision,observed_revision,mutation_fence,deletion_marker,phase,tombstone,created_at,updated_at) VALUES ('crashed','incarnation',1,0,1,0,'Pending',0,1,1)").await?;
+    let store = shaula_store::Store::open(&path).await?;
+    let admissions = Arc::new(WorkerAdmissions::new(4, 1)?);
+    let control = SqliteControlPlane::new(store.clone(), data.join("template-artifacts"))
+        .with_worker_admissions(admissions.clone());
+    let id = uuid::Uuid::new_v4();
+    let workspace = data.join("runners").join(id.to_string());
+    std::fs::create_dir_all(&workspace)?;
+    let record = GenerationRecord {
+        id: id.to_string(),
+        fleet_key: "crashed".into(),
+        runner_name: "runner".into(),
+        generation_name: format!("s{}", id.simple()),
+        fleet_revision: 1,
+        template_profile_key: "template".into(),
+        pool_member_key: None,
+        template_revision: 1,
+        template_artifact_digest: "sha256:fixture".into(),
+        attestation_id: "activation".into(),
+        inputs_digest: "fixture".into(),
+        state: G::CreatePending,
+        github_runner_id: None,
+        workspace_path: workspace.to_str().ok_or("workspace encoding")?.into(),
+        created_at: 1,
+        updated_at: 1,
+    };
+    let guard = FleetRuntimeGuard {
+        incarnation: "incarnation".into(),
+        desired_revision: 1,
+        mutation_fence: 1,
+    };
+    assert!(control.generation_insert_guarded(record, &guard).await?);
+    control
+        .generation_advance(&id.to_string(), G::Creating, 2)
+        .await?;
+    let admission = admissions.take(id)?;
+    let access = ControlAccess {
+        claim: admission.claim.clone(),
+        capability: admission.control.clone(),
+    };
+    // The crashed daemon's last durable step, then its unregistered spawn.
+    SqliteStateBackend::new(store.clone())
+        .worker_launch_pending(&access)
+        .await?;
+    let crashed = shaula_executor::ExecExecutor::new(
+        std::path::PathBuf::from(env!("CARGO_BIN_EXE_shaula")),
+        std::path::PathBuf::from(std::env::var("SHAULA_TEST_CGROUP")?),
+    )?;
+    let identity = crashed.launch(&admission.claim).await?;
+    let group = std::path::PathBuf::from(&identity.containment);
+    let mut stray = std::process::Command::new("sleep").arg("300").spawn()?;
+    std::fs::write(group.join("cgroup.procs"), stray.id().to_string())?;
+    assert_eq!(crashed.observe(&identity).await, ProcessObservation::Live);
+    drop(store);
+
+    let child = launch(&fixture).await?;
+    assert!(!group.exists(), "the attempt's exact group was fenced");
+    assert!(stray.try_wait()?.is_some(), "stray member was killed");
+    assert_ne!(
+        crashed.observe(&identity).await,
+        ProcessObservation::Live,
+        "the unenveloped job was killed"
+    );
+    let fence = db
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT outcome,confirmed_fenced FROM lifecycle_fences WHERE worker_attempt=?",
+            vec![admission.claim.worker_attempt.to_string().into()],
+        ))
+        .await?
+        .ok_or("fence record missing")?;
+    assert_eq!(fence.try_get::<String>("", "outcome")?, "fenced");
+    let row = db
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT g.state, w.phase FROM runner_generations g JOIN lifecycle_workers w ON w.generation_id=g.id WHERE g.id=?",
+            vec![id.to_string().into()],
+        ))
+        .await?
+        .ok_or("generation missing")?;
+    assert_ne!(row.try_get::<String>("", "state")?, "Quarantined");
+    assert_ne!(row.try_get::<String>("", "phase")?, "quarantined");
+    stop(child).await?;
+    Ok(())
+}
