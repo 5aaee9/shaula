@@ -66,3 +66,35 @@ pub(super) async fn variables(
         Err(error) => read_failure(error),
     }
 }
+
+/// Authorized metadata only; the archive itself is never downloadable here.
+pub(super) async fn metadata(
+    State(state): State<AppState>,
+    Path(digest): Path<String>,
+    auth: Authenticated,
+) -> Response {
+    if let Err(response) = require_scope(&auth.actor, Scope::TemplateRead) {
+        return response;
+    }
+    let not_found = || {
+        problem(
+            StatusCode::NOT_FOUND,
+            "NotFound",
+            "template artifact not found",
+        )
+        .into_response()
+    };
+    if shaula_core::artifact_layout::artifact_dir(std::path::Path::new("."), &digest).is_none() {
+        return not_found();
+    }
+    match state.artifact_publisher.metadata(&digest).await {
+        Ok(Some(metadata)) => Json(metadata).into_response(),
+        Ok(None) => not_found(),
+        Err(_) => problem(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Internal",
+            "template library storage is unavailable",
+        )
+        .into_response(),
+    }
+}

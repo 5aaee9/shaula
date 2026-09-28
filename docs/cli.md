@@ -42,6 +42,7 @@ credential and cannot migrate across credentials.
 ```console
 shaula templates sources list
 shaula templates variables <artifact-digest>
+shaula templates artifacts get <artifact-digest>
 shaula templates input-contract <profile> <revision>
 shaula fleets create <key> --file fleet.json
 shaula fleets get <key>
@@ -65,6 +66,10 @@ concurrent updates yield 412. Template Update omits bindings to inherit them;
 top-level null is rejected, and per-field keep sentinels retain their meaning.
 Auth rotation/policy changes display their impact before confirmation. Secrets
 in Auth request files remain write-only. Installation links are displayed only.
+
+`fleets list` and `templates list` follow every server page (`next_cursor`) and
+return the merged list. `templates artifacts get` shows an archive's size and the
+sources/revisions that reference it, never the archive bytes.
 
 Reads put the endpoint's JSON in `data`, and opaque resource versions in
 `metadata.version`. Copy the entire quoted version into `--if-match`; never

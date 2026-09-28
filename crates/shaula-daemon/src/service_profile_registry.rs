@@ -96,9 +96,13 @@ impl ProfileRegistryPort for ControlPlane {
         }))
     }
 
-    async fn template_list(&self, actor: &Actor) -> CoreResult<Vec<TemplateProfileView>> {
+    async fn template_list(
+        &self,
+        actor: &Actor,
+        page: shaula_core::registry::KeyPage,
+    ) -> CoreResult<Vec<TemplateProfileView>> {
         let mut views = Vec::new();
-        for key in self.store.template_profile_keys().await? {
+        for key in self.store.template_profile_keys(page).await? {
             match self.template_get(actor, &key).await? {
                 Ok(view) => views.push(view),
                 Err(MutationError::NotFound) => {}

@@ -233,7 +233,7 @@ impl SupervisorWiring {
         // fleet_list element 3 is the fleet PHASE (Pending/Decommissioning/...),
         // which also belongs in the cache key: a phase transition rebuilds
         // the supervisor alongside the revision-driven rebuild (R10-01).
-        for (key, revision, phase) in self.store.fleet_list(&actor).await? {
+        for (key, revision, phase) in self.store.fleet_list(&actor, Default::default()).await? {
             live_keys.insert(key.clone());
             let is_forgejo = self
                 .store

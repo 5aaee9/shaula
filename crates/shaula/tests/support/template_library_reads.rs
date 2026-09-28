@@ -7,7 +7,7 @@ use axum::{
     Router,
 };
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
-use shaula_core::registry::{TemplateSource, TemplateVariables};
+use shaula_core::registry::{TemplateArtifactMetadata, TemplateSource, TemplateVariables};
 use shaula_http::router::{AppState, ArtifactPublisher};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -61,6 +61,23 @@ impl ArtifactPublisher for Library {
             ));
         }
         Ok(None)
+    }
+    async fn metadata(&self, key: &str) -> CoreResult<Option<TemplateArtifactMetadata>> {
+        self.reads.fetch_add(1, Ordering::SeqCst);
+        if key == digest("cc") {
+            return Err(CoreError::new(
+                ReasonCode::StorageUnavailable,
+                "PRIVATE_DATABASE_PATH",
+            ));
+        }
+        Ok((key == digest("aa")).then(|| TemplateArtifactMetadata {
+            digest: key.into(),
+            size_bytes: 3,
+            created_at: 1,
+            source_keys: vec!["docker".into()],
+            revisions: vec![],
+            revisions_truncated: false,
+        }))
     }
 }
 
@@ -181,5 +198,60 @@ async fn archive_storage_failure_is_sanitized_and_retryable(
         serde_json::from_slice::<serde_json::Value>(&body)?["code"],
         "Internal"
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn artifact_metadata_is_authorized_private_and_never_the_archive(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let library = Arc::new(Library::default());
+    let app = app(library.clone()).await;
+    let path = |pair: &str| format!("/api/v1/template-artifacts/{}", digest(pair));
+    for (scope, status) in [
+        (None, StatusCode::UNAUTHORIZED),
+        (Some("template.publish"), StatusCode::FORBIDDEN),
+    ] {
+        let mut request = Request::builder().uri(path("aa"));
+        if let Some(scope) = scope {
+            request = request.header("authorization", common::oidc::bearer(scope));
+        }
+        let response = app.clone().oneshot(request.body(Body::empty())?).await?;
+        assert_eq!(response.status(), status);
+    }
+    assert_eq!(library.reads.load(Ordering::SeqCst), 0);
+    let response = app
+        .clone()
+        .oneshot(common::authorized("GET", &path("aa"), None))
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["cache-control"], "private, no-store");
+    let data: serde_json::Value =
+        serde_json::from_slice(&axum::body::to_bytes(response.into_body(), 4096).await?)?;
+    assert_eq!(
+        data,
+        serde_json::json!({"digest": digest("aa"), "sizeBytes": 3, "createdAt": 1,
+            "sourceKeys": ["docker"], "revisions": [], "revisionsTruncated": false})
+    );
+    for (uri, status, code) in [
+        (
+            "/api/v1/template-artifacts/invalid".to_owned(),
+            StatusCode::NOT_FOUND,
+            "NotFound",
+        ),
+        (path("dd"), StatusCode::NOT_FOUND, "NotFound"),
+        (path("cc"), StatusCode::INTERNAL_SERVER_ERROR, "Internal"),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(common::authorized("GET", &uri, None))
+            .await?;
+        assert_eq!(response.status(), status, "{uri}");
+        let bytes = axum::body::to_bytes(response.into_body(), 4096).await?;
+        assert!(!std::str::from_utf8(&bytes)?.contains("PRIVATE_DATABASE_PATH"));
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&bytes)?["code"],
+            code
+        );
+    }
     Ok(())
 }

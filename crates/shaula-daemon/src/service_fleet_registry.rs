@@ -73,8 +73,12 @@ impl FleetRegistryPort for ControlPlane {
         self.fleet_status_impl(key).await
     }
 
-    async fn fleet_list(&self, _actor: &Actor) -> CoreResult<Vec<(String, i64, String)>> {
-        self.store.fleet_list(_actor).await
+    async fn fleet_list(
+        &self,
+        actor: &Actor,
+        page: shaula_core::registry::KeyPage,
+    ) -> CoreResult<Vec<(String, i64, String)>> {
+        self.store.fleet_list(actor, page).await
     }
 
     async fn fleet_delete(

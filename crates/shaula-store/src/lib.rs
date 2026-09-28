@@ -3,6 +3,7 @@
 //! this crate.
 
 pub mod artifact_library;
+mod artifact_metadata;
 mod auth_dependents_repo;
 mod auth_execution_repo;
 pub mod auth_policy_repo;
@@ -16,6 +17,7 @@ mod fleet_observations;
 pub mod fleet_repo;
 pub mod http_state;
 pub mod jobs;
+mod key_pages;
 mod lifecycle_bootstrap;
 pub mod lifecycle_repo;
 mod listener_acquisitions;

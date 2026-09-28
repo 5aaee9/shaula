@@ -44,7 +44,11 @@ pub trait ControlPlaneStore: crate::registry::AuthExecutionStore + Send + Sync {
         facts: MutationFacts,
     ) -> CoreResult<Result<(), MutationError>>;
     async fn fleet_get(&self, key: &str) -> CoreResult<Option<FleetHead>>;
-    async fn fleet_list(&self, actor: &Actor) -> CoreResult<Vec<(String, i64, String)>>;
+    async fn fleet_list(
+        &self,
+        actor: &Actor,
+        page: super::KeyPage,
+    ) -> CoreResult<Vec<(String, i64, String)>>;
     async fn fleet_count(&self) -> CoreResult<usize>;
     async fn fleet_revision_latest(&self, key: &str) -> CoreResult<Option<FleetRevisionRow>>;
     async fn generations_occupancy(&self, fleet_key: &str) -> CoreResult<i64>;
@@ -60,7 +64,7 @@ pub trait ControlPlaneStore: crate::registry::AuthExecutionStore + Send + Sync {
     async fn handoff_get(&self, fleet_key: &str) -> CoreResult<Option<AuthHandoffRow>>;
 
     async fn template_profile_get(&self, key: &str) -> CoreResult<Option<ProfileHead>>;
-    async fn template_profile_keys(&self) -> CoreResult<Vec<String>>;
+    async fn template_profile_keys(&self, page: super::KeyPage) -> CoreResult<Vec<String>>;
     /// Current trusted default catalog entry; historical associations are independent.
     async fn template_source_get(&self, key: &str) -> CoreResult<Option<super::TemplateSource>>;
     async fn template_revision_get(

@@ -196,3 +196,40 @@ async fn archived_source(
         engine_ref: "terraform".into(),
     })
 }
+
+#[tokio::test]
+async fn artifact_metadata_reports_size_and_bounded_references_only() -> TestResult {
+    use sea_orm::ConnectionTrait;
+    let temp = tempfile::tempdir()?;
+    let store = Store::open(&temp.path().join("shaula.db")).await?;
+    store.migrate().await?;
+    let source = archived_source(&store, "docker", b"metadata archive").await?;
+    store
+        .template_sources_replace(std::slice::from_ref(&source), 1)
+        .await?;
+    let digest = source.artifact_digest.clone();
+    store
+        .connection()
+        .execute_unprepared(&format!(
+            "INSERT INTO template_profile_revisions (profile_key,revision,artifact_digest,engine_ref,state,created_at) VALUES
+            ('b',2,'{digest}','terraform','Active',1),('a',1,'{digest}','terraform','Superseded',1),
+            ('c',1,'sha256:other','terraform','Active',1)"
+        ))
+        .await?;
+    let metadata = store
+        .artifact_metadata(&digest)
+        .await?
+        .ok_or("metadata missing")?;
+    assert_eq!(metadata.size_bytes, b"metadata archive".len() as i64);
+    assert_eq!(metadata.created_at, 1);
+    assert_eq!(metadata.source_keys, ["docker"]);
+    let refs: Vec<_> = metadata
+        .revisions
+        .iter()
+        .map(|r| (r.profile_key.as_str(), r.revision, r.state.as_str()))
+        .collect();
+    assert_eq!(refs, [("a", 1, "Superseded"), ("b", 2, "Active")]);
+    assert!(!metadata.revisions_truncated);
+    assert!(store.artifact_metadata("sha256:absent").await?.is_none());
+    Ok(())
+}

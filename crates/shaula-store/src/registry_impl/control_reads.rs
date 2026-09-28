@@ -20,11 +20,11 @@ impl SqliteControlPlane {
     }
     pub(super) async fn fleet_list_read(
         &self,
-        _actor: &shaula_core::registry::Actor,
+        page: &shaula_core::registry::KeyPage,
     ) -> CoreResult<Vec<(String, i64, String)>> {
         Ok(self
             .store
-            .fleet_list()
+            .fleet_page(page)
             .await
             .map_err(core_err)?
             .into_iter()
@@ -106,15 +106,14 @@ impl SqliteControlPlane {
             .map_err(core_err)?
             .map(tpl_profile_head))
     }
-    pub(super) async fn template_profile_keys_read(&self) -> CoreResult<Vec<String>> {
-        Ok(self
-            .store
-            .template_profiles_list()
+    pub(super) async fn template_profile_keys_read(
+        &self,
+        page: &shaula_core::registry::KeyPage,
+    ) -> CoreResult<Vec<String>> {
+        self.store
+            .template_profile_key_page(page)
             .await
-            .map_err(core_err)?
-            .into_iter()
-            .map(|p| p.key)
-            .collect())
+            .map_err(core_err)
     }
     pub(super) async fn template_revision_get_read(
         &self,

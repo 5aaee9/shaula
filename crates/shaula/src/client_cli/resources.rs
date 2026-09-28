@@ -148,6 +148,9 @@ pub(super) async fn run(
                 )
                 .await?
         }
+        ResourceAction::Artifacts {
+            action: ArtifactAction::Get { digest },
+        } if kind == "templates" => client.templates().artifact(&digest).await?,
         ResourceAction::Attestations {
             action,
             key,

@@ -73,7 +73,7 @@ async fn all_inventory_routes_require_identity_and_scoped_routes_reject_identity
         "../../../../docs/design/0039-route-inventory.json"
     ))?;
     let operations = inventory["operations"].as_array().ok_or("operations")?;
-    assert_eq!(operations.len(), 52);
+    assert_eq!(operations.len(), 53);
     for operation in operations {
         let method = operation["method"]
             .as_str()

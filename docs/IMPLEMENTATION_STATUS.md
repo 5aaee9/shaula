@@ -154,8 +154,9 @@ Local evidence obtained for this implementation:
   proved through the recorded root cgroup ID (tested under user and system
   managers); GitHub Generations never entering Busy (spec 0001); and a harness
   expecting 404 instead of the 410 tombstone. GitHub/Kubernetes was not run and
-  is not claimed. After a restart the lost JobCompleted leaves the Jobs view at
-  `running`; the Generation still retires via the vanished-runner fallback. See
+  is not claimed. After a restart the lost JobCompleted left the Jobs view at
+  `running` (now reported as unknown/stale once the Generation is Destroyed; see
+  Remaining staged work); the Generation still retires via the vanished-runner fallback. See
   the [GitHub lifecycle receipt](evidence/0042-worker-acceptance-2026-09-26/README.md#real-github-lifecycle-lw-32-githubdocker-2026-09-27).
 
 **Release/merge acceptance.** The LW-32 GitHub/Docker gate now has a passing
@@ -1408,9 +1409,25 @@ above describe their own baselines and remain historical records.
   for Docker (the [2026-09-08 smoke](evidence/docker-smoke-2026-09-08/README.md)
   and the worker lifecycles) and Forgejo on Kind; Kubernetes security-context,
   RBAC and resource-limit acceptance is still open. See the [harness instructions](docker-conformance.md).
-- Remaining endpoint surface: list pagination (only Jobs invocation/log reads
-  accept cursors) and an artifact metadata GET. Protected Profile bytes and
-  revision history are retained indefinitely; retention/GC is part of D2.
+- **Registry list pagination and artifact metadata: implemented (2026-09-27).**
+  `GET /fleets` and `GET /template-profiles` use keyset pages (`limit` 1..200,
+  default 100) with an opaque cursor bound to its collection; the Rust client,
+  CLI and Web follow `next_cursor` to a complete list and still accept an older
+  unpaginated server. `GET /template-artifacts/{digest}` (`template.read`) returns
+  size, creation time and the referencing sources/Template Revisions (at most 200,
+  flagged when truncated), never archive bytes. Real SQLite/HTTP, client and
+  browser tests cover ordering, exact final pages, invalid limits/cursors,
+  cross-collection cursor reuse, repeated cursors, authorization and sanitized
+  storage failures; route inventory/parity now list 53 operations. Template Pool
+  and Auth Profile collections remain unpaginated (not required by their specs).
+  Protected Profile bytes and revision history are retained indefinitely;
+  retention/GC is part of D2.
+- **Jobs after a lost JobCompleted: fixed (2026-09-27).** A GitHub job last seen
+  `running` whose every verified Generation is Destroyed now reads as
+  `observed_status=unknown`, `freshness=stale` (spec 0019 §2.2), in lists, detail,
+  status filters and Generation detail. Retained observations are unchanged and a
+  later real Completed still wins. This closes the LW-32 observation below; it is
+  a local regression, not a new real-GitHub receipt.
   Template/Auth revision and attestation reads exist in
   `crates/shaula-http/src/router/profile_reads.rs`; their existence is not
   evidence that the entire specified read representation is complete.

@@ -43,3 +43,25 @@ pub struct TemplateVariables {
     pub bindings: Vec<TemplateVariable>,
     pub parameters: Vec<TemplateVariable>,
 }
+
+/// Authorized non-secret metadata of one stored archive; never its bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateArtifactMetadata {
+    pub digest: String,
+    pub size_bytes: i64,
+    pub created_at: i64,
+    /// Default catalog sources currently naming this archive.
+    pub source_keys: Vec<String>,
+    /// Template Revisions pinning this archive, oldest first, bounded.
+    pub revisions: Vec<TemplateArtifactReference>,
+    pub revisions_truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateArtifactReference {
+    pub profile_key: String,
+    pub revision: i64,
+    pub state: String,
+}

@@ -99,8 +99,10 @@ Scope and remaining observations:
 - GitHub/Kubernetes was not run and is not claimed. Forgejo Docker/Kubernetes
   evidence is the hosted CI above.
 - The JobCompleted for the restarted session was not redelivered, so the Jobs
-  projection still shows `running` for the completed job. The Generation itself
-  retired through the readiness fallback for a vanished Busy runner.
+  projection showed `running` for the completed job. The Generation itself
+  retired through the readiness fallback for a vanished Busy runner. Since
+  2026-09-27 such a job reads as unknown/stale once its Generation is Destroyed
+  (local regression; this receipt was not re-run).
 - Decommission does not delete a Scale Set (spec 0001). The four temporary Scale
   Sets named `shaula-lifecycle-*-github` remain in the repository and need removal
   with App credentials; runs 1 and 2 also left their Fleets unretired in their

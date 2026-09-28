@@ -1,6 +1,7 @@
 //! Async API-only client. Mutation attempts are immutable and explicitly replayed.
 mod builder;
 mod diagnostics;
+mod pages;
 mod problem;
 mod resources;
 mod tokens;

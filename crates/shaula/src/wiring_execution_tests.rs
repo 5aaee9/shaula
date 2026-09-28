@@ -54,7 +54,7 @@ async fn wiring_builds_execution_supervisor_from_observed_context() {
     acknowledge_handoff(&plane, fence).await;
     let mut wiring = execution_wiring(&plane).await;
     let (_, fleet_revision, phase) =
-        ControlPlaneStore::fleet_list(&*plane.control_plane, &fleet_actor())
+        ControlPlaneStore::fleet_list(&*plane.control_plane, &fleet_actor(), Default::default())
             .await
             .unwrap()[0]
             .clone();
@@ -79,7 +79,7 @@ async fn wiring_refuses_execution_supervisor_on_corrupt_observed_context() {
     corrupt_observed_context(&plane.db_path).await;
     let mut wiring = execution_wiring(&plane).await;
     let (_, fleet_revision, phase) =
-        ControlPlaneStore::fleet_list(&*plane.control_plane, &fleet_actor())
+        ControlPlaneStore::fleet_list(&*plane.control_plane, &fleet_actor(), Default::default())
             .await
             .unwrap()[0]
             .clone();
@@ -187,7 +187,7 @@ async fn wiring_execution_authority_stays_observed_during_in_flight_rotation() {
     )
     .await;
     let (_, fleet_revision, phase) =
-        ControlPlaneStore::fleet_list(&*plane.control_plane, &fleet_actor())
+        ControlPlaneStore::fleet_list(&*plane.control_plane, &fleet_actor(), Default::default())
             .await
             .unwrap()[0]
             .clone();

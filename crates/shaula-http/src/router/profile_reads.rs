@@ -1,6 +1,7 @@
 //! R10-05 Profile read/retire route handlers, split to keep
 //! profile_routes.rs within the 400-line limit (AGENTS.md).
-use axum::extract::{Path, State};
+use axum::extract::rejection::QueryRejection;
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -8,6 +9,7 @@ use axum::Json;
 use shaula_core::registry::Scope;
 
 use crate::problem::{mutation_problem, problem};
+use crate::router::key_page::{ListQuery, RequestPage};
 use crate::router::{accepted_response, idempotency_header, require_scope, AppState};
 
 pub(crate) async fn profile_change_get(
@@ -41,13 +43,19 @@ pub(crate) async fn profile_change_get(
 pub(crate) async fn template_profile_list(
     State(state): State<AppState>,
     auth: crate::oidc::Authenticated,
+    query: Result<Query<ListQuery>, QueryRejection>,
 ) -> Response {
     let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::TemplateRead) {
         return response;
     }
-    match state.profiles.template_list(&actor).await {
-        Ok(views) => {
+    let (page, fetch) = match RequestPage::parse("template-profiles", query) {
+        Ok(page) => page,
+        Err(response) => return response,
+    };
+    match state.profiles.template_list(&actor, fetch).await {
+        Ok(mut views) => {
+            let next_cursor = page.finish(&mut views, |view| &view.key);
             let items: Vec<serde_json::Value> = views
                 .iter()
                 .map(|v| {
@@ -63,7 +71,7 @@ pub(crate) async fn template_profile_list(
                 .collect();
             (
                 StatusCode::OK,
-                Json(serde_json::json!({ "profiles": items })),
+                Json(serde_json::json!({ "profiles": items, "next_cursor": next_cursor })),
             )
                 .into_response()
         }

@@ -5,7 +5,7 @@ mod import;
 
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::registry::template_library::ArtifactCache;
-use shaula_core::registry::{TemplateSource, TemplateVariables};
+use shaula_core::registry::{TemplateArtifactMetadata, TemplateSource, TemplateVariables};
 use shaula_http::router::ArtifactPublisher;
 use shaula_store::Store;
 use std::path::PathBuf;
@@ -140,6 +140,10 @@ impl ArtifactPublisher for DbArtifactPublisher {
 
     async fn sources(&self) -> CoreResult<Vec<TemplateSource>> {
         self.store.template_sources().await.map_err(storage)
+    }
+
+    async fn metadata(&self, digest: &str) -> CoreResult<Option<TemplateArtifactMetadata>> {
+        self.store.artifact_metadata(digest).await.map_err(storage)
     }
 
     async fn variables(&self, digest: &str) -> CoreResult<Option<TemplateVariables>> {

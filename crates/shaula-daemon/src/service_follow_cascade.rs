@@ -39,7 +39,11 @@ impl ControlPlane {
         // new Active mints one new pool revision; referencing fleets catch
         // up on their own occupancy boundary in the fleet pass below.
         upgraded += self.cascade_pool_follow_upgrades(now).await?;
-        for (key, _revision, _phase) in self.store.fleet_list(&Self::daemon_actor()).await? {
+        for (key, _revision, _phase) in self
+            .store
+            .fleet_list(&Self::daemon_actor(), Default::default())
+            .await?
+        {
             match self.maybe_upgrade_follower(&key, now).await {
                 Ok(true) => upgraded += 1,
                 Ok(false) => {}

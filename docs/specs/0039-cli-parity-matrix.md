@@ -8,7 +8,7 @@
 
 ## 1. 使用方式
 
-本表包含 **43 个已注册的管理 API/health method+path 组合，以及 6 个拟新增 Token 组合**。PUT 的创建和更新各有 CLI workflow，但仍是同一个 HTTP operation。数量不包含自动 HEAD、UI/assets、OIDC login/logout/callback 或内部 capability listeners。
+本表包含 **43 个已注册的管理 API/health method+path 组合，以及 6 个拟新增 Token 组合**；此后新增的 diagnostics 与 artifact 元数据读取另列于 route inventory。PUT 的创建和更新各有 CLI workflow，但仍是同一个 HTTP operation。数量不包含自动 HEAD、UI/assets、OIDC login/logout/callback 或内部 capability listeners。
 
 “Web 关系”区分业务页面、页面支撑 API 和已有但不一定存在专用 UI 的 API 扩展；不能把所有已注册 API 都宣称为已有可点击按钮。所有 baseline 操作纳入 typed client/CLI，以便完整承接 Web 的组合行为并避免遗漏底层能力。
 
@@ -28,7 +28,7 @@
 
 | ID / HTTP operation | Rust client → CLI | Scope | 条件 / Web 关系 |
 | --- | --- | --- | --- |
-| FL-01<br>`GET /api/v1/fleets` | `fleets().list`<br>`shaula fleets list` | `fleet.read` | 非 cursor 列表；本地搜索/排序须标明。<br>Fleets 列表。 |
+| FL-01<br>`GET /api/v1/fleets` | `fleets().list`<br>`shaula fleets list` | `fleet.read` | keyset 分页（`limit` 1..200，默认 100；不透明 `cursor` / `next_cursor`）；client、CLI 与 Web 跟随全部页面；本地搜索/排序须标明。<br>Fleets 列表。 |
 | FL-02<br>`GET /api/v1/fleets/{fleetKey}` | `fleets().get`<br>`shaula fleets get / fleets edit 前置读取` | `fleet.read` | 取得强写版本，保留 spec 原始数字。<br>Fleet 详情与编辑。 |
 | FL-03<br>`GET /api/v1/fleets/{fleetKey}/status` | `fleets().status`<br>`shaula fleets status [--watch]` | `fleet.read` | 展示 desired/observed、依赖、容量和 conditions。<br>Fleet runtime 详情。 |
 | FL-04<br>`PUT /api/v1/fleets/{fleetKey}` | `fleets().put`<br>`shaula fleets create / update / edit` | `fleet.write` | create=*；更新 If-Match；稳定幂等 key；200 NoOp/202。<br>创建与编辑；依赖/输入选择使用支撑 API。 |
@@ -52,7 +52,8 @@
 | TP-01<br>`GET /api/v1/template-sources` | `templates().list_sources`<br>`shaula templates sources list` | `template.read` | 读取已登记 source；不伪造同步默认模板 API。<br>Template 发布/更新的 source 选择。 |
 | TP-02<br>`GET /api/v1/template-artifacts/{digest}/variables` | `templates().variables`<br>`shaula templates variables <digest>` | `template.read` | 变量/schema/bindings 投影保留服务端规则。<br>可视化变量与 bindings 编辑支撑。 |
 | TP-03<br>`PUT /api/v1/template-artifacts/{digest}` | `artifacts().upload`<br>`shaula templates artifacts upload --file ...` | `template.publish` | content-addressed bytes；非 JSON；201；不假设此端点处理 If-Match。<br>底层 API 能力；不假设独立 Web 上传页面。 |
-| TP-04<br>`GET /api/v1/template-profiles` | `templates().list`<br>`shaula templates list` | `template.read` | profiles envelope；非 cursor 列表。<br>Templates 列表。 |
+| TP-14<br>`GET /api/v1/template-artifacts/{digest}` | `templates().artifact`<br>`shaula templates artifacts get <digest>` | `template.read` | 仅授权元数据：大小、创建时间、引用它的 source 与 Template Revision（最多 200 条并标记截断）；不下载归档。<br>底层 API 能力；不假设独立 Web 页面。 |
+| TP-04<br>`GET /api/v1/template-profiles` | `templates().list`<br>`shaula templates list` | `template.read` | profiles envelope；keyset 分页（`limit` 1..200，默认 100；不透明 `cursor` / `next_cursor`）；client、CLI 与 Web 跟随全部页面。<br>Templates 列表。 |
 | TP-05<br>`GET /api/v1/template-profiles/{profileKey}` | `templates().get`<br>`shaula templates get` | `template.read` | 保留 desired/active/backend/status 与强版本。<br>Template 详情。 |
 | TP-06<br>`PUT /api/v1/template-profiles/{profileKey}` | `templates().publish`<br>`shaula templates publish / templates revisions publish` | `template.publish` | create=* 或 If-Match；幂等；完整发布，不等同 Update。<br>新发布 / 新 Revision。 |
 | TP-07<br>`POST /api/v1/template-profiles/{profileKey}/updates` | `templates().update`<br>`shaula templates update` | `template.publish` | If-Match；禁止 If-None-Match；bindings omitted/null 语义；幂等。<br>Template Update。 |

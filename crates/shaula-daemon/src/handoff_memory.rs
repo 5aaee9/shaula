@@ -45,7 +45,11 @@ impl ControlPlaneStore for MemoryStore {
             last_condition_reason: None,
         }))
     }
-    async fn fleet_list(&self, _actor: &Actor) -> CoreResult<Vec<(String, i64, String)>> {
+    async fn fleet_list(
+        &self,
+        _actor: &Actor,
+        _page: shaula_core::registry::KeyPage,
+    ) -> CoreResult<Vec<(String, i64, String)>> {
         Ok(Vec::new())
     }
     async fn fleet_count(&self) -> CoreResult<usize> {
@@ -91,7 +95,10 @@ impl ControlPlaneStore for MemoryStore {
     ) -> CoreResult<Option<shaula_core::registry::ProfileHead>> {
         Ok(None)
     }
-    async fn template_profile_keys(&self) -> CoreResult<Vec<String>> {
+    async fn template_profile_keys(
+        &self,
+        _page: shaula_core::registry::KeyPage,
+    ) -> CoreResult<Vec<String>> {
         Ok(Vec::new())
     }
     async fn template_revision_get(

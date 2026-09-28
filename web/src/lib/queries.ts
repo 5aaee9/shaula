@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { api, resourcePath } from "./api";
+import { api, apiAllPages, resourcePath } from "./api";
 import { authenticationExpired } from "./authentication";
 import type {
   AuthLiveFleet,
@@ -24,7 +24,7 @@ export function useSession() {
 export function useFleets(enabled: boolean) {
   return useQuery({
     queryKey: ["fleets"],
-    queryFn: ({ signal }) => api<{ fleets: FleetSummary[] }>("/fleets", { signal }),
+    queryFn: ({ signal }) => apiAllPages<"fleets", FleetSummary>("/fleets", "fleets", { signal }),
     enabled,
     refetchInterval: 10_000,
   });
@@ -46,7 +46,8 @@ export function useFleetStatus(key: string) {
 export function useTemplates(enabled = true) {
   return useQuery({
     queryKey: ["templates"],
-    queryFn: ({ signal }) => api<{ profiles: TemplateSummary[] }>("/template-profiles", { signal }),
+    queryFn: ({ signal }) =>
+      apiAllPages<"profiles", TemplateSummary>("/template-profiles", "profiles", { signal }),
     enabled,
     refetchOnMount: "always",
     refetchInterval: 10_000,

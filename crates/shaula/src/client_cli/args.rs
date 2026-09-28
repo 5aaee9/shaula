@@ -181,6 +181,8 @@ pub enum ArtifactAction {
         #[arg(long)]
         file: PathBuf,
     },
+    /// Show size, creation time and referencing sources/revisions.
+    Get { digest: String },
 }
 #[derive(Args)]
 pub struct WriteArgs {

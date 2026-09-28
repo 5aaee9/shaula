@@ -2,9 +2,9 @@ use super::{core_err, SqliteControlPlane};
 use async_trait::async_trait;
 use shaula_core::error::CoreResult;
 use shaula_core::registry::{
-    AttestationCommit, AttestationRecord, AuthHandoffRow, AuthRevisionRow, ChangeView,
-    ControlPlaneStore, FleetHead, FleetRevisionRow, MutationError, MutationFacts, ProfileHead,
-    TemplateRevisionRow,
+    Actor, AttestationCommit, AttestationRecord, AuthHandoffRow, AuthRevisionRow, ChangeView,
+    ControlPlaneStore, FleetHead, FleetRevisionRow, KeyPage, MutationError, MutationFacts,
+    ProfileHead, TemplateRevisionRow,
 };
 
 #[async_trait]
@@ -50,11 +50,8 @@ impl ControlPlaneStore for SqliteControlPlane {
     async fn fleet_get(&self, key: &str) -> CoreResult<Option<FleetHead>> {
         self.fleet_get_read(key).await
     }
-    async fn fleet_list(
-        &self,
-        _actor: &shaula_core::registry::Actor,
-    ) -> CoreResult<Vec<(String, i64, String)>> {
-        self.fleet_list_read(_actor).await
+    async fn fleet_list(&self, _: &Actor, page: KeyPage) -> CoreResult<Vec<(String, i64, String)>> {
+        self.fleet_list_read(&page).await
     }
     async fn fleet_count(&self) -> CoreResult<usize> {
         Ok(self.store.fleet_list().await.map_err(core_err)?.len())
@@ -80,8 +77,8 @@ impl ControlPlaneStore for SqliteControlPlane {
     async fn template_profile_get(&self, key: &str) -> CoreResult<Option<ProfileHead>> {
         self.template_profile_get_read(key).await
     }
-    async fn template_profile_keys(&self) -> CoreResult<Vec<String>> {
-        self.template_profile_keys_read().await
+    async fn template_profile_keys(&self, page: KeyPage) -> CoreResult<Vec<String>> {
+        self.template_profile_keys_read(&page).await
     }
     async fn template_source_get(
         &self,

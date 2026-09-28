@@ -66,6 +66,30 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<R
 
 export const resourcePath = (kind: string, key: string) => `/${kind}/${encodeURIComponent(key)}`;
 
+/** Follows the opaque `next_cursor` of a paginated registry list and merges `field`. */
+export async function apiAllPages<K extends string, T>(
+  path: string,
+  field: K,
+  options: RequestInit = {},
+): Promise<Resource<Record<K, T[]>>> {
+  const items: T[] = [];
+  const seen = new Set<string>();
+  let url = path;
+  for (let page = 0; page < 1_000; page += 1) {
+    const { data } = await api<Record<K, T[]> & { next_cursor?: string | null }>(url, options);
+    if (!Array.isArray(data[field]))
+      throw new ApiError(502, "InvalidResponse", "The server did not return a valid list.");
+    items.push(...data[field]);
+    const next = data.next_cursor;
+    if (!next) return { data: { [field]: items } as Record<K, T[]>, etag: null };
+    if (seen.has(next))
+      throw new ApiError(502, "InvalidResponse", "The server repeated a list cursor.");
+    seen.add(next);
+    url = `${path}?cursor=${encodeURIComponent(next)}`;
+  }
+  throw new ApiError(502, "InvalidResponse", "The list has too many pages.");
+}
+
 // Keep the key for an unchanged request so retrying an uncertain write is safe.
 export class MutationAttempt {
   private fingerprint = "";

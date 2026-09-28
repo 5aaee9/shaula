@@ -64,6 +64,10 @@ async fn handler(
         let mut change = change;
         change["state"] = "Succeeded".into();
         serde_json::json!({"etag":"opaque","change":change,"no_op":false})
+    } else if path == "/api/v1/fleets" {
+        serde_json::json!({"fleets":[],"next_cursor":null})
+    } else if path == "/api/v1/template-profiles" {
+        serde_json::json!({"profiles":[],"next_cursor":null})
     } else if method != Method::GET {
         serde_json::json!({"changeId":"key","state":"Pending","revision":1,"noOp":false})
     } else {
@@ -123,6 +127,7 @@ async fn every_inventory_route_is_exercised_through_public_sdk_methods() -> Resu
     }
     client.templates().sources().await?;
     client.templates().variables("key").await?;
+    client.templates().artifact("key").await?;
     client.templates().upload("key", vec![1, 2, 3]).await?;
     let a = client.templates().update("key", &doc, update()?).await?;
     client.execute_mutation(&a).await?;
@@ -204,7 +209,7 @@ async fn every_inventory_route_is_exercised_through_public_sdk_methods() -> Resu
         .map(|(m, p, _, _)| (m.clone(), p.clone()))
         .collect();
     assert_eq!(actual, expected);
-    assert_eq!(actual.len(), 52);
+    assert_eq!(actual.len(), 53);
     task.abort();
     Ok(())
 }

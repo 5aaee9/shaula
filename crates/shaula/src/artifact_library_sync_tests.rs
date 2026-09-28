@@ -160,7 +160,10 @@ async fn package_upgrade_replaces_catalog_but_old_archives_still_recover() -> Te
     library.initialize(roots, 3).await?;
     assert_eq!(library.sources().await?, sources);
     assert_eq!(store.artifact_archive_digests().await?.len(), 2);
-    assert!(plane.template_profile_keys().await?.is_empty());
+    assert!(plane
+        .template_profile_keys(Default::default())
+        .await?
+        .is_empty());
 
     library.initialize(&[], 4).await?;
     assert!(library.sources().await?.is_empty());

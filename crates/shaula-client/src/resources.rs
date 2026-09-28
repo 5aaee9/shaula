@@ -3,7 +3,7 @@ use types::{Document, FinalizeReceipt, NormalMutation};
 pub type Query = Vec<(String, String)>;
 
 macro_rules! resource {
-    ($name:ident,$accessor:ident,$path:literal) => {
+    ($name:ident,$accessor:ident,$path:literal $(, $field:literal)?) => {
         pub struct $name<'a>(&'a Client);
         impl Client {
             pub fn $accessor(&self) -> $name<'_> {
@@ -11,8 +11,13 @@ macro_rules! resource {
             }
         }
         impl $name<'_> {
+            /// The complete list; paginated collections follow every `next_cursor`.
             pub async fn list(&self) -> Result<Resource<Document>, Error> {
-                self.0.read(&["api", "v1", $path], &[]).await
+                let path = ["api", "v1", $path];
+                match None::<&str> $(.or(Some($field)))? {
+                    Some(field) => self.0.read_all_pages(&path, field).await,
+                    None => self.0.read(&path, &[]).await,
+                }
             }
             pub async fn get(&self, key: &str) -> Result<Resource<Document>, Error> {
                 self.0.read(&["api", "v1", $path, key], &[]).await
@@ -54,8 +59,8 @@ macro_rules! resource {
         }
     };
 }
-resource!(Fleets, fleets, "fleets");
-resource!(Templates, templates, "template-profiles");
+resource!(Fleets, fleets, "fleets", "fleets");
+resource!(Templates, templates, "template-profiles", "profiles");
 resource!(Pools, pools, "template-pools");
 resource!(AuthProfiles, auth_profiles, "github-auth-profiles");
 
@@ -77,6 +82,12 @@ impl Fleets<'_> {
 impl Templates<'_> {
     pub async fn sources(&self) -> Result<Resource<Document>, Error> {
         self.0.read(&["api", "v1", "template-sources"], &[]).await
+    }
+    /// Authorized metadata of one stored archive; never its bytes.
+    pub async fn artifact(&self, digest: &str) -> Result<Resource<Document>, Error> {
+        self.0
+            .read(&["api", "v1", "template-artifacts", digest], &[])
+            .await
     }
     pub async fn variables(&self, digest: &str) -> Result<Resource<Document>, Error> {
         self.0
@@ -308,5 +319,29 @@ impl Client {
         attempt: &MutationAttempt,
     ) -> Result<Resource<FinalizeReceipt>, Error> {
         self.execute(attempt).await
+    }
+}
+
+impl Fleets<'_> {
+    pub async fn list_page(
+        &self,
+        cursor: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Resource<Document>, Error> {
+        self.0
+            .read_page(&["api", "v1", "fleets"], cursor, limit)
+            .await
+    }
+}
+
+impl Templates<'_> {
+    pub async fn list_page(
+        &self,
+        cursor: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Resource<Document>, Error> {
+        self.0
+            .read_page(&["api", "v1", "template-profiles"], cursor, limit)
+            .await
     }
 }

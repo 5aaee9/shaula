@@ -102,7 +102,11 @@ pub trait ProfileRegistryPort: Send + Sync {
         actor: &Actor,
         key: &str,
     ) -> CoreResult<Result<TemplateProfileView, MutationError>>;
-    async fn template_list(&self, actor: &Actor) -> CoreResult<Vec<TemplateProfileView>>;
+    async fn template_list(
+        &self,
+        actor: &Actor,
+        page: super::KeyPage,
+    ) -> CoreResult<Vec<TemplateProfileView>>;
 
     /// Read model of ONE immutable Template Revision (R10-05 route).
     async fn template_revision_get(

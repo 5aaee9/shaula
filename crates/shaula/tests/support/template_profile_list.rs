@@ -63,7 +63,7 @@ async fn template_collection_orders_current_heads_without_filtering_existing_act
                 "activeRevision": 1, "runnerBackend": null, "status": "Validating"},
             {"key": "z-retiring", "incarnation": "incarnation-z-retiring", "desiredRevision": 1,
                 "activeRevision": 1, "runnerBackend": null, "status": "Retiring"}
-        ]})
+        ], "next_cursor": null})
     );
     database.close().await?;
     Ok(())
@@ -83,7 +83,10 @@ async fn template_collection_propagates_revision_decode_fault_after_successful_k
         DatabaseBackend::Sqlite,
         "UPDATE template_profile_revisions SET engine_ref=CAST(X'80' AS TEXT) WHERE profile_key='broken-profile'",
     )).await?;
-    assert_eq!(store.template_profile_keys().await?.len(), 2);
+    assert_eq!(
+        store.template_profile_keys(Default::default()).await?.len(),
+        2
+    );
     for (path, expected) in [
         (format!("{COLLECTION}/healthy-profile"), StatusCode::OK),
         (
@@ -130,7 +133,7 @@ async fn template_collection_requires_read_permission_and_represents_empty_inven
             let bytes = axum::body::to_bytes(response.into_body(), 1 << 20).await?;
             assert_eq!(
                 serde_json::from_slice::<Value>(&bytes)?,
-                json!({"profiles": []})
+                json!({"profiles": [], "next_cursor": null})
             );
         }
     }

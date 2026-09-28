@@ -156,6 +156,15 @@ pub use mutation_error::MutationError;
 
 pub type MutationResult<T> = Result<T, MutationError>;
 
+/// Keyset page over resource keys in ascending order. `limit: None` reads all
+/// (internal reconcilers); HTTP lists always bound it and fetch `limit + 1`
+/// rows to learn whether another page exists.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct KeyPage {
+    pub after: Option<String>,
+    pub limit: Option<usize>,
+}
+
 /// The Fleet Registry driving port.
 #[async_trait]
 pub trait FleetRegistryPort: Send + Sync {
@@ -190,7 +199,11 @@ pub trait FleetRegistryPort: Send + Sync {
         key: &str,
     ) -> CoreResult<Result<FleetStatus, MutationError>>;
 
-    async fn fleet_list(&self, actor: &Actor) -> CoreResult<Vec<(String, i64, String)>>;
+    async fn fleet_list(
+        &self,
+        actor: &Actor,
+        page: KeyPage,
+    ) -> CoreResult<Vec<(String, i64, String)>>;
 
     async fn fleet_delete(
         &self,
@@ -279,7 +292,10 @@ pub use attestation_subject::{
 pub mod input_contract;
 #[path = "registry/template_library.rs"]
 pub mod template_library;
-pub use template_library::{TemplateSource, TemplateVariable, TemplateVariables};
+pub use template_library::{
+    TemplateArtifactMetadata, TemplateArtifactReference, TemplateSource, TemplateVariable,
+    TemplateVariables,
+};
 #[path = "registry/bindings_projection.rs"]
 pub mod bindings_projection;
 pub use bindings_projection::BindingsSchema;

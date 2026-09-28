@@ -11,6 +11,9 @@ pub struct ResourceSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FleetsList {
     pub fleets: Vec<ResourceSummary>,
+    /// Opaque cursor of the next page; absent from older unpaginated servers.
+    #[serde(default)]
+    pub next_cursor: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PoolsList {
@@ -19,6 +22,8 @@ pub struct PoolsList {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfilesList {
     pub profiles: Vec<Profile>,
+    #[serde(default)]
+    pub next_cursor: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -1,7 +1,8 @@
 //! Fleet route handlers: conditional writes, status, changes.
 
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::rejection::QueryRejection;
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -10,6 +11,7 @@ use shaula_core::registry::Scope;
 
 use crate::dto::FleetSpecDto;
 use crate::problem::{mutation_problem, problem};
+use crate::router::key_page::{ListQuery, RequestPage};
 use crate::router::{
     accepted_response, idempotency_header, if_none_match_star, parse_if_match, require_scope,
     resource_version_headers, AppState,
@@ -260,13 +262,19 @@ pub(crate) async fn fleet_change_get(
 pub(crate) async fn fleet_list(
     State(state): State<AppState>,
     auth: crate::oidc::Authenticated,
+    query: Result<Query<ListQuery>, QueryRejection>,
 ) -> Response {
     let actor = auth.actor;
     if let Err(response) = require_scope(&actor, Scope::FleetRead) {
         return response;
     }
-    match state.fleets.fleet_list(&actor).await {
-        Ok(fleets) => {
+    let (page, fetch) = match RequestPage::parse("fleets", query) {
+        Ok(page) => page,
+        Err(response) => return response,
+    };
+    match state.fleets.fleet_list(&actor, fetch).await {
+        Ok(mut fleets) => {
+            let next_cursor = page.finish(&mut fleets, |fleet| &fleet.0);
             let items: Vec<serde_json::Value> = fleets
                 .iter()
                 .map(|(key, revision, incarnation)| {
@@ -277,7 +285,8 @@ pub(crate) async fn fleet_list(
                     })
                 })
                 .collect();
-            (StatusCode::OK, Json(serde_json::json!({ "fleets": items }))).into_response()
+            let body = serde_json::json!({ "fleets": items, "next_cursor": next_cursor });
+            (StatusCode::OK, Json(body)).into_response()
         }
         Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
     }

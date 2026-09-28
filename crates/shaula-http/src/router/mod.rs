@@ -8,6 +8,7 @@ mod diagnostics;
 pub mod fleet_routes;
 mod input_contract;
 mod jobs;
+mod key_page;
 mod pool_routes;
 mod profile_auth_policy;
 pub mod profile_auth_reads;
@@ -72,6 +73,14 @@ pub trait ArtifactPublisher: Send + Sync {
         &self,
         _digest: &str,
     ) -> shaula_core::error::CoreResult<Option<shaula_core::registry::TemplateVariables>> {
+        Ok(None)
+    }
+    /// Non-secret metadata of one stored archive (spec 0005 §4); `None` if absent.
+    async fn metadata(
+        &self,
+        _digest: &str,
+    ) -> shaula_core::error::CoreResult<Option<shaula_core::registry::TemplateArtifactMetadata>>
+    {
         Ok(None)
     }
 }
@@ -318,9 +327,9 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/api/v1/template-artifacts/{digest}",
-            put(profile_routes::template_artifact_put).layer(DefaultBodyLimit::max(
-                state.body_limit,
-            )),
+            put(profile_routes::template_artifact_put)
+                .layer(DefaultBodyLimit::max(state.body_limit))
+                .get(template_library::metadata),
         )
         .route(
             "/api/v1/template-profiles",
