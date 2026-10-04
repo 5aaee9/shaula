@@ -64,6 +64,8 @@
 | TP-12<br>`DELETE /api/v1/template-profiles/{profileKey}` | `templates().retire`<br>`shaula templates retire` | `template.retire` | If-Match；幂等；异步 retirement。<br>Template 退休。 |
 | TP-13<br>`GET /api/v1/profile-changes/{changeId}` | `changes().get_profile`<br>`shaula changes get / wait --kind profile` | `template.read OR auth.read (resource-kind dependent)` | 按实际 resource_kind 检查对应 read，非二者任选。<br>Profile ChangeNotice / Changes。 |
 
+| TP-15<br>`GET /api/v1/template-profiles/{profileKey}/status` | `templates().status`<br>`shaula templates status [--watch]` | `template.read` | desired Revision validation、live-reference observation 与 schema-approved bindings；只读状态不授权 mutation。 |
+
 ## 2.5 Authentication Profile
 
 | ID / HTTP operation | Rust client → CLI | Scope | 条件 / Web 关系 |

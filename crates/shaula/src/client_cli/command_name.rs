@@ -100,6 +100,8 @@ pub(super) fn streaming(command: &RemoteCommand) -> bool {
             action: ResourceAction::Status { watch: true, .. }
         } | RemoteCommand::AuthProfiles {
             action: ResourceAction::Status { watch: true, .. }
+        } | RemoteCommand::Templates {
+            action: ResourceAction::Status { watch: true, .. }
         } | RemoteCommand::Logs {
             action: LogAction::Read(LogArgs { follow: true, .. })
         } | RemoteCommand::Logs {

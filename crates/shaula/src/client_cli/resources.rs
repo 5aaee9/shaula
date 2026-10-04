@@ -73,15 +73,17 @@ pub(super) async fn run(
             watch,
             timeout,
         } => {
-            if !["fleets", "auth-profiles"].contains(&kind) {
+            if !["fleets", "auth-profiles", "templates"].contains(&kind) {
                 return Err(Error::Invalid(
-                    "status is available for fleets and auth-profiles",
+                    "status is available for fleets, templates and auth-profiles",
                 ));
             }
             let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(timeout);
             loop {
                 let result = if kind == "fleets" {
                     client.fleets().status(&key).await?
+                } else if kind == "templates" {
+                    client.templates().status(&key).await?
                 } else {
                     client.auth_profiles().status(&key).await?
                 };
@@ -184,7 +186,14 @@ pub(super) async fn run(
                         options,
                     )
                     .await?;
-                client.execute(&attempt).await?
+                return Ok(super::attestation::execute(
+                    client,
+                    attempt,
+                    &key,
+                    revision,
+                    &attestation,
+                )
+                .await);
             }
         }
         _ => return Err(Error::Invalid("operation is unavailable for this resource")),

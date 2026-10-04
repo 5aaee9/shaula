@@ -42,6 +42,11 @@ pub struct Profile {
     pub active: Option<Document>,
     pub desired: Option<Document>,
     pub live_fleets: Option<Vec<Document>>,
+    pub bindings: Option<Document>,
+    #[serde(rename = "bindings_present")]
+    pub bindings_present: Option<bool>,
+    pub validation: Option<Document>,
+    pub references: Option<Document>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Pool {
@@ -69,6 +74,9 @@ pub struct ProfileStatus {
     pub desired_revision: i64,
     pub active_revision: Option<i64>,
     pub status: String,
+    pub validation: Option<Document>,
+    pub references: Option<Document>,
+    pub bindings: Option<Document>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -174,6 +182,8 @@ pub struct Attestation {
     pub suite: Document,
     pub completed_at: i64,
     pub subject_verified: bool,
+    pub bindings_present: Option<bool>,
+    pub bindings: Option<Document>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

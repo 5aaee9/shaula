@@ -328,3 +328,6 @@ async fn bindings_replay_returns_original_result_and_changed_request_conflicts()
     assert_eq!(status, StatusCode::CONFLICT);
     Ok(())
 }
+
+#[path = "support/template_read_contract.rs"]
+mod read_contract;

@@ -320,6 +320,8 @@ mod pool_registry;
 
 #[path = "service_profile_registry.rs"]
 mod profile_registry;
+#[path = "service_template_reads.rs"]
+mod template_reads;
 
 #[path = "service_profile_update.rs"]
 mod profile_update;

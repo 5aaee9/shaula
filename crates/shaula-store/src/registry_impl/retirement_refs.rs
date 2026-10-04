@@ -1,11 +1,11 @@
 //! Execution references, not historical rows, prevent logical retirement.
-//! Called only while holding the same SQLite writer as the terminal commit.
+//! Retirement calls this under its writer; status reads are observations only.
 
 use crate::store::StoreResult;
-use sea_orm::{ConnectionTrait, DatabaseTransaction, DbBackend, Statement};
+use sea_orm::{ConnectionTrait, DbBackend, Statement};
 
 pub(super) async fn in_use(
-    tx: &DatabaseTransaction,
+    tx: &impl ConnectionTrait,
     key: &str,
     template: bool,
     now: i64,

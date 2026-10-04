@@ -60,9 +60,13 @@ async fn template_collection_orders_current_heads_without_filtering_existing_act
         body,
         json!({"profiles": [
             {"key": "a-upgrading", "incarnation": "incarnation-a-upgrading", "desiredRevision": 1,
-                "activeRevision": 1, "runnerBackend": null, "status": "Validating"},
+                "activeRevision": 1, "runnerBackend": null, "status": "Validating",
+                "platform":null,"bindingsContract":null,"bindings_present":false,"bindings":null,
+                "validation":{"revision":1,"state":"Active","reason":null},"references":{"inUse":false}},
             {"key": "z-retiring", "incarnation": "incarnation-z-retiring", "desiredRevision": 1,
-                "activeRevision": 1, "runnerBackend": null, "status": "Retiring"}
+                "activeRevision": 1, "runnerBackend": null, "status": "Retiring",
+                "platform":null,"bindingsContract":null,"bindings_present":false,"bindings":null,
+                "validation":{"revision":1,"state":"Active","reason":null},"references":{"inUse":false}}
         ], "next_cursor": null})
     );
     database.close().await?;

@@ -33,13 +33,7 @@ impl ControlPlaneStore for SqliteControlPlane {
         self.store.diagnostics(kind, key, actor, now).await
     }
     async fn ensure_artifact_cached(&self, digest: &str) -> CoreResult<()> {
-        if !self.artifact_available(digest).await? {
-            return Err(shaula_core::error::CoreError::new(
-                shaula_core::error::ReasonCode::TemplateInvalid,
-                "artifact digest is not published",
-            ));
-        }
-        Ok(())
+        self.ensure_artifact_cached_read(digest).await
     }
     async fn commit_profile_retirement(
         &self,
@@ -79,6 +73,12 @@ impl ControlPlaneStore for SqliteControlPlane {
     }
     async fn template_profile_keys(&self, page: KeyPage) -> CoreResult<Vec<String>> {
         self.template_profile_keys_read(&page).await
+    }
+    async fn template_references_in_use(&self, key: &str, now: i64) -> CoreResult<Option<bool>> {
+        super::retirement_refs::in_use(self.store.connection(), key, true, now)
+            .await
+            .map(Some)
+            .map_err(super::core_err)
     }
     async fn template_source_get(
         &self,

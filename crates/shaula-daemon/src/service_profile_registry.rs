@@ -68,32 +68,10 @@ impl ProfileRegistryPort for ControlPlane {
 
     async fn template_get(
         &self,
-        _actor: &Actor,
+        actor: &Actor,
         key: &str,
     ) -> CoreResult<Result<TemplateProfileView, MutationError>> {
-        let Some(profile) = self.store.template_profile_get(key).await? else {
-            return Ok(Err(MutationError::NotFound));
-        };
-        let revision = self
-            .store
-            .template_revision_get(key, profile.desired_revision)
-            .await?;
-        Ok(Ok(TemplateProfileView {
-            key: key.to_string(),
-            incarnation: profile.incarnation.clone(),
-            desired_revision: profile.desired_revision,
-            active_revision: profile.active_revision,
-            runner_backend: self
-                .active_template_backend(key, profile.active_revision)
-                .await?,
-            status: profile.status.clone(),
-            platform: revision.as_ref().and_then(|r| r.platform.clone()),
-            bindings_contract: revision.as_ref().and_then(|r| r.bindings_contract.clone()),
-            bindings_present: revision
-                .as_ref()
-                .map(|r| r.bindings_present)
-                .unwrap_or(false),
-        }))
+        self.template_read(actor, key).await
     }
 
     async fn template_list(
@@ -245,21 +223,7 @@ impl ProfileRegistryPort for ControlPlane {
         let Some(row) = self.store.template_revision_get(key, revision).await? else {
             return Ok(Err(MutationError::NotFound));
         };
-        // Spec 0038 §2: project the stored bindings through the
-        // artifact's sensitivity schema. Unreadable/absent schema or
-        // stored-set fields unknown to it fail closed to presence
-        // markers — a read must never 500 or leak on a schema problem.
-        let bindings = match row.bindings_json.as_deref() {
-            Some(text) => {
-                let stored: serde_json::Map<String, serde_json::Value> = serde_json::from_str(text)
-                    .map_err(|_| {
-                        CoreError::new(ReasonCode::Internal, "stored template bindings are invalid")
-                    })?;
-                let schema = self.bindings_schema_view(&row.artifact_digest).await;
-                Some(serde_json::Value::Object(schema.project(&stored)))
-            }
-            None => None,
-        };
+        let bindings = self.project_template_bindings(&row).await?;
         Ok(Ok(TemplateRevisionView {
             profile_key: row.profile_key,
             revision: row.revision,
@@ -315,6 +279,14 @@ impl ProfileRegistryPort for ControlPlane {
                 "stored attestation suite version is missing",
             )
         })?;
+        let revision_row = self
+            .store
+            .template_revision_get(key, revision)
+            .await?
+            .ok_or_else(|| {
+                CoreError::new(ReasonCode::StorageCorrupt, "attestation revision missing")
+            })?;
+        let bindings = self.project_template_bindings(&revision_row).await?;
         Ok(Ok(AttestationView {
             profile_key: row.profile_key,
             revision: row.revision,
@@ -323,6 +295,8 @@ impl ProfileRegistryPort for ControlPlane {
             suite: (suite_name, suite_version),
             completed_at: row.completed_at,
             subject_verified: row.subject_verified,
+            bindings_present: revision_row.bindings_present,
+            bindings,
         }))
     }
 

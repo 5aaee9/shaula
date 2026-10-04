@@ -125,6 +125,7 @@ async fn every_inventory_route_is_exercised_through_public_sdk_methods() -> Resu
     ] {
         client.change(kind, "key").await?;
     }
+    client.templates().status("key").await?;
     client.templates().sources().await?;
     client.templates().variables("key").await?;
     client.templates().artifact("key").await?;
@@ -209,7 +210,7 @@ async fn every_inventory_route_is_exercised_through_public_sdk_methods() -> Resu
         .map(|(m, p, _, _)| (m.clone(), p.clone()))
         .collect();
     assert_eq!(actual, expected);
-    assert_eq!(actual.len(), 53);
+    assert_eq!(actual.len(), 54);
     task.abort();
     Ok(())
 }

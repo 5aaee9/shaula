@@ -19,6 +19,7 @@ impl Pools<'_> {
     projection!(get_typed, get, types::Pool);
 }
 impl Templates<'_> {
+    projection!(status_typed, status, types::ProfileStatus);
     pub async fn list_typed(&self) -> Result<TypedResource<types::ProfilesList>, Error> {
         self.list().await?.typed()
     }

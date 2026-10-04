@@ -15,6 +15,7 @@ pub mod profile_auth_reads;
 pub mod profile_reads;
 pub mod profile_routes;
 mod template_library;
+mod template_reads;
 mod template_update;
 
 use std::sync::Arc;
@@ -271,6 +272,7 @@ pub fn build_router(state: AppState) -> Router {
     use axum::extract::DefaultBodyLimit;
     Router::new()
         .merge(diagnostics::routes())
+        .route("/api/v1/template-profiles/{profileKey}/status", get(template_reads::status))
         .route("/api/v1/access-tokens", get(access_tokens::list).post(access_tokens::issue))
         .route("/api/v1/access-tokens/current", get(access_tokens::current).delete(access_tokens::revoke_current))
         .route("/api/v1/access-tokens/{id}", get(access_tokens::get).delete(access_tokens::revoke))

@@ -190,7 +190,21 @@ The typed subject includes the engine's `required_version` constraint as well as
 
 For v1 `schemas/bindings.schema.json`, `properties.<field>.sensitive` is the boolean annotation. A true value protects the entire top-level member/subtree; omitted annotation is conservatively sensitive, and a non-boolean annotation is invalid. Nested mixed-secret objects are protected as a whole, not split through JSON-path read exceptions. Publishers must not mark credential-bearing material non-sensitive.
 
-The normalized v1 read projection is deliberately small: omit `bindings` values altogether and expose only `bindings_present: boolean` (whether any binding material was supplied). It does not expose per-field lengths, hashes, names derived from values or a new map of secret fingerprints. This conservative projection also omits non-sensitive binding values; richer mixed-field reads are not promised. It applies to Profile GET/list/revision/attestation-related reads regardless of caller write permission. A full replacement must resubmit required bindings, not round-trip redacted placeholders or infer deletion from omitted response fields.
+[Spec 0038 §2](0038-template-detail-and-editable-bindings.md) amends the original
+presence-only projection: Profile GET/list/status expose the desired Revision's
+schema-approved `bindings`, alongside `bindings_present`; Revision and attestation
+reads use their exact historical Revision. Non-sensitive fields retain their JSON
+values; sensitive or unknown-schema fields expose only presence markers, never
+values, lengths, hashes or fingerprints. Write permission does not expand reads.
+A full replacement must resubmit required bindings, not round-trip redacted markers;
+Update's keep semantics are defined by spec 0038.
+
+Template `/status` returns the Profile projection plus `validation` (desired
+revision, state and bounded reason) and `references.inUse`. The latter observes the
+same live-reference predicate used by retirement, including live Fleet/Pool pins,
+Generations and open effects/claims; it is not mutation authority. Unsupported
+store adapters report null rather than inventing an unused state. Existing
+retirement mutations recheck their references under the writer transaction.
 
 ## 6. GitHub Auth Profile resource
 
@@ -342,7 +356,7 @@ Implementation is incomplete until：
 17. Database/WAL/SHM/online-copy/backup/migration-copy/crash-dump tests and documentation identify every plaintext credential- or binding-bearing artifact and enforce restrictive permissions, retention and disposal.
 18. OTel tests cover commit, validation, attestation/activation, Auth handoff, ordinary session reconcile and exporter failure without leaking bodies, bindings or credentials.
 19. Trusted attestation tests cover absent/forged identity, wrong scopes, exact subject/engine constraints, evidence linkage, canonical replay and immutable audit; no unimplemented independent signature verification or daemon-run harness is claimed.
-20. Binding schema annotation tests cover true/false/omitted/invalid sensitivity and nested secret material; every read uses §5.2's presence-only projection without placeholders, secret fingerprints or accidental round-trip updates.
+20. Binding schema annotation tests cover true/false/omitted/invalid sensitivity and nested secret material; every read uses spec 0038's schema-approved projection without secret fingerprints or accidental round-trip updates.
 
 ## 12. Open decisions
 

@@ -65,6 +65,10 @@ pub trait ControlPlaneStore: crate::registry::AuthExecutionStore + Send + Sync {
 
     async fn template_profile_get(&self, key: &str) -> CoreResult<Option<ProfileHead>>;
     async fn template_profile_keys(&self, page: super::KeyPage) -> CoreResult<Vec<String>>;
+    /// Read-only live-reference observation; never authorizes retirement.
+    async fn template_references_in_use(&self, _key: &str, _now: i64) -> CoreResult<Option<bool>> {
+        Ok(None)
+    }
     /// Current trusted default catalog entry; historical associations are independent.
     async fn template_source_get(&self, key: &str) -> CoreResult<Option<super::TemplateSource>>;
     async fn template_revision_get(

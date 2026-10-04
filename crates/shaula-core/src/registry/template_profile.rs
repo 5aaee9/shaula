@@ -12,6 +12,12 @@ pub struct TemplateProfileView {
     pub bindings_contract: Option<String>,
     /// Bounded presence metadata for sensitive bindings.
     pub bindings_present: bool,
+    /// Schema-approved projection of the desired revision, never protected values.
+    pub bindings: Option<serde_json::Value>,
+    pub validation_state: Option<String>,
+    pub validation_reason: Option<String>,
+    /// Same live-reference predicate as retirement; None means unavailable.
+    pub references_in_use: Option<bool>,
     /// Selection frozen in the Active revision, not the Candidate's capability list.
     /// None means there is no Active revision or its contract cannot be resolved.
     pub runner_backend: Option<crate::fleet::FleetProviderKind>,

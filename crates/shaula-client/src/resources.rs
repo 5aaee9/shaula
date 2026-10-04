@@ -80,6 +80,12 @@ impl Fleets<'_> {
     }
 }
 impl Templates<'_> {
+    pub async fn status(&self, key: &str) -> Result<Resource<Document>, Error> {
+        self.0
+            .read(&["api", "v1", "template-profiles", key, "status"], &[])
+            .await
+    }
+
     pub async fn sources(&self) -> Result<Resource<Document>, Error> {
         self.0.read(&["api", "v1", "template-sources"], &[]).await
     }

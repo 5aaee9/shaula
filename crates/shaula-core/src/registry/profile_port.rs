@@ -37,7 +37,7 @@ pub struct TemplateRevisionView {
 }
 
 /// Read model of ONE immutable attestation (R10-05). The subject is the
-/// canonical typed serialization — raw output, bindings and credentials
+/// canonical typed serialization — raw output, protected bindings and credentials
 /// can never appear here by construction.
 #[derive(Debug, Clone)]
 pub struct AttestationView {
@@ -48,6 +48,8 @@ pub struct AttestationView {
     pub suite: (String, String),
     pub completed_at: i64,
     pub subject_verified: bool,
+    pub bindings_present: bool,
+    pub bindings: Option<serde_json::Value>,
 }
 
 /// Read model of ONE immutable Auth Revision (R10-05). Credential bytes

@@ -1,4 +1,5 @@
 pub mod args;
+mod attestation;
 mod command_name;
 mod config;
 mod edit;
@@ -174,7 +175,15 @@ pub async fn mutation(
             let mut out = Outcome::data(&result.data);
             out.receipt = receipt;
             if wait && !result.data.no_op {
-                let waited = tokio::select! { r=client.wait(kind,&result.data.change_id,std::time::Duration::from_secs(timeout))=>r,_=tokio::signal::ctrl_c()=>Err(Error::Tracking("cancelled; server operation continues".into())) };
+                let waited = tokio::select! {
+                    r = client.wait(kind, &result.data.change_id, std::time::Duration::from_secs(timeout)) => r,
+                    _ = tokio::signal::ctrl_c() => {
+                        out.code = 130;
+                        out.partial = true;
+                        out.error = json!({"code":130,"message":"cancelled; server operation continues","http_status":null,"retry_after_seconds":null});
+                        return out;
+                    }
+                };
                 match waited {
                     Ok(change) => out.data = Outcome::data(change).data,
                     Err(e) => {

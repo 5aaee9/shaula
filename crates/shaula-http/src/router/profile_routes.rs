@@ -340,17 +340,7 @@ pub(crate) async fn template_profile_get(
         Ok(Ok(view)) => (
             StatusCode::OK,
             resource_version_headers(&format!("{}:{}", view.incarnation, view.desired_revision)),
-            Json(serde_json::json!({
-                "key": view.key,
-                "incarnation": view.incarnation,
-                "desiredRevision": view.desired_revision,
-                "activeRevision": view.active_revision,
-                "runnerBackend": view.runner_backend,
-                "status": view.status,
-                "platform": view.platform,
-                "bindingsContract": view.bindings_contract,
-                "bindings_present": view.bindings_present,
-            })),
+            Json(super::template_reads::profile(&view)),
         )
             .into_response(),
         Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),

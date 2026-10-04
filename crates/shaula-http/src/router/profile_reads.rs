@@ -56,19 +56,8 @@ pub(crate) async fn template_profile_list(
     match state.profiles.template_list(&actor, fetch).await {
         Ok(mut views) => {
             let next_cursor = page.finish(&mut views, |view| &view.key);
-            let items: Vec<serde_json::Value> = views
-                .iter()
-                .map(|v| {
-                    serde_json::json!({
-                        "key": v.key,
-                        "incarnation": v.incarnation,
-                        "desiredRevision": v.desired_revision,
-                        "activeRevision": v.active_revision,
-                        "runnerBackend": v.runner_backend,
-                        "status": v.status,
-                    })
-                })
-                .collect();
+            let items: Vec<serde_json::Value> =
+                views.iter().map(super::template_reads::profile).collect();
             (
                 StatusCode::OK,
                 Json(serde_json::json!({ "profiles": items, "next_cursor": next_cursor })),
@@ -201,6 +190,8 @@ pub(crate) async fn template_attestation_get(
                 "suite": {"name": view.suite.0, "version": view.suite.1},
                 "completedAt": view.completed_at,
                 "subjectVerified": view.subject_verified,
+                "bindingsPresent": view.bindings_present,
+                "bindings": view.bindings,
             })),
         )
             .into_response(),

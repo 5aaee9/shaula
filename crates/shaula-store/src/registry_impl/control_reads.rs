@@ -10,6 +10,16 @@ use shaula_core::registry::{
 };
 
 impl SqliteControlPlane {
+    pub(super) async fn ensure_artifact_cached_read(&self, digest: &str) -> CoreResult<()> {
+        if !self.artifact_available(digest).await? {
+            return Err(shaula_core::error::CoreError::new(
+                shaula_core::error::ReasonCode::TemplateInvalid,
+                "artifact digest is not published",
+            ));
+        }
+        Ok(())
+    }
+
     pub(super) async fn fleet_get_read(&self, key: &str) -> CoreResult<Option<FleetHead>> {
         Ok(self
             .store

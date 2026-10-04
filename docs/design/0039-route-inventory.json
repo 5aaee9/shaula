@@ -5,9 +5,10 @@
   "existing_operations": 43,
   "proposed_operations": 6,
   "diagnostic_operations": 3,
-  "registry_read_operations": 1,
+  "registry_read_operations": 2,
   "excluded_surfaces": ["GET /auth/oidc/login", "GET /auth/oidc/callback", "POST /auth/oidc/logout", "UI/assets/fallback", "internal worker/control/state/setup-info listeners"],
   "operations": [
+    {"group": "Template", "id": "TP-15", "method": "GET", "path": "/api/v1/template-profiles/{profileKey}/status", "scopes": ["template.read"], "client_method": "templates().status", "cli": "templates status [--watch]", "condition": "desired revision validation and live-reference observation", "web_relation": "Template status API", "status": "implemented", "acceptance": ["CL-04", "template_read_contract"]},
     {"group": "身份与健康", "id": "ID-01", "method": "GET", "path": "/api/v1/session", "scopes": [], "client_method": "identity().session", "cli": "auth whoami / auth status", "condition": "有效身份；PAT 不取 CSRF", "web_relation": "Web session 与 scope 展示", "status": "baseline", "baseline_commit": "118a732405069908d62fce7a9639c1079d9d348e", "acceptance": ["CL-04", "UI-02"]},
     {"group": "身份与健康", "id": "ID-02", "method": "GET", "path": "/livez", "scopes": [], "client_method": "health().live", "cli": "health live", "condition": "200/503 可为空 body", "web_relation": "受保护 API；非专用 Web 页面", "status": "baseline", "baseline_commit": "118a732405069908d62fce7a9639c1079d9d348e", "acceptance": ["CL-04", "UI-02"]},
     {"group": "身份与健康", "id": "ID-03", "method": "GET", "path": "/readyz", "scopes": [], "client_method": "health().ready", "cli": "health ready", "condition": "200/503 JSON ready；503 不等于协议失败", "web_relation": "Web 顶部健康状态", "status": "baseline", "baseline_commit": "118a732405069908d62fce7a9639c1079d9d348e", "acceptance": ["CL-04", "UI-02"]},

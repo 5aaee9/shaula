@@ -122,7 +122,20 @@ async fn one_source_publishes_both_backends_and_rejects_mismatched_fleets_and_im
             .find(|p| p["key"] == key)
             .ok_or("profile missing")?;
         assert_eq!(profile["runnerBackend"], backend);
-        assert!(profile.get("bindings").is_none());
+        if key == "k8s-linux" {
+            // An omitted selection uses GitHub without inventing a stored binding.
+            assert!(profile["bindings"]["runner_backend"].is_null());
+            assert_eq!(profile["bindings"]["namespace"], "actions-runners");
+        } else {
+            assert_eq!(profile["bindings"]["runner_backend"], backend);
+            assert_eq!(profile["bindings"]["namespace"], "runners");
+        }
+        assert_eq!(
+            profile["bindings"]["kubeconfig"],
+            json!({"sensitive":true,"set":true})
+        );
+        assert!(!profile.to_string().contains("protected-path"));
+        assert!(!profile.to_string().contains("secret-kubeconfig"));
     }
     let (bindings, _) = store
         .template_protected_bindings("forgejo-linux", 1)
