@@ -7,6 +7,10 @@ use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 mod schema;
 pub(super) use schema::validate_value;
 
+#[path = "service_template_inputs.rs"]
+mod template_inputs;
+pub(super) use template_inputs::InputContext;
+
 pub(super) struct InputAuthority {
     pub policy: Map<String, Value>,
     pub schema: Option<Value>,

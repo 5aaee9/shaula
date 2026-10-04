@@ -390,6 +390,4 @@ mod input_contract;
 #[path = "service_attestation.rs"]
 mod attestation;
 
-pub(crate) use validation::validate_inputs;
-
 pub(crate) use attestation::verify_attestation_subject;

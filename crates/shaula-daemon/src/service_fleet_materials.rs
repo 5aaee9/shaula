@@ -1,7 +1,7 @@
 //! Exact Template Revision and authentication material for Fleet admission.
 
-use super::{unprocessable, AuthRevisionRef, ControlPlane};
-use shaula_core::error::{CoreError, CoreResult, ReasonCode};
+use super::{unprocessable, validation::InputContext, AuthRevisionRef, ControlPlane};
+use shaula_core::error::{CoreResult, ReasonCode};
 use shaula_core::fleet::FleetSpec;
 use shaula_core::registry::MutationError;
 
@@ -127,41 +127,17 @@ impl ControlPlane {
                 Err(e) => return Ok(Err(unprocessable(e.code, e.summary))),
             }
         };
-        if let Some((pin_key, pin_rev, pin_artifact, _)) = &template {
-            let policy = self
-                .store
-                .template_revision_get(pin_key, *pin_rev)
-                .await?
-                .and_then(|r| r.fleet_input_policy_json)
-                .unwrap_or_else(|| "{}".into());
-            // Layer 1 authority: the artifact's declared parameter schema
-            // (required/type/bounds) from the exact pinned artifact. A
-            // read failure is an Err (`?` → 500): admission never
-            // degrades a corrupt artifact to "no schema" (F08). A blank
-            // document is equally corrupt — an empty schema is `{}`, not
-            // whitespace (R5-04).
-            let schema = self.store.artifact_parameter_schema(pin_artifact).await?;
+        if let Some(pin) = &template {
+            let materials = self.load_template_inputs(pin, InputContext::Fleet).await?;
+            // Preserve backend rejection before blank-schema/input rejection,
+            // but after material reads (which can fail independently).
             if let Err(error) = self
-                .validate_template_backend(
-                    pin_key,
-                    *pin_rev,
-                    pin_artifact,
-                    spec,
-                    &spec.template_inputs,
-                )
+                .validate_template_backend(&pin.0, pin.1, &pin.2, spec, &spec.template_inputs)
                 .await
             {
                 return Ok(Err(unprocessable(error.code, error.summary)));
             }
-            if schema.trim().is_empty() {
-                return Err(CoreError::new(
-                    ReasonCode::StorageUnavailable,
-                    "pinned artifact has a blank parameter schema document",
-                ));
-            }
-            // A rejected input is a CLIENT error: classified 422, never a
-            // 500 (spec 0002 section 5.1 invalid-spec contract).
-            if let Err(e) = super::validate_inputs(&spec.template_inputs, &policy, Some(&schema)) {
+            if let Err(e) = materials.validate(&spec.template_inputs)? {
                 return Ok(Err(unprocessable(e.code, e.summary)));
             }
         }
@@ -187,22 +163,10 @@ impl ControlPlane {
                         Ok(pin) => pin,
                         Err(e) => return Ok(Err(unprocessable(e.code, e.summary))),
                     };
-                    let policy = self
-                        .store
-                        .template_revision_get(&pin.0, pin.1)
-                        .await?
-                        .and_then(|r| r.fleet_input_policy_json)
-                        .unwrap_or_else(|| "{}".into());
-                    let schema = self.store.artifact_parameter_schema(&pin.2).await?;
-                    if schema.trim().is_empty() {
-                        return Err(CoreError::new(
-                            ReasonCode::StorageUnavailable,
-                            "pool member artifact has a blank parameter schema document",
-                        ));
-                    }
-                    if let Err(e) =
-                        super::validate_inputs(&member.template_inputs, &policy, Some(&schema))
-                    {
+                    let materials = self
+                        .load_template_inputs(&pin, InputContext::PoolMember)
+                        .await?;
+                    if let Err(e) = materials.validate(&member.template_inputs)? {
                         return Ok(Err(unprocessable(e.code, e.summary)));
                     }
                     let inputs_digest = super::template_inputs_digest(&member.template_inputs)?;

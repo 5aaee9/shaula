@@ -147,20 +147,10 @@ impl ControlPlane {
         // policy and artifact schema — the same gate a manual replacement
         // passes (spec 0002 §5.1); an incompatible follower skips instead
         // of silently changing its input contract.
-        let policy = self
-            .store
-            .template_revision_get(&pin.0, pin.1)
-            .await?
-            .and_then(|r| r.fleet_input_policy_json)
-            .unwrap_or_else(|| "{}".into());
-        let schema = self.store.artifact_parameter_schema(&pin.2).await?;
-        if schema.trim().is_empty() {
-            return Err(CoreError::new(
-                ReasonCode::StorageUnavailable,
-                "pinned artifact has a blank parameter schema document",
-            ));
-        }
-        if let Err(e) = super::validate_inputs(&spec.template_inputs, &policy, Some(&schema)) {
+        let materials = self
+            .load_template_inputs(&pin, super::validation::InputContext::Fleet)
+            .await?;
+        if let Err(e) = materials.validate(&spec.template_inputs)? {
             diagnostic.reason(
                 Code::RolloutInputsIncompatible,
                 StageId::InputCompatibility,

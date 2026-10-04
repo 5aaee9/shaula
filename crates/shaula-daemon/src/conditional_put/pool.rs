@@ -8,7 +8,7 @@ use shaula_core::template_pool::{ResolvedTemplatePoolMember, TemplatePoolHead, T
 
 use super::request::{Commit, Identity, Plan};
 use super::{ControlPlane, Outcome, Resource};
-use crate::service::{sha256_digest, template_inputs_digest, unprocessable, validate_inputs};
+use crate::service::{sha256_digest, template_inputs_digest, unprocessable};
 
 pub(in crate::service) struct Pool {
     spec: TemplatePoolSpec,
@@ -118,8 +118,8 @@ impl Resource for Pool {
 }
 
 impl ControlPlane {
-    /// Shared by explicit PUT and cascade; both resolve current Active with
-    /// the profile policy AND artifact schema as independent authorities.
+    /// Explicit PUT resolves every member to current Active. Follow selects
+    /// moved members separately; both share exact-pin input materials.
     pub(crate) async fn resolve_pool_members(
         &self,
         spec: &TemplatePoolSpec,
@@ -133,20 +133,10 @@ impl ControlPlane {
                 Ok(pin) => pin,
                 Err(error) => return Ok(Err(unprocessable(error.code, error.summary))),
             };
-            let policy = self
-                .store
-                .template_revision_get(&pin.0, pin.1)
-                .await?
-                .and_then(|r| r.fleet_input_policy_json)
-                .unwrap_or_else(|| "{}".into());
-            let schema = self.store.artifact_parameter_schema(&pin.2).await?;
-            if schema.trim().is_empty() {
-                return Err(CoreError::new(
-                    ReasonCode::StorageUnavailable,
-                    "pool member artifact has a blank parameter schema document",
-                ));
-            }
-            if let Err(error) = validate_inputs(&member.template_inputs, &policy, Some(&schema)) {
+            let materials = self
+                .load_template_inputs(&pin, crate::service::validation::InputContext::PoolMember)
+                .await?;
+            if let Err(error) = materials.validate(&member.template_inputs)? {
                 return Ok(Err(unprocessable(error.code, error.summary)));
             }
             let inputs_digest = template_inputs_digest(&member.template_inputs)?;

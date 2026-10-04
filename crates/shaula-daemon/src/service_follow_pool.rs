@@ -64,22 +64,10 @@ impl ControlPlane {
                 // policy and artifact schema — the same gate a pool PUT
                 // passes; an incompatible member skips the pool, never
                 // silently changes its input contract.
-                let policy = self
-                    .store
-                    .template_revision_get(&pin.0, pin.1)
-                    .await?
-                    .and_then(|r| r.fleet_input_policy_json)
-                    .unwrap_or_else(|| "{}".into());
-                let schema = self.store.artifact_parameter_schema(&pin.2).await?;
-                if schema.trim().is_empty() {
-                    return Err(CoreError::new(
-                        ReasonCode::StorageUnavailable,
-                        "pool member artifact has a blank parameter schema document",
-                    ));
-                }
-                if let Err(e) =
-                    super::super::validate_inputs(&member.template_inputs, &policy, Some(&schema))
-                {
+                let materials = self
+                    .load_template_inputs(&pin, super::super::validation::InputContext::PoolMember)
+                    .await?;
+                if let Err(e) = materials.validate(&member.template_inputs)? {
                     tracing::warn!(pool = %key, member = %member.key, summary = %e.summary, "pool follow upgrade skipped: inputs incompatible with active revision");
                     return Ok(false);
                 }

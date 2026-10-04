@@ -5,6 +5,8 @@
 //! zero-occupancy replacement gate still applies to the cascade.
 
 mod common;
+#[path = "follow_cascade/input_materials.rs"]
+mod input_materials;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
