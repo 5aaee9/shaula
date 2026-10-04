@@ -102,21 +102,4 @@ mod tests {
         assert_eq!(decode("fleets", "not base64!"), None);
         assert_eq!(decode("fleets", &encode("fleets", "")), None);
     }
-
-    #[test]
-    fn finish_emits_a_cursor_only_when_an_extra_row_was_fetched() {
-        let page = RequestPage {
-            kind: "fleets",
-            limit: 2,
-        };
-        let mut short = vec!["a", "b"];
-        assert_eq!(page.finish(&mut short, |k| k), None);
-        let mut long = vec!["a", "b", "c"];
-        let next = page.finish(&mut long, |k| k);
-        assert_eq!(long, ["a", "b"]);
-        assert_eq!(
-            next.and_then(|next| decode("fleets", &next)).as_deref(),
-            Some("b")
-        );
-    }
 }

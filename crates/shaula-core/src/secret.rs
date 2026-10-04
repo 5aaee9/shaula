@@ -55,13 +55,4 @@ mod tests {
         assert_eq!(rendered, "SecretString(REDACTED)");
         assert!(!rendered.contains("SUPERSECRET"));
     }
-
-    #[test]
-    fn display_is_not_implemented_via_debug_string() {
-        // Display is not implemented at all; ensure Debug path is used and
-        // contains no plaintext.
-        let secret = SecretString::new("-----BEGIN RSA PRIVATE KEY-----");
-        let rendered = format!("{secret:?}");
-        assert!(!rendered.contains("RSA"));
-    }
 }

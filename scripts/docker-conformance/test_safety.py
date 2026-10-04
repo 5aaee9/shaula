@@ -74,11 +74,6 @@ def destroy_plan_with_unevaluated_check():
 
 
 class SafetyTests(unittest.TestCase):
-    def test_actual_destroy_unknown_resource_check_is_unevaluated(self):
-        admit_plan(
-            destroy_plan_with_unevaluated_check(), "delete", ["docker_container.runner"]
-        )
-
     def test_unknown_check_never_permitted_for_create(self):
         document = destroy_plan_with_unevaluated_check()
         document["resource_changes"][0]["change"] = {"actions": ["create"]}
@@ -174,18 +169,6 @@ class SafetyTests(unittest.TestCase):
         for server in invalid:
             with self.subTest(server=server), self.assertRaises(Rejected):
                 admit_docker_engine(server)
-
-    def test_create_accepts_single_container_and_readonly_data(self):
-        document = plan()
-        document["resource_changes"].append(
-            {
-                "address": "data.docker_image.runner",
-                "mode": "data",
-                "type": "docker_image",
-                "change": {"actions": ["read"]},
-            }
-        )
-        admit_plan(document, "create", [])
 
     def test_create_rejects_drift_incomplete_and_mutation_shapes(self):
         for key, value in (

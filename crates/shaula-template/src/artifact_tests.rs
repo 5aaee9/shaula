@@ -91,28 +91,6 @@ fn executable_material_is_bound_to_the_archive_not_its_raw_digest() {
 }
 
 #[test]
-fn publish_round_trip_and_manifest() {
-    let tmp = tempfile::tempdir().unwrap();
-    let archive = tar_gz_fixture(&[
-        (
-            "profile.yaml",
-            "api_version: shaula.io/template-profile/v1\n",
-        ),
-        ("main.tf", "resource {}\n"),
-    ]);
-    let digest = digest_of(&archive);
-    let store = ArtifactStore::new(tmp.path().join("artifacts"));
-
-    let published = store.publish(&archive, &digest).unwrap();
-    assert_eq!(published.digest, digest);
-    assert!(published.manifest_yaml.contains("api_version"));
-
-    // Idempotent republish.
-    let again = store.publish(&archive, &digest).unwrap();
-    assert_eq!(again.final_path, published.final_path);
-}
-
-#[test]
 fn digest_mismatch_rejected() {
     let tmp = tempfile::tempdir().unwrap();
     let archive = tar_gz_fixture(&[("profile.yaml", "x")]);

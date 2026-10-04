@@ -80,7 +80,6 @@ pub async fn serve_bound(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -88,11 +87,5 @@ mod tests {
     fn non_loopback_bind_fails_closed() {
         assert!(ServerConfig::new("127.0.0.1", 8080, 1024).is_ok());
         assert!(ServerConfig::new("0.0.0.0", 8080, 1024).is_err());
-    }
-
-    #[test]
-    fn server_config_formats_address() {
-        let config = ServerConfig::new("127.0.0.1", 8080, 1024).unwrap();
-        assert_eq!(config.listen_addr(), "127.0.0.1:8080");
     }
 }

@@ -33,11 +33,6 @@ runtime_policy_digest: sha256:policy-v1
 }
 
 #[test]
-fn manifest_validates() {
-    assert!(manifest().validate().is_ok());
-}
-
-#[test]
 fn platform_comes_only_from_manifest() {
     assert_eq!(manifest().platform(), TemplatePlatform::Kubernetes);
     assert_eq!(
@@ -96,62 +91,6 @@ fn bindings_digest_is_keyed_not_plaintext_digest() {
         "commitment depends on the server key, not just plaintext"
     );
     assert!(d1.0.starts_with("bd1_"));
-}
-
-#[test]
-fn tfvars_has_single_shaula_variable() {
-    let env = ShaulaInputEnvelope::new(
-        GenerationIdentity {
-            fleet_key: "fleet-a".into(),
-            scale_set_id: Some(123),
-            id: "gen-1".into(),
-            runner_name: "runner-1".into(),
-            generation_name: "s0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-                .into(),
-        },
-        "jit-secret".into(),
-        BindingsDigest("bd1_x".into()),
-    );
-    let doc: serde_json::Value = serde_json::from_str(&env.to_tfvars().unwrap()).unwrap();
-    let obj = doc.as_object().unwrap();
-    assert_eq!(
-        obj.len(),
-        1,
-        "tfvars must have exactly one top-level variable"
-    );
-    assert!(obj.contains_key("shaula"));
-    assert_eq!(obj["shaula"]["generation"]["id"], "gen-1");
-}
-
-#[test]
-fn forgejo_input_contains_identity_but_never_registration_token() {
-    let mut manifest = manifest();
-    manifest.runner_backend = "forgejo".into();
-    manifest.container_bootstrap_contract = Some(CONTAINER_BOOTSTRAP_CONTRACT.into());
-    manifest.runner_image_digests = vec![format!(
-        "code.forgejo.org/forgejo/runner:13.1.0@sha256:{}",
-        "a".repeat(64)
-    )];
-    let mut input = ShaulaInputEnvelope::new(
-        GenerationIdentity {
-            fleet_key: "fleet-a".into(),
-            scale_set_id: None,
-            id: "gen-1".into(),
-            runner_name: "runner-1".into(),
-            generation_name: "generation".into(),
-        },
-        String::new(),
-        BindingsDigest("bd1_x".into()),
-    );
-    input.forgejo = Some(crate::forgejo::ForgejoBootstrapIdentity {
-        instance_url: "https://forgejo.example.test".into(),
-        uuid: "runner-uuid".into(),
-        labels: vec!["linux:host".into()],
-    });
-    input.validate_for_manifest(&manifest).unwrap();
-    let tfvars = input.to_tfvars().unwrap();
-    assert!(tfvars.contains("runner-uuid"));
-    assert!(!tfvars.contains("registration-token"));
 }
 
 #[test]

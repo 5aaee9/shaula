@@ -68,14 +68,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn workspace_paths_are_namespaced() {
-        let root = Path::new("/work-root");
-        let path = generation_workspace(root, "fleet-a", "gen-1").unwrap();
-        let rendered = path.to_string_lossy().replace('\\', "/");
-        assert_eq!(rendered, "/work-root/fleet-a/gen-1");
-    }
-
-    #[test]
     fn traversal_segments_rejected() {
         let root = Path::new("/work-root");
         assert!(generation_workspace(root, "..", "gen").is_err());

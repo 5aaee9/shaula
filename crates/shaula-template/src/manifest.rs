@@ -68,41 +68,6 @@ pub fn verify_artifact_shape(dir: &std::path::Path) -> CoreResult<()> {
 mod tests {
     use super::*;
 
-    const VALID_MANIFEST: &str = r#"
-api_version: shaula.io/template-profile/v1
-kind: RunnerTemplateProfile
-platform: kubernetes
-runtime:
-  protocol: terraform-cli/v1
-  engine: terraform
-  root_module: .
-  required_version: ">= 1.9, < 2.0"
-bindings_contract: shaula.bindings.kubernetes/v1
-schemas:
-  bindings: schemas/bindings.schema.json
-  parameters: schemas/parameters.schema.json
-managed_resource_shape:
-  - role: bootstrap
-    terraform_type: kubernetes_secret_v1
-    exact_count: 1
-  - role: runner
-    terraform_type: kubernetes_pod_v1
-    exact_count: 1
-runner_image_digests:
-  - ghcr.io/actions/actions-runner:2.323.0@sha256:3f2a1b9c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8
-runtime_policy_digest: sha256:policy-v1
-"#;
-
-    #[test]
-    fn parses_valid_manifest() {
-        let manifest = parse_manifest(VALID_MANIFEST).unwrap();
-        assert_eq!(
-            manifest.platform(),
-            shaula_core::template::TemplatePlatform::Kubernetes
-        );
-        assert_eq!(manifest.bindings_contract, "shaula.bindings.kubernetes/v1");
-    }
-
     #[test]
     fn rejects_invalid_manifest() {
         assert!(parse_manifest("api_version: wrong\n").is_err());

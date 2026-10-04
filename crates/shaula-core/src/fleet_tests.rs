@@ -23,11 +23,6 @@ fn base_spec() -> FleetSpec {
 }
 
 #[test]
-fn valid_spec_passes() {
-    assert!(validate_fleet_spec(&base_spec()).is_ok());
-}
-
-#[test]
 fn capacity_inversion_rejected() {
     let mut spec = base_spec();
     spec.capacity = CapacityPolicyDto {

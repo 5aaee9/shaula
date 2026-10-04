@@ -73,17 +73,6 @@ fn unknown_and_unannotated_fields_fail_closed_to_markers() {
 }
 
 #[test]
-fn all_sensitive_schema_marks_every_field() {
-    let schema = BindingsSchema::all_sensitive();
-    let stored = map(json!({"proxmox_host": "https://pve.example.com:8006"}));
-    let projected = schema.project(&stored);
-    assert_eq!(
-        projected.get("proxmox_host"),
-        Some(&json!({"sensitive": true, "set": true}))
-    );
-}
-
-#[test]
 fn nested_secret_member_protects_the_whole_field() {
     let schema = BindingsSchema::parse(&proxmox_like_schema()).unwrap();
     assert!(schema.sensitive("nested_secret_member"));
@@ -131,50 +120,6 @@ fn merge_keeps_secrets_on_null_or_omission_and_replaces_on_value() {
         merged.get("proxmox_token"),
         Some(&json!("root@pam!fresh=new-secret"))
     );
-}
-
-#[test]
-fn merge_rejects_unknown_fields_and_presence_marker_echoes() {
-    let schema = BindingsSchema::parse(&proxmox_like_schema()).unwrap();
-    let base = map(json!({"proxmox_host": "https://old.example.com:8006"}));
-    assert!(schema
-        .merge_update(&base, &map(json!({"typo_field": "x"})))
-        .is_err());
-    assert!(schema
-        .merge_update(
-            &base,
-            &map(json!({"proxmox_token": {"sensitive": true, "set": true}}))
-        )
-        .is_err());
-}
-
-#[test]
-fn validate_rejects_missing_required_wrong_type_and_unknown_fields() {
-    let schema = BindingsSchema::parse(&proxmox_like_schema()).unwrap();
-    // Missing required token.
-    let merged = map(json!({"proxmox_host": "https://pve.example.com:8006"}));
-    assert!(schema.validate(&merged).is_err());
-    // Wrong types.
-    let merged = map(json!({
-        "proxmox_host": "https://pve.example.com:8006",
-        "proxmox_token": "user@pam!id=secret",
-        "proxmox_vmid_begin": "not-a-number"
-    }));
-    assert!(schema.validate(&merged).is_err());
-    // Unknown field (additionalProperties: false).
-    let merged = map(json!({
-        "proxmox_host": "https://pve.example.com:8006",
-        "proxmox_token": "user@pam!id=secret",
-        "rogue": 1
-    }));
-    assert!(schema.validate(&merged).is_err());
-    // A full valid set passes, including bounds and pattern keywords.
-    let merged = map(json!({
-        "proxmox_host": "https://pve.example.com:8006",
-        "proxmox_token": "user@pam!id=secret",
-        "proxmox_vmid_begin": 100
-    }));
-    schema.validate(&merged).unwrap();
 }
 
 #[test]

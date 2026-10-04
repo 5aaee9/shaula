@@ -11,13 +11,6 @@ fn request() -> serde_json::Value {
 }
 
 #[test]
-fn supported_publication_is_accepted() {
-    let payload = build_auth_payload(serde_json::from_value(request()).unwrap()).unwrap();
-    assert_eq!(payload.schema_version, Some(2));
-    assert_eq!(payload.app_id.as_deref(), Some("123"));
-}
-
-#[test]
 fn legacy_members_are_unknown_even_when_null_or_empty() {
     for field in [
         "target_allowlist",

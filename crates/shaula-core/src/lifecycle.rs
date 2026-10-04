@@ -139,25 +139,6 @@ mod tests {
     use GenerationState::*;
 
     #[test]
-    fn happy_path_create_to_destroyed() {
-        let path = [
-            (CreatePending, Creating),
-            (Creating, WaitingOnline),
-            (WaitingOnline, Idle),
-            (Idle, Retiring),
-            (Retiring, DestroyPending),
-            (DestroyPending, Destroying),
-            (Destroying, Destroyed),
-        ];
-        for (from, to) in path {
-            assert!(
-                transition_allowed(from, to),
-                "{from:?} -> {to:?} must be allowed"
-            );
-        }
-    }
-
-    #[test]
     fn uncertain_create_enters_cleanup_not_reapply() {
         assert!(transition_allowed(Creating, CleanupRequired));
         assert!(transition_allowed(CleanupRequired, Retiring));

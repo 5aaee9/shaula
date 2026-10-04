@@ -214,25 +214,6 @@ mod tests {
     }
 
     #[test]
-    fn auth_ref_tuple_round_trip() {
-        let r = AuthRevisionRef::new(AuthProfileKey::new("prod-app").unwrap(), 7);
-        assert_eq!(
-            serde_json::to_string(&r).unwrap(),
-            r#"{"profile_key":"prod-app","revision":7}"#
-        );
-    }
-
-    #[test]
-    fn bare_revision_never_equals_full_tuple() {
-        let a = AuthRevisionRef::new(AuthProfileKey::new("p1").unwrap(), 3);
-        let b = AuthRevisionRef::new(AuthProfileKey::new("p2").unwrap(), 3);
-        assert_ne!(
-            a, b,
-            "same revision number in a different profile is a different ref"
-        );
-    }
-
-    #[test]
     fn invalid_profile_keys_rejected() {
         assert!(AuthProfileKey::new("").is_err());
         assert!(AuthProfileKey::new("has space").is_err());

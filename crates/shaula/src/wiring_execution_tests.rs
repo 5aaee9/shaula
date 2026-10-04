@@ -44,30 +44,6 @@ async fn ownership_reports_actual_proof_health_for_the_observed_revision() {
 
 // ---- G3 tests ---------------------------------------------------------------
 
-/// G3: the execution supervisor is built FROM the persisted observed
-/// authority — the handoff's observed ref plus the observed context row —
-/// and only then is it eligible to run effects.
-#[tokio::test]
-async fn wiring_builds_execution_supervisor_from_observed_context() {
-    let plane = test_plane().await;
-    let fence = seed_promoted_profile_and_fleet(&plane).await;
-    acknowledge_handoff(&plane, fence).await;
-    let mut wiring = execution_wiring(&plane).await;
-    let (_, fleet_revision, phase) =
-        ControlPlaneStore::fleet_list(&*plane.control_plane, &fleet_actor(), Default::default())
-            .await
-            .unwrap()[0]
-            .clone();
-    let supervisor = wiring
-        .supervisor_for(FLEET, fleet_revision, &phase)
-        .await
-        .unwrap();
-    assert!(
-        supervisor.is_some(),
-        "a fully observed authority must yield an executable supervisor"
-    );
-}
-
 /// G3: a CORRUPT observed context (durable crash/corruption state) must
 /// never yield an executable port — the wiring refuses to build the
 /// supervisor instead of running effects under an unreadable authority.

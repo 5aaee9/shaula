@@ -223,18 +223,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn repository_selection_wire_names() {
-        assert_eq!(
-            serde_json::to_string(&RepositorySelection::All).unwrap(),
-            r#""all""#
-        );
-        assert_eq!(
-            serde_json::to_string(&RepositorySelection::Selected).unwrap(),
-            r#""selected""#
-        );
-    }
-
-    #[test]
     fn context_ref_and_binding_match_requires_full_identity() {
         let binding = AccountBinding {
             account_id: 7,

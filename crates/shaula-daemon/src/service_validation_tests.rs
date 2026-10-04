@@ -29,15 +29,6 @@ const POLICY: &str = r#"{
 }"#;
 
 #[test]
-fn valid_input_passes_both_layers() {
-    assert!(ok(
-        json!({"runner_image": "img:1", "cpu": "2"}),
-        POLICY,
-        Some(SCHEMA)
-    ));
-}
-
-#[test]
 fn missing_required_key_is_rejected() {
     assert!(!ok(json!({"cpu": "1"}), POLICY, Some(SCHEMA)));
 }

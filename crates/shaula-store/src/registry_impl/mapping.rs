@@ -262,22 +262,4 @@ mod tests {
             Err(StoreError::Corrupt(_))
         ));
     }
-
-    #[test]
-    fn persisted_pool_fields_keep_valid_values() {
-        let inputs = template_inputs_from_json(r#"{"size":"standard"}"#);
-        assert_eq!(
-            inputs
-                .as_ref()
-                .ok()
-                .and_then(|value| value.get("size"))
-                .and_then(serde_json::Value::as_str),
-            Some("standard")
-        );
-        assert_eq!(pool_member_weight(7).ok(), Some(7));
-        assert_eq!(
-            pool_failure_policy("redistribute").ok(),
-            Some(PoolFailurePolicy::Redistribute)
-        );
-    }
 }

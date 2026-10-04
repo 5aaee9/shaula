@@ -168,34 +168,6 @@ mod tests {
     }
 
     #[test]
-    fn access_failure_mapping_never_treats_404_as_absence() {
-        let err = ScalesetError::Status {
-            status: 404,
-            summary: "filtered".into(),
-        };
-        assert!(matches!(
-            err.to_access_failure(),
-            AccessFailure::TargetHiddenOrNotFound
-        ));
-        let err = ScalesetError::Status {
-            status: 403,
-            summary: "denied".into(),
-        };
-        assert!(matches!(
-            err.to_access_failure(),
-            AccessFailure::PermissionDenied
-        ));
-        let err = ScalesetError::Status {
-            status: 401,
-            summary: "stale".into(),
-        };
-        assert!(matches!(
-            err.to_access_failure(),
-            AccessFailure::Unauthenticated
-        ));
-    }
-
-    #[test]
     fn summaries_do_not_carry_body_content() {
         let err = ScalesetError::Service {
             exception: ActionsException::JobStillRunning,

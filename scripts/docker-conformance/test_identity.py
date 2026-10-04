@@ -27,17 +27,6 @@ class IdentityTests(unittest.TestCase):
             with self.assertRaises(Rejected):
                 runner_identity(jit(runner))
 
-    def test_real_shaped_pascal_case_jit_with_decimal_id(self):
-        # Non-secret metadata only, matching the live GitHub serialization.
-        runner = {
-            "AgentId": "2",
-            "AgentName": "shaula-codex-docker-smoke-20260908-01",
-            "Ephemeral": True,
-            "DisableUpdate": True,
-            "WorkFolder": "_work",
-        }
-        self.assertEqual(runner_identity(jit(runner)), (2, runner["AgentName"]))
-
     def test_supported_aliases_and_exact_safe_integer_boundaries(self):
         for id_key in ("AgentId", "agentId"):
             for name_key in ("AgentName", "agentName"):

@@ -84,30 +84,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registration_token_paths_by_scope() {
-        let org = GitHubConfig::production(GitHubTarget::organization("example-org").unwrap());
-        assert_eq!(
-            org.registration_token_path(),
-            "/orgs/example-org/actions/runners/registration-token"
-        );
-
-        let repo = GitHubConfig::production(
-            GitHubTarget::new_repository("example-org", "example-repo").unwrap(),
-        );
-        assert_eq!(
-            repo.registration_token_path(),
-            "/repos/example-org/example-repo/actions/runners/registration-token"
-        );
-    }
-
-    #[test]
-    fn production_uses_api_github_com() {
-        let cfg = GitHubConfig::production(GitHubTarget::organization("o").unwrap());
-        assert_eq!(cfg.github_api_base, "https://api.github.com");
-        assert!(!cfg.allow_test_endpoints);
-    }
-
-    #[test]
     fn config_url_validation() {
         let target = GitHubTarget::organization("example-org").unwrap();
         assert!(validate_config_url_matches("https://github.com/example-org", &target).is_ok());

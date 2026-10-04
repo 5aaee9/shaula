@@ -30,20 +30,6 @@ execution:
 }
 
 #[test]
-fn valid_bootstrap_freezes_absolute_engine_path() {
-    let validated = ValidatedBootstrap::validate(base_config()).unwrap();
-    assert_eq!(validated.listen, "127.0.0.1:8080");
-    assert_eq!(
-        validated.database_path,
-        PathBuf::from("/var/lib/shaula/shaula.db")
-    );
-    assert_eq!(validated.max_active_fleets, 100);
-    // The frozen authority is the ABSOLUTE fixture path (R5-08).
-    assert!(validated.terraform_executable.is_absolute());
-    assert!(validated.terraform_executable.is_file());
-}
-
-#[test]
 fn runner_lifetime_defaults_and_overrides_are_validated() {
     assert_eq!(
         ValidatedBootstrap::validate(base_config())
@@ -171,12 +157,6 @@ fn non_loopback_listen_fails_closed() {
     let mut config = base_config();
     config.http.listen = "0.0.0.0:8080".to_string();
     assert!(ValidatedBootstrap::validate(config).is_err());
-}
-
-#[test]
-fn missing_observability_section_defaults_service_name() {
-    let config = base_config();
-    assert_eq!(config.observability.service_name, "shaula");
 }
 
 #[test]

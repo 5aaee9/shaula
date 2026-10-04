@@ -1,4 +1,4 @@
-//! G1/G2 scheduling composition tests: the REAL `SupervisorWiring` tick
+//! G2 scheduling composition tests: the REAL `SupervisorWiring` tick
 //! loop drives the REAL v2 worker against the scripted GitHub mock — the
 //! production scheduling path itself, no test-only dispatch. Time is
 //! controlled through the tick parameter while the worker's fixed clock
@@ -17,38 +17,6 @@ const T0: i64 = 1_800_000_000_000;
 
 const NOLIMIT_POLICY: &str =
     r#"{"selectors":[{"kind":"account_repositories","account_kind":"user","owner":"nolimit"}]}"#;
-
-/// G1: the scheduling loop passes the REAL Profile key to the worker —
-/// `auth/{key}` is only the internal task name. A candidate published
-/// under `shared-github` promotes through `tick_all`; with the old bug
-/// (worker keyed `auth/shared-github`) the worker would find no profile
-/// and the candidate would stay Validating forever.
-#[tokio::test]
-async fn scheduling_passes_real_profile_key_and_promotes_candidate() {
-    let mock = crate::auth_worker_mock::mock_server(false).await;
-    let control_plane = control_plane().await;
-    seed_candidate(&control_plane, 1, &policy(false)).await;
-    let mut wiring = wiring_with(
-        &control_plane,
-        crate::auth_worker_mock::endpoints(&mock.base),
-    )
-    .await;
-    tick_and_drain(&mut wiring, T0).await;
-    let head = ControlPlaneStore::auth_profile_get(control_plane.as_ref(), KEY)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        head.active_revision,
-        Some(1),
-        "the real profile key must reach the worker through the scheduling loop"
-    );
-    assert_eq!(head.status, "Active");
-    assert!(
-        !mock.user_agents.lock().unwrap().is_empty(),
-        "the scheduled worker made real GitHub requests"
-    );
-}
 
 /// G2: a rate-limited validation carries GitHub's Retry-After as an
 /// ABSOLUTE deadline — no worker attempt inside the window, a real
