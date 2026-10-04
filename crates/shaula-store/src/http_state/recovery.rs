@@ -1,46 +1,29 @@
 //! Restart classification under the daemon ownership lock, before acquisition.
 use super::{row::Row, sql, unavailable, worker::WorkerRow, SqliteStateBackend, WorkerAdmissions};
-use sea_orm::{ConnectionTrait, FromQueryResult};
+use sea_orm::ConnectionTrait;
 use shaula_core::{
-    state_backend::{StateClaim, StateError, StateResult},
-    worker::{FenceOutcome, ProcessIdentity, WorkerAdmission},
+    state_backend::{StateError, StateResult},
+    worker::{FenceOutcome, WorkerAdmission},
 };
-use uuid::Uuid;
 
-#[derive(FromQueryResult)]
-pub struct RecoveryRecord {
-    pub generation_id: String,
-    pub worker_epoch: i64,
-    pub worker_attempt: String,
-    pub phase: String,
-    pub process_identity: Option<String>,
-    pub workspace_path: String,
-    pub create_started: bool,
-    pub has_input: bool,
-}
-
-impl RecoveryRecord {
-    pub fn identity(&self) -> StateResult<Option<ProcessIdentity>> {
-        self.process_identity
-            .as_deref()
-            .map(|value| serde_json::from_str(value).map_err(|_| StateError::Unavailable))
-            .transpose()
-    }
-    pub fn claim(&self) -> StateResult<StateClaim> {
-        Ok(StateClaim {
-            generation_id: Uuid::parse_str(&self.generation_id).map_err(|_| StateError::Invalid)?,
-            worker_epoch: self.worker_epoch,
-            worker_attempt: Uuid::parse_str(&self.worker_attempt)
-                .map_err(|_| StateError::Invalid)?,
-        })
-    }
-}
+pub use shaula_core::worker::recovery::RecoveryRecord;
 
 impl SqliteStateBackend {
     pub async fn recovery_records(&self) -> StateResult<Vec<RecoveryRecord>> {
         let rows = self.store.connection().query_all(sql("SELECT w.generation_id, s.worker_epoch, s.worker_attempt, w.phase, w.process_identity, g.workspace_path, s.create_started, w.protected_input IS NOT NULL AS has_input FROM lifecycle_workers w JOIN generation_http_state s ON s.generation_id = w.generation_id JOIN runner_generations g ON g.id = w.generation_id WHERE w.phase != 'completed' AND g.state != 'Destroyed' ORDER BY g.created_at, g.id", vec![])).await.map_err(unavailable)?;
         rows.iter()
-            .map(|row| RecoveryRecord::from_query_result(row, "").map_err(unavailable))
+            .map(|row| {
+                Ok(RecoveryRecord {
+                    generation_id: row.try_get("", "generation_id").map_err(unavailable)?,
+                    worker_epoch: row.try_get("", "worker_epoch").map_err(unavailable)?,
+                    worker_attempt: row.try_get("", "worker_attempt").map_err(unavailable)?,
+                    phase: row.try_get("", "phase").map_err(unavailable)?,
+                    process_identity: row.try_get("", "process_identity").map_err(unavailable)?,
+                    workspace_path: row.try_get("", "workspace_path").map_err(unavailable)?,
+                    create_started: row.try_get("", "create_started").map_err(unavailable)?,
+                    has_input: row.try_get("", "has_input").map_err(unavailable)?,
+                })
+            })
             .collect()
     }
 

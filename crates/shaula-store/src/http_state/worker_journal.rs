@@ -10,8 +10,8 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 pub struct SqliteWorkerJournal {
-    backend: SqliteStateBackend,
-    admissions: Arc<WorkerAdmissions>,
+    pub(super) backend: SqliteStateBackend,
+    pub(super) admissions: Arc<WorkerAdmissions>,
 }
 
 impl SqliteWorkerJournal {

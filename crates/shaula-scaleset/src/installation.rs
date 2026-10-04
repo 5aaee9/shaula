@@ -41,67 +41,9 @@ pub fn required_permission(selector: &TargetSelector) -> (&'static str, &'static
     }
 }
 
-/// Verified installation facts for one account (non-secret).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InstallationProof {
-    pub installation_id: i64,
-    pub app_id: i64,
-    pub account_id: i64,
-    pub account_kind: AccountKind,
-    /// Canonical login as GitHub returned it (display only).
-    pub login: String,
-    pub repository_selection: RepositorySelection,
-    pub has_required_permission: bool,
-}
-
-/// Classified lookup outcome; the validator maps every variant onto a
-/// durable Candidate outcome or a bounded retry (spec 0011 §4.1).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum InstallationLookup {
-    Proven(InstallationProof),
-    /// 404: no installation for this account/repository.
-    NotFound,
-    /// The installation exists but is suspended.
-    Suspended,
-    /// The installation answers for a DIFFERENT App or account than the
-    /// declared/selector identity.
-    IdentityMismatch,
-    /// A required permission is missing from the installation.
-    PermissionDenied,
-    /// Network failure, `429`, rate-limit `403` or GitHub `5xx`: bounded
-    /// retry, never a terminal rejection.
-    /// Bounded retry with the deadline GitHub supplied (if any).
-    Transient {
-        retry_after_ms: Option<i64>,
-    },
-}
-
-/// Outcome of the bounded installation-metadata probe.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MetadataReachability {
-    Reachable,
-    NotFound,
-    PermissionDenied,
-    Transient { retry_after_ms: Option<i64> },
-}
-
-/// The `/app` proof of the declared numeric App identity.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AppVerification {
-    pub app_id: i64,
-}
-
-/// Classified outcome of one repository identity lookup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RepoIdentity {
-    /// Durable numeric identity (repository id, owner id).
-    Proven(i64, i64),
-    /// 404: removed from the installation, renamed or deleted.
-    Missing,
-    Transient {
-        retry_after_ms: Option<i64>,
-    },
-}
+pub use shaula_core::auth_validation::{
+    AppVerification, InstallationLookup, InstallationProof, MetadataReachability, RepoIdentity,
+};
 
 #[derive(Deserialize)]
 pub(crate) struct InstallationAccount {

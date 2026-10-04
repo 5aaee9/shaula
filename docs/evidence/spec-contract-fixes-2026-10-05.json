@@ -1,0 +1,498 @@
+{
+  "date": "2026-10-05",
+  "baseline_commit": "40e8d476c1f109dd39249e2e75148a67ba256bae",
+  "scope": [
+    "Template status and schema-approved read projections",
+    "CLI attestation receipts and accepted-wait cancellation",
+    "Daemon ownership of Auth validation and worker recovery policy"
+  ],
+  "regressions": {
+    "before": "Four new HTTP/CLI integration regressions failed before implementation.",
+    "after": "All passed; original dropped-ACK and Ctrl-C reproductions also passed."
+  },
+  "validation": [
+    {
+      "command": "cargo fmt --check",
+      "result": "passed"
+    },
+    {
+      "command": "cargo clippy --workspace --all-targets -- -D warnings",
+      "result": "passed"
+    },
+    {
+      "command": "NEXTEST_TEST_THREADS=8 cargo nextest run --manifest-path Cargo.toml --workspace --no-fail-fast --status-level fail --final-status-level fail",
+      "passed": 1015,
+      "skipped": 23
+    },
+    {
+      "command": "NEXTEST_TEST_THREADS=8 cargo nextest run --manifest-path Cargo.toml --workspace test",
+      "passed": 778,
+      "skipped": 260,
+      "note": "The user-required name-filtered command is separate from the full workspace gate."
+    },
+    {
+      "command": "cargo nextest run -p shaula --test serve_lifecycle --run-ignored ignored-only --test-threads 1 --no-fail-fast --status-level fail --final-status-level fail",
+      "environment": "Linux cgroup v2; systemd-run --user --scope -p Delegate=yes; SHAULA_TEST_CGROUP set to delegated scope path",
+      "passed": 3,
+      "skipped": 0
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed"
+    },
+    {
+      "check": "Changed Rust source file length",
+      "result": "All at most 400 lines"
+    }
+  ],
+  "transient_failure": "An earlier high-concurrency filtered run exceeded an existing OIDC test token expiration window (4 seconds). The final full and filtered runs passed with 8 threads.",
+  "artifacts": {
+    "attestation-lost-ack.json": {
+      "command": "templates.attestations.create",
+      "data": null,
+      "error": {
+        "code": 9,
+        "http_status": null,
+        "message": "server returned an invalid response",
+        "retry_after_seconds": null
+      },
+      "metadata": {
+        "partial": false,
+        "version": null
+      },
+      "receipt": {
+        "attestation_key": "proof",
+        "idempotency_key": "e623a31c-de23-48f3-a477-92240ae98c49",
+        "outcome": "uncertain",
+        "resource_key": "review",
+        "resource_kind": "template-attestation",
+        "revision": 1
+      },
+      "schema_version": 1
+    },
+    "attestation-replayed.json": {
+      "command": "templates.attestations.create",
+      "data": {
+        "attestationId": "proof"
+      },
+      "error": null,
+      "metadata": {
+        "partial": false,
+        "version": null
+      },
+      "receipt": {
+        "attestation_key": "proof",
+        "idempotency_key": "e623a31c-de23-48f3-a477-92240ae98c49",
+        "outcome": "completed",
+        "resource_key": "review",
+        "resource_kind": "template-attestation",
+        "revision": 1
+      },
+      "schema_version": 1
+    },
+    "cancel-accepted-wait.json": {
+      "exit_code": 130,
+      "output": {
+        "command": "fleets.create",
+        "data": {
+          "changeId": "change-1",
+          "revision": 1,
+          "state": "Accepted"
+        },
+        "error": {
+          "code": 130,
+          "http_status": null,
+          "message": "cancelled; server operation continues",
+          "retry_after_seconds": null
+        },
+        "metadata": {
+          "partial": true,
+          "version": null
+        },
+        "receipt": {
+          "change": {
+            "id": "change-1",
+            "kind": "fleet"
+          },
+          "idempotency_key": "96116d85-6708-42cb-9667-f05249e55416",
+          "outcome": "accepted",
+          "resource_key": "review",
+          "resource_kind": "fleet",
+          "version": null
+        },
+        "schema_version": 1
+      }
+    },
+    "template-read-projections.json": {
+      "historical": {
+        "artifactDigest": "sha256:044cb79bed86cdb8d3b08545431b7becec01114cd9986b2704cd720dd59cee1d",
+        "bindings": {
+          "kubeconfig": {
+            "sensitive": true,
+            "set": true
+          },
+          "namespace": {
+            "sensitive": true,
+            "set": true
+          }
+        },
+        "bindingsContract": "shaula.bindings.kubernetes/v1",
+        "bindingsPresent": true,
+        "engineRef": "terraform",
+        "platform": "kubernetes",
+        "profileKey": "k8s-linux",
+        "reason": null,
+        "revision": 1,
+        "sourceKey": null,
+        "state": "Active"
+      },
+      "reads": [
+        {
+          "body": {
+            "activeRevision": 1,
+            "bindings": {
+              "kubeconfig": {
+                "sensitive": true,
+                "set": true
+              },
+              "namespace": "public-namespace"
+            },
+            "bindingsContract": null,
+            "bindings_present": true,
+            "desiredRevision": 2,
+            "incarnation": "adaea1aa-152e-4256-8189-f1992142c5bc",
+            "key": "k8s-linux",
+            "platform": null,
+            "references": {
+              "inUse": true
+            },
+            "runnerBackend": "github",
+            "status": "Validating",
+            "validation": {
+              "reason": null,
+              "revision": 2,
+              "state": "Validating"
+            }
+          },
+          "path": "/api/v1/template-profiles/k8s-linux"
+        },
+        {
+          "body": {
+            "activeRevision": 1,
+            "bindings": {
+              "kubeconfig": {
+                "sensitive": true,
+                "set": true
+              },
+              "namespace": "public-namespace"
+            },
+            "bindingsContract": null,
+            "bindings_present": true,
+            "desiredRevision": 2,
+            "incarnation": "adaea1aa-152e-4256-8189-f1992142c5bc",
+            "key": "k8s-linux",
+            "platform": null,
+            "references": {
+              "inUse": true
+            },
+            "runnerBackend": "github",
+            "status": "Validating",
+            "validation": {
+              "reason": null,
+              "revision": 2,
+              "state": "Validating"
+            }
+          },
+          "path": "/api/v1/template-profiles/k8s-linux/status"
+        },
+        {
+          "body": {
+            "artifactDigest": "sha256:ef23c80ad44ba4a08d6e9e33841657098c26379b3d4ff8fe9e86288e75b2becc",
+            "bindings": {
+              "kubeconfig": {
+                "sensitive": true,
+                "set": true
+              },
+              "namespace": "public-namespace"
+            },
+            "bindingsContract": null,
+            "bindingsPresent": true,
+            "engineRef": "terraform",
+            "platform": null,
+            "profileKey": "k8s-linux",
+            "reason": null,
+            "revision": 2,
+            "sourceKey": null,
+            "state": "Validating"
+          },
+          "path": "/api/v1/template-profiles/k8s-linux/revisions/2"
+        },
+        {
+          "body": {
+            "bindings": {
+              "kubeconfig": {
+                "sensitive": true,
+                "set": true
+              },
+              "namespace": "public-namespace"
+            },
+            "bindingsPresent": true,
+            "completedAt": 1800000000,
+            "profileKey": "k8s-linux",
+            "result": "passed",
+            "revision": 2,
+            "subject": {
+              "artifact_digest": "sha256:ef23c80ad44ba4a08d6e9e33841657098c26379b3d4ff8fe9e86288e75b2becc",
+              "bindings_contract": "shaula.bindings.kubernetes/v1",
+              "bindings_digest": "bd1_688c164f2744ab15e28164fe28bd0423190e61ba53abc364b563bca6674df934",
+              "dependency_lock_digest": "sha256:e8516c4d0c6d2c3eef6a99e94482bfed797c8de50b0828ab6ecc8c944e9f5e5c",
+              "engine": {
+                "binary_digest": "sha256:8d44f071a98f78308f761d1c01d0187a653cc4280c3e699ee02cbab88e0bfdf6",
+                "kind": "terraform",
+                "required_version": ">= 1.9, < 2.0",
+                "version": "1.9.8"
+              },
+              "platform": "kubernetes",
+              "providers": [
+                {
+                  "checksums_digest": "sha256:317c9c846d549272df2bbb2f6570d47733fc8144a327a5686adaec3b826c53d3",
+                  "source": "hashicorp/kubernetes",
+                  "version": "2.23.0"
+                }
+              ],
+              "runner_image_digests": [
+                "ghcr.io/actions/actions-runner:2.323.0@sha256:3f2a1b9c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8"
+              ],
+              "runtime_policy_digest": "sha256:policy-v1",
+              "suite": {
+                "name": "shaula-template-conformance",
+                "version": "v1"
+              }
+            },
+            "subjectVerified": false,
+            "suite": {
+              "name": "shaula-template-conformance",
+              "version": "v1"
+            }
+          },
+          "path": "/api/v1/template-profiles/k8s-linux/revisions/2/attestations/proof"
+        },
+        {
+          "body": {
+            "next_cursor": null,
+            "profiles": [
+              {
+                "activeRevision": 1,
+                "bindings": {
+                  "kubeconfig": {
+                    "sensitive": true,
+                    "set": true
+                  },
+                  "namespace": "public-namespace"
+                },
+                "bindingsContract": null,
+                "bindings_present": true,
+                "desiredRevision": 2,
+                "incarnation": "adaea1aa-152e-4256-8189-f1992142c5bc",
+                "key": "k8s-linux",
+                "platform": null,
+                "references": {
+                  "inUse": true
+                },
+                "runnerBackend": "github",
+                "status": "Validating",
+                "validation": {
+                  "reason": null,
+                  "revision": 2,
+                  "state": "Validating"
+                }
+              }
+            ]
+          },
+          "path": "/api/v1/template-profiles"
+        }
+      ]
+    },
+    "template-status-cli-watch.json": {
+      "events": [
+        {
+          "data": {
+            "activeRevision": 1,
+            "bindings": {
+              "kubeconfig": {
+                "sensitive": true,
+                "set": true
+              },
+              "namespace": {
+                "sensitive": true,
+                "set": true
+              }
+            },
+            "bindingsContract": "shaula.bindings.kubernetes/v1",
+            "bindings_present": true,
+            "desiredRevision": 1,
+            "incarnation": "79f114f2-13a4-45d6-aa30-e5ebcf4d6388",
+            "key": "k8s-linux",
+            "platform": "kubernetes",
+            "references": {
+              "inUse": true
+            },
+            "runnerBackend": "github",
+            "status": "Active",
+            "validation": {
+              "reason": null,
+              "revision": 1,
+              "state": "Active"
+            }
+          },
+          "event": "snapshot",
+          "metadata": {
+            "partial": false
+          },
+          "schema_version": 1
+        },
+        {
+          "data": {
+            "activeRevision": 1,
+            "bindings": {
+              "kubeconfig": {
+                "sensitive": true,
+                "set": true
+              },
+              "namespace": {
+                "sensitive": true,
+                "set": true
+              }
+            },
+            "bindingsContract": "shaula.bindings.kubernetes/v1",
+            "bindings_present": true,
+            "desiredRevision": 1,
+            "incarnation": "79f114f2-13a4-45d6-aa30-e5ebcf4d6388",
+            "key": "k8s-linux",
+            "platform": "kubernetes",
+            "references": {
+              "inUse": true
+            },
+            "runnerBackend": "github",
+            "status": "Active",
+            "validation": {
+              "reason": null,
+              "revision": 1,
+              "state": "Active"
+            }
+          },
+          "event": "snapshot",
+          "metadata": {
+            "partial": false
+          },
+          "schema_version": 1
+        },
+        {
+          "data": {
+            "exit_code": 0,
+            "reason": "timeout"
+          },
+          "event": "end",
+          "metadata": {
+            "partial": false
+          },
+          "schema_version": 1
+        }
+      ],
+      "exit_code": 0
+    },
+    "template-status.json": {
+      "activeRevision": 1,
+      "bindings": {
+        "kubeconfig": {
+          "sensitive": true,
+          "set": true
+        },
+        "namespace": {
+          "sensitive": true,
+          "set": true
+        }
+      },
+      "bindingsContract": "shaula.bindings.kubernetes/v1",
+      "bindings_present": true,
+      "desiredRevision": 1,
+      "incarnation": "6915fba1-b29b-4f7b-b86a-1d5b981024fb",
+      "key": "k8s-linux",
+      "platform": "kubernetes",
+      "references": {
+        "inUse": true
+      },
+      "runnerBackend": "github",
+      "status": "Active",
+      "validation": {
+        "reason": null,
+        "revision": 1,
+        "state": "Active"
+      }
+    }
+  },
+  "changed_rust_source_sha256": {
+    "crates/shaula-api-types/src/views.rs": "c882c1fc063b68ab7e131a0dc9cefe903019106be55ab99aac5ff5cbf71349d3",
+    "crates/shaula-client/src/resources.rs": "d5776814f2ac893cb51ab193c5b240938bf576db36169215231abe498d148754",
+    "crates/shaula-client/src/typed_registry.rs": "4944ad87eac27ba9b23a8eca765aae3cae9269ce18d48bb22b244274724f0ca9",
+    "crates/shaula-client/tests/routes.rs": "58906b33faba6d8321bd5fc47faeda386ea4f93807cd4a9484645fab08a2edc2",
+    "crates/shaula-core/src/auth_validation.rs": "da677fce4f420261a7edb7ae9008929e2b7ed5c57add3e715ac21f263256ad65",
+    "crates/shaula-core/src/lib.rs": "951fcc1b3a18b62146f6d2ba6baea135284adab827a0a37501389f27685b793f",
+    "crates/shaula-core/src/registry/profile_port.rs": "616e117fc873775d7e2b8070f2e62738859ef8b3cbe2510d089008bd0d856ddf",
+    "crates/shaula-core/src/registry/store_port.rs": "021208e4acaccb3de2bfa2dedaf37d317abc8e79cde5713cde534f066258caf5",
+    "crates/shaula-core/src/registry/template_profile.rs": "d6a1343c8c002a698a8b20f4fcc9a7bfd7f1699218c56c62289da7f58ec4bf12",
+    "crates/shaula-core/src/worker.rs": "3cbb626e6dcc783eb056da254fe118f04a0e4ddef892ddbaccde500c860c2738",
+    "crates/shaula-core/src/worker/recovery.rs": "8af6d8279e0a6130af012f5eb4a500cf2f29362848bf7fa0f8662896b79b16f3",
+    "crates/shaula-daemon/src/auth_validation/forgejo.rs": "81653a295b3ffb8c7c1b277b77841278faf186bb547f9155af9415ecc431f397",
+    "crates/shaula-daemon/src/auth_validation/github.rs": "d45f8d79b259751f0f5851a75a65c06ac3d16b4fa964ee3184038836a7595fd3",
+    "crates/shaula-daemon/src/auth_validation/mod.rs": "1925af7f5670036b66ab02f1d8b05755bd674084866fc0180e576303759f1495",
+    "crates/shaula-daemon/src/auth_validation/predecessor.rs": "845ac597cc974fdfab6e957f7df74f0f3a4753da3a64c88ca5213387a9739d60",
+    "crates/shaula-daemon/src/auth_validation/scheduler.rs": "a720dc013ac8b8b825067a5451f3590f40ef4302465780c6e2d49211f6d2ee90",
+    "crates/shaula-daemon/src/auth_validation/selectors.rs": "705869b0319a5b1d549648c1ad4fb5779002e8edb63a328bd9e85ee476ae1250",
+    "crates/shaula-daemon/src/fleet_tasks.rs": "94274bf13f37e27425d1b9303117bcdd9237fd5b832a9a45acc104506e143e1f",
+    "crates/shaula-daemon/src/lib.rs": "13ee35c5fc5d59fc315fd65d8dc20cd64c3f4cac1a1bdbd842952b496b766778",
+    "crates/shaula-daemon/src/service.rs": "afcd4a4c98a0d2731946a1dd748691f611c186abc7073958a32009dfe66c84bb",
+    "crates/shaula-daemon/src/service_profile_registry.rs": "314fd6b4747ee9526163254e9ccca4b9b5731a6514bd4c962e45613a17334cd0",
+    "crates/shaula-daemon/src/service_template_reads.rs": "0882660427655caca3d8affa92672244b632b6b83e04ce1c9826664039a6dc19",
+    "crates/shaula-daemon/src/worker_recovery.rs": "1631673cedee2bbcf8b0958addb0345e2a72c4c6a1049a8d9380755f20996ff9",
+    "crates/shaula-forgejo/src/lib.rs": "21cd45dbd9ee356eab34d3ecc2a5c49cf2a70fd1b457c115f1fa8aaf4b60e432",
+    "crates/shaula-forgejo/src/validation.rs": "cb658bc299ac64fd22031cf018c8dc0de120573760a887d9910b5efde8966286",
+    "crates/shaula-http/src/router/mod.rs": "7fd0a81d9abee827e0e185153c1e3442b1569bf8905158e90a3d4ad42d72b984",
+    "crates/shaula-http/src/router/profile_reads.rs": "406e24d0b75ad3ba9e725be1e232e4467e86d8e4b8e3703c42b3db29466dfb56",
+    "crates/shaula-http/src/router/profile_routes.rs": "e67faba7c4a07eb257d62f66d5057cc79750670fe387ef64ba569078909352fb",
+    "crates/shaula-http/src/router/template_reads.rs": "0e5b6aa4ce9fe1dfd978391ca221c17a503e7f453d7b1d1ce85d7002cb190cc4",
+    "crates/shaula-scaleset/src/installation.rs": "24aa02db7d1cbccb7b3428ca1e705beab3d803e89a3e5dd0792623b4fa1281c6",
+    "crates/shaula-scaleset/src/lib.rs": "0dd9cb38642a84d80c86af8de9fa5127c3fef3898daa8651d0851c8570e4d5ca",
+    "crates/shaula-scaleset/src/validation.rs": "f1ac4e368832a0cbd5c5cf3b2a077f7e79a3e4f63e49ab6623153473c5ffbbe1",
+    "crates/shaula-store/src/http_state/cleanup.rs": "abaaa78826aaddeffc602326a2fe4df1f84f834077d46ff0685f4227e659b56b",
+    "crates/shaula-store/src/http_state/mod.rs": "d504a03247298ceb226d685dea1864a42824750632c27a50839d4c0dddaac722",
+    "crates/shaula-store/src/http_state/recovery.rs": "66b73a81a9fbedce35c96c24d342079e3f2c4d530ba908016883075fcf27c5ff",
+    "crates/shaula-store/src/http_state/recovery_journal.rs": "f7090d446bbd45349413a58d8bb4a1ce4fdb9ef21c4379666ea01422788e1936",
+    "crates/shaula-store/src/http_state/worker_journal.rs": "26ba003ee882dea36089f5b53b7e2e76cdde86565963f3bb9bed2d74503ffb8b",
+    "crates/shaula-store/src/registry_impl/control_plane_store.rs": "a3ddac3a8854d4f8f8cba54e4f6b0471445011258c941437f3d3a9b0f19751b2",
+    "crates/shaula-store/src/registry_impl/control_reads.rs": "e74e552cbb835e76be788d6ef6b5a9a580586caf4f5d68fd9395e58a155673d2",
+    "crates/shaula-store/src/registry_impl/retirement_refs.rs": "4003d76239e4b14cfb545610ce0eff3a1d1e75885da4981f48436ffa86ac687a",
+    "crates/shaula/src/auth_worker.rs": "60f20068109bcdb3f88f68c93242f7a67ddbc9662bee25e9db4aa387d3fa3165",
+    "crates/shaula/src/auth_worker_probe.rs": "7a697a0d433c9159562ff26e3318e65022c8899a98d87452c62485487f0e6ed0",
+    "crates/shaula/src/auth_worker_v2.rs": "b71dacba278c1a1787704a64d92c842fc424bdeee56557fbaa076f9ffa699f1e",
+    "crates/shaula/src/client_cli/attestation.rs": "9d90f34514c79b0abe4660b31b4ed7c2ada111cb7f732f8c39704ce9f229f4bb",
+    "crates/shaula/src/client_cli/command_name.rs": "2446833d1fcd49560c906d703f65cdd527349a49817ea0c804b17dda57c06f8d",
+    "crates/shaula/src/client_cli/mod.rs": "4dc670920981958f17165b250c797a4e4f5fd5c058bf89cddb67c39cb5f0827e",
+    "crates/shaula/src/client_cli/resources.rs": "fcc941854d776de8598289541d83bddf7d9a8a92ccede9c1e5cb059c50371485",
+    "crates/shaula/src/fleet_tasks.rs": "d58e23ef5b1c33885a9073ab7efddd623b2a500c56c9d1fc32bf7c2ace2edb52",
+    "crates/shaula/src/lifecycle.rs": "124f891eb0bf0fcb237c7f02a5ee341d6e42d76e093f35e2154f1ad00a494c21",
+    "crates/shaula/src/main.rs": "209b7ac376297ccd941b5ac44d3ad1a605ff68769a04bd327ba0cc3e0a6976bc",
+    "crates/shaula/src/wiring.rs": "f9692a285f9c11eeacd3af4a99c84b14a823529e761a0928da9a29a9b8416996",
+    "crates/shaula/tests/cli_contract_recovery.rs": "6f88d485ec52ba4caa961bbd0f11647dd55252fea8849677848a16b314f1d0f8",
+    "crates/shaula/tests/support/personal_token_routes.rs": "6aeb3b7e82c1aa6a7d6f861c927dbdca1865b6a569db20145bc98df8aea00b4a",
+    "crates/shaula/tests/support/template_profile_list.rs": "b1b66c8753a60a6469ed88648686262fa2e394069937410170ebb65f17c2a519",
+    "crates/shaula/tests/support/template_read_contract.rs": "1a7395586cad73610ef293d7f97c0b89e653be163375c60002108ae7a7488957",
+    "crates/shaula/tests/template_backends.rs": "cd5f41b81fae3d3f95e42d8d40626af764c3b6d07f917c36f0b5668eccbf9122",
+    "crates/shaula/tests/template_bindings_update.rs": "e112892c862455e3181720961290fd06665b69fd1a13c4ba4ad1f4b407b4c02f"
+  },
+  "remaining": [
+    "Forgejo ordinary idle/busy-safe drain needs an upstream acquisition fence or equivalent proven process protocol; fail-closed behavior retained.",
+    "Real GitHub/Kubernetes, real Auth Handoff, multi-account routing, maximum-scale and Go-oracle acceptance were not run.",
+    "Terraform-dependent ignored worker process tests were not run; Terraform was unavailable."
+  ]
+}

@@ -3,14 +3,11 @@ use sea_orm::ConnectionTrait;
 use sha2::{Digest, Sha256};
 use shaula_core::{
     state_backend::{StateError, StateResult},
-    worker::{cleanup::WorkspaceCleanup, CompletionReceipt, ProcessIdentity},
+    worker::{cleanup::WorkspaceCleanup, CompletionReceipt},
 };
 use std::path::Path;
 
-pub struct CompletedWorkspace {
-    pub cleanup: WorkspaceCleanup,
-    pub process: Option<ProcessIdentity>,
-}
+pub use shaula_core::worker::recovery::CompletedWorkspace;
 
 impl SqliteStateBackend {
     /// One row at a time bounds protected input reads, even after a long outage.

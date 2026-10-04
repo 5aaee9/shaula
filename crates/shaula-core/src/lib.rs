@@ -8,6 +8,7 @@ pub mod artifact_layout;
 pub mod auth;
 pub mod auth_context;
 pub mod auth_policy;
+pub mod auth_validation;
 pub mod capacity;
 pub mod error;
 pub mod fleet;

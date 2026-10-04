@@ -18,3 +18,9 @@ pub mod access_tokens;
 
 mod diagnostic_capture;
 pub mod workers;
+
+pub mod worker_recovery;
+
+pub mod auth_validation;
+
+pub mod fleet_tasks;

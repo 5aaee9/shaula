@@ -39,10 +39,7 @@ pub struct SupervisorWiring {
     cache: HashMap<supervisor::SupervisorCacheKey, Arc<FleetSupervisor>>,
     listeners: HashMap<String, Arc<shaula_daemon::listener::FleetListener>>,
     tasks: crate::fleet_tasks::FleetTasks,
-    /// Per-profile auth-worker deferral deadlines (F8): a rate-limited
-    /// validation carries GitHub's Retry-After; the next attempt waits
-    /// until the deadline instead of polling every scan interval.
-    auth_worker_deferred_until: Arc<tokio::sync::Mutex<HashMap<(String, i64), i64>>>,
+    auth_workers: shaula_daemon::auth_validation::AuthWorkerScheduler,
     /// Transport seam for the auth worker (G1): production wiring pins
     /// the fixed github.com endpoints; tests inject a scripted server.
     auth_worker_endpoints: crate::auth_worker_probe::WorkerEndpoints,
@@ -76,7 +73,7 @@ impl SupervisorWiring {
             cache: HashMap::new(),
             listeners: HashMap::new(),
             tasks: crate::fleet_tasks::FleetTasks::default(),
-            auth_worker_deferred_until: Arc::default(),
+            auth_workers: Default::default(),
             auth_worker_endpoints: crate::auth_worker_probe::WorkerEndpoints::production(),
         }
     }
@@ -139,80 +136,13 @@ impl SupervisorWiring {
     }
 
     async fn tick_all(&mut self, now: i64) -> CoreResult<()> {
-        for key in self.store.auth_profile_keys().await? {
-            // G1: the REAL Profile key reaches the worker — the namespaced
-            // `auth/{key}` string is only the internal task identity. The
-            // deferral gate is keyed by the CANDIDATE REF (profile +
-            // desired revision, G2), so a new publication is never
-            // stranded by an old revision's deadline.
-            let Some(head) = self.store.auth_profile_get(&key).await? else {
-                continue;
-            };
-            if head.status != "Validating" {
-                continue;
-            }
-            let worker_key = format!("auth/{key}");
-            if self.tasks.contains(&worker_key) {
-                continue;
-            }
-            let gate_key = (key.clone(), head.desired_revision);
-            if let Some(retry_at) = self.auth_worker_deferred_until.lock().await.get(&gate_key) {
-                if now < *retry_at {
-                    continue;
-                }
-            }
-            // A new desired revision invalidates stale deferral state from
-            // earlier revisions of this profile.
-            self.auth_worker_deferred_until
-                .lock()
-                .await
-                .retain(|(profile, revision), _| {
-                    profile != &key || *revision == head.desired_revision
-                });
-            let deferred = self.auth_worker_deferred_until.clone();
-            let store = self.store.clone();
-            let clock = self.clock.clone();
-            let endpoints = self.auth_worker_endpoints.clone();
-            let real_key = key.clone();
-            self.tasks.spawn(worker_key, async move {
-                let flow = crate::auth_worker::validate(
-                    store,
-                    clock.clone(),
-                    real_key,
-                    gate_key.1,
-                    &endpoints,
-                )
-                .await;
-                let mut gate = deferred.lock().await;
-                match &flow {
-                    Ok(crate::auth_worker::WorkerFlow::Deferred { retry_at_unix_ms }) => {
-                        // G2: None means bounded normal backoff — never an
-                        // infinite deadline. Deadlines are ABSOLUTE unix
-                        // ms, so the default backoff anchors at `now`.
-                        gate.insert(
-                            gate_key,
-                            retry_at_unix_ms.unwrap_or_else(|| {
-                                clock
-                                    .now_unix_ms()
-                                    .saturating_add(crate::auth_worker::DEFAULT_RETRY_BACKOFF_MS)
-                            }),
-                        );
-                    }
-                    Err(_) => {
-                        gate.insert(
-                            gate_key,
-                            clock
-                                .now_unix_ms()
-                                .saturating_add(crate::auth_worker::DEFAULT_RETRY_BACKOFF_MS),
-                        );
-                    }
-                    Ok(crate::auth_worker::WorkerFlow::Done) => {
-                        gate.remove(&gate_key);
-                    }
-                }
-                flow.map(|_| ())
-            });
-        }
+        let factory = Arc::new(crate::auth_worker::Adapters {
+            endpoints: self.auth_worker_endpoints.clone(),
+            clock: self.clock.clone(),
+        });
+        self.auth_workers
+            .tick(&mut self.tasks, &self.store, &self.clock, factory, now)
+            .await?;
         let mut live_keys = std::collections::HashSet::new();
         let actor = Actor {
             authentication: Default::default(),

@@ -8,18 +8,16 @@ mod auth_worker;
 #[cfg(test)]
 #[path = "auth_worker_continuity_tests.rs"]
 pub(crate) mod auth_worker_continuity_tests;
-mod auth_worker_forgejo;
 #[cfg(test)]
 #[path = "auth_worker_mock.rs"]
 pub(crate) mod auth_worker_mock;
 #[cfg(test)]
 mod auth_worker_mock_routes;
-mod auth_worker_predecessor;
 mod auth_worker_probe;
 #[cfg(test)]
 #[path = "auth_worker_scheduling_tests.rs"]
 pub(crate) mod auth_worker_scheduling_tests;
-mod auth_worker_selectors;
+#[cfg(test)]
 mod auth_worker_v2;
 mod client_cli;
 mod diagnostics;
@@ -29,7 +27,6 @@ mod fleet_tasks;
 pub(crate) mod http_oidc;
 mod job;
 mod lifecycle;
-mod lifecycle_cleanup;
 mod maintenance;
 mod oidc_args;
 mod serve;

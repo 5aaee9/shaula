@@ -1,5 +1,4 @@
 //! Production composition of the private listener, durable journal and exec.
-use shaula_core::worker::{Executor, FenceOutcome};
 use shaula_daemon::{
     bootstrap::ValidatedBootstrap,
     workers::{WorkerConfig, Workers},
@@ -83,7 +82,7 @@ impl Lifecycle {
                 artifact_root: std::fs::canonicalize(&bootstrap.artifact_root)
                     .map_err(|_| "artifact root unavailable")?,
             },
-            journal,
+            journal.clone(),
             executor.clone(),
         )
         .with_reaper(reaper.clone());
@@ -108,45 +107,10 @@ impl Lifecycle {
             .send()
             .await
             .map_err(|_| "private listener not serving")?;
-        let records = if migration_required {
-            Vec::new()
-        } else {
-            backend
-                .recovery_records()
-                .await
-                .map_err(|_| "worker recovery scan failed")?
-        };
-        for record in records {
-            let outcome = match record.identity() {
-                Ok(_) if record.phase == "fenced" => FenceOutcome::Fenced,
-                Ok(Some(identity)) => executor.stop_and_fence(&identity).await,
-                Ok(None) if matches!(record.phase.as_str(), "admitted" | "fenced") => {
-                    FenceOutcome::Fenced
-                }
-                // Pre-exec crash: classified by the exact containment, never
-                // by an empty in-memory child list.
-                Ok(None) if record.phase == "launch_pending" => match record.claim() {
-                    Ok(claim) => executor.fence_unregistered(&claim).await,
-                    Err(_) => FenceOutcome::Unknown,
-                },
-                _ => FenceOutcome::Unknown,
-            };
-            let workspace = std::path::Path::new(&record.workspace_path);
-            let emergency = [
-                "errored.tfstate",
-                "terraform.tfstate",
-                "terraform.tfstate.backup",
-            ]
-            .iter()
-            .any(|name| workspace.join(name).exists());
-            backend
-                .recover_worker(&record, outcome, &admissions, emergency)
-                .await
-                .map_err(|_| "worker recovery classification failed")?;
-        }
         if !migration_required {
-            crate::lifecycle_cleanup::reap(
-                &backend,
+            shaula_daemon::worker_recovery::recover(journal.as_ref(), executor.as_ref()).await?;
+            shaula_daemon::worker_recovery::reap(
+                journal.as_ref(),
                 executor.as_ref(),
                 reaper.as_ref(),
                 &bootstrap.artifact_root,

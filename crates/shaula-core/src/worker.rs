@@ -14,6 +14,7 @@ pub const MAX_OPERATION_TIMEOUT: std::time::Duration = std::time::Duration::from
 
 pub mod cleanup;
 pub mod journal;
+pub mod recovery;
 pub mod wire;
 
 /// Control and Terraform state credentials are deliberately different types

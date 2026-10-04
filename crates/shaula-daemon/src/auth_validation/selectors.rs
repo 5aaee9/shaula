@@ -3,28 +3,26 @@
 //! from `auth_worker_v2.rs` to keep files within the 400-line budget
 //! (AGENTS.md).
 
-use crate::auth_worker_predecessor::Predecessor;
-use crate::auth_worker_probe::WorkerEndpoints;
+use super::predecessor::Predecessor;
 use shaula_core::auth_context::AccountBinding;
 use shaula_core::auth_policy::TargetSelector;
+use shaula_core::auth_validation::{GitHubValidationPort, ProbeOutcome};
+use shaula_core::auth_validation::{InstallationLookup, MetadataReachability, RepoIdentity};
 use shaula_core::error::CoreResult;
 use shaula_core::github::GitHubTarget;
 use shaula_core::ports::Clock;
 use shaula_core::registry::{AuthIdentityProof, AuthRepoProof};
 use shaula_core::secret::SecretString;
-use shaula_scaleset::installation::{InstallationLookup, MetadataReachability, RepoIdentity};
-use shaula_scaleset::AppInstallationResolver;
 use std::sync::Arc;
 
 /// The inputs of the discovery/probe pass.
 pub(super) struct SelectorInput<'a> {
-    pub resolver: &'a AppInstallationResolver,
+    pub resolver: &'a dyn GitHubValidationPort,
     pub app_id: &'a str,
     pub private_key: &'a SecretString,
     pub clock: &'a Arc<dyn Clock>,
     pub policy: &'a shaula_core::auth_policy::TargetPolicy,
     pub predecessor: &'a Predecessor,
-    pub endpoints: &'a WorkerEndpoints,
 }
 
 /// The pass outcome: proven route bindings + identities, a terminal
@@ -43,7 +41,6 @@ pub(super) async fn discover_and_probe(input: &SelectorInput<'_>) -> CoreResult<
         clock,
         policy,
         predecessor,
-        endpoints,
     } = input;
     let mut bindings: Vec<AccountBinding> = Vec::new();
     let mut identities: Vec<AuthIdentityProof> = Vec::new();
@@ -133,21 +130,15 @@ pub(super) async fn discover_and_probe(input: &SelectorInput<'_>) -> CoreResult<
                         e.summary,
                     )
                 })?;
-                match crate::auth_worker_probe::probe_runner_access(
-                    &target,
-                    app_id,
-                    binding.installation_id,
-                    private_key,
-                    clock,
-                    endpoints,
-                )
-                .await
+                match resolver
+                    .probe_runner_access(&target, app_id, binding.installation_id, private_key)
+                    .await
                 {
-                    crate::auth_worker_probe::ProbeOutcome::Proven => {}
-                    crate::auth_worker_probe::ProbeOutcome::Terminal(reason) => {
+                    ProbeOutcome::Proven => {}
+                    ProbeOutcome::Terminal(reason) => {
                         return Ok(SelectorOutcome::Rejected(reason));
                     }
-                    crate::auth_worker_probe::ProbeOutcome::Retry { retry_after_ms } => {
+                    ProbeOutcome::Retry { retry_after_ms } => {
                         return Ok(SelectorOutcome::Retry { retry_after_ms });
                     }
                 }
@@ -160,21 +151,15 @@ pub(super) async fn discover_and_probe(input: &SelectorInput<'_>) -> CoreResult<
                             e.summary,
                         )
                     })?;
-                match crate::auth_worker_probe::probe_runner_access(
-                    &target,
-                    app_id,
-                    binding.installation_id,
-                    private_key,
-                    clock,
-                    endpoints,
-                )
-                .await
+                match resolver
+                    .probe_runner_access(&target, app_id, binding.installation_id, private_key)
+                    .await
                 {
-                    crate::auth_worker_probe::ProbeOutcome::Proven => {}
-                    crate::auth_worker_probe::ProbeOutcome::Terminal(reason) => {
+                    ProbeOutcome::Proven => {}
+                    ProbeOutcome::Terminal(reason) => {
                         return Ok(SelectorOutcome::Rejected(reason));
                     }
-                    crate::auth_worker_probe::ProbeOutcome::Retry { retry_after_ms } => {
+                    ProbeOutcome::Retry { retry_after_ms } => {
                         return Ok(SelectorOutcome::Retry { retry_after_ms });
                     }
                 }

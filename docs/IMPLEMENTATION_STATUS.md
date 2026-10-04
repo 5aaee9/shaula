@@ -19,6 +19,40 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## Contract fixes and application policy ownership (2026-10-05)
+
+- Template Profile `/status` now requires `template.read` and exposes desired
+  Revision validation, live-reference status and schema-approved bindings. GET,
+  list and status share the desired Revision projection; Revision and attestation
+  reads retain their exact historical artifact/schema. Sensitive and unannotated
+  values remain presence-only. The reference observation reuses the retirement
+  predicate; actual retirement still rechecks under its writer transaction.
+  Rust client/typed projections, `templates status [--watch]` and the route/parity
+  inventory now cover this operation (54 management operations).
+- CLI attestation writes retain the exact idempotency key on success and on
+  uncertain acknowledgement; replay uses the same attempt. Cancelling an
+  accepted mutation's wait exits 130 while retaining the accepted receipt.
+- Auth candidate continuity, promotion and retry scheduling now live in
+  `shaula-daemon/src/auth_validation/`. Core validation ports separate these use
+  cases from the GitHub/Forgejo adapters. Restart fencing/classification and
+  receipt-authorized cleanup now live in `shaula-daemon/src/worker_recovery.rs`
+  over a core RecoveryJournal implemented by the SQLite adapter. The binary
+  constructs and connects these components. Existing authorization, conservative
+  recovery and atomic Store transitions are unchanged.
+
+The four initial HTTP/CLI regressions were written and observed failing before
+implementation. Repeatable evidence comes from `cli_contract_recovery` and
+`template_bindings_update::read_contract`, using the real CLI or authenticated
+HTTP router with SQLite and controlled protocol fixtures. They write sanitized
+receipts under `target/spec-contract-evidence/`; the source and validation record
+are linked in [the verification manifest](evidence/spec-contract-fixes-2026-10-05.json).
+
+This does not close Forgejo ordinary idle/busy-safe drain: production still lacks
+an upstream acquisition fence or equivalent process proof, as documented in
+[Forgejo drain](forgejo-drain.md). Remote idle alone remains insufficient for
+removal. The hard-lifetime exception is independent. Real provider/platform,
+maximum-scale and Go-oracle acceptance gates below remain open.
+
 ## Production lifecycle workers and HTTP state (2026-09-26, PR #6)
 
 Both GitHub and Forgejo production supervisors now use

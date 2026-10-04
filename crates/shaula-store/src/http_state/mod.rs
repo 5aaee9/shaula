@@ -78,3 +78,5 @@ fn exactly_one(count: u64) -> StateResult<()> {
 
 #[cfg(test)]
 mod tests;
+
+mod recovery_journal;
