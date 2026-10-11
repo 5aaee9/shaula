@@ -21,26 +21,22 @@ async fn fleet_replacement_occupancy_in_tx(
     tx: &sea_orm::DatabaseTransaction,
     fleet_key: &str,
 ) -> crate::store::StoreResult<i64> {
-    let generations = runner_generations::Entity::find()
-        .filter(runner_generations::Column::FleetKey.eq(fleet_key))
-        .all(tx)
-        .await?;
-    let mut occupancy = generations
-        .iter()
-        .filter(|g| g.state != "Destroyed")
-        .count() as i64;
-    let ids: Vec<String> = generations.iter().map(|g| g.id.clone()).collect();
-    if !ids.is_empty() {
-        occupancy += runner_operations::Entity::find()
-            .filter(runner_operations::Column::GenerationId.is_in(ids))
-            .filter(
-                runner_operations::Column::State
-                    .is_in(crate::lifecycle_repo::OPEN_OPERATION_STATES),
-            )
-            .count(tx)
-            .await? as i64;
-    }
-    Ok(occupancy)
+    let generations = crate::generation_counts::fleet_counts(tx, fleet_key)
+        .await?
+        .occupancy;
+    let fleet_generation_ids = sea_orm::sea_query::Query::select()
+        .column(runner_generations::Column::Id)
+        .from(runner_generations::Entity)
+        .and_where(runner_generations::Column::FleetKey.eq(fleet_key))
+        .to_owned();
+    let operations = runner_operations::Entity::find()
+        .filter(runner_operations::Column::GenerationId.in_subquery(fleet_generation_ids))
+        .filter(
+            runner_operations::Column::State.is_in(crate::lifecycle_repo::OPEN_OPERATION_STATES),
+        )
+        .count(tx)
+        .await? as i64;
+    Ok(generations + operations)
 }
 
 impl SqliteControlPlane {

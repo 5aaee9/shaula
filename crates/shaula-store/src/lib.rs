@@ -15,6 +15,7 @@ pub mod fleet_auth_context_repo;
 pub mod fleet_auth_repo;
 mod fleet_observations;
 pub mod fleet_repo;
+mod generation_counts;
 pub mod http_state;
 pub mod jobs;
 mod key_pages;

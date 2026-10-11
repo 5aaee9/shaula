@@ -1,10 +1,10 @@
 //! Shared-pool generation admission helpers (spec 0037 §4–§6): member
-//! loading, pool-wide cap counting and the eligible draw set.
+//! loading and replayed member inputs. Pool-wide cap counting lives in
+//! `generation_counts::member_occupancy`.
 
 use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder};
 
 use crate::entities::fleet::fleet_revisions;
-use crate::entities::lifecycle::runner_generations;
 use crate::entities::template_pool::{template_pool_members, template_pool_revisions};
 
 use super::core_err;
@@ -105,34 +105,6 @@ pub(crate) async fn load_routing(
         failure_policy,
         pool_scope: Some((pool_key, pool_revision)),
     })
-}
-
-/// Live (non-Destroyed) generations of every fleet whose fleet revision
-/// froze this pool revision — the pool-wide occupancy the member caps
-/// count against (spec 0037 §6).
-pub(crate) async fn pool_wide_generations(
-    tx: &DatabaseTransaction,
-    pool_scope: &FleetPoolRef,
-) -> CoreResult<Vec<runner_generations::Model>> {
-    let referencing = fleet_revisions::Entity::find()
-        .filter(fleet_revisions::Column::TemplatePoolRef.eq(pool_scope.0.clone()))
-        .filter(fleet_revisions::Column::TemplatePoolRevision.eq(pool_scope.1))
-        .all(tx)
-        .await
-        .map_err(|e| core_err(e.into()))?;
-    let mut generations = Vec::new();
-    for revision in referencing {
-        generations.extend(
-            runner_generations::Entity::find()
-                .filter(runner_generations::Column::FleetKey.eq(&revision.fleet_key))
-                .filter(runner_generations::Column::FleetRevision.eq(revision.revision))
-                .filter(runner_generations::Column::State.ne("Destroyed"))
-                .all(tx)
-                .await
-                .map_err(|e| core_err(e.into()))?,
-        );
-    }
-    Ok(generations)
 }
 
 /// The inputs a replayed generation freezes: pool member rows when its

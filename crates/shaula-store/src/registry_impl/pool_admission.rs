@@ -177,15 +177,10 @@ impl SqliteControlPlane {
             tx.rollback().await.map_err(|e| core_err(e.into()))?;
             return Ok(None);
         }
-        let fleet_live: Vec<_> = runner_generations::Entity::find()
-            .filter(runner_generations::Column::FleetKey.eq(&record.fleet_key))
-            .all(&tx)
+        let occupancy = crate::generation_counts::fleet_counts(&tx, &record.fleet_key)
             .await
-            .map_err(|e| core_err(e.into()))?
-            .into_iter()
-            .filter(|g| g.state != "Destroyed")
-            .collect();
-        let occupancy = fleet_live.len() as i64;
+            .map_err(core_err)?
+            .occupancy;
         if occupancy >= spec.capacity.max_runners {
             diagnostic.reason(Code::CapacityOccupancyLimit, StageId::Capacity, true);
             tx.rollback().await.map_err(|e| core_err(e.into()))?;
@@ -194,18 +189,17 @@ impl SqliteControlPlane {
         // Pool-wide occupancy when the fleet routes through a shared pool:
         // member caps count every fleet referencing that pool revision
         // (spec 0037 §6); inline pools keep their fleet-local accounting.
-        let generations = if let Some(scope) = &routing.pool_scope {
-            super::lifecycle_pool_admit::pool_wide_generations(&tx, scope).await?
-        } else {
-            fleet_live
-        };
+        let usage = crate::generation_counts::member_occupancy(
+            &tx,
+            &record.fleet_key,
+            routing.pool_scope.as_ref(),
+        )
+        .await
+        .map_err(core_err)?;
         let mut eligible = Vec::new();
         let mut member_at_capacity = false;
         for member in members {
-            let used = generations
-                .iter()
-                .filter(|g| g.pool_member_key.as_deref() == Some(member.member_key.as_str()))
-                .count() as i64;
+            let used = usage.get(&member.member_key).copied().unwrap_or(0);
             if let Some(pool) = diagnostic
                 .0
                 .as_mut()

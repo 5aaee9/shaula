@@ -65,23 +65,19 @@ async fn fleet(db: &impl ConnectionTrait, key: &str) -> StoreResult<Option<View>
         rollout.outcome = Outcome::NotApplicable;
         rollout.coverage = Coverage::Complete;
     }
-    let row = db.query_one(Statement::from_sql_and_values(Sqlite,
-        "SELECT COUNT(*) AS occupancy,COALESCE(SUM(state='Quarantined'),0) AS quarantined FROM runner_generations WHERE fleet_key=? AND state!='Destroyed'",
-        vec![key.into()])).await?;
+    let counts = crate::generation_counts::fleet_counts(db, key).await?;
     let mut cleanup = ledger(QuestionId::Cleanup, at, Some(guard.revision));
-    if let Some(row) = row {
-        if row.try_get::<i64>("", "occupancy")? == 0 {
-            cleanup.outcome = Outcome::Satisfied;
-            cleanup.coverage = Coverage::Complete;
-            cleanup.stage(StageId::Completion, Evaluation::Passed);
-        } else if row.try_get::<i64>("", "quarantined")? > 0 {
-            cleanup.reason(
-                Code::CleanupQuarantined,
-                StageId::Completion,
-                Effect::Blocking,
-                EvidenceKind::LedgerFact,
-            );
-        }
+    if counts.occupancy == 0 {
+        cleanup.outcome = Outcome::Satisfied;
+        cleanup.coverage = Coverage::Complete;
+        cleanup.stage(StageId::Completion, Evaluation::Passed);
+    } else if counts.quarantined > 0 {
+        cleanup.reason(
+            Code::CleanupQuarantined,
+            StageId::Completion,
+            Effect::Blocking,
+            EvidenceKind::LedgerFact,
+        );
     }
     Ok(Some((
         guard.subject(),
