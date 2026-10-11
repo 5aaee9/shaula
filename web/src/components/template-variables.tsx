@@ -1,12 +1,15 @@
-import { inputEntries, inputsJson, parseInputValue } from "@/lib/input-values";
+import { inputEntries, inputsJson } from "@/lib/input-values";
+import { bindingDefault, bindingInput, type BindingInput } from "@/lib/template-binding-input";
 import type { TemplateVariable, TemplateVariables as Variables } from "@/lib/template-variables";
-import { ApprovedValueSelect, RawInputValuePreview } from "./template-input-values";
+import { ApprovedValueSelect } from "./template-input-values";
+import {
+  BooleanBindingSelect,
+  ManualBindingNotice,
+  TypedBindingInput,
+} from "./template-binding-fields";
 import { TemplatePolicyOptions } from "./template-policy-options";
 import { TemplateVariableDescription as VariableDescription } from "./template-variable-description";
 import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { NativeSelect, NativeSelectOption } from "./ui/native-select";
-import { Field } from "./status";
 
 function entries(raw: string): Map<string, string> | null {
   try {
@@ -14,6 +17,49 @@ function entries(raw: string): Map<string, string> | null {
   } catch {
     return null;
   }
+}
+
+function BindingControl({
+  variable,
+  input,
+  placeholder,
+  value,
+  onChange,
+}: {
+  variable: TemplateVariable;
+  input: BindingInput;
+  placeholder?: string;
+  value?: string;
+  onChange: (value?: string) => void;
+}) {
+  const options = variable.sensitive ? [] : variable.options;
+  if (options.length)
+    return (
+      <ApprovedValueSelect
+        label={input.label}
+        required={variable.required}
+        options={options}
+        value={value}
+        onChange={onChange}
+      />
+    );
+  if (input.expected === "boolean")
+    return (
+      <BooleanBindingSelect
+        label={input.label}
+        required={variable.required}
+        value={value}
+        onChange={onChange}
+      />
+    );
+  return (
+    <TypedBindingInput
+      variable={variable}
+      input={input}
+      placeholder={placeholder}
+      onChange={onChange}
+    />
+  );
 }
 
 function BindingEditor({
@@ -25,80 +71,28 @@ function BindingEditor({
   value?: string;
   onChange: (value?: string) => void;
 }) {
-  const label = variable.label || variable.key;
-  const scalar = ["string", "number", "integer", "boolean", "bool"].includes(variable.typeName);
-  let parsed;
-  try {
-    parsed = value === undefined ? undefined : parseInputValue(value);
-  } catch {
-    /* Manual JSON is preserved. */
-  }
-  const expected =
-    variable.typeName === "integer"
-      ? "number"
-      : variable.typeName === "bool"
-        ? "boolean"
-        : variable.typeName;
-  const incompatible = parsed !== undefined && parsed.kind !== expected;
-  if (!scalar || incompatible)
+  const input = bindingInput(variable, value);
+  const { label } = input;
+  if (input.manual)
     return (
-      <div className="form-stack gap-2">
-        <h4 className="text-sm font-medium">{label}</h4>
-        <VariableDescription variable={variable} />
-        <p className="text-sm text-muted-foreground">
-          Configure this value in Bindings (JSON) under Advanced settings.
-        </p>
-        {value !== undefined && !variable.sensitive && <RawInputValuePreview raw={value} />}
-      </div>
+      <ManualBindingNotice
+        variable={variable}
+        label={label}
+        raw={variable.sensitive ? undefined : value}
+      >
+        Configure this value in Bindings (JSON) under Advanced settings.
+      </ManualBindingNotice>
     );
-  const options = variable.sensitive ? [] : variable.options;
-  const defaultValue =
-    !variable.sensitive &&
-    variable.defaultValueJson !== undefined &&
-    variable.defaultValueJson !== "null"
-      ? parseInputValue(variable.defaultValueJson)
-      : undefined;
+  const defaultValue = bindingDefault(variable);
   return (
     <div className="form-stack gap-2">
-      {options.length ? (
-        <ApprovedValueSelect
-          label={label}
-          required={variable.required}
-          options={options}
-          value={value}
-          onChange={onChange}
-        />
-      ) : expected === "boolean" ? (
-        <Field label={label}>
-          <NativeSelect
-            required={variable.required}
-            value={value ?? ""}
-            onChange={(event) => onChange(event.target.value || undefined)}
-          >
-            <NativeSelectOption value="">Not set</NativeSelectOption>
-            <NativeSelectOption value="true">Yes</NativeSelectOption>
-            <NativeSelectOption value="false">No</NativeSelectOption>
-          </NativeSelect>
-        </Field>
-      ) : (
-        <Field label={label}>
-          <Input
-            type={variable.sensitive ? "password" : expected === "number" ? "number" : "text"}
-            autoComplete="off"
-            spellCheck={false}
-            step={variable.typeName === "integer" ? 1 : "any"}
-            required={variable.required}
-            placeholder={defaultValue?.text}
-            value={parsed?.text ?? ""}
-            onChange={(event) => {
-              const text = event.target.value;
-              if (expected === "string") onChange(JSON.stringify(text));
-              else if (!text) onChange(undefined);
-              else if (/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(text)) onChange(text);
-            }}
-          />
-        </Field>
-      )}
+      <BindingControl
+        variable={variable}
+        input={input}
+        placeholder={defaultValue?.text}
+        value={value}
+        onChange={onChange}
+      />
       <VariableDescription variable={variable} />
       {defaultValue && (
         <Button

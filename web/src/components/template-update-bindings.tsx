@@ -1,7 +1,12 @@
 import { useMemo } from "react";
-import { inputEntries, inputsJson, parseInputValue } from "@/lib/input-values";
+import { inputEntries, inputsJson } from "@/lib/input-values";
+import { bindingInput, type BindingInput } from "@/lib/template-binding-input";
 import type { TemplateVariable, TemplateVariables } from "@/lib/template-variables";
-import { RawInputValuePreview } from "./template-input-values";
+import {
+  BooleanBindingSelect,
+  ManualBindingNotice,
+  TypedBindingInput,
+} from "./template-binding-fields";
 import { TemplateVariableDescription as VariableDescription } from "./template-variable-description";
 import { Field } from "./status";
 import { Input } from "./ui/input";
@@ -15,6 +20,78 @@ function entries(raw: string): Map<string, string> | null {
   }
 }
 
+function SensitiveBindingEditor({
+  variable,
+  input,
+  onChange,
+}: {
+  variable: TemplateVariable;
+  input: BindingInput;
+  onChange: (value?: string) => void;
+}) {
+  return (
+    <div className="form-stack gap-2">
+      <Field label={input.label}>
+        <Input
+          type="password"
+          autoComplete="new-password"
+          spellCheck={false}
+          required={false}
+          placeholder="Leave blank to keep the stored secret"
+          value={input.parsed?.text ?? ""}
+          onChange={(event) => onChange(event.target.value || undefined)}
+        />
+      </Field>
+      <VariableDescription variable={variable} />
+      <p className="text-sm text-muted-foreground">
+        Stored secret is never shown. Enter a new value to replace it, or leave blank to keep the
+        current one.
+      </p>
+    </div>
+  );
+}
+
+function UpdateBindingControl({
+  variable,
+  input,
+  value,
+  onChange,
+}: {
+  variable: TemplateVariable;
+  input: BindingInput;
+  value?: string;
+  onChange: (value?: string) => void;
+}) {
+  const options = variable.options;
+  if (options.length)
+    return (
+      <Field label={input.label}>
+        <NativeSelect
+          required={variable.required}
+          value={value ?? ""}
+          onChange={(event) => onChange(event.target.value || undefined)}
+        >
+          <NativeSelectOption value="">Not set</NativeSelectOption>
+          {options.map((option) => (
+            <NativeSelectOption key={option.valueJson} value={option.valueJson}>
+              {option.valueJson}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+      </Field>
+    );
+  if (input.expected === "boolean")
+    return (
+      <BooleanBindingSelect
+        label={input.label}
+        required={variable.required}
+        value={value}
+        onChange={onChange}
+      />
+    );
+  return <TypedBindingInput variable={variable} input={input} onChange={onChange} />;
+}
+
 function UpdateBindingEditor({
   variable,
   value,
@@ -24,105 +101,18 @@ function UpdateBindingEditor({
   value?: string;
   onChange: (value?: string) => void;
 }) {
-  const label = variable.label || variable.key;
-  const scalar = ["string", "number", "integer", "boolean", "bool"].includes(variable.typeName);
-  let parsed;
-  try {
-    parsed = value === undefined ? undefined : parseInputValue(value);
-  } catch {
-    /* Manual JSON is preserved. */
-  }
-  const expected =
-    variable.typeName === "integer"
-      ? "number"
-      : variable.typeName === "bool"
-        ? "boolean"
-        : variable.typeName;
-  const incompatible = parsed !== undefined && parsed.kind !== expected;
-
-  if (variable.sensitive) {
+  const input = bindingInput(variable, value);
+  if (variable.sensitive)
+    return <SensitiveBindingEditor variable={variable} input={input} onChange={onChange} />;
+  if (input.manual)
     return (
-      <div className="form-stack gap-2">
-        <Field label={label}>
-          <Input
-            type="password"
-            autoComplete="new-password"
-            spellCheck={false}
-            required={false}
-            placeholder="Leave blank to keep the stored secret"
-            value={parsed?.text ?? ""}
-            onChange={(event) => onChange(event.target.value || undefined)}
-          />
-        </Field>
-        <VariableDescription variable={variable} />
-        <p className="text-sm text-muted-foreground">
-          Stored secret is never shown. Enter a new value to replace it, or leave blank to keep the
-          current one.
-        </p>
-      </div>
+      <ManualBindingNotice variable={variable} label={input.label} raw={value}>
+        Edit this value in Bindings (JSON) under Advanced settings.
+      </ManualBindingNotice>
     );
-  }
-
-  if (!scalar || incompatible)
-    return (
-      <div className="form-stack gap-2">
-        <h4 className="text-sm font-medium">{label}</h4>
-        <VariableDescription variable={variable} />
-        <p className="text-sm text-muted-foreground">
-          Edit this value in Bindings (JSON) under Advanced settings.
-        </p>
-        {value !== undefined && <RawInputValuePreview raw={value} />}
-      </div>
-    );
-
-  const options = variable.options;
   return (
     <div className="form-stack gap-2">
-      {options.length ? (
-        <Field label={label}>
-          <NativeSelect
-            required={variable.required}
-            value={value ?? ""}
-            onChange={(event) => onChange(event.target.value || undefined)}
-          >
-            <NativeSelectOption value="">Not set</NativeSelectOption>
-            {options.map((option) => (
-              <NativeSelectOption key={option.valueJson} value={option.valueJson}>
-                {option.valueJson}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-        </Field>
-      ) : expected === "boolean" ? (
-        <Field label={label}>
-          <NativeSelect
-            required={variable.required}
-            value={value ?? ""}
-            onChange={(event) => onChange(event.target.value || undefined)}
-          >
-            <NativeSelectOption value="">Not set</NativeSelectOption>
-            <NativeSelectOption value="true">Yes</NativeSelectOption>
-            <NativeSelectOption value="false">No</NativeSelectOption>
-          </NativeSelect>
-        </Field>
-      ) : (
-        <Field label={label}>
-          <Input
-            type={expected === "number" ? "number" : "text"}
-            autoComplete="off"
-            spellCheck={false}
-            step={variable.typeName === "integer" ? 1 : "any"}
-            required={variable.required}
-            value={parsed?.text ?? ""}
-            onChange={(event) => {
-              const text = event.target.value;
-              if (expected === "string") onChange(JSON.stringify(text));
-              else if (!text) onChange(undefined);
-              else if (/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(text)) onChange(text);
-            }}
-          />
-        </Field>
-      )}
+      <UpdateBindingControl variable={variable} input={input} value={value} onChange={onChange} />
       <VariableDescription variable={variable} />
       {value !== undefined && !variable.required && (
         <button
@@ -130,7 +120,7 @@ function UpdateBindingEditor({
           className="self-start text-xs text-muted-foreground underline"
           onClick={() => onChange(undefined)}
         >
-          Clear {label}
+          Clear {input.label}
         </button>
       )}
     </div>
