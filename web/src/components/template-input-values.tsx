@@ -1,6 +1,7 @@
 import { useId } from "react";
+import { approvedOptionTitle, approvedValueSelection } from "@/lib/approved-value-options";
 import type { ApprovedInputOption } from "@/lib/input-contract";
-import { optionLabel, parseInputValue, sameInputValue, type InputValue } from "@/lib/input-values";
+import { optionLabel, parseInputValue, type InputValue } from "@/lib/input-values";
 import { Button } from "./ui/button";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select";
 
@@ -54,17 +55,42 @@ export function RawInputValuePreview({ raw }: { raw: string }) {
   }
 }
 
-function compoundSummary(value: InputValue): string {
-  if (!value.children?.length) return value.kind === "array" ? "Empty array" : "Empty object";
+function ApprovedValueDetails({
+  id,
+  description,
+  value,
+  unavailable,
+  showPreview,
+  removeLabel,
+  onRemove,
+}: {
+  id: string;
+  description?: string;
+  value?: string;
+  unavailable: boolean;
+  showPreview: boolean;
+  removeLabel: string;
+  onRemove: () => void;
+}) {
   return (
-    value.children
-      ?.slice(0, 3)
-      .map(
-        ([key, child]) =>
-          `${value.kind === "object" ? `${key}: ` : ""}${child.children ? child.text : child.text || '""'}`,
-      )
-      .join(", ")
-      .slice(0, 100) ?? value.text
+    <div id={id} className="min-w-0 space-y-2">
+      {description && (
+        <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
+          {description}
+        </p>
+      )}
+      {unavailable && (
+        <p className="text-sm" role="status">
+          Existing value is no longer selectable. It is preserved until you replace or remove it.
+        </p>
+      )}
+      {value !== undefined && showPreview && <RawInputValuePreview raw={value} />}
+      {unavailable && (
+        <Button type="button" variant="outline" size="sm" onClick={onRemove}>
+          Remove {removeLabel}
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -86,21 +112,7 @@ export function ApprovedValueSelect({
   onChange: (value?: string) => void;
 }) {
   const id = useId();
-  const index =
-    value === undefined
-      ? -1
-      : options.findIndex((option) => sameInputValue(option.valueJson, value));
-  const unavailable = value !== undefined && index < 0;
-  const selected = value === undefined ? "" : unavailable ? "unavailable" : String(index);
-  const mixed = new Set(options.map((option) => parseInputValue(option.valueJson).kind)).size > 1;
-  const selectedOption = index < 0 ? undefined : parseInputValue(options[index].valueJson);
-  const showPreview =
-    unavailable ||
-    mixed ||
-    selectedOption?.children ||
-    selectedOption?.kind === "null" ||
-    selectedOption?.text === "" ||
-    (selectedOption?.text.length ?? 0) > 120;
+  const { selected, unavailable, mixed, showPreview } = approvedValueSelection(options, value);
   return (
     <div className="form-stack gap-2 min-w-0 [&_[data-slot=native-select-wrapper]]:w-full [&_[data-slot=native-select-wrapper]]:max-w-full">
       <label htmlFor={id} className="text-sm font-medium">
@@ -126,45 +138,21 @@ export function ApprovedValueSelect({
             Existing value is no longer selectable
           </NativeSelectOption>
         )}
-        {options.map((option, optionIndex) => {
-          const parsed = parseInputValue(option.valueJson);
-          const title =
-            mixed || parsed.kind === "null" || parsed.children || parsed.text === ""
-              ? optionLabel(parsed)
-              : parsed.kind === "boolean"
-                ? parsed.text === "true"
-                  ? "Yes"
-                  : "No"
-                : parsed.text;
-          return (
-            <NativeSelectOption key={optionIndex} value={optionIndex}>
-              {parsed.children
-                ? `Configuration ${optionIndex + 1}: ${compoundSummary(parsed)}`
-                : title.length > 120
-                  ? `${title.slice(0, 117)}…`
-                  : title}
-            </NativeSelectOption>
-          );
-        })}
+        {options.map((option, optionIndex) => (
+          <NativeSelectOption key={optionIndex} value={optionIndex}>
+            {approvedOptionTitle(option.valueJson, optionIndex, mixed)}
+          </NativeSelectOption>
+        ))}
       </NativeSelect>
-      <div id={`${id}-details`} className="min-w-0 space-y-2">
-        {description && (
-          <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
-            {description}
-          </p>
-        )}
-        {unavailable && (
-          <p className="text-sm" role="status">
-            Existing value is no longer selectable. It is preserved until you replace or remove it.
-          </p>
-        )}
-        {value !== undefined && showPreview && <RawInputValuePreview raw={value} />}
-        {unavailable && (
-          <Button type="button" variant="outline" size="sm" onClick={() => onChange(undefined)}>
-            Remove {inputKey ?? label}
-          </Button>
-        )}
-      </div>
+      <ApprovedValueDetails
+        id={`${id}-details`}
+        description={description}
+        value={value}
+        unavailable={unavailable}
+        showPreview={showPreview}
+        removeLabel={inputKey ?? label}
+        onRemove={() => onChange(undefined)}
+      />
     </div>
   );
 }
