@@ -9,6 +9,7 @@
 mod common;
 
 use axum::http::StatusCode;
+use shaula_core::registry::{ProfileStore, TemplateStore};
 use tower::ServiceExt;
 
 use common::attestation_harness::{
@@ -82,8 +83,6 @@ use common::*;
 
 #[tokio::test]
 async fn unreadable_published_authority_is_retryable_never_a_recorded_mismatch() {
-    use shaula_core::registry::ControlPlaneStore;
-
     // R7-03: without the published dependency lock the registry cannot
     // conclude ANYTHING about the subject. The failure must surface as a
     // retryable server error, must NOT consume the attestation key with
@@ -137,8 +136,6 @@ async fn unreadable_published_authority_is_retryable_never_a_recorded_mismatch()
 
 #[tokio::test]
 async fn control_bytes_in_uri_keys_are_rejected_at_the_boundary() {
-    use shaula_core::registry::ControlPlaneStore;
-
     // R7-05: keys that are not legitimate URI path segments (NUL bytes)
     // never enter durable identity material — neither as a profile key
     // nor as an attestation key.
@@ -173,8 +170,6 @@ async fn control_bytes_in_uri_keys_are_rejected_at_the_boundary() {
 
 #[tokio::test]
 async fn whitespace_normalized_keys_are_rejected_not_silently_rewritten() {
-    use shaula_core::registry::ControlPlaneStore;
-
     // R8-01: the key validator no longer TRIMS — a key that whitespace
     // normalization would rewrite is rejected at the boundary, so the
     // validated identity is always EXACTLY the persisted identity. The
@@ -234,8 +229,6 @@ async fn put_auth_profile(app: &axum::Router, key: &str) -> (StatusCode, String)
 
 #[tokio::test]
 async fn corrupt_published_manifest_is_retryable_never_a_recorded_mismatch() {
-    use shaula_core::registry::ControlPlaneStore;
-
     // R8-02: a READABLE but invalid published manifest is server-side
     // authority corruption — the registry cannot recompute the expected
     // subject, so it must answer with a retryable storage error and keep
@@ -288,8 +281,6 @@ async fn corrupt_published_manifest_is_retryable_never_a_recorded_mismatch() {
 
 #[tokio::test]
 async fn non_canonical_subject_is_a_422_and_never_reaches_the_durable_record() {
-    use shaula_core::registry::ControlPlaneStore;
-
     // R7-04: the subject is a TYPED canonical document. Payload the spec
     // excludes (bindings, raw test output) — or missing canonical
     // members — is rejected by the strict parse at the request boundary;

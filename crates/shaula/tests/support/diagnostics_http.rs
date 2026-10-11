@@ -6,7 +6,7 @@ use axum::{
 use sea_orm::{ConnectionTrait, Database, DatabaseBackend::Sqlite, Statement};
 use shaula_core::{
     diagnostics::*,
-    registry::{ControlPlaneStore, FleetRuntimeGuard},
+    registry::{AdmissionSupportStore, FleetRuntimeGuard},
 };
 use tower::ServiceExt;
 

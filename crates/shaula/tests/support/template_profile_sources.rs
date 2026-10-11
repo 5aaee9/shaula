@@ -4,7 +4,7 @@ mod replay;
 use crate::template_updates as support;
 
 use axum::http::{HeaderValue, StatusCode};
-use shaula_core::registry::{ControlPlaneStore, TemplateSource};
+use shaula_core::registry::{FleetStore, TemplateSource, TemplateStore};
 use tower::ServiceExt;
 
 use support::{Fixture, TestResult, PROFILE};

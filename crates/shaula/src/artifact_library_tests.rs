@@ -1,6 +1,6 @@
 use super::*;
 use sha2::{Digest, Sha256};
-use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::ArtifactStore;
 use shaula_store::registry_impl::SqliteControlPlane;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

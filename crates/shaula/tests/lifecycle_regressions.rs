@@ -5,6 +5,7 @@ mod fakes;
 #[path = "support/lifecycle_ownership_tests.rs"]
 mod ownership_tests;
 use common::*;
+use shaula_core::registry::FleetStore;
 use shaula_core::{
     lifecycle::GenerationState as G,
     registry::{GenerationRecord, LifecycleStore},
@@ -15,7 +16,7 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn transaction_rejects_same_profile_revision_switch_with_occupancy() {
-    use shaula_core::registry::{ChangeView, ControlPlaneStore, MutationError, MutationFacts};
+    use shaula_core::registry::{ChangeView, MutationError, MutationFacts};
     let (store, _, _, digest) = setup().await;
     seed_idle(store.as_ref(), &digest).await;
     let head = store.fleet_get("f1").await.unwrap().unwrap();
@@ -69,7 +70,7 @@ async fn transaction_rejects_same_profile_revision_switch_with_occupancy() {
 
 #[tokio::test]
 async fn guarded_generation_insert_rejects_a_stale_fleet_revision() {
-    use shaula_core::registry::{ChangeView, ControlPlaneStore, FleetRuntimeGuard, MutationFacts};
+    use shaula_core::registry::{ChangeView, FleetRuntimeGuard, MutationFacts};
 
     let (store, _, _, digest) = setup().await;
     let head = store.fleet_get("f1").await.unwrap().unwrap();

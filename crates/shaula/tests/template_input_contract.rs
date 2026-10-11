@@ -14,7 +14,7 @@ mod support;
 use axum::body::Body;
 use axum::http::{HeaderValue, Request, StatusCode};
 use serde_json::json;
-use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::{FleetStore, TemplateStore};
 use tower::ServiceExt;
 
 use common::*;

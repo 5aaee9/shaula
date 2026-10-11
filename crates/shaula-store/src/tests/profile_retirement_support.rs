@@ -1,6 +1,8 @@
 use super::forgejo_pool_support::{Fixture, TestResult};
 use sea_orm::ConnectionTrait;
-use shaula_core::registry::{ChangeView, ControlPlaneStore, MutationFacts};
+use shaula_core::registry::{
+    AuthProfileStore, ChangeView, MutationFacts, ProfileStore, TemplateStore,
+};
 
 pub(super) async fn fixture() -> TestResult<Fixture> {
     let fixture = Fixture::new(0, 2).await?;

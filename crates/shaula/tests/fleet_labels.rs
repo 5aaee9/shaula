@@ -7,7 +7,7 @@ mod common;
 use axum::body::{to_bytes, Body};
 use axum::http::{HeaderValue, Request, StatusCode};
 use shaula_core::lifecycle::GenerationState;
-use shaula_core::registry::{ControlPlaneStore, GenerationRecord, LifecycleStore};
+use shaula_core::registry::{CapacityStore, FleetStore, GenerationRecord, LifecycleStore};
 use tower::ServiceExt;
 
 use common::attestation_harness::{put_attestation, seed_profile};

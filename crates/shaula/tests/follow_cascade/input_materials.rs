@@ -1,5 +1,6 @@
 //! Exercise exact-pin materials through publication and follow, not helpers.
 use super::*;
+use shaula_core::registry::{FleetStore, TemplatePoolStore};
 
 #[tokio::test]
 async fn template_input_reads_precede_backend_but_validation_follows_it() {

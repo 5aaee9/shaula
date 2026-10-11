@@ -1,6 +1,7 @@
 //! Fleet revision replacement must settle its renewed auth handoff before effects.
 
 use super::*;
+use shaula_core::registry::{CapacityStore, FleetStore, HandoffStore};
 
 async fn commit_same_auth_replacement(plane: &TestPlane) {
     let store = &plane.control_plane;

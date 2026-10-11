@@ -13,7 +13,7 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use shaula_core::ports::Clock;
-use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::ArtifactStore;
 use shaula_daemon::service::ControlPlane;
 use shaula_store::registry_impl::SqliteControlPlane;
 use shaula_store::Store;

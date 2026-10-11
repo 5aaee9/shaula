@@ -6,7 +6,7 @@
 mod common;
 
 use axum::http::StatusCode;
-use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::TemplateStore;
 use tower::ServiceExt;
 
 use common::attestation_harness::{put_attestation, put_template_profile, seed_profile};

@@ -3,7 +3,7 @@ use super::{
     forgejo_pool_support::TestResult,
     profile_retirement_support::{facts, fixture, pool},
 };
-use shaula_core::registry::{ControlPlaneStore, MutationError};
+use shaula_core::registry::{FleetStore, MutationError, ProfileStore, TemplatePoolStore};
 
 #[tokio::test]
 async fn shared_pool_fleet_commit_rechecks_retirement_after_dependency_resolution() -> TestResult {

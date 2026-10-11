@@ -5,7 +5,7 @@ use shaula_core::{
     capacity::CapacityPolicy,
     fleet::FleetSpec,
     lifecycle::GenerationState as G,
-    registry::{ControlPlaneStore, FleetRuntimeGuard, GenerationRecord, LifecycleStore},
+    registry::{FleetRuntimeGuard, FleetStore, GenerationRecord, LifecycleStore},
 };
 use shaula_daemon::{
     effect_gate::FleetEffectGates,

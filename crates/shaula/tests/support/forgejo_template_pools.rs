@@ -2,7 +2,9 @@ use super::{artifact, common, forgejo, publication, put_fleet, TestResult};
 use axum::http::StatusCode;
 use common::attestation_harness::{put_template_profile, seed_profile_artifact};
 use serde_json::{json, Value};
-use shaula_core::registry::{AuthPromotion, AuthPromotionOutcome, ControlPlaneStore};
+use shaula_core::registry::{
+    AuthProfileStore, AuthPromotion, AuthPromotionOutcome, FleetStore, TemplatePoolStore,
+};
 use std::sync::Arc;
 use tower::ServiceExt;
 

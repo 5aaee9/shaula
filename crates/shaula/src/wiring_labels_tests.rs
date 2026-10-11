@@ -2,6 +2,7 @@
 
 use super::*;
 use serde_json::json;
+use shaula_core::registry::FleetStore;
 
 pub(super) async fn commit_labels(plane: &TestPlane, labels: &[&str], now: i64) -> i64 {
     let store = &plane.control_plane;

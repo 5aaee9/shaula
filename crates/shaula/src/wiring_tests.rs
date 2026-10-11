@@ -7,7 +7,9 @@
 
 use super::SupervisorWiring;
 use shaula_core::ports::TemplateRuntimePort;
-use shaula_core::registry::{Actor, ChangeView, ControlPlaneStore, MutationFacts, Scope};
+use shaula_core::registry::{
+    Actor, AuthProfileStore, ChangeView, FleetStore, HandoffStore, MutationFacts, Scope,
+};
 use shaula_store::registry_impl::SqliteControlPlane;
 use shaula_store::Store;
 use std::path::PathBuf;
@@ -143,7 +145,7 @@ pub(crate) async fn seed_profile_and_fleet_config(
         }],
         snapshot_json: serde_json::to_string(&snapshot).unwrap(),
     };
-    let outcome = ControlPlaneStore::auth_apply_validation_v2(
+    let outcome = AuthProfileStore::auth_apply_validation_v2(
         plane.control_plane.as_ref(),
         KEY,
         1,
@@ -192,7 +194,7 @@ pub(crate) async fn seed_profile_and_fleet_config(
         outbox_payload: "{}".into(),
         idempotency: None,
     };
-    ControlPlaneStore::commit_fleet_mutation(plane.control_plane.as_ref(), facts)
+    FleetStore::commit_fleet_mutation(plane.control_plane.as_ref(), facts)
         .await
         .unwrap()
         .unwrap();
@@ -225,7 +227,7 @@ pub(crate) async fn acknowledge_handoff(plane: &TestPlane, fence: i64) {
         repository_id: Some(700),
         repository_owner_id: Some(220),
     };
-    let ack = ControlPlaneStore::handoff_acknowledge(
+    let ack = HandoffStore::handoff_acknowledge(
         plane.control_plane.as_ref(),
         FLEET,
         KEY,

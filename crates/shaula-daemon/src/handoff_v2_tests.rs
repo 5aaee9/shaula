@@ -3,6 +3,7 @@
 use super::handoff_tests::{HealthyGitHub, MemoryStore};
 use super::{run_handoff, HandoffProgress};
 use shaula_core::ports::GitHubAccessPort;
+use shaula_core::registry::HandoffStore;
 use shaula_core::registry::{AuthHandoffRow, ControlPlaneStore, FleetAuthContextRow};
 use std::sync::{atomic::Ordering, Arc};
 

@@ -3,7 +3,7 @@ use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use shaula_core::{
     jobs::{AssociationStatus, ForgejoJobsStore, JobsQuery, JobsReadPort, ObservedStatus},
     ports::forgejo::ForgejoJob,
-    registry::{ControlPlaneStore, FleetRuntimeGuard},
+    registry::{FleetRuntimeGuard, FleetStore},
 };
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;

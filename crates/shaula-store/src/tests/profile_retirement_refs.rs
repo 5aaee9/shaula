@@ -2,7 +2,7 @@ use super::{forgejo_pool_support::TestResult, profile_retirement_support::*};
 use sea_orm::ConnectionTrait;
 use shaula_core::{
     lifecycle::GenerationState as G,
-    registry::{ControlPlaneStore, LifecycleStore},
+    registry::{AuthProfileStore, LifecycleStore, TemplatePoolStore, TemplateStore},
 };
 
 #[tokio::test]

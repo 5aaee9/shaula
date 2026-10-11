@@ -1,5 +1,5 @@
 use sea_orm::ConnectionTrait;
-use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::TemplateStore;
 
 use super::template_source_migration_support::{
     restored, retained_snapshot, scalar, Fixture, TestResult,

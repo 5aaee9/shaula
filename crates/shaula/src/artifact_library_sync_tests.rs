@@ -1,4 +1,5 @@
 use super::*;
+use shaula_core::registry::{ArtifactStore, TemplateStore};
 
 #[tokio::test]
 async fn bundled_catalog_imports_and_recovers_proxmox_render_sources_from_database() -> TestResult {

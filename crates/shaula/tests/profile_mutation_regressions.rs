@@ -10,7 +10,7 @@ mod template_profile_updates;
 mod template_updates;
 use axum::http::{HeaderValue, StatusCode};
 use common::*;
-use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::{AuthProfileStore, ProfileStore, TemplateStore};
 use tower::ServiceExt;
 
 #[tokio::test]

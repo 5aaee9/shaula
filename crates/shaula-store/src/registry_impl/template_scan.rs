@@ -2,7 +2,7 @@
 
 use sha2::{Digest, Sha256};
 use shaula_core::error::CoreResult;
-use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::ArtifactStore;
 
 use crate::template_activation::{ValidatedTemplate, ValidationCommit};
 

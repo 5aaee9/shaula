@@ -14,6 +14,7 @@ mod replacement_tests;
 use super::*;
 use crate::auth_worker_mock::{endpoints, listener::ListenerMock, mock_server_cfg, MockConfig};
 use shaula_core::registry::LifecycleStore;
+use shaula_core::registry::{CapacityStore, FleetStore, HandoffStore};
 use std::sync::atomic::{AtomicI64, Ordering};
 
 struct TestClock(AtomicI64);

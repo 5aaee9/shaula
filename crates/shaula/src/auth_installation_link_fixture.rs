@@ -7,7 +7,7 @@ use axum::http::{Request, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use sea_orm::{ConnectionTrait, Statement};
-use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::AuthProfileStore;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tower::ServiceExt;
 

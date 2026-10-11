@@ -6,6 +6,7 @@
 
 use crate::auth_worker_v2::tests::{control_plane, policy, real_pem};
 use shaula_core::ports::Clock;
+use shaula_core::registry::AuthProfileStore;
 use shaula_core::registry::ControlPlaneStore;
 use shaula_store::registry_impl::SqliteControlPlane;
 use std::sync::Arc;
@@ -125,7 +126,7 @@ async fn seed_predecessor(control_plane: &Arc<SqliteControlPlane>, app_id: &str)
             repositories: Vec::new(),
         });
     promotion.snapshot_json = serde_json::to_string(&snapshot).unwrap();
-    ControlPlaneStore::auth_apply_validation_v2(
+    AuthProfileStore::auth_apply_validation_v2(
         control_plane.as_ref(),
         KEY,
         1,
@@ -147,7 +148,7 @@ async fn numeric_app_identity_preserved_across_publications() {
 
     // The v2 Candidate declares the NUMERIC id of the same App.
     crate::auth_worker_v2::tests::seed_candidate(&control_plane, 2, &policy(false)).await;
-    let row = ControlPlaneStore::auth_revision_get(control_plane.as_ref(), KEY, 2)
+    let row = AuthProfileStore::auth_revision_get(control_plane.as_ref(), KEY, 2)
         .await
         .unwrap()
         .unwrap();
@@ -166,7 +167,7 @@ async fn numeric_app_identity_preserved_across_publications() {
         crate::auth_worker_v2::Verdict::Accepted,
         "same numeric App identity must permit a new selector"
     );
-    let head = ControlPlaneStore::auth_profile_get(control_plane.as_ref(), KEY)
+    let head = AuthProfileStore::auth_profile_get(control_plane.as_ref(), KEY)
         .await
         .unwrap()
         .unwrap();
@@ -180,7 +181,7 @@ async fn different_numeric_app_identity_rejects() {
     let control_plane = control_plane().await;
     seed_predecessor(&control_plane, "1234").await;
     crate::auth_worker_v2::tests::seed_candidate(&control_plane, 2, &policy(false)).await;
-    let row = ControlPlaneStore::auth_revision_get(control_plane.as_ref(), KEY, 2)
+    let row = AuthProfileStore::auth_revision_get(control_plane.as_ref(), KEY, 2)
         .await
         .unwrap()
         .unwrap();
@@ -196,7 +197,7 @@ async fn different_numeric_app_identity_rejects() {
     .unwrap();
     assert_eq!(verdict, crate::auth_worker_v2::Verdict::Rejected);
     // The predecessor stays active — no silent rebind.
-    let head = ControlPlaneStore::auth_profile_get(control_plane.as_ref(), KEY)
+    let head = AuthProfileStore::auth_profile_get(control_plane.as_ref(), KEY)
         .await
         .unwrap()
         .unwrap();
@@ -214,7 +215,7 @@ async fn rate_limit_at_token_mint_defers_with_deadline() {
     .await;
     let control_plane = control_plane().await;
     crate::auth_worker_v2::tests::seed_candidate(&control_plane, 1, &policy(false)).await;
-    let row = ControlPlaneStore::auth_revision_get(control_plane.as_ref(), KEY, 1)
+    let row = AuthProfileStore::auth_revision_get(control_plane.as_ref(), KEY, 1)
         .await
         .unwrap()
         .unwrap();
@@ -235,7 +236,7 @@ async fn rate_limit_at_token_mint_defers_with_deadline() {
         },
         "Retry-After: 45 must surface as the next-attempt deadline"
     );
-    let head = ControlPlaneStore::auth_profile_get(control_plane.as_ref(), KEY)
+    let head = AuthProfileStore::auth_profile_get(control_plane.as_ref(), KEY)
         .await
         .unwrap()
         .unwrap();

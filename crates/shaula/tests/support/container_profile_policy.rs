@@ -8,7 +8,7 @@ use shaula_core::{
         DestroyClassification, OriginalStateIdentity, PlanProvenance, StateLineage,
         TemplateCreateRequest, TemplateDestroyRequest, TemplateOutcomeError, TemplateRuntimePort,
     },
-    registry::ControlPlaneStore,
+    registry::TemplateStore,
     template::{BindingsDigest, GenerationIdentity, ShaulaInputEnvelope},
 };
 use std::{path::Path, time::Duration};

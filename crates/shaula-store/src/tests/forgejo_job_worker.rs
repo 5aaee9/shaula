@@ -5,7 +5,7 @@ use shaula_core::{
         ObservedStatus,
     },
     ports::forgejo::ForgejoJob,
-    registry::{ControlPlaneStore, FleetRuntimeGuard},
+    registry::{FleetRuntimeGuard, FleetStore},
 };
 use std::{
     sync::{atomic::Ordering, Arc},

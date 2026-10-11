@@ -2,6 +2,7 @@
 
 use super::*;
 use axum::http::StatusCode;
+use shaula_core::registry::AuthProfileStore;
 
 #[path = "auth_installation_link_fixture.rs"]
 mod fixture;

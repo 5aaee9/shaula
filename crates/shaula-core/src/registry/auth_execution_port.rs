@@ -20,18 +20,14 @@ pub trait AuthExecutionStore: Send + Sync {
     /// Display-only bounded observations, never an authorization authority.
     async fn auth_route_observation_report(
         &self,
-        _observation: AuthRouteObservation,
-    ) -> CoreResult<()> {
-        Ok(())
-    }
+        observation: AuthRouteObservation,
+    ) -> CoreResult<()>;
     async fn auth_route_observations(
         &self,
-        _key: &str,
-        _revision: i64,
-        _now_ms: i64,
-    ) -> CoreResult<Vec<AuthRouteObservation>> {
-        Ok(Vec::new())
-    }
+        key: &str,
+        revision: i64,
+        now_ms: i64,
+    ) -> CoreResult<Vec<AuthRouteObservation>>;
 
     /// Actual observed, generation and session references, excluding unused history.
     async fn auth_execution_refs(&self, fleet_key: &str) -> CoreResult<Vec<(String, i64)>>;

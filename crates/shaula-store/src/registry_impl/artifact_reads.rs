@@ -2,7 +2,7 @@
 
 use super::{artifacts, SqliteControlPlane};
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
-use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::ArtifactStore;
 
 impl SqliteControlPlane {
     pub(super) async fn artifact_manifest_impl(&self, digest: &str) -> CoreResult<Option<String>> {

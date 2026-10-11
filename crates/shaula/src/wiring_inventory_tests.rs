@@ -2,6 +2,7 @@
 
 use super::*;
 use serde_json::{json, Value};
+use shaula_core::registry::FleetStore;
 
 fn inventory(unknown_current_runner: bool) -> Value {
     let mut runners = vec![

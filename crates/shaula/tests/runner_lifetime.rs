@@ -10,7 +10,7 @@ mod fixture;
 use fixture::{Fixture, TestResult};
 use shaula_core::{
     lifecycle::GenerationState as G,
-    registry::{ControlPlaneStore, LifecycleStore},
+    registry::{CapacityStore, FleetStore, LifecycleStore},
     runner_lifetime::RunnerLifetimeStore,
 };
 use std::{sync::atomic::Ordering, time::Duration};

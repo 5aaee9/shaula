@@ -3,6 +3,7 @@
 use super::*;
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use serde_json::json;
+use shaula_core::registry::{CapacityStore, FleetStore};
 
 #[tokio::test]
 async fn assigned_zero_request_is_retained_and_acked_without_degrading_ready_fleet() {

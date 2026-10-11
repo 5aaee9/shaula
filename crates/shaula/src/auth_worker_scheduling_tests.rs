@@ -9,7 +9,7 @@
 
 use crate::auth_worker_v2::tests::{control_plane, policy, seed_candidate, KEY};
 use crate::wiring::wiring_tests::{tick_and_drain, wiring_with};
-use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::AuthProfileStore;
 use std::sync::atomic::Ordering;
 
 /// The worker clock's fixed instant (auth_worker_mock::Now).
@@ -49,7 +49,7 @@ async fn scheduling_honors_retry_after_deadline() {
         2,
         "the worker re-attempts after the Retry-After deadline"
     );
-    let head = ControlPlaneStore::auth_profile_get(control_plane.as_ref(), KEY)
+    let head = AuthProfileStore::auth_profile_get(control_plane.as_ref(), KEY)
         .await
         .unwrap()
         .unwrap();
@@ -125,7 +125,7 @@ async fn scheduling_new_revision_not_stranded_by_old_deferral() {
     );
     seed_candidate(&control_plane, 2, &policy(false)).await;
     tick_and_drain(&mut wiring, T0 + 1_000).await;
-    let head = ControlPlaneStore::auth_profile_get(control_plane.as_ref(), KEY)
+    let head = AuthProfileStore::auth_profile_get(control_plane.as_ref(), KEY)
         .await
         .unwrap()
         .unwrap();

@@ -9,6 +9,7 @@
 
 use shaula_core::ports::Clock;
 use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::{AuthProfileStore, ProfileStore};
 use shaula_store::registry_impl::SqliteControlPlane;
 use shaula_store::Store;
 use std::sync::atomic::Ordering;
@@ -144,7 +145,7 @@ pub(crate) async fn run_worker(
     control_plane: &Arc<SqliteControlPlane>,
     mock: &crate::auth_worker_mock::Mock,
 ) -> shaula_core::error::CoreResult<crate::auth_worker_v2::Verdict> {
-    let row = ControlPlaneStore::auth_revision_get(control_plane.as_ref(), KEY, 1)
+    let row = AuthProfileStore::auth_revision_get(control_plane.as_ref(), KEY, 1)
         .await
         .unwrap()
         .unwrap();
@@ -170,12 +171,12 @@ async fn worker_promotes_with_user_agent_and_installation_scoped_metadata() {
     seed_candidate(&control_plane, 1, &policy(false)).await;
     let verdict = run_worker(&control_plane, &mock).await.unwrap();
     assert_eq!(verdict, crate::auth_worker_v2::Verdict::Accepted);
-    let head = ControlPlaneStore::auth_profile_get(control_plane.as_ref(), KEY)
+    let head = AuthProfileStore::auth_profile_get(control_plane.as_ref(), KEY)
         .await
         .unwrap()
         .unwrap();
     assert_eq!(head.active_revision, Some(1));
-    let bindings = ControlPlaneStore::auth_bindings_get(control_plane.as_ref(), KEY, 1)
+    let bindings = AuthProfileStore::auth_bindings_get(control_plane.as_ref(), KEY, 1)
         .await
         .unwrap();
     assert_eq!(bindings.len(), 2);
@@ -211,7 +212,7 @@ async fn worker_rate_limit_stays_pending_not_rejected() {
         },
         "Retry-After must surface as the next-attempt deadline"
     );
-    let head = ControlPlaneStore::auth_profile_get(control_plane.as_ref(), KEY)
+    let head = AuthProfileStore::auth_profile_get(control_plane.as_ref(), KEY)
         .await
         .unwrap()
         .unwrap();
@@ -230,20 +231,20 @@ async fn worker_org_selector_probe_denial_rejects_without_fleets() {
     seed_candidate(&control_plane, 1, &policy(true)).await;
     let verdict = run_worker(&control_plane, &mock).await.unwrap();
     assert_eq!(verdict, crate::auth_worker_v2::Verdict::Rejected);
-    let head = ControlPlaneStore::auth_profile_get(control_plane.as_ref(), KEY)
+    let head = AuthProfileStore::auth_profile_get(control_plane.as_ref(), KEY)
         .await
         .unwrap()
         .unwrap();
     assert_eq!(head.active_revision, None, "denied probe never activates");
     let change =
-        ControlPlaneStore::profile_change_get(control_plane.as_ref(), &format!("change-{KEY}-1"))
+        ProfileStore::profile_change_get(control_plane.as_ref(), &format!("change-{KEY}-1"))
             .await
             .unwrap()
             .unwrap();
     assert_eq!(change.state, "Rejected");
     assert_eq!(change.reason.as_deref(), Some("PermissionDenied"));
     assert!(
-        ControlPlaneStore::auth_bindings_get(control_plane.as_ref(), KEY, 1)
+        AuthProfileStore::auth_bindings_get(control_plane.as_ref(), KEY, 1)
             .await
             .unwrap()
             .is_empty()
@@ -261,7 +262,7 @@ async fn rejected_candidate_cannot_be_promoted_later() {
     assert_eq!(verdict, crate::auth_worker_v2::Verdict::Rejected);
     // A late validation callback claiming success must fail, never flip
     // the rejected revision Active.
-    let outcome = ControlPlaneStore::auth_apply_validation_v2(
+    let outcome = AuthProfileStore::auth_apply_validation_v2(
         control_plane.as_ref(),
         KEY,
         1,
@@ -273,13 +274,13 @@ async fn rejected_candidate_cannot_be_promoted_later() {
     .await;
     assert!(outcome.is_err(), "rejected candidate promotion refused");
     let change =
-        ControlPlaneStore::profile_change_get(control_plane.as_ref(), &format!("change-{KEY}-1"))
+        ProfileStore::profile_change_get(control_plane.as_ref(), &format!("change-{KEY}-1"))
             .await
             .unwrap()
             .unwrap();
     assert_eq!(change.state, "Rejected");
     assert!(
-        ControlPlaneStore::auth_profile_get(control_plane.as_ref(), KEY)
+        AuthProfileStore::auth_profile_get(control_plane.as_ref(), KEY)
             .await
             .unwrap()
             .unwrap()

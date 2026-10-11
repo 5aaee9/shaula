@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used)] // test-only module
+use shaula_core::registry::HandoffStore;
 use std::sync::Arc;
 
 use super::{run_handoff, HandoffProgress};

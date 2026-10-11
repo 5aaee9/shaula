@@ -6,7 +6,7 @@ use shaula_core::{
     jobs::{JobsQuery, JobsReadPort},
     lifecycle::GenerationState as G,
     ports::forgejo::ForgejoJob,
-    registry::ControlPlaneStore,
+    registry::CapacityStore,
 };
 use std::sync::atomic::Ordering;
 

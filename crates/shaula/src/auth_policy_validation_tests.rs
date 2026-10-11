@@ -2,6 +2,7 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use shaula_core::registry::AuthProfileStore;
 use shaula_core::registry::{ControlPlaneStore, ProfileRegistryPort};
 use std::sync::Arc;
 use tower::ServiceExt;

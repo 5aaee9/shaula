@@ -4,7 +4,10 @@ use crate::{registry_impl::SqliteControlPlane, Store};
 use sea_orm::ConnectionTrait;
 use shaula_core::{
     lifecycle::GenerationState as G,
-    registry::{ControlPlaneStore, LifecycleStore, MutationError, OperationInsert},
+    registry::{
+        AuthProfileStore, LifecycleStore, MutationError, OperationInsert, ProfileStore,
+        TemplatePoolStore, TemplateStore,
+    },
 };
 
 #[tokio::test]

@@ -3,7 +3,7 @@ use super::forgejo_pool_support::{Fixture, TestResult};
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use shaula_core::{
     fleet::TemplateProfileRefDto,
-    registry::{ControlPlaneStore, LifecycleStore},
+    registry::{CapacityStore, LifecycleStore},
 };
 use std::sync::atomic::Ordering;
 

@@ -6,7 +6,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use sea_orm::{ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, Statement};
 use serde_json::{json, Value};
-use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::TemplateStore;
 use tower::ServiceExt;
 
 const COLLECTION: &str = "/api/v1/template-profiles";

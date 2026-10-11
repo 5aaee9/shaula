@@ -8,7 +8,9 @@ mod common;
 use axum::http::StatusCode;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use shaula_core::registry::{AuthPromotion, AuthPromotionOutcome, ControlPlaneStore};
+use shaula_core::registry::{
+    AuthProfileStore, AuthPromotion, AuthPromotionOutcome, FleetStore, TemplateStore,
+};
 use tower::ServiceExt;
 
 use common::attestation_harness::{put_template_profile, seed_profile_artifact};

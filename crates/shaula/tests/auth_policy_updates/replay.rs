@@ -1,5 +1,5 @@
 use axum::http::StatusCode;
-use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::AuthProfileStore;
 use tower::ServiceExt;
 
 use super::common;

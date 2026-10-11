@@ -4,7 +4,7 @@ use sea_orm::ConnectionTrait;
 use shaula_core::{
     lifecycle::GenerationState as G,
     registry::{
-        ChangeView, ControlPlaneStore, LifecycleStore, MutationError, MutationFacts,
+        CapacityStore, ChangeView, FleetStore, LifecycleStore, MutationError, MutationFacts,
         OperationInsert,
     },
 };

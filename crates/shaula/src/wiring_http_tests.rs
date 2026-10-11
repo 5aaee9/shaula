@@ -9,7 +9,7 @@ use super::wiring_tests::{test_plane, tick_and_drain, wiring_with, TestPlane};
 use crate::http_oidc;
 use axum::body::Body;
 use axum::http::Request;
-use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::AuthProfileStore;
 use shaula_daemon::service::ControlPlane;
 use shaula_http::router::AppState;
 use std::sync::Arc;
@@ -212,7 +212,7 @@ async fn http_different_app_against_established_identity_still_conflicts() {
         axum::http::StatusCode::CONFLICT,
         "a different numeric App is an identity conflict"
     );
-    let head = ControlPlaneStore::auth_profile_get(plane.control_plane.as_ref(), KEY)
+    let head = AuthProfileStore::auth_profile_get(plane.control_plane.as_ref(), KEY)
         .await
         .unwrap()
         .unwrap();

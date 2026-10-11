@@ -13,7 +13,7 @@ mod replay;
 mod support;
 
 use axum::http::StatusCode;
-use shaula_core::registry::{AuthPromotionOutcome, ControlPlaneStore};
+use shaula_core::registry::{AuthProfileStore, AuthPromotionOutcome};
 use support::{body, json_response, Fixture, TestResult, KEY, PRIVATE_KEY, URI};
 use tower::ServiceExt;
 

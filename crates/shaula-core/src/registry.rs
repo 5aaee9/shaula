@@ -340,8 +340,11 @@ mod runtime_port;
 pub use runtime_port::{
     FleetObservation, FleetObservationPhase, FleetRuntimeGuard, PersistedSession, SessionInstall,
 };
-pub use store_port::ControlPlaneStore;
 pub use store_port::MutationFacts;
+pub use store_port::{
+    AdmissionSupportStore, ArtifactStore, AuthProfileStore, CapacityStore, ControlPlaneStore,
+    FleetStore, HandoffStore, ProfileStore, TemplatePoolStore, TemplateStore,
+};
 pub use store_port::{FleetHead, FleetRevisionRow, ProfileHead, TemplateRevisionRow};
 
 mod write_records;

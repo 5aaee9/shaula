@@ -8,7 +8,7 @@ use common::{authorized, build_app_with_scan, get_json};
 use shaula_core::auth_context::{AccountBinding, RepositorySelection};
 use shaula_core::auth_policy::AccountKind;
 use shaula_core::registry::{
-    auth_dependent_set_fingerprint, AuthPromotion, AuthValidationSnapshot, ControlPlaneStore,
+    auth_dependent_set_fingerprint, AuthProfileStore, AuthPromotion, AuthValidationSnapshot,
     MutationFacts,
 };
 use tower::ServiceExt;

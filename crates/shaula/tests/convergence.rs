@@ -6,7 +6,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use shaula_core::lifecycle::GenerationState;
 use shaula_core::registry::GenerationRecord;
-use shaula_core::registry::{ControlPlaneStore, LifecycleStore};
+use shaula_core::registry::{FleetStore, LifecycleStore, TemplateStore};
 use tower::ServiceExt;
 
 use common::attestation_harness::put_template_profile;

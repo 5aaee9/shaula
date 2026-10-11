@@ -2,8 +2,8 @@ use std::sync::{Arc, Barrier};
 
 use shaula_core::ports::Clock;
 use shaula_core::registry::{
-    Actor, ControlPlaneStore, MutationAccepted, MutationError, ProfileRegistryPort, Scope,
-    TemplateProfileUpdate,
+    Actor, MutationAccepted, MutationError, ProfileRegistryPort, Scope, TemplateProfileUpdate,
+    TemplateStore,
 };
 use shaula_daemon::service::ControlPlane;
 

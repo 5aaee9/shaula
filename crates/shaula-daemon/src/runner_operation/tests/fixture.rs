@@ -10,7 +10,7 @@ use shaula_core::lifecycle::GenerationState as G;
 use shaula_core::ports::forgejo::ForgejoRunnerRef;
 use shaula_core::ports::{ApplyIntentSink, GitHubAccessPort};
 use shaula_core::registry::{
-    ControlPlaneStore, FleetRuntimeGuard, GenerationRecord, LifecycleStore, ScaleSetRow,
+    FleetRuntimeGuard, FleetStore, GenerationRecord, LifecycleStore, ScaleSetRow,
 };
 use shaula_store::registry_impl::SqliteControlPlane;
 use shaula_store::Store;

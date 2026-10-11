@@ -8,7 +8,7 @@ mod history;
 use axum::http::StatusCode;
 use common::*;
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
-use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::AuthProfileStore;
 use tower::ServiceExt;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

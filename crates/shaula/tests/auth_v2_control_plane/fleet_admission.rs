@@ -2,6 +2,7 @@
 
 use super::*;
 use serde_json::{json, Value};
+use shaula_core::registry::AuthProfileStore;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 

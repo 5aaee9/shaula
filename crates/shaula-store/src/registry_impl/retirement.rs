@@ -6,7 +6,7 @@ use crate::entities::{
 };
 use sea_orm::{sea_query::Expr, ColumnTrait, EntityTrait, QueryFilter};
 use shaula_core::error::CoreResult;
-use shaula_core::registry::{ControlPlaneStore, MutationError, MutationFacts};
+use shaula_core::registry::{AuthProfileStore, MutationError, MutationFacts, TemplateStore};
 
 pub(super) async fn allows_references(
     tx: &sea_orm::DatabaseTransaction,

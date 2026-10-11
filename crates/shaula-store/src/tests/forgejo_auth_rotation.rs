@@ -3,7 +3,7 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use shaula_core::{
     forgejo::ForgejoScope,
     ports::forgejo::ForgejoAuthProbe,
-    registry::{AuthPromotion, AuthPromotionOutcome, ControlPlaneStore},
+    registry::{AuthProfileStore, AuthPromotion, AuthPromotionOutcome, FleetStore, HandoffStore},
 };
 
 fn probe(principal_id: Option<u64>) -> ForgejoAuthProbe {

@@ -1,5 +1,5 @@
 use axum::http::StatusCode;
-use shaula_core::registry::{ControlPlaneStore, IdempotencyLookup};
+use shaula_core::registry::{AdmissionSupportStore, IdempotencyLookup, TemplateStore};
 
 use super::support::{Fixture, TestResult};
 use super::{associated_body, catalog, put, put_body};

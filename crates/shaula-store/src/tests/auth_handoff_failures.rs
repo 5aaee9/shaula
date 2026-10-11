@@ -5,6 +5,7 @@ mod remote;
 use super::auth_execution::ready;
 use super::auth_v2::{binding, org_selector, policy_json, promotion, seed_v2_candidate, PROFILE};
 use remote::{FailingGitHub, FailureStage};
+use shaula_core::registry::{AuthProfileStore, FleetStore, HandoffStore};
 use shaula_core::registry::{ChangeView, ControlPlaneStore, MutationFacts};
 use shaula_daemon::handoff::{run_handoff, HandoffProgress};
 use std::sync::Arc;

@@ -4,7 +4,7 @@ use super::forgejo_pool_support::{Fixture, TestResult};
 use sea_orm::ConnectionTrait;
 use shaula_core::{
     lifecycle::GenerationState as G,
-    registry::{ControlPlaneStore, LifecycleStore, OperationInsert},
+    registry::{CapacityStore, FleetStore, LifecycleStore, OperationInsert},
 };
 use std::sync::atomic::Ordering;
 

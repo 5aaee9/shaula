@@ -4,7 +4,7 @@
 
 use crate::store::Store;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::ProfileStore;
 
 pub(crate) async fn store() -> Store {
     let tmp = tempfile::tempdir().unwrap();

@@ -4,8 +4,9 @@ use axum::Router;
 use sea_orm::{ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, Statement};
 use shaula_core::auth::AuthKind;
 use shaula_core::registry::{
-    Actor, AuthProfilePut, ControlPlaneStore, FleetRegistryPort, MutationAccepted, MutationError,
-    ProfileRegistryPort, Scope, TemplatePoolRegistryPort, TemplateProfilePut,
+    Actor, AuthProfilePut, AuthProfileStore, FleetRegistryPort, FleetStore, MutationAccepted,
+    MutationError, ProfileRegistryPort, Scope, TemplatePoolRegistryPort, TemplatePoolStore,
+    TemplateProfilePut, TemplateStore,
 };
 use shaula_core::secret::SecretString;
 use shaula_daemon::service::ControlPlane;

@@ -5,7 +5,7 @@ use crate::template_updates as support;
 
 use axum::body::Body;
 use axum::http::{HeaderValue, StatusCode};
-use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::{FleetStore, TemplateStore};
 use tower::ServiceExt;
 
 use support::{request, response, Fixture, TestResult, PROFILE};

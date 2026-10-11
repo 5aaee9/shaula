@@ -1,6 +1,7 @@
 //! Exact execution-authority composition regressions.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 use super::*;
+use shaula_core::registry::{AuthProfileStore, ControlPlaneStore, FleetStore, HandoffStore};
 
 #[tokio::test]
 async fn ownership_reports_actual_proof_health_for_the_observed_revision() {
@@ -55,7 +56,7 @@ async fn wiring_refuses_execution_supervisor_on_corrupt_observed_context() {
     corrupt_observed_context(&plane.db_path).await;
     let mut wiring = execution_wiring(&plane).await;
     let (_, fleet_revision, phase) =
-        ControlPlaneStore::fleet_list(&*plane.control_plane, &fleet_actor(), Default::default())
+        FleetStore::fleet_list(&*plane.control_plane, &fleet_actor(), Default::default())
             .await
             .unwrap()[0]
             .clone();
@@ -89,7 +90,7 @@ async fn wiring_execution_authority_stays_observed_during_in_flight_rotation() {
         r#"{"selectors":[{"kind":"repository","owner":"5aaee9","repository":"proj"}]}"#,
     )
     .await;
-    let dependents = ControlPlaneStore::auth_live_dependents(&*plane.control_plane, KEY)
+    let dependents = AuthProfileStore::auth_live_dependents(&*plane.control_plane, KEY)
         .await
         .unwrap();
     assert_eq!(
@@ -126,7 +127,7 @@ async fn wiring_execution_authority_stays_observed_during_in_flight_rotation() {
         }],
         snapshot_json: serde_json::to_string(&snapshot).unwrap(),
     };
-    let outcome = ControlPlaneStore::auth_apply_validation_v2(
+    let outcome = AuthProfileStore::auth_apply_validation_v2(
         plane.control_plane.as_ref(),
         KEY,
         2,
@@ -142,7 +143,7 @@ async fn wiring_execution_authority_stays_observed_during_in_flight_rotation() {
         shaula_core::registry::AuthPromotionOutcome::Promoted
     );
 
-    let handoff = ControlPlaneStore::handoff_get(&*plane.control_plane, FLEET)
+    let handoff = HandoffStore::handoff_get(&*plane.control_plane, FLEET)
         .await
         .unwrap()
         .unwrap();
@@ -163,7 +164,7 @@ async fn wiring_execution_authority_stays_observed_during_in_flight_rotation() {
     )
     .await;
     let (_, fleet_revision, phase) =
-        ControlPlaneStore::fleet_list(&*plane.control_plane, &fleet_actor(), Default::default())
+        FleetStore::fleet_list(&*plane.control_plane, &fleet_actor(), Default::default())
             .await
             .unwrap()[0]
             .clone();

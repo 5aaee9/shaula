@@ -11,7 +11,7 @@ mod input_materials;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use shaula_core::lifecycle::GenerationState;
-use shaula_core::registry::{ControlPlaneStore, GenerationRecord, LifecycleStore};
+use shaula_core::registry::{FleetStore, GenerationRecord, LifecycleStore, TemplateStore};
 use tower::ServiceExt;
 
 use common::attestation_harness::{put_template_profile, seed_profile, seed_profile_artifact};

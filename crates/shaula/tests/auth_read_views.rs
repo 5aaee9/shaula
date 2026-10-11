@@ -12,9 +12,9 @@ use common::{authorized, build_app_with_scan, get_json};
 use shaula_core::auth_context::{AccountBinding, RepositorySelection, ResolvedAuthContext};
 use shaula_core::auth_policy::AccountKind;
 use shaula_core::registry::{
-    auth_dependent_set_fingerprint, AuthExecutionStore, AuthHandoffExpectation, AuthPromotion,
-    AuthRouteObservation, AuthValidationSnapshot, ChangeView, ControlPlaneStore, FleetContextAck,
-    MutationFacts,
+    auth_dependent_set_fingerprint, AuthExecutionStore, AuthHandoffExpectation, AuthProfileStore,
+    AuthPromotion, AuthRouteObservation, AuthValidationSnapshot, ChangeView, FleetContextAck,
+    FleetStore, HandoffStore, MutationFacts,
 };
 use shaula_store::registry_impl::SqliteControlPlane;
 use tower::ServiceExt;

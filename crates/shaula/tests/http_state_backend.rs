@@ -11,7 +11,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 use shaula_core::{
     lifecycle::GenerationState,
     ports::TemplateRuntimePort,
-    registry::{ControlPlaneStore, GenerationRecord},
+    registry::{FleetStore, GenerationRecord},
     state_backend::{LockInfo, StateAccess, StateBackend, StateDocument},
 };
 use shaula_http::state_backend::StateServer;

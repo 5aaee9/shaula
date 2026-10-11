@@ -7,8 +7,8 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement};
 use shaula_core::auth_context::{AccountBinding, RepositorySelection};
 use shaula_core::auth_policy::AccountKind;
 use shaula_core::registry::{
-    auth_dependent_set_fingerprint, AuthPromotion, AuthPromotionOutcome, AuthValidationSnapshot,
-    ControlPlaneStore,
+    auth_dependent_set_fingerprint, AuthProfileStore, AuthPromotion, AuthPromotionOutcome,
+    AuthValidationSnapshot,
 };
 use shaula_store::registry_impl::SqliteControlPlane;
 use tower::ServiceExt;

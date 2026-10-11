@@ -122,6 +122,7 @@ mod artifact_reads;
 mod artifacts;
 
 mod auth_execution;
+mod control_plane_profiles;
 #[path = "control_plane_store.rs"]
 mod control_plane_store;
 

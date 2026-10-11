@@ -1,5 +1,5 @@
 use sea_orm::ConnectionTrait;
-use shaula_core::registry::{ControlPlaneStore, MutationError, Scope, TemplatePoolRegistryPort};
+use shaula_core::registry::{MutationError, Scope, TemplatePoolRegistryPort, TemplatePoolStore};
 
 use super::{registry::*, support::*};
 

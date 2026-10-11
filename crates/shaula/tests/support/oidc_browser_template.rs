@@ -9,8 +9,8 @@ use sha2::{Digest, Sha256};
 use shaula_core::auth_context::{AccountBinding, RepositorySelection};
 use shaula_core::auth_policy::{AccountKind, TargetPolicy, TargetSelector};
 use shaula_core::registry::{
-    auth_dependent_set_fingerprint, AuthIdentityProof, AuthPromotion, AuthPromotionOutcome,
-    AuthValidationSnapshot, ControlPlaneStore,
+    auth_dependent_set_fingerprint, AuthIdentityProof, AuthProfileStore, AuthPromotion,
+    AuthPromotionOutcome, AuthValidationSnapshot,
 };
 
 pub async fn seed(directory: &Path) -> Result<(), Box<dyn std::error::Error>> {

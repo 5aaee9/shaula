@@ -14,7 +14,7 @@ use tower::ServiceExt;
 
 use common::attestation_harness::{put_template_profile, seed_profile};
 use common::*;
-use shaula_core::registry::{ControlPlaneStore, LifecycleStore};
+use shaula_core::registry::{FleetStore, LifecycleStore, TemplatePoolStore, TemplateStore};
 
 const POOL_BODY: &str = r#"{
     "members": [

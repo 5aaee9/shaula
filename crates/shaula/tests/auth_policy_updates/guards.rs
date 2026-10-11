@@ -1,6 +1,6 @@
 use axum::http::StatusCode;
 use sea_orm::{ConnectionTrait, TransactionTrait};
-use shaula_core::registry::ControlPlaneStore;
+use shaula_core::registry::AuthProfileStore;
 use tower::ServiceExt;
 
 use super::support::{body, json_response, Fixture, TestResult, KEY, PRIVATE_KEY};
