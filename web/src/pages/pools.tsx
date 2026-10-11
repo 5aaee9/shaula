@@ -13,19 +13,8 @@ import { PoolForm } from "@/components/pool-form";
  * member mix once; fleets reference them by key.
  */
 export function PoolsPage({ scopes }: { scopes: string[] }) {
-  const client = useQueryClient();
   const pools = useTemplatePools(scopes.includes("template.read"));
   const [editing, setEditing] = useState<string | "new" | null>(null);
-  const summaries = pools.data?.data.pools || [];
-  const detail = useQuery({
-    queryKey: ["template-pool", editing],
-    enabled: !!editing && editing !== "new" && scopes.includes("template.read"),
-    queryFn: ({ signal }) =>
-      api<TemplatePoolResource>(resourcePath("template-pools", editing as string), {
-        signal,
-      }),
-  });
-
   if (!scopes.includes("template.read"))
     return <ErrorNotice error={new Error("Template read permission is required.")} />;
   return (
@@ -47,69 +36,106 @@ export function PoolsPage({ scopes }: { scopes: string[] }) {
           </Button>
         )}
       </div>
-      {pools.error ? (
-        <ErrorNotice error={pools.error} retry={() => void pools.refetch()} />
-      ) : pools.isPending ? (
-        <Loading />
-      ) : !summaries.length ? (
-        <Empty title="No template pools yet">
-          <p className="text-sm text-muted-foreground">
-            A pool defines a weighted mix of template members. Fleets reference it by key and draw
-            one member per new runner.
-          </p>
-        </Empty>
-      ) : (
-        <section className="resource-section" aria-label="Template pool inventory">
-          <div className="section-heading">
-            <h2>
-              All pools <span className="count">{summaries.length}</span>
-            </h2>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={pools.isFetching}
-              onClick={() => void pools.refetch()}
-            >
-              <RefreshCw className={pools.isFetching ? "animate-spin" : undefined} />
-              Refresh
-            </Button>
-          </div>
-          <ul className="divide-y">
-            {summaries.map((pool) => (
-              <li key={pool.key} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                <div className="min-w-0">
-                  <p className="font-medium break-all">{pool.key}</p>
-                  <p className="text-sm text-muted-foreground">Revision {pool.revision}</p>
-                </div>
-                {scopes.includes("template.publish") && (
-                  <Button variant="outline" size="sm" onClick={() => setEditing(pool.key)}>
-                    Edit
-                  </Button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      {editing === "new" && (
-        <PoolForm
-          scopes={scopes}
-          onClose={() => setEditing(null)}
-          onAccepted={() => void client.invalidateQueries({ queryKey: ["template-pools"] })}
-        />
-      )}
-      {editing && editing !== "new" && detail.data && (
-        <PoolForm
-          key={editing}
-          resource={detail.data}
-          scopes={scopes}
-          onClose={() => setEditing(null)}
-          onAccepted={() => {
-            void client.invalidateQueries({ queryKey: ["template-pools"] });
-            void client.invalidateQueries({ queryKey: ["template-pool", editing] });
-          }}
-        />
-      )}
+      <PoolInventory pools={pools} scopes={scopes} onEdit={setEditing} />
+      <PoolEditor editing={editing} scopes={scopes} onClose={() => setEditing(null)} />
     </>
+  );
+}
+
+function PoolInventory({
+  pools,
+  scopes,
+  onEdit,
+}: {
+  pools: ReturnType<typeof useTemplatePools>;
+  scopes: string[];
+  onEdit: (key: string) => void;
+}) {
+  const summaries = pools.data?.data.pools || [];
+  if (pools.error) return <ErrorNotice error={pools.error} retry={() => void pools.refetch()} />;
+  if (pools.isPending) return <Loading />;
+  if (!summaries.length)
+    return (
+      <Empty title="No template pools yet">
+        <p className="text-sm text-muted-foreground">
+          A pool defines a weighted mix of template members. Fleets reference it by key and draw one
+          member per new runner.
+        </p>
+      </Empty>
+    );
+  return (
+    <section className="resource-section" aria-label="Template pool inventory">
+      <div className="section-heading">
+        <h2>
+          All pools <span className="count">{summaries.length}</span>
+        </h2>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={pools.isFetching}
+          onClick={() => void pools.refetch()}
+        >
+          <RefreshCw className={pools.isFetching ? "animate-spin" : undefined} />
+          Refresh
+        </Button>
+      </div>
+      <ul className="divide-y">
+        {summaries.map((pool) => (
+          <li key={pool.key} className="flex flex-wrap items-center justify-between gap-3 py-3">
+            <div className="min-w-0">
+              <p className="font-medium break-all">{pool.key}</p>
+              <p className="text-sm text-muted-foreground">Revision {pool.revision}</p>
+            </div>
+            {scopes.includes("template.publish") && (
+              <Button variant="outline" size="sm" onClick={() => onEdit(pool.key)}>
+                Edit
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Create form, or the edit form once the selected pool's current revision has loaded. */
+function PoolEditor({
+  editing,
+  scopes,
+  onClose,
+}: {
+  editing: string | "new" | null;
+  scopes: string[];
+  onClose: () => void;
+}) {
+  const client = useQueryClient();
+  const detail = useQuery({
+    queryKey: ["template-pool", editing],
+    enabled: !!editing && editing !== "new" && scopes.includes("template.read"),
+    queryFn: ({ signal }) =>
+      api<TemplatePoolResource>(resourcePath("template-pools", editing as string), {
+        signal,
+      }),
+  });
+  if (editing === "new")
+    return (
+      <PoolForm
+        scopes={scopes}
+        onClose={onClose}
+        onAccepted={() => void client.invalidateQueries({ queryKey: ["template-pools"] })}
+      />
+    );
+  if (!editing || !detail.data) return null;
+  return (
+    <PoolForm
+      key={editing}
+      resource={detail.data}
+      scopes={scopes}
+      onClose={onClose}
+      onAccepted={() => {
+        void client.invalidateQueries({ queryKey: ["template-pools"] });
+        void client.invalidateQueries({ queryKey: ["template-pool", editing] });
+      }}
+    />
   );
 }

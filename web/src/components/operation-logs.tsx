@@ -40,22 +40,7 @@ export function OperationLogs({
         </Empty>
       ) : (
         <>
-          <div className="mb-4 flex flex-wrap gap-6">
-            {["Create", "Destroy"].map((operation) => {
-              const latest =
-                operation === "Create"
-                  ? invocations.data?.latest_create
-                  : invocations.data?.latest_destroy;
-              return (
-                <div key={operation}>
-                  <span className="mr-2 text-sm text-muted-foreground">
-                    {operationName(operation)}
-                  </span>
-                  <StatusBadge value={latest?.execution_outcome || "not_recorded"} />
-                </div>
-              );
-            })}
-          </div>
+          <LatestOutcomes page={invocations.data} />
           <NativeSelect
             aria-label="Execution attempt"
             value={selected?.id || ""}
@@ -85,30 +70,50 @@ export function OperationLogs({
               Older attempts
             </Button>
           </div>
-          {selected && (
-            <div className="mt-4 space-y-4">
-              <div className="flex flex-wrap items-center gap-3 text-sm">
-                <span>Execution</span>
-                <StatusBadge value={selected.execution_outcome} />
-                <span>Log capture</span>
-                <StatusBadge value={selected.capture_status} />
-                <span className="text-muted-foreground">
-                  {selected.retained_bytes.toLocaleString()} bytes retained ·{" "}
-                  {selected.lost_bytes.toLocaleString()} bytes omitted
-                </span>
-              </div>
-              {!scopes.includes("logs.read") ? (
-                <p className="text-sm text-muted-foreground">
-                  logs.read permission is required to view log text.
-                </p>
-              ) : (
-                <LogViewer key={selected.id} invocation={selected} />
-              )}
-            </div>
-          )}
+          {selected && <InvocationDetail invocation={selected} scopes={scopes} />}
         </>
       )}
     </section>
+  );
+}
+
+function LatestOutcomes({ page }: { page: InvocationsPage | undefined }) {
+  return (
+    <div className="mb-4 flex flex-wrap gap-6">
+      {["Create", "Destroy"].map((operation) => {
+        const latest = operation === "Create" ? page?.latest_create : page?.latest_destroy;
+        return (
+          <div key={operation}>
+            <span className="mr-2 text-sm text-muted-foreground">{operationName(operation)}</span>
+            <StatusBadge value={latest?.execution_outcome || "not_recorded"} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function InvocationDetail({ invocation, scopes }: { invocation: Invocation; scopes: string[] }) {
+  return (
+    <div className="mt-4 space-y-4">
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <span>Execution</span>
+        <StatusBadge value={invocation.execution_outcome} />
+        <span>Log capture</span>
+        <StatusBadge value={invocation.capture_status} />
+        <span className="text-muted-foreground">
+          {invocation.retained_bytes.toLocaleString()} bytes retained ·{" "}
+          {invocation.lost_bytes.toLocaleString()} bytes omitted
+        </span>
+      </div>
+      {!scopes.includes("logs.read") ? (
+        <p className="text-sm text-muted-foreground">
+          logs.read permission is required to view log text.
+        </p>
+      ) : (
+        <LogViewer key={invocation.id} invocation={invocation} />
+      )}
+    </div>
   );
 }
 
