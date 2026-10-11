@@ -1,7 +1,7 @@
 //! GitHub Retirement and Runner Maximum Lifetime selection. The Destroy rules
 //! (state walk, proofs, Quarantine) live in [`crate::runner_operation`].
 
-use shaula_core::error::{CoreError, CoreResult, ReasonCode};
+use shaula_core::error::CoreResult;
 use shaula_core::lifecycle::GenerationState as G;
 
 use super::FleetSupervisor;
@@ -62,20 +62,14 @@ impl FleetSupervisor {
             if generation.state == G::Idle {
                 excess -= 1;
             }
-            let _permit = crate::diagnostic_capture::acquire(
+            let _permit = crate::diagnostic_capture::acquire_destroy_slot(
                 &self.limits.destroy,
-                crate::diagnostic_capture::generation_observer(
-                    self.handoff.as_ref(),
-                    self.runtime_guard.as_ref(),
-                    &generation,
-                    shaula_core::diagnostics::Lane::Operation,
-                    shaula_core::diagnostics::QuestionId::Cleanup,
-                ),
-                shaula_core::diagnostics::Code::ExecutionDestroySlotWait,
+                self.handoff.as_ref(),
+                self.runtime_guard.as_ref(),
+                &generation,
                 now,
             )
-            .await
-            .map_err(|_| CoreError::new(ReasonCode::Internal, "destroy scheduler stopped"))?;
+            .await?;
             let outcome = operation.retire(&generation, now).await;
             tally.record(&generation, &outcome);
         }
@@ -90,20 +84,14 @@ impl FleetSupervisor {
             .expired(&self.config.fleet_key, now, self.runner_max_lifetime)
             .await?
         {
-            let _permit = crate::diagnostic_capture::acquire(
+            let _permit = crate::diagnostic_capture::acquire_destroy_slot(
                 &self.limits.destroy,
-                crate::diagnostic_capture::generation_observer(
-                    self.handoff.as_ref(),
-                    self.runtime_guard.as_ref(),
-                    &generation,
-                    shaula_core::diagnostics::Lane::Operation,
-                    shaula_core::diagnostics::QuestionId::Cleanup,
-                ),
-                shaula_core::diagnostics::Code::ExecutionDestroySlotWait,
+                self.handoff.as_ref(),
+                self.runtime_guard.as_ref(),
+                &generation,
                 now,
             )
-            .await
-            .map_err(|_| CoreError::new(ReasonCode::Internal, "destroy scheduler stopped"))?;
+            .await?;
             let outcome = operation.expire(&generation, now).await;
             tally.record(&generation, &outcome);
         }

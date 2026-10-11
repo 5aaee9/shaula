@@ -108,6 +108,11 @@ impl CoreError {
             summary: summary.into(),
         }
     }
+
+    /// Shorthand for a [`ReasonCode::Internal`] fault.
+    pub fn internal(summary: impl Into<String>) -> Self {
+        Self::new(ReasonCode::Internal, summary)
+    }
 }
 
 pub type CoreResult<T> = Result<T, CoreError>;

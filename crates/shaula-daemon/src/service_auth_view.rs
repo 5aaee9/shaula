@@ -138,17 +138,16 @@ impl ControlPlane {
             bindings: Vec::new(),
             forgejo: None,
         };
-        if row.schema_version == 2 && row.kind == "github_app" {
+        if row.is_github_app_v2() {
             state.app_id = row.app_id.clone();
             state.target_policy = row.target_policy()?;
             state.bindings = self
                 .store
                 .auth_bindings_get(&row.profile_key, row.revision)
                 .await?;
-        } else if row.schema_version == 1 && row.kind == "forgejo_token" {
+        } else if row.is_forgejo_token_v1() {
             let parse_error = |_| {
-                shaula_core::error::CoreError::new(
-                    shaula_core::error::ReasonCode::Internal,
+                shaula_core::error::CoreError::internal(
                     "stored Forgejo authentication metadata is invalid",
                 )
             };
@@ -170,8 +169,5 @@ impl ControlPlane {
 }
 
 fn supported(row: &AuthRevisionRow) -> bool {
-    matches!(
-        (row.kind.as_str(), row.schema_version),
-        ("github_app", 2) | ("forgejo_token", 1)
-    )
+    row.is_github_app_v2() || row.is_forgejo_token_v1()
 }

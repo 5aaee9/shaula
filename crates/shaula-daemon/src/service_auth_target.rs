@@ -20,15 +20,15 @@ impl ControlPlane {
         };
         match spec.kind {
             FleetProviderKind::Github => {
-                if revision.schema_version != 2 || revision.kind != "github_app" {
+                if !revision.is_github_app_v2() {
                     return Err(CoreError::new(
                         ReasonCode::AuthTargetDenied,
                         "unsupported authentication revision; publish a GitHub App v2 profile",
                     ));
                 }
-                let policy = revision.target_policy()?.ok_or_else(|| {
-                    CoreError::new(ReasonCode::Internal, "active auth policy missing")
-                })?;
+                let policy = revision
+                    .target_policy()?
+                    .ok_or_else(|| CoreError::internal("active auth policy missing"))?;
                 if !policy.allows(&spec.github.target) {
                     return Err(CoreError::new(
                         ReasonCode::AuthTargetDenied,
@@ -37,7 +37,7 @@ impl ControlPlane {
                 }
             }
             FleetProviderKind::Forgejo => {
-                if revision.schema_version != 1 || revision.kind != "forgejo_token" {
+                if !revision.is_forgejo_token_v1() {
                     return Err(CoreError::new(
                         ReasonCode::AuthTargetDenied,
                         "active authentication revision is not a Forgejo token",

@@ -36,16 +36,17 @@ impl AuthWorkerScheduler {
                 continue;
             }
             let gate_key = (key.clone(), head.desired_revision);
-            if let Some(retry_at) = self.deferred.lock().await.get(&gate_key) {
-                if now < *retry_at {
+            {
+                let mut gate = self.deferred.lock().await;
+                if gate.get(&gate_key).is_some_and(|retry_at| now < *retry_at) {
                     continue;
                 }
+                // A new desired revision invalidates stale deferral state
+                // from earlier revisions of this profile.
+                gate.retain(|(profile, revision), _| {
+                    profile != &key || *revision == head.desired_revision
+                });
             }
-            // A new desired revision invalidates stale deferral state from
-            // earlier revisions of this profile.
-            self.deferred.lock().await.retain(|(profile, revision), _| {
-                profile != &key || *revision == head.desired_revision
-            });
             let deferred = self.deferred.clone();
             let store = store.clone();
             let clock = clock.clone();
@@ -56,27 +57,21 @@ impl AuthWorkerScheduler {
                     super::validate(store, clock.clone(), real_key, gate_key.1, factory.as_ref())
                         .await;
                 let mut gate = deferred.lock().await;
+                // Deadlines are ABSOLUTE unix ms, so the default backoff
+                // anchors at `now`.
+                let default_deadline = || {
+                    clock
+                        .now_unix_ms()
+                        .saturating_add(super::DEFAULT_RETRY_BACKOFF_MS)
+                };
                 match &flow {
                     Ok(super::WorkerFlow::Deferred { retry_at_unix_ms }) => {
                         // G2: None means bounded normal backoff — never an
-                        // infinite deadline. Deadlines are ABSOLUTE unix
-                        // ms, so the default backoff anchors at `now`.
-                        gate.insert(
-                            gate_key,
-                            retry_at_unix_ms.unwrap_or_else(|| {
-                                clock
-                                    .now_unix_ms()
-                                    .saturating_add(super::DEFAULT_RETRY_BACKOFF_MS)
-                            }),
-                        );
+                        // infinite deadline.
+                        gate.insert(gate_key, retry_at_unix_ms.unwrap_or_else(default_deadline));
                     }
                     Err(_) => {
-                        gate.insert(
-                            gate_key,
-                            clock
-                                .now_unix_ms()
-                                .saturating_add(super::DEFAULT_RETRY_BACKOFF_MS),
-                        );
+                        gate.insert(gate_key, default_deadline());
                     }
                     Ok(super::WorkerFlow::Done) => {
                         gate.remove(&gate_key);

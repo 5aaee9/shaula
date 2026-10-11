@@ -171,4 +171,16 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
     }
 }
 
+/// Platform resource name of a Runner Generation. Kubernetes names cap at 63
+/// chars: `s` + the first 56 hex chars of sha256(generation_id) (224 bits —
+/// collision resistance stays cryptographic). The short display runner name
+/// must never become a platform resource name.
+pub(crate) fn generation_resource_name(generation_id: &str) -> String {
+    use sha2::Digest as _;
+    format!(
+        "s{}",
+        &hex::encode(sha2::Sha256::digest(generation_id.as_bytes()))[..56]
+    )
+}
+
 mod diagnostics;

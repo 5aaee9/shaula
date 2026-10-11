@@ -85,10 +85,7 @@ impl ProfileRegistryPort for ControlPlane {
                 Ok(view) => views.push(view),
                 Err(MutationError::NotFound) => {}
                 Err(_) => {
-                    return Err(CoreError::new(
-                        ReasonCode::Internal,
-                        "template profile could not be read",
-                    ));
+                    return Err(CoreError::internal("template profile could not be read"));
                 }
             }
         }
@@ -175,7 +172,7 @@ impl ProfileRegistryPort for ControlPlane {
         };
         // Non-secret v2 metadata: the Target policy selectors and the
         // frozen Account Bindings of this exact revision.
-        let supported = row.schema_version == 2 && row.kind == "github_app";
+        let supported = row.is_github_app_v2();
         let target_policy = if supported {
             row.target_policy()?
         } else {

@@ -9,7 +9,7 @@ use shaula_core::registry::GenerationRecord;
 use super::ForgejoPoolSupervisor;
 use crate::runner_operation::forgejo::observe_identity;
 
-const READINESS_TIMEOUT_MS: i64 = 15 * 60 * 1000;
+use crate::supervisor::READINESS_TIMEOUT_MS;
 
 impl ForgejoPoolSupervisor {
     pub(super) async fn reconcile_generation_readiness(

@@ -105,17 +105,24 @@ pub struct AuthRevisionRow {
 }
 
 impl AuthRevisionRow {
+    /// Whether this row is the executable GitHub App format (schema v2).
+    pub fn is_github_app_v2(&self) -> bool {
+        self.schema_version == 2 && self.kind == crate::auth::AuthKind::GithubApp.as_str()
+    }
+
+    /// Whether this row is the executable Forgejo token format (schema v1).
+    pub fn is_forgejo_token_v1(&self) -> bool {
+        self.schema_version == 1 && self.kind == crate::auth::AuthKind::ForgejoToken.as_str()
+    }
+
     /// The stored Target policy of a v2 revision. Legacy rows have none;
     /// a stored policy that no longer parses is an internal fault.
     pub fn target_policy(&self) -> CoreResult<Option<crate::auth_policy::TargetPolicy>> {
         match &self.policy_json {
             None => Ok(None),
-            Some(json) => serde_json::from_str(json).map(Some).map_err(|e| {
-                crate::error::CoreError::new(
-                    crate::error::ReasonCode::Internal,
-                    format!("policy invalid: {e}"),
-                )
-            }),
+            Some(json) => serde_json::from_str(json)
+                .map(Some)
+                .map_err(|e| crate::error::CoreError::internal(format!("policy invalid: {e}"))),
         }
     }
 }

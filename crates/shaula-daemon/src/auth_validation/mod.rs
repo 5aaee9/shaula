@@ -39,10 +39,10 @@ pub async fn validate(
     let Some(row) = store.auth_revision_get(&key, head.desired_revision).await? else {
         return Ok(WorkerFlow::Done);
     };
-    if row.schema_version == 1 && row.kind == "forgejo_token" {
+    if row.is_forgejo_token_v1() {
         return forgejo::validate(&store, &clock, &key, &row, factory).await;
     }
-    if row.schema_version != 2 || row.kind != "github_app" {
+    if !row.is_github_app_v2() {
         return Err(CoreError::new(
             ReasonCode::CredentialMalformed,
             "unsupported authentication revision",

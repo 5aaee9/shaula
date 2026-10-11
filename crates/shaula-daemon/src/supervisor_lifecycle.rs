@@ -43,7 +43,7 @@ impl FleetSupervisor {
             now,
         )
         .await
-        .map_err(|_| CoreError::new(ReasonCode::Internal, "create scheduler stopped"))?;
+        .map_err(|_| CoreError::internal("create scheduler stopped"))?;
         // Route-proof gate (spec 0011 §5.3): a new Create/JIT effect runs
         // only on fresh authorization evidence; unprovable routes fail
         // closed without touching safe cleanup.
@@ -71,16 +71,14 @@ impl FleetSupervisor {
             .handoff
             .fleet_revision_latest(&self.config.fleet_key)
             .await?
-            .ok_or_else(|| {
-                CoreError::new(ReasonCode::Internal, "fleet has no admitted revision")
-            })?;
+            .ok_or_else(|| CoreError::internal("fleet has no admitted revision"))?;
         if snapshot.revision != head.desired_revision {
             // Head moved between the two reads: nothing durable happened
             // yet; retry on the next tick against the settled head.
             return Ok(false);
         }
         let spec: shaula_core::fleet::FleetSpec = serde_json::from_str(&snapshot.spec_json)
-            .map_err(|e| CoreError::new(ReasonCode::Internal, format!("spec invalid: {e}")))?;
+            .map_err(|e| CoreError::internal(format!("spec invalid: {e}")))?;
         let mut parameters = spec.template_inputs;
         let (pin_profile, pin_revision, pin_artifact, pin_attestation) =
             if spec.template_pool.is_some() || spec.template_pool_ref.is_some() {
@@ -97,8 +95,7 @@ impl FleetSupervisor {
                 ) {
                     (Some(k), Some(r), Some(d), Some(a)) => (k.clone(), r, d.clone(), a.clone()),
                     _ => {
-                        return Err(CoreError::new(
-                            ReasonCode::Internal,
+                        return Err(CoreError::internal(
                             "admitted fleet revision has no resolved template pin",
                         ))
                     }
@@ -106,19 +103,13 @@ impl FleetSupervisor {
             };
 
         let generation_id = shaula_core::auth::new_attempt_id();
-        // Kubernetes names cap at 63 chars: derive the generation-scoped
-        // resource name from sha256(generation_id), keeping 56 hex chars
-        // (224 bits — collision resistance stays cryptographic). The short
-        // display runner_name must never become a platform resource name.
-        let mut hasher = sha2::Sha256::new();
-        use sha2::Digest as _;
-        hasher.update(generation_id.as_bytes());
-        let generation_name = format!("s{}", &hex::encode(hasher.finalize())[..56]);
+        // The short display runner_name must never become a platform
+        // resource name.
+        let generation_name = crate::runner_operation::generation_resource_name(&generation_id);
         if generation_name.len() > 63 {
             // Unreachable by construction; fail closed rather than emit a
             // name Kubernetes would reject or that could collide.
-            return Err(CoreError::new(
-                ReasonCode::Internal,
+            return Err(CoreError::internal(
                 "generation name exceeds the Kubernetes 63-char limit",
             ));
         }
@@ -228,17 +219,13 @@ impl FleetSupervisor {
             &record.template_artifact_digest,
         )
         .ok_or_else(|| {
-            CoreError::new(
-                ReasonCode::Internal,
-                format!(
-                    "artifact digest malformed: {}",
-                    record.template_artifact_digest
-                ),
-            )
+            CoreError::internal(format!(
+                "artifact digest malformed: {}",
+                record.template_artifact_digest
+            ))
         })?;
-        std::fs::create_dir_all(&workspace).map_err(|e| {
-            CoreError::new(ReasonCode::Internal, format!("workspace unusable: {e}"))
-        })?;
+        std::fs::create_dir_all(&workspace)
+            .map_err(|e| CoreError::internal(format!("workspace unusable: {e}")))?;
         self.runtime
             .prepare_create(
                 &workspace,
@@ -247,7 +234,7 @@ impl FleetSupervisor {
                 self.config.operation_timeout,
             )
             .await
-            .map_err(|_| CoreError::new(ReasonCode::Internal, "workspace prepare failed"))?;
+            .map_err(|_| CoreError::internal("workspace prepare failed"))?;
 
         // The backend selection and images belong to the exact protected
         // Template Revision. Check them before minting any remote JIT.

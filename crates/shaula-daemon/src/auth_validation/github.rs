@@ -43,7 +43,7 @@ pub async fn validate_v2(
     row: &AuthRevisionRow,
     resolver: &dyn GitHubValidationPort,
 ) -> CoreResult<Verdict> {
-    if row.schema_version != 2 || row.kind != "github_app" {
+    if !row.is_github_app_v2() {
         return Err(CoreError::new(
             ReasonCode::CredentialMalformed,
             "unsupported authentication revision",
@@ -51,7 +51,7 @@ pub async fn validate_v2(
     }
     let policy = row
         .target_policy()?
-        .ok_or_else(|| CoreError::new(ReasonCode::Internal, "v2 revision without target policy"))?;
+        .ok_or_else(|| CoreError::internal("v2 revision without target policy"))?;
     let Some(app_id) = row.app_id.clone() else {
         return reject(store, clock, key, row.revision, "CredentialMalformed").await;
     };
@@ -120,10 +120,7 @@ pub async fn validate_v2(
     let dependents = store.auth_live_dependents(key).await?;
     for dependent in &dependents {
         let Ok(target) = serde_json::from_str::<GitHubTarget>(&dependent.target_json) else {
-            return Err(CoreError::new(
-                ReasonCode::Internal,
-                "dependent fleet target invalid",
-            ));
+            return Err(CoreError::internal("dependent fleet target invalid"));
         };
         if !policy.allows(&target) {
             return reject(store, clock, key, row.revision, "TargetPolicyInUse").await;
@@ -232,8 +229,8 @@ pub async fn validate_v2(
             .collect(),
         identities,
     };
-    let snapshot_json = serde_json::to_string(&snapshot)
-        .map_err(|e| CoreError::new(ReasonCode::Internal, e.to_string()))?;
+    let snapshot_json =
+        serde_json::to_string(&snapshot).map_err(|e| CoreError::internal(e.to_string()))?;
     let promotion = AuthPromotion {
         bindings,
         snapshot_json,

@@ -169,3 +169,28 @@ pub(crate) fn generation_observer(
     guard.bind_generation(generation);
     Observer::register(store.diagnostic_sink(), guard, lane, question)
 }
+
+/// Waits for a Destroy slot for `generation`, recording a Cleanup slot-wait
+/// observation while the scheduler is saturated.
+pub(crate) async fn acquire_destroy_slot<'a>(
+    semaphore: &'a tokio::sync::Semaphore,
+    store: &dyn shaula_core::registry::ControlPlaneStore,
+    runtime_guard: Option<&shaula_core::registry::FleetRuntimeGuard>,
+    generation: &shaula_core::registry::GenerationRecord,
+    now: i64,
+) -> shaula_core::error::CoreResult<tokio::sync::SemaphorePermit<'a>> {
+    acquire(
+        semaphore,
+        generation_observer(
+            store,
+            runtime_guard,
+            generation,
+            Lane::Operation,
+            QuestionId::Cleanup,
+        ),
+        Code::ExecutionDestroySlotWait,
+        now,
+    )
+    .await
+    .map_err(|_| shaula_core::error::CoreError::internal("destroy scheduler stopped"))
+}

@@ -31,7 +31,7 @@ pub(crate) async fn load_predecessor(
     let Some(active) = store.auth_revision_active(key).await? else {
         return Ok(Predecessor::First);
     };
-    if active.schema_version != 2 || active.kind != "github_app" {
+    if !active.is_github_app_v2() {
         return Err(CoreError::new(
             ReasonCode::CredentialMalformed,
             "unsupported authentication predecessor",
@@ -47,17 +47,12 @@ pub(crate) async fn load_predecessor(
             )
         })?;
     let Some(json) = active.validation_snapshot_json.clone() else {
-        return Err(CoreError::new(
-            ReasonCode::Internal,
+        return Err(CoreError::internal(
             "active v2 revision lacks its validation snapshot",
         ));
     };
-    let snapshot: AuthValidationSnapshot = serde_json::from_str(&json).map_err(|e| {
-        CoreError::new(
-            ReasonCode::Internal,
-            format!("validation snapshot unreadable: {e}"),
-        )
-    })?;
+    let snapshot: AuthValidationSnapshot = serde_json::from_str(&json)
+        .map_err(|e| CoreError::internal(format!("validation snapshot unreadable: {e}")))?;
     Ok(Predecessor::V2 {
         app_id,
         identities: snapshot.identities,

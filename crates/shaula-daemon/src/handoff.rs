@@ -25,6 +25,9 @@ pub enum HandoffProgress {
     Retry,
 }
 
+/// Persisted retry delay after a blocked handoff attempt (30 seconds).
+const HANDOFF_BACKOFF_MS: i64 = 30 * 1000;
+
 /// Runs one durable handoff attempt against the exact desired tuple.
 pub async fn run_handoff(
     store: &Arc<dyn ControlPlaneStore>,
@@ -35,7 +38,8 @@ pub async fn run_handoff(
     bound_scale_set_id: Option<i64>,
     now: i64,
 ) -> CoreResult<HandoffProgress> {
-    let backoff_secs = 30;
+    // Evaluated only on a blocking path, exactly as the inline sums were.
+    let blocked_until = || now + HANDOFF_BACKOFF_MS;
     let Some(handoff) = store.handoff_get(fleet_key).await? else {
         return Ok(HandoffProgress::UpToDate);
     };
@@ -73,20 +77,19 @@ pub async fn run_handoff(
             .filter(|row| row.desired.as_ref() == Some(&handoff.desired))
             .and_then(|row| row.desired_context_json.clone()),
     };
+    // The desired revision must exist and be GitHub App v2; this is the only
+    // read of it in the attempt (rows are immutable in kind and format).
     let revision = store
         .auth_revision_get(&desired_key, desired_revision)
         .await?;
-    if revision
-        .as_ref()
-        .is_none_or(|row| row.schema_version != 2 || row.kind != "github_app")
-    {
+    if revision.as_ref().is_none_or(|row| !row.is_github_app_v2()) {
         return record_failure(
             store,
             fleet_key,
             authority,
             &expectation,
             "UnsupportedAuthenticationRevision",
-            now + backoff_secs * 1000,
+            blocked_until(),
         )
         .await;
     }
@@ -97,7 +100,7 @@ pub async fn run_handoff(
             authority,
             &expectation,
             &failure.summary(),
-            now + backoff_secs * 1000,
+            blocked_until(),
         )
         .await;
     }
@@ -114,7 +117,6 @@ pub async fn run_handoff(
             // an equal ref tuple is not enough to prove the context
             // switched.
             match resolve_exact_context(
-                store,
                 github,
                 fleet_key,
                 &desired_key,
@@ -148,7 +150,7 @@ pub async fn run_handoff(
                                 authority,
                                 &expectation,
                                 "TargetIdentityChanged",
-                                now + backoff_secs * 1000,
+                                blocked_until(),
                             )
                             .await
                         }
@@ -161,7 +163,7 @@ pub async fn run_handoff(
                         authority,
                         &expectation,
                         &reason,
-                        now + backoff_secs * 1000,
+                        blocked_until(),
                     )
                     .await
                 }
@@ -174,7 +176,7 @@ pub async fn run_handoff(
                 authority,
                 &expectation,
                 &reason,
-                now + backoff_secs * 1000,
+                blocked_until(),
             )
             .await
         }
@@ -217,7 +219,7 @@ async fn observed_context_settled(
     let Some(revision_row) = store.auth_revision_get(&desired.0, desired.1).await? else {
         return Ok(false);
     };
-    if revision_row.schema_version != 2 || revision_row.kind != "github_app" {
+    if !revision_row.is_github_app_v2() {
         return Ok(false);
     }
     let Some(context_row) = store.fleet_auth_context_get(fleet_key).await? else {
@@ -228,10 +230,7 @@ async fn observed_context_settled(
     };
     let context: shaula_core::auth_context::ResolvedAuthContext = serde_json::from_str(&json)
         .map_err(|e| {
-            shaula_core::error::CoreError::new(
-                shaula_core::error::ReasonCode::Internal,
-                format!("observed auth context corrupt: {e}"),
-            )
+            shaula_core::error::CoreError::internal(format!("observed auth context corrupt: {e}"))
         })?;
     Ok(context_row.state == "Observed"
         && context_row.desired.as_ref() == Some(desired)
@@ -245,9 +244,9 @@ async fn observed_context_settled(
 /// revision (spec 0011 §5.2 step 2/4): the desired intent from admission
 /// is completed with the REMOTE numeric identity of the Target. A target
 /// that no longer matches the fleet's saved identity — or a GitHub that
-/// cannot prove it — blocks; nothing is written unverified.
+/// cannot prove it — blocks; nothing is written unverified. The caller has
+/// already verified that `(profile_key, revision)` is a GitHub App v2 row.
 async fn resolve_exact_context(
-    store: &Arc<dyn ControlPlaneStore>,
     github: &Arc<dyn GitHubAccessPort>,
     _fleet_key: &str,
     profile_key: &str,
@@ -255,14 +254,6 @@ async fn resolve_exact_context(
     desired_json: Option<&str>,
     fleet_target: &shaula_core::github::GitHubTarget,
 ) -> CoreResult<ExactContext> {
-    let Some(revision_row) = store.auth_revision_get(profile_key, revision).await? else {
-        return Ok(ExactContext::Blocked("AuthRevisionMissing".into()));
-    };
-    if revision_row.schema_version != 2 || revision_row.kind != "github_app" {
-        return Ok(ExactContext::Blocked(
-            "UnsupportedAuthenticationRevision".into(),
-        ));
-    }
     let Some(json) = desired_json else {
         return Ok(ExactContext::Blocked("AuthContextMissing".into()));
     };
@@ -293,10 +284,7 @@ async fn resolve_exact_context(
     }
     match serde_json::to_string(&context) {
         Ok(verified) => Ok(ExactContext::Verified(verified)),
-        Err(e) => Err(shaula_core::error::CoreError::new(
-            shaula_core::error::ReasonCode::Internal,
-            e.to_string(),
-        )),
+        Err(e) => Err(shaula_core::error::CoreError::internal(e.to_string())),
     }
 }
 

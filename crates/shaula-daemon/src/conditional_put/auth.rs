@@ -71,7 +71,7 @@ impl Auth {
             else {
                 return Ok(Err(MutationError::IdentityConflict));
             };
-            if head.schema_version != 2 || head.kind != "github_app" {
+            if !head.is_github_app_v2() {
                 return Ok(Err(unprocessable(
                     ReasonCode::SpecInvalid,
                     "unsupported authentication profile; publish under a new profile key",
@@ -82,7 +82,7 @@ impl Auth {
                 let Some(active) = plane.store.auth_revision_get(key, revision).await? else {
                     return Ok(Err(MutationError::IdentityConflict));
                 };
-                if active.schema_version != 2 || active.kind != "github_app" {
+                if !active.is_github_app_v2() {
                     return Ok(Err(unprocessable(
                         ReasonCode::SpecInvalid,
                         "unsupported authentication profile; publish under a new profile key",
@@ -117,7 +117,7 @@ impl Auth {
             else {
                 return Ok(Err(MutationError::IdentityConflict));
             };
-            if head.kind != "forgejo_token" || head.schema_version != 1 {
+            if !head.is_forgejo_token_v1() {
                 return Ok(Err(MutationError::IdentityConflict));
             }
             let target = head
@@ -126,10 +126,7 @@ impl Auth {
                 .ok_or_else(|| internal("Forgejo target is missing"))?;
             let target: shaula_core::forgejo::ForgejoTarget = serde_json::from_str(target)
                 .map_err(|error| {
-                    CoreError::new(
-                        ReasonCode::Internal,
-                        format!("Forgejo target is invalid: {error}"),
-                    )
+                    CoreError::internal(format!("Forgejo target is invalid: {error}"))
                 })?;
             if target != format.target {
                 return Ok(Err(MutationError::IdentityConflict));

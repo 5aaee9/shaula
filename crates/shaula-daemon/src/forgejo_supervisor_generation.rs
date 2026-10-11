@@ -29,7 +29,7 @@ impl ForgejoPoolSupervisor {
             now,
         )
         .await
-        .map_err(|_| CoreError::new(ReasonCode::Internal, "create scheduler stopped"))?;
+        .map_err(|_| CoreError::internal("create scheduler stopped"))?;
         // Reserve occupancy under the same exclusive gate used by Fleet writes.
         // Never borrow a newer revision with a client built for an older one.
         let gate = self.gates.acquire_exclusive(&self.fleet_key).await;
@@ -78,7 +78,7 @@ impl ForgejoPoolSupervisor {
             }
         };
         let generation_id = shaula_core::auth::new_attempt_id();
-        let generation_name = resource_name(&generation_id);
+        let generation_name = crate::runner_operation::generation_resource_name(&generation_id);
         let runner_name = format!("{}{}", self.runner_name_prefix, generation_id);
         let workspace = self.work_root.join(&self.fleet_key).join(&generation_id);
         let record = GenerationRecord {
@@ -289,9 +289,9 @@ impl ForgejoPoolSupervisor {
             manifest.selected_runner_image(&bindings, parameters)?;
         }
         let workspace = std::path::Path::new(&record.workspace_path);
-        tokio::fs::create_dir_all(workspace).await.map_err(|_| {
-            CoreError::new(ReasonCode::Internal, "Forgejo workspace creation failed")
-        })?;
+        tokio::fs::create_dir_all(workspace)
+            .await
+            .map_err(|_| CoreError::internal("Forgejo workspace creation failed"))?;
         self.runtime
             .prepare_create(
                 workspace,
@@ -308,13 +308,6 @@ impl ForgejoPoolSupervisor {
             })?;
         Ok((artifact_dir, manifest, bindings, bindings_digest))
     }
-}
-
-fn resource_name(generation_id: &str) -> String {
-    format!(
-        "s{}",
-        &hex::encode(Sha256::digest(generation_id.as_bytes()))[..56]
-    )
 }
 
 pub(super) fn read_manifest(
