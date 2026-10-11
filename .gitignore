@@ -10,3 +10,4 @@ web/.env.*.local
 /result
 /result-*
 __pycache__/
+.claude/worktrees/
