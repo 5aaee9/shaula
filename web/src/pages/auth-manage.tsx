@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { AuthForm, type AuthFormMode } from "@/components/auth-form";
 import { ErrorNotice, Loading } from "@/components/status";
-import { api, resourcePath } from "@/lib/api";
+import { api, resourcePath, type Resource } from "@/lib/api";
+import { authManageCopy } from "@/lib/auth-manage-copy";
 import { canManageAuthProfile } from "@/lib/auth-policy";
 import type { AuthResource, ChangeRef } from "@/lib/types";
 
@@ -31,11 +32,7 @@ export function AuthManagePage({ scopes, mode }: { scopes: string[]; mode: AuthF
       state: { change },
     });
   }
-  const title = creating
-    ? "Create authentication profile"
-    : mode === "policy"
-      ? `Edit target policy for ${profileKey}`
-      : `Rotate credential for ${profileKey}`;
+  const { title, description } = authManageCopy(mode, profileKey);
   return (
     <div className="mx-auto w-full max-w-4xl">
       <Link className="back-link" to={backTo}>
@@ -45,13 +42,7 @@ export function AuthManagePage({ scopes, mode }: { scopes: string[]; mode: AuthF
       <div className="page-heading">
         <div>
           <h1 className="break-all">{title}</h1>
-          <p>
-            {creating
-              ? "Connect a GitHub App or a scoped Forgejo token for runner management."
-              : mode === "policy"
-                ? "Choose allowed targets using the credential from the current Active revision."
-                : "Replace the credential while retaining the current Active target."}
-          </p>
+          <p>{description}</p>
         </div>
       </div>
       {!canWrite || (!creating && !canRead) ? (
@@ -65,28 +56,55 @@ export function AuthManagePage({ scopes, mode }: { scopes: string[]; mode: AuthF
           onClose={() => navigate(backTo)}
           onAccepted={accepted}
         />
-      ) : query.isPending ? (
-        <Loading />
-      ) : query.error ? (
-        <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-      ) : !canManageAuthProfile(query.data.data) ||
-        (mode === "policy" && query.data.data.kind !== "github_app") ? (
-        <ErrorNotice
-          error={
-            new Error(
-              "A supported Active revision is required. Target policy editing is only available for GitHub Apps.",
-            )
-          }
-        />
       ) : (
-        <AuthForm
-          key={location.key}
+        <ExistingProfileForm
+          query={query}
           mode={mode}
-          resource={query.data}
+          formKey={location.key}
           onClose={() => navigate(backTo)}
           onAccepted={accepted}
         />
       )}
     </div>
+  );
+}
+
+/** Policy edit and rotation both require a loaded, manageable Active revision. */
+function ExistingProfileForm({
+  query,
+  mode,
+  formKey,
+  onClose,
+  onAccepted,
+}: {
+  query: UseQueryResult<Resource<AuthResource>>;
+  mode: Exclude<AuthFormMode, "create">;
+  formKey: string;
+  onClose: () => void;
+  onAccepted: (change: ChangeRef) => void;
+}) {
+  if (query.isPending) return <Loading />;
+  if (query.error) return <ErrorNotice error={query.error} retry={() => void query.refetch()} />;
+  if (
+    !canManageAuthProfile(query.data.data) ||
+    (mode === "policy" && query.data.data.kind !== "github_app")
+  )
+    return (
+      <ErrorNotice
+        error={
+          new Error(
+            "A supported Active revision is required. Target policy editing is only available for GitHub Apps.",
+          )
+        }
+      />
+    );
+  return (
+    <AuthForm
+      key={formKey}
+      mode={mode}
+      resource={query.data}
+      onClose={onClose}
+      onAccepted={onAccepted}
+    />
   );
 }

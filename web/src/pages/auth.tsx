@@ -1,20 +1,18 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, RotateCw, ShieldCheck, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Plus, ShieldCheck } from "lucide-react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api, resourcePath } from "@/lib/api";
 import type { AuthResource, ChangeRef } from "@/lib/types";
-import { selectorLabel } from "@/lib/types";
-import { authKindLabel, forgejoTargetName } from "@/lib/runner-backend";
 import { ForgejoAuthDetails } from "@/components/forgejo-auth-details";
-import { canManageAuthProfile, selectorKey } from "@/lib/auth-policy";
+import { canManageAuthProfile } from "@/lib/auth-policy";
 import { AuthBindings } from "@/components/auth-bindings";
 import { AuthConnections } from "@/components/auth-connections";
+import { AuthDetailsActions, AuthProfileFacts } from "@/components/auth-details-sections";
 import { Button } from "@/components/ui/button";
-import { ErrorNotice, KeyValue, Loading, StatusBadge } from "@/components/status";
+import { ErrorNotice, Loading } from "@/components/status";
 import { RetireDialog } from "@/components/retire-dialog";
 import { ChangeNotice } from "@/components/change-notice";
-import { AuthReauth } from "@/components/auth-reauth";
 
 export function AuthPage({ scopes }: { scopes: string[] }) {
   const [params, setParams] = useSearchParams();
@@ -63,7 +61,6 @@ function AuthDetails({
     refetchInterval: 10_000,
   });
   const [retire, setRetire] = useState(false);
-  const navigate = useNavigate();
   if (query.isPending) return <Loading />;
   if (query.error) return <ErrorNotice error={query.error} retry={() => void query.refetch()} />;
   const { data } = query.data;
@@ -75,42 +72,13 @@ function AuthDetails({
           <ShieldCheck className="size-5 shrink-0 text-emerald-600" />
           {profileKey}
         </h2>
-        <div className="flex min-w-0 flex-wrap gap-2">
-          {canManage && (
-            <>
-              {data.kind === "github_app" && (
-                <>
-                  <AuthReauth profile={data} />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => navigate(`/auth/${encodeURIComponent(profileKey)}/targets/edit`)}
-                  >
-                    <SlidersHorizontal />
-                    Edit target policy
-                  </Button>
-                </>
-              )}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => navigate(`/auth/${encodeURIComponent(profileKey)}/rotate`)}
-              >
-                <RotateCw />
-                Rotate credential
-              </Button>
-            </>
-          )}
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Retire authentication profile"
-            disabled={!scopes.includes("auth.retire")}
-            onClick={() => setRetire(true)}
-          >
-            <Trash2 />
-          </Button>
-        </div>
+        <AuthDetailsActions
+          profileKey={profileKey}
+          profile={data}
+          canManage={canManage}
+          canRetire={scopes.includes("auth.retire")}
+          onRetire={() => setRetire(true)}
+        />
       </div>
       {canManage && data.kind === "github_app" && (
         <p className="mb-5 text-sm text-muted-foreground">
@@ -118,53 +86,7 @@ function AuthDetails({
           target policy to enable those targets.
         </p>
       )}
-      <dl className="details-grid">
-        <KeyValue label="Status">
-          <StatusBadge value={data.status} />
-        </KeyValue>
-        <KeyValue label="Credential type">{authKindLabel(data.kind)}</KeyValue>
-        {data.schema_version === 2 && (
-          <KeyValue label="App ID">{data.active?.app_id || data.app_id || "--"}</KeyValue>
-        )}
-        <KeyValue label="Credential">{data.credential_present ? "Configured" : "Absent"}</KeyValue>
-        <KeyValue label="Active revision">
-          {data.activeRevision ? `r${data.activeRevision}` : "--"}
-        </KeyValue>
-        <KeyValue label="Desired revision">r{data.desiredRevision}</KeyValue>
-        {data.active?.schema_version === 2 && (
-          <KeyValue label="Active target policy">
-            {data.active.target_policy?.length ? (
-              <div className="flex flex-wrap gap-2">
-                {data.active.target_policy.map((selector) => (
-                  <span className="label-chip" key={selectorKey(selector)}>
-                    {selectorLabel(selector)}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              "--"
-            )}
-          </KeyValue>
-        )}
-        {data.desired && (
-          <KeyValue label={`Candidate r${data.desired.revision}: ${data.desired.state}`}>
-            {data.desired.reason && <p className="text-red-600">{data.desired.reason}</p>}
-            {data.desired.forgejo ? (
-              forgejoTargetName(data.desired.forgejo.target)
-            ) : data.desired.target_policy?.length ? (
-              <div className="flex flex-wrap gap-2">
-                {data.desired.target_policy.map((selector) => (
-                  <span className="label-chip" key={selectorKey(selector)}>
-                    {selectorLabel(selector)}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              "--"
-            )}
-          </KeyValue>
-        )}
-      </dl>
+      <AuthProfileFacts profile={data} />
       {data.active?.forgejo && <ForgejoAuthDetails state={data.active.forgejo} />}
       {data.status === "Unsupported" && (
         <p className="text-sm text-muted-foreground">
