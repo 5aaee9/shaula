@@ -268,13 +268,18 @@ async fn oidc_tests_signed_token_claims_fail_closed() {
     let (app, _, _) = common::build_app_with_scan().await;
     let base = oidc::claims(&oidc::provider().issuer, "api", "ops", oidc::SCOPES);
     let now = jsonwebtoken::get_current_timestamp();
+    // The verifier allows 60s of clock skew against its own whole-second clock,
+    // read when each request is validated. `now + 61` was accepted whenever a
+    // second boundary passed between here and validation, so stay a full
+    // skew window outside the leeway instead of one second.
+    let skew = 2 * 60;
     for (key, value) in [
         ("iss", json!("https://evil.example")),
         ("aud", json!("web")),
         ("sub", json!("")),
-        ("exp", json!(now - 61)),
-        ("iat", json!(now + 61)),
-        ("nbf", json!(now + 61)),
+        ("exp", json!(now - skew)),
+        ("iat", json!(now + skew)),
+        ("nbf", json!(now + skew)),
         ("client_id", json!(null)),
         ("jti", json!(null)),
     ] {
