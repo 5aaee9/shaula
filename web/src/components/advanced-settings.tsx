@@ -1,5 +1,4 @@
 import { useId, type ReactNode } from "react";
-import { flushSync } from "react-dom";
 import { ChevronDown } from "lucide-react";
 import { Button } from "./ui/button";
 
@@ -39,7 +38,7 @@ export function AdvancedSettings({
         id={id}
         hidden={!open}
         onInvalidCapture={() => {
-          if (!open) flushSync(() => onOpenChange(true));
+          if (!open) onOpenChange(true);
         }}
       >
         <div className="form-stack pt-4">{children}</div>

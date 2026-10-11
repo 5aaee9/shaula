@@ -26,7 +26,7 @@ export function ForgejoAuthForm({
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const attempt = useRef(new MutationAttempt());
+  const [attempt] = useState(() => new MutationAttempt());
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -58,7 +58,7 @@ export function ForgejoAuthForm({
       const result = await api<Accepted>(path, {
         method: "PUT",
         body,
-        headers: attempt.current.headers("PUT", path, body, resource?.etag || null, !resource),
+        headers: attempt.headers("PUT", path, body, resource?.etag || null, !resource),
       });
       void client.invalidateQueries();
       if (mounted.current) {

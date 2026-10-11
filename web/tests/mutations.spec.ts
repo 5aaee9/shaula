@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { mockApi } from "./fixtures";
+import { fleetForm, mockApi } from "./fixtures";
 
 test("new fleet sends the API spec with create precondition", async ({ page }) => {
   await mockApi(page);
@@ -16,9 +16,7 @@ test("new fleet sends the API spec with create precondition", async ({ page }) =
     .getByLabel("GitHub authentication profile", { exact: true })
     .selectOption("github-build");
   await page.getByLabel("Template profile", { exact: true }).selectOption("kubernetes-linux");
-  await expect(page.getByRole("dialog")).toContainText(
-    "This template needs no input configuration.",
-  );
+  await expect(fleetForm(page)).toContainText("This template needs no input configuration.");
   await page.screenshot({
     path: "test-results/fleet-dialog-compact.png",
     fullPage: true,
@@ -44,8 +42,8 @@ test("new fleet sends the API spec with create precondition", async ({ page }) =
       json: { changeId: "create-1", state: "Accepted", revision: 1 },
     });
   });
-  await page.getByRole("dialog").getByRole("button", { name: "Create fleet" }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await fleetForm(page).getByRole("button", { name: "Create fleet" }).click();
+  await expect(fleetForm(page)).toHaveCount(0);
   await expect(page.getByText("Change for new-build")).toBeVisible();
 });
 

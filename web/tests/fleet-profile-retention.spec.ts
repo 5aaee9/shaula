@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { authProfile, fleet, mockApi, profile, scopes } from "./fixtures";
+import { authProfile, fleet, fleetForm, mockApi, profile, scopes } from "./fixtures";
 
 for (const failure of ["unavailable lists", "missing permissions"] as const) {
   test(`${failure} preserve both original references when saving capacity`, async ({ page }) => {
@@ -43,14 +43,14 @@ for (const failure of ["unavailable lists", "missing permissions"] as const) {
     await expect(page.getByLabel("Template profile", { exact: true })).toHaveValue(
       "kubernetes-linux",
     );
-    await expect(page.getByRole("dialog")).toContainText(
+    await expect(fleetForm(page)).toContainText(
       failure === "missing permissions"
         ? "auth.read permission is required"
         : "github-auth-profiles unavailable",
     );
     await page.getByLabel("Maximum runners", { exact: true }).fill("12");
     await page.getByRole("button", { name: "Save changes", exact: true }).click();
-    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(fleetForm(page)).toHaveCount(0);
     expect(writes).toBe(1);
   });
 }
@@ -94,7 +94,7 @@ test("removed originals can be restored after switching both references", async 
   await expect(auth).toHaveValue("github-build");
   await expect(template).toHaveValue("kubernetes-linux");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(fleetForm(page)).toHaveCount(0);
 });
 
 test("same-key revision changes remain saveable when the profile list refresh fails", async ({
@@ -108,20 +108,20 @@ test("same-key revision changes remain saveable when the profile list refresh fa
   );
   await page.goto("/fleets/linux-build");
   await page.getByRole("button", { name: "Edit fleet" }).click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog).toContainText("kubernetes-linux · Revision 3");
-  await dialog.getByRole("button", { name: "Load latest Active", exact: true }).click();
-  await expect(dialog).toContainText("kubernetes-linux · Revision 4");
+  const form = fleetForm(page);
+  await expect(form).toContainText("kubernetes-linux · Revision 3");
+  await form.getByRole("button", { name: "Load latest Active", exact: true }).click();
+  await expect(form).toContainText("kubernetes-linux · Revision 4");
   await page.route("**/api/v1/template-profiles", (route) =>
     route.fulfill({
       status: 503,
       json: { code: "Unavailable", detail: "Latest list unavailable" },
     }),
   );
-  await dialog.getByRole("button", { name: "Refresh Template profiles", exact: true }).click();
-  await expect(dialog).toContainText("Latest list unavailable");
+  await form.getByRole("button", { name: "Refresh Template profiles", exact: true }).click();
+  await expect(form).toContainText("Latest list unavailable");
   // The Fleet reference is a bare key and follows the latest Active revision;
   // a failed profile-list refresh does not invalidate the already loaded
   // contract or block unrelated Fleet edits.
-  await expect(dialog.getByRole("button", { name: "Save changes", exact: true })).toBeEnabled();
+  await expect(form.getByRole("button", { name: "Save changes", exact: true })).toBeEnabled();
 });

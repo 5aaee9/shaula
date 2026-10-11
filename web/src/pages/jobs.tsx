@@ -3,14 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Empty, ErrorNotice, Loading, StatusBadge } from "@/components/status";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
+import { TableColumns } from "@/components/table-columns";
 import {
   historyTime,
   jobRepository,
@@ -102,16 +96,16 @@ export function JobsPage({ scopes }: { scopes: string[] }) {
                 ) : (
                   <div className="rounded-md border">
                     <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Workflow job</TableHead>
-                          <TableHead>Repository / run</TableHead>
-                          <TableHead>Fleet</TableHead>
-                          <TableHead>Job status</TableHead>
-                          <TableHead>Reported result</TableHead>
-                          <TableHead>Updated</TableHead>
-                        </TableRow>
-                      </TableHeader>
+                      <TableColumns
+                        labels={[
+                          "Workflow job",
+                          "Repository / run",
+                          "Fleet",
+                          "Job status",
+                          "Reported result",
+                          "Updated",
+                        ]}
+                      />
                       <TableBody>
                         {jobs.data.items.map((job) => (
                           <TableRow key={job.id}>

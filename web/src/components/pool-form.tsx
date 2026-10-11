@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, Save } from "lucide-react";
 import { api, MutationAttempt, resourcePath, type Resource } from "@/lib/api";
@@ -6,7 +6,8 @@ import type { Accepted, TemplatePoolMemberSpec, TemplatePoolResource } from "@/l
 import { Modal } from "./modal";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { initialPoolMember, TemplatePoolEditor } from "./template-pool-editor";
+import { initialPoolMember } from "@/lib/template-pool";
+import { TemplatePoolEditor } from "./template-pool-editor";
 import { ErrorNotice, Field } from "./status";
 
 /**
@@ -35,7 +36,7 @@ export function PoolForm({
   );
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
-  const attempt = useRef(new MutationAttempt());
+  const [attempt] = useState(() => new MutationAttempt());
   const canReadTemplates = scopes.includes("template.read");
 
   async function submit(event: FormEvent) {
@@ -57,7 +58,7 @@ export function PoolForm({
       }
       const body = JSON.stringify({ members, failure_policy: failurePolicy });
       const path = resourcePath("template-pools", key);
-      const headers = attempt.current.headers("PUT", path, body, resource?.etag || null, !resource);
+      const headers = attempt.headers("PUT", path, body, resource?.etag || null, !resource);
       setBusy(true);
       await api<Accepted>(path, { method: "PUT", headers, body });
       void client.invalidateQueries({ queryKey: ["template-pools"] });

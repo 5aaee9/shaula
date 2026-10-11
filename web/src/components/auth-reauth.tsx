@@ -17,7 +17,9 @@ export function AuthReauth({ profile }: { profile: AuthResource }) {
   const [error, setError] = useState<unknown>(null);
   const request = useRef<AbortController | null>(null);
   const latestProfile = useRef(profile);
-  latestProfile.current = profile;
+  useEffect(() => {
+    latestProfile.current = profile;
+  }, [profile]);
   useEffect(() => () => request.current?.abort(), []);
 
   async function openGitHub() {
@@ -47,7 +49,7 @@ export function AuthReauth({ profile }: { profile: AuthResource }) {
     } catch (thrown) {
       if (!controller.signal.aborted) setError(thrown);
     } finally {
-      if (!controller.signal.aborted) setBusy(false);
+      setBusy(false);
     }
   }
 

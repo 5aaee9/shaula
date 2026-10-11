@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { fleet, mockApi } from "./fixtures";
+import { fleet, fleetForm, mockApi } from "./fixtures";
 
 test("collapsed fleet settings preserve the edit snapshot and reveal invalid fields", async ({
   page,
@@ -38,7 +38,7 @@ test("collapsed fleet settings preserve the edit snapshot and reveal invalid fie
   await page.getByLabel("Minimum runners").fill("2");
   await advanced.click();
   await save.click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(fleetForm(page)).toHaveCount(0);
   expect(writes).toBe(1);
 });
 

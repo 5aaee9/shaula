@@ -8,7 +8,7 @@ import { Empty, ErrorNotice, KeyValue, Loading, StatusBadge } from "@/components
 import { useChange } from "@/components/change-notice";
 export function ChangesPage({ scopes }: { scopes: string[] }) {
   const [params, setParams] = useSearchParams();
-  const [id, setId] = useState(params.get("id") || "");
+  const [id, setId] = useState(() => params.get("id") || "");
   const [kind, setKind] = useState(params.get("type") === "profile" ? "profile" : "fleet");
   const currentId = params.get("id");
   const type = params.get("type") === "profile" ? "profile" : "fleet";

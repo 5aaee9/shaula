@@ -1,5 +1,5 @@
 import { expect, type Page } from "@playwright/test";
-import { profile } from "./fixtures";
+import { fleetForm, profile } from "./fixtures";
 
 export const artifactDigest = `sha256:${"a".repeat(64)}`;
 
@@ -74,7 +74,7 @@ export async function acceptCreate(page: Page, check: (body: string) => void) {
       json: { changeId: "visual-create", state: "Accepted", revision: 1 },
     });
   });
-  await page.getByRole("dialog").getByRole("button", { name: "Create fleet" }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await fleetForm(page).getByRole("button", { name: "Create fleet" }).click();
+  await expect(fleetForm(page)).toHaveCount(0);
   expect(writes).toBe(1);
 }

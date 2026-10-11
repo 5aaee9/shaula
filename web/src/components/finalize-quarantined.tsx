@@ -14,6 +14,8 @@ import { ErrorNotice, Field } from "./status";
  * request — this only collapses the verification statement and the
  * click-through into one confirmation. Requires fleet.retire.
  */
+const FINALIZE_LANES = 4;
+
 export function FinalizeQuarantined({
   fleetKey,
   onAccepted,
@@ -27,7 +29,7 @@ export function FinalizeQuarantined({
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  const attempt = useRef(crypto.randomUUID());
+  const attempt = useRef<string | null>(null);
 
   const quarantined = useQuery({
     queryKey: [
@@ -61,23 +63,32 @@ export function FinalizeQuarantined({
     }
     setBusy(true);
     setProgress({ done: 0, total: items.length });
+    const key = (attempt.current ??= crypto.randomUUID());
+    let done = 0;
     let failed = 0;
-    try {
-      for (const [index, generation] of items.entries()) {
+    // Each finalize is an independent, idempotent ledger write, so a few run
+    // at once; a shared iterator hands every generation to exactly one lane.
+    const pending = items.values();
+    async function lane() {
+      for (const generation of pending) {
         try {
           await api(`/generations/${encodeURIComponent(generation.id)}/finalize`, {
             method: "POST",
             headers: {
               "content-type": "application/json",
-              "idempotency-key": `${attempt.current}-${generation.id}`,
+              "idempotency-key": `${key}-${generation.id}`,
             },
             body: JSON.stringify({ reason: trimmed }),
           });
         } catch {
           failed += 1;
         }
-        setProgress({ done: index + 1, total: items.length });
+        done += 1;
+        setProgress({ done, total: items.length });
       }
+    }
+    try {
+      await Promise.all(Array.from({ length: FINALIZE_LANES }, lane));
       void client.invalidateQueries({ queryKey: ["history"] });
       void client.invalidateQueries({ queryKey: ["fleet", fleetKey] });
       if (failed === 0) {
@@ -90,7 +101,7 @@ export function FinalizeQuarantined({
             `${failed} of ${items.length} runners could not be finalized. Retry to finish.`,
           ),
         );
-        attempt.current = crypto.randomUUID();
+        attempt.current = null;
       }
     } finally {
       setBusy(false);

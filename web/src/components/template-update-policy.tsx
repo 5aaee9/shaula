@@ -36,8 +36,8 @@ export function TemplateUpdatePolicy({
             {declared.map((variable) => (
               <div key={variable.key} className="min-w-0 space-y-2">
                 <h3 className="text-sm font-medium">{variable.label || variable.key}</h3>
-                {variable.options.map((option, index) => (
-                  <RawInputValuePreview key={index} raw={option.valueJson} />
+                {variable.options.map((option) => (
+                  <RawInputValuePreview key={option.valueJson} raw={option.valueJson} />
                 ))}
               </div>
             ))}

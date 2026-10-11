@@ -40,7 +40,7 @@ export function TemplateForm({
   const [policy, setPolicy] = useState("{}");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const attempt = useRef(new MutationAttempt());
+  const [attempt] = useState(() => new MutationAttempt());
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -82,7 +82,7 @@ export function TemplateForm({
       const { data } = await api<Accepted>(path, {
         method: "PUT",
         body,
-        headers: attempt.current.headers("PUT", path, body, snapshot?.etag || null, !snapshot),
+        headers: attempt.headers("PUT", path, body, snapshot?.etag || null, !snapshot),
       });
       void client.invalidateQueries();
       if (mounted.current)
@@ -90,7 +90,7 @@ export function TemplateForm({
     } catch (error) {
       if (mounted.current) setError(error);
     } finally {
-      if (mounted.current) setBusy(false);
+      setBusy(false);
     }
   }
 

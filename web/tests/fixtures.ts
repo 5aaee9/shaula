@@ -161,3 +161,8 @@ export async function mockApi(page: Page, permissions = scopes) {
     return route.fulfill({ status: 404, json: { code: "NotFound", detail: "Missing test route" } });
   });
 }
+
+/** The full-page fleet create/edit form: a named region, not a dialog. */
+export function fleetForm(page: Page) {
+  return page.getByRole("region", { name: /^(Create fleet|Edit \S+)$/ });
+}

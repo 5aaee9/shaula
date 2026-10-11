@@ -4,6 +4,8 @@ import { templateChoices, type RunnerBackend } from "@/lib/runner-backend";
 import type { ProfileChoices } from "@/lib/profile-choice";
 import { useMemberContract } from "@/lib/use-member-inputs";
 import { inputEntries, inputsJson } from "@/lib/input-values";
+import { initialPoolMember } from "@/lib/template-pool";
+import { useRowKeys } from "@/lib/use-row-keys";
 import type { TemplatePoolMemberSpec } from "@/lib/types";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -12,15 +14,8 @@ import { ApprovedValueSelect } from "./template-input-values";
 import { ErrorNotice, Field } from "./status";
 import { cn } from "cn";
 
-export const initialPoolMember = (index: number): TemplatePoolMemberSpec => ({
-  key: `member-${index + 1}`,
-  template_profile_ref: "",
-  weight: 1,
-  template_inputs: {},
-});
-
 /** A categorical ramp: readable on white, distinct enough to tell members apart. */
-export const POOL_TONES = [
+const POOL_TONES = [
   "bg-slate-500",
   "bg-sky-600",
   "bg-amber-500",
@@ -52,6 +47,7 @@ export function TemplatePoolEditor({
   canRead: boolean;
   backend?: RunnerBackend;
 }) {
+  const rows = useRowKeys(members.length);
   const query = useTemplates(canRead);
   const templates = backend ? templateChoices(query, backend) : query;
   const total = members.reduce((sum, member) => sum + Math.max(0, member.weight), 0);
@@ -69,7 +65,7 @@ export function TemplatePoolEditor({
         >
           {members.map((member, index) => (
             <div
-              key={member.key || index}
+              key={rows.keys[index]}
               className={cn(POOL_TONES[index % POOL_TONES.length], "transition-all")}
               style={{ flexGrow: Math.max(member.weight, 0) || (total === 0 ? 1 : 0) }}
               title={`${member.key || `member-${index + 1}`} · ${Math.round(shares[index] * 100)}%`}
@@ -87,7 +83,7 @@ export function TemplatePoolEditor({
         const tone = POOL_TONES[index % POOL_TONES.length];
         return (
           <MemberRow
-            key={index}
+            key={rows.keys[index]}
             index={index}
             member={member}
             tone={tone}
@@ -96,7 +92,10 @@ export function TemplatePoolEditor({
             canRead={canRead}
             canRemove={members.length > 1}
             onChange={(next) => setMembers(members.map((m, i) => (i === index ? next : m)))}
-            onRemove={() => setMembers(members.filter((_, i) => i !== index))}
+            onRemove={() => {
+              setMembers(members.filter((_, i) => i !== index));
+              rows.remove(index);
+            }}
           />
         );
       })}
@@ -106,7 +105,10 @@ export function TemplatePoolEditor({
           type="button"
           variant="outline"
           disabled={members.length >= 32}
-          onClick={() => setMembers([...members, initialPoolMember(members.length)])}
+          onClick={() => {
+            setMembers([...members, initialPoolMember(members.length)]);
+            rows.append();
+          }}
         >
           <Plus /> Add member
         </Button>

@@ -39,7 +39,7 @@ export function GitHubAuthForm({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const attempt = useRef(new MutationAttempt());
+  const [attempt] = useState(() => new MutationAttempt());
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -86,7 +86,7 @@ export function GitHubAuthForm({
       const { data } = await api<Accepted>(path, {
         method,
         body,
-        headers: attempt.current.headers(method, path, body, resource?.etag || null, !resource),
+        headers: attempt.headers(method, path, body, resource?.etag || null, !resource),
       });
       void client.invalidateQueries();
       if (mounted.current) {

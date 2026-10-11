@@ -1,6 +1,6 @@
 import type { ComponentProps } from "react";
-import { Boxes, GitPullRequest, KeyRound, Layers3, ListChecks, Network } from "lucide-react";
 import { Link } from "react-router-dom";
+import { navigation } from "@/lib/navigation";
 import type { Session } from "@/lib/types";
 import { NavMain } from "@/components/nav-main";
 import { NavUser } from "@/components/nav-user";
@@ -14,16 +14,6 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-
-export const navigation = [
-  { url: "/jobs", title: "Jobs", icon: ListChecks },
-  { url: "/fleets", title: "Fleets", icon: Boxes },
-  { url: "/templates", title: "Templates", icon: Layers3 },
-  { url: "/pools", title: "Template pools", icon: Network },
-  { url: "/auth", title: "Authentication", icon: KeyRound },
-  { url: "/settings/access-tokens", title: "Access tokens", icon: KeyRound },
-  { url: "/changes", title: "Changes", icon: GitPullRequest },
-];
 
 // Adapted from shadcn/ui dashboard-01; menus are bound to Shaula routes and session.
 export function AppSidebar({

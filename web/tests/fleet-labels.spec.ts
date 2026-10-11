@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { fleet, mockApi } from "./fixtures";
+import { fleet, fleetForm, mockApi } from "./fixtures";
 
 for (const { name, draft, expected } of [
   { name: "add", draft: " linux, x64, arm64 ", expected: ["linux", "x64", "arm64"] },
@@ -34,10 +34,10 @@ for (const { name, draft, expected } of [
     await expect(page.getByLabel("Labels", { exact: true })).toBeEnabled();
     await expect(page.getByLabel("Scale set name", { exact: true })).toBeDisabled();
     await expect(page.getByLabel("Runner group", { exact: true })).toBeDisabled();
-    await expect(page.getByRole("dialog")).toContainText("Changes sync to GitHub after saving");
+    await expect(fleetForm(page)).toContainText("Changes sync to GitHub after saving");
     await page.getByLabel("Labels", { exact: true }).fill(draft);
     await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(fleetForm(page)).toHaveCount(0);
     await expect(page.getByText("Converged", { exact: true })).toBeVisible();
     expect(writes).toBe(1);
   });

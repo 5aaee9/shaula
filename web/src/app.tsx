@@ -10,7 +10,8 @@ import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom"
 import { useSession } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { AppSidebar, navigation } from "@/components/app-sidebar";
+import { AppSidebar } from "@/components/app-sidebar";
+import { navigation } from "@/lib/navigation";
 import { SiteHeader } from "@/components/site-header";
 import { ErrorNotice, Loading } from "@/components/status";
 import { FleetsPage } from "@/pages/fleets";

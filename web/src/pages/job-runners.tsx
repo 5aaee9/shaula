@@ -3,14 +3,8 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Empty, ErrorNotice, KeyValue, Loading, StatusBadge } from "@/components/status";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
+import { TableColumns } from "@/components/table-columns";
 import { OperationLogs } from "@/components/operation-logs";
 import { FinalizeRunner } from "@/components/finalize-runner";
 import {
@@ -70,16 +64,16 @@ export function UnassignedRunners({ scopes }: { scopes: string[] }) {
                   <Empty title="No unassigned runners" />
                 ) : (
                   <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Runner</TableHead>
-                        <TableHead>Pool member</TableHead>
-                        <TableHead>Fleet</TableHead>
-                        <TableHead>Runner status</TableHead>
-                        <TableHead>Association</TableHead>
-                        <TableHead>Updated</TableHead>
-                      </TableRow>
-                    </TableHeader>
+                    <TableColumns
+                      labels={[
+                        "Runner",
+                        "Pool member",
+                        "Fleet",
+                        "Runner status",
+                        "Association",
+                        "Updated",
+                      ]}
+                    />
                     <TableBody>
                       {generations.data.items.map((generation) => (
                         <TableRow key={generation.id}>

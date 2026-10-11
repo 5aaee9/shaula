@@ -6,7 +6,8 @@ import { inputEntries } from "@/lib/input-values";
 import { useTemplateVariables, type TemplateSource } from "@/lib/template-variables";
 import type { Accepted, ChangeRef, TemplateResource, TemplateRevision } from "@/lib/types";
 import { isSensitiveMarker } from "@/lib/types";
-import { initialUpdateBindings, TemplateUpdateBindings } from "./template-update-bindings";
+import { initialUpdateBindings } from "@/lib/update-bindings";
+import { TemplateUpdateBindings } from "./template-update-bindings";
 import { TemplateUpdatePolicy } from "./template-update-policy";
 import { ErrorNotice, Field, KeyValue, Loading } from "./status";
 import { Button } from "./ui/button";
@@ -55,7 +56,7 @@ export function TemplateUpdateForm({
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const attempt = useRef(new MutationAttempt());
+  const [attempt] = useState(() => new MutationAttempt());
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -135,7 +136,7 @@ export function TemplateUpdateForm({
       const { data } = await api<Accepted>(path, {
         method: "POST",
         body,
-        headers: attempt.current.headers("POST", path, body, snapshot.resource.etag, false),
+        headers: attempt.headers("POST", path, body, snapshot.resource.etag, false),
       });
       void client.invalidateQueries();
       if (mounted.current)
@@ -150,7 +151,7 @@ export function TemplateUpdateForm({
         setError(error);
       }
     } finally {
-      if (mounted.current) setBusy(false);
+      setBusy(false);
     }
   }
 

@@ -28,7 +28,7 @@ export function FinalizeRunner({
   const [reason, setReason] = useState("");
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
-  const attempt = useRef(crypto.randomUUID());
+  const attempt = useRef<string | null>(null);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -38,13 +38,15 @@ export function FinalizeRunner({
       setError(new Error("Describe how you verified the external resources are gone."));
       return;
     }
+    // One idempotency key per attempt; a rejection clears it for the next one.
+    const key = (attempt.current ??= crypto.randomUUID());
     try {
       setBusy(true);
       await api(`/generations/${encodeURIComponent(generationId)}/finalize`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "idempotency-key": attempt.current,
+          "idempotency-key": key,
         },
         body: JSON.stringify({ reason: trimmed }),
       });
@@ -54,7 +56,7 @@ export function FinalizeRunner({
     } catch (error) {
       setError(error);
       // A rejected attempt must not replay under the same idempotency key.
-      attempt.current = crypto.randomUUID();
+      attempt.current = null;
     } finally {
       setBusy(false);
     }

@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, Save } from "lucide-react";
 import { api, MutationAttempt, resourcePath, type Resource } from "@/lib/api";
@@ -15,7 +15,8 @@ import { Modal } from "./modal";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select";
-import { initialPoolMember, TemplatePoolEditor } from "./template-pool-editor";
+import { initialPoolMember } from "@/lib/template-pool";
+import { TemplatePoolEditor } from "./template-pool-editor";
 import { ErrorNotice, Field } from "./status";
 
 export function ForgejoFleetForm({
@@ -44,14 +45,14 @@ export function ForgejoFleetForm({
   const [poolRef, setPoolRef] = useState(original?.template_pool_ref || "");
   const [auth, setAuth] = useState(original?.forgejo.auth_profile_ref || "");
   const [prefix, setPrefix] = useState(original?.forgejo.runner_name_prefix || "");
-  const [labels, setLabels] = useState(original?.forgejo.labels.join(", ") || "");
+  const [labels, setLabels] = useState(() => original?.forgejo.labels.join(", ") || "");
   const [capacity, setCapacity] = useState(
     original?.capacity || { min_runners: 0, max_runners: 10 },
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const client = useQueryClient();
-  const attempt = useRef(new MutationAttempt());
+  const [attempt] = useState(() => new MutationAttempt());
   const canReadAuth = scopes.includes("auth.read");
   const authQuery = useAuthProfiles(canReadAuth);
   const choices = authChoices(authQuery, "forgejo");
@@ -145,7 +146,7 @@ export function ForgejoFleetForm({
       const result = await api<Accepted>(path, {
         method: "PUT",
         body,
-        headers: attempt.current.headers("PUT", path, body, resource?.etag || null, !resource),
+        headers: attempt.headers("PUT", path, body, resource?.etag || null, !resource),
       });
       void client.invalidateQueries({ queryKey: ["fleets"] });
       void client.invalidateQueries({ queryKey: ["fleet", key] });

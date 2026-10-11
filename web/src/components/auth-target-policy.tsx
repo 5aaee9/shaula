@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { selectorFromRow, type SelectorRow } from "@/lib/auth-policy";
 import { selectorLabel } from "@/lib/types";
+import { useRowKeys } from "@/lib/use-row-keys";
 import { Plus, X } from "lucide-react";
 import { AdvancedSettings } from "./advanced-settings";
 import { Field } from "./status";
@@ -24,6 +25,7 @@ export function AuthTargetPolicy({
   existing: boolean;
 }) {
   const [advanced, setAdvanced] = useState(false);
+  const rowKeys = useRowKeys(rows.length);
   const additional = rows.slice(1);
   const summary =
     !existing && additional.length
@@ -34,12 +36,19 @@ export function AuthTargetPolicy({
   function targetFields(row: SelectorRow, index: number, removable: boolean) {
     return (
       <AuthTargetFields
-        key={index}
+        key={rowKeys.keys[index]}
         row={row}
         onChange={(patch) =>
           onChange(rows.map((current, i) => (i === index ? { ...current, ...patch } : current)))
         }
-        onRemove={removable ? () => onChange(rows.filter((_, i) => i !== index)) : undefined}
+        onRemove={
+          removable
+            ? () => {
+                onChange(rows.filter((_, i) => i !== index));
+                rowKeys.remove(index);
+              }
+            : undefined
+        }
       />
     );
   }
@@ -47,12 +56,13 @@ export function AuthTargetPolicy({
     <Button
       variant="outline"
       type="button"
-      onClick={() =>
+      onClick={() => {
         onChange([
           ...rows,
           { kind: "organization", owner: "", repository: "", account_kind: "user" },
-        ])
-      }
+        ]);
+        rowKeys.append();
+      }}
     >
       <Plus />
       Add selector

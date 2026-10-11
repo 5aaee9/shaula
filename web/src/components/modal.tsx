@@ -21,13 +21,12 @@ export function Modal({
 }) {
   if (inline)
     return (
-      <div
-        role="dialog"
-        aria-modal="false"
+      <section
+        aria-label={title}
         className="mx-auto w-full max-w-5xl rounded-lg border bg-card p-6 shadow-sm"
       >
         {children}
-      </div>
+      </section>
     );
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

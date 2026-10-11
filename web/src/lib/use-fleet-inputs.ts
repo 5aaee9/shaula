@@ -36,7 +36,7 @@ export function useFleetInputs(resource: Resource<FleetResource> | undefined, ca
   const [selection, setSelection] = useState<Selection>();
   const originalSelection = useRef<Selection | undefined>(undefined);
   const [pending, setPending] = useState<Selection>();
-  const [error, setError] = useState<unknown>(
+  const [error, setError] = useState<unknown>(() =>
     !canRead ? new Error("Template read permission is required to edit template inputs.") : null,
   );
   const [loading, setLoading] = useState(false);

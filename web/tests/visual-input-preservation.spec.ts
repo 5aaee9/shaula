@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { fleet, mockApi, scopes } from "./fixtures";
+import { fleet, fleetForm, mockApi, scopes } from "./fixtures";
 import { contract, field, mockContract, openCreate } from "./visual-input-fixtures";
 
 for (const failure of ["missing permission", "contract unavailable"] as const) {
@@ -51,7 +51,7 @@ for (const failure of ["missing permission", "contract unavailable"] as const) {
     });
     await page.goto("/fleets/linux-build");
     await page.getByRole("button", { name: "Edit fleet" }).click();
-    await expect(page.getByRole("dialog")).toContainText(
+    await expect(fleetForm(page)).toContainText(
       failure === "missing permission"
         ? /template.read|Template read permission/
         : "Template artifact could not be read",
@@ -59,7 +59,7 @@ for (const failure of ["missing permission", "contract unavailable"] as const) {
     await expect(page.getByLabel("Template profile", { exact: true })).toBeDisabled();
     await page.getByLabel("Maximum runners", { exact: true }).fill("12");
     await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(fleetForm(page)).toHaveCount(0);
     expect(writes).toBe(1);
     if (failure === "missing permission") expect(contractReads).toBe(0);
     else expect(contractReads).toBeGreaterThan(0);
@@ -77,10 +77,8 @@ test("new fleets cannot bypass template.read with empty inputs", async ({ page }
     return route.fulfill({ status: 500 });
   });
   await openCreate(page);
-  await expect(page.getByRole("dialog")).toContainText(/template.read|Template read permission/);
-  await expect(
-    page.getByRole("dialog").getByRole("button", { name: "Create fleet" }),
-  ).toBeDisabled();
+  await expect(fleetForm(page)).toContainText(/template.read|Template read permission/);
+  await expect(fleetForm(page).getByRole("button", { name: "Create fleet" })).toBeDisabled();
   expect(writes).toBe(0);
 });
 
@@ -114,12 +112,12 @@ test("unrecognized existing fields stay visible and preserve values for unrelate
   });
   await page.goto("/fleets/linux-build");
   await page.getByRole("button", { name: "Edit fleet" }).click();
-  await expect(page.getByRole("dialog")).toContainText("no longer selectable");
+  await expect(fleetForm(page)).toContainText("no longer selectable");
   await expect(page.getByRole("button", { name: "Remove obsolete", exact: true })).toBeVisible();
-  await expect(page.getByRole("dialog")).toContainText("9007199254740993");
+  await expect(fleetForm(page)).toContainText("9007199254740993");
   await page.getByLabel("Maximum runners", { exact: true }).fill("15");
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(fleetForm(page)).toHaveCount(0);
   expect(writes).toBe(1);
 });
 
@@ -157,7 +155,7 @@ test("an operator explicitly replaces unsupported values and removes orphan fiel
   const approved = image.locator("option").filter({ hasText: "current-image" });
   await image.selectOption((await approved.getAttribute("value")) as string);
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(fleetForm(page)).toHaveCount(0);
   expect(writes).toBe(1);
 });
 
@@ -211,7 +209,7 @@ test("an existing bare-key fleet reads its resolved historical contract without 
     "",
   );
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(fleetForm(page)).toHaveCount(0);
   expect(reads.length).toBeGreaterThan(0);
   for (const path of reads) expect(path).toContain("/revisions/3/input-contract");
 });
@@ -251,8 +249,8 @@ test("a historical value exceeding the visual projection depth still permits unc
   });
   await page.goto("/fleets/linux-build");
   await page.getByRole("button", { name: "Edit fleet" }).click();
-  await expect(page.getByRole("dialog")).toContainText("maximum display depth");
+  await expect(fleetForm(page)).toContainText("maximum display depth");
   await page.getByLabel("Maximum runners", { exact: true }).fill("12");
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(fleetForm(page)).toHaveCount(0);
 });

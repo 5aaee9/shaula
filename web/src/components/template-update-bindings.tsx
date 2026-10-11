@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import { inputEntries, inputsJson, parseInputValue } from "@/lib/input-values";
 import type { TemplateVariable, TemplateVariables } from "@/lib/template-variables";
-import { isSensitiveMarker } from "@/lib/types";
 import { RawInputValuePreview } from "./template-input-values";
 import { TemplateVariableDescription as VariableDescription } from "./template-variable-description";
 import { Field } from "./status";
@@ -14,22 +13,6 @@ function entries(raw: string): Map<string, string> | null {
   } catch {
     return null;
   }
-}
-
-/**
- * Initial bindings JSON for an Update review. Non-sensitive fields prefill with
- * their stored value; sensitive fields are omitted so the server keeps them
- * (spec 0038: omitted/`null` sensitive field = retain base value).
- */
-export function initialUpdateBindings(
-  revisionBindings: Record<string, unknown> | null | undefined,
-): string {
-  const values = new Map<string, string>();
-  for (const [key, value] of Object.entries(revisionBindings ?? {})) {
-    if (isSensitiveMarker(value)) continue;
-    values.set(key, JSON.stringify(value));
-  }
-  return inputsJson(values);
 }
 
 function UpdateBindingEditor({
@@ -103,8 +86,8 @@ function UpdateBindingEditor({
             onChange={(event) => onChange(event.target.value || undefined)}
           >
             <NativeSelectOption value="">Not set</NativeSelectOption>
-            {options.map((option, index) => (
-              <NativeSelectOption key={index} value={option.valueJson}>
+            {options.map((option) => (
+              <NativeSelectOption key={option.valueJson} value={option.valueJson}>
                 {option.valueJson}
               </NativeSelectOption>
             ))}

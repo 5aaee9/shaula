@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { fleet, mockApi } from "./fixtures";
+import { fleet, fleetForm, mockApi } from "./fixtures";
 
 test("fleet inventory, search, detail navigation and mobile layout", async ({ page }) => {
   await mockApi(page);
@@ -99,7 +99,7 @@ test("uncertain writes reuse idempotency and track accepted changes", async ({ p
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByRole("alert")).toBeVisible();
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(fleetForm(page)).toHaveCount(0);
   await expect(page.getByText("Converged", { exact: true })).toBeVisible();
 });
 

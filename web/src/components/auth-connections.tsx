@@ -7,7 +7,8 @@ import { authKindLabel, forgejoTargetName } from "@/lib/runner-backend";
 import { Empty, ErrorNotice, Loading, StatusBadge } from "./status";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
+import { Table, TableBody, TableCell, TableRow } from "./ui/table";
+import { TableColumns } from "./table-columns";
 
 export function AuthConnections({
   selectedKey,
@@ -56,16 +57,16 @@ export function AuthConnections({
       ) : (
         <div className="table-scroll">
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Connection</TableHead>
-                <TableHead>Credential type</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Active targets</TableHead>
-                <TableHead>Active revision</TableHead>
-                <TableHead>Desired revision</TableHead>
-              </TableRow>
-            </TableHeader>
+            <TableColumns
+              labels={[
+                "Connection",
+                "Credential type",
+                "Status",
+                "Active targets",
+                "Active revision",
+                "Desired revision",
+              ]}
+            />
             <TableBody>
               {items.map((profile) => (
                 <TableRow

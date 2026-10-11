@@ -1,5 +1,5 @@
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
-import { useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, Save } from "lucide-react";
 import { api, MutationAttempt, resourcePath, type Resource } from "@/lib/api";
@@ -21,7 +21,8 @@ import { useFleetInputs } from "@/lib/use-fleet-inputs";
 import { FleetTemplateInputs } from "./fleet-template-inputs";
 import { FleetTemplateSelection } from "./fleet-template-selection";
 import { ProfileSelector } from "./profile-selector";
-import { initialPoolMember, TemplatePoolEditor } from "./template-pool-editor";
+import { initialPoolMember } from "@/lib/template-pool";
+import { TemplatePoolEditor } from "./template-pool-editor";
 import { ErrorNotice, Field } from "./status";
 import { cn } from "cn";
 
@@ -93,11 +94,11 @@ export function GitHubFleetForm({
   );
   const [poolRef, setPoolRef] = useState(resource?.data.spec.template_pool_ref || "");
   const editor = useFleetInputs(resource, scopes.includes("template.read"));
-  const [labels, setLabels] = useState(spec.github.labels.join(", "));
+  const [labels, setLabels] = useState(() => spec.github.labels.join(", "));
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const attempt = useRef(new MutationAttempt());
+  const [attempt] = useState(() => new MutationAttempt());
   const canReadAuth = scopes.includes("auth.read");
   const canReadTemplates = scopes.includes("template.read");
   const templates = templateChoices(useTemplates(editor.canRead), "github");
@@ -179,7 +180,7 @@ export function GitHubFleetForm({
         body = JSON.stringify({ ...base, template_pool_ref: poolRef.trim() });
       }
       const path = resourcePath("fleets", key);
-      const headers = attempt.current.headers("PUT", path, body, resource?.etag || null, !resource);
+      const headers = attempt.headers("PUT", path, body, resource?.etag || null, !resource);
       setBusy(true);
       const result = await api<Accepted>(path, { method: "PUT", headers, body });
       onAccepted({ id: result.data.changeId, resource: key, type: "fleet" });

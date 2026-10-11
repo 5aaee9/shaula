@@ -2,14 +2,8 @@ import { Diagnostics } from "@/components/diagnostics";
 import { Link, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Empty, ErrorNotice, KeyValue, Loading, StatusBadge } from "@/components/status";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
+import { TableColumns } from "@/components/table-columns";
 import { historyTime, jobRepository, useHistory, type JobDetail as Detail } from "@/lib/jobs";
 import { ForgejoJobFacts, ForgejoJobObservations } from "@/components/forgejo-job-details";
 import { OperationLogs } from "@/components/operation-logs";
@@ -123,16 +117,16 @@ export function JobDetail({ scopes }: { scopes: string[] }) {
               <ForgejoJobObservations job={job} />
             ) : (
               <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Observed</TableHead>
-                    <TableHead>Event</TableHead>
-                    <TableHead>Request</TableHead>
-                    <TableHead>Runner</TableHead>
-                    <TableHead>Reported result</TableHead>
-                    <TableHead>Association</TableHead>
-                  </TableRow>
-                </TableHeader>
+                <TableColumns
+                  labels={[
+                    "Observed",
+                    "Event",
+                    "Request",
+                    "Runner",
+                    "Reported result",
+                    "Association",
+                  ]}
+                />
                 <TableBody>
                   {job.observations.map((observation) => (
                     <TableRow key={observation.id}>

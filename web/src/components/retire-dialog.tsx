@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, Trash2 } from "lucide-react";
 import { api, MutationAttempt } from "@/lib/api";
@@ -27,14 +27,14 @@ export function RetireDialog({
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const attempt = useRef(new MutationAttempt());
+  const [attempt] = useState(() => new MutationAttempt());
   async function retire() {
     setBusy(true);
     setError(null);
     try {
       const { data } = await api<Accepted>(path, {
         method: "DELETE",
-        headers: attempt.current.headers("DELETE", path, undefined, version, false),
+        headers: attempt.headers("DELETE", path, undefined, version, false),
       });
       onAccepted({ id: data.changeId, resource: name, type });
       void client.invalidateQueries();

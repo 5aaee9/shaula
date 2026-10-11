@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { fleet, mockApi } from "./fixtures";
+import { fleet, fleetForm, mockApi } from "./fixtures";
 import {
   acceptCreate,
   contract,
@@ -69,9 +69,7 @@ test("approved values preserve JSON types and large integers without default sel
     fullPage: true,
     animations: "disabled",
   });
-  expect(
-    await page.getByRole("dialog").evaluate((node) => node.scrollWidth <= node.clientWidth),
-  ).toBe(true);
+  expect(await fleetForm(page).evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
   const advanced = page.getByRole("button", { name: "Advanced settings" });
   await advanced.click();
   await advanced.click();
@@ -125,7 +123,7 @@ test("optional inputs stay visible when Advanced settings is collapsed and can b
   await expect(choice).toBeVisible();
   await expect(choice).toHaveValue("");
   await expect(page.getByText('<img src=x onerror="alert(1)">', { exact: true })).toBeVisible();
-  await expect(page.getByRole("dialog").locator("img")).toHaveCount(0);
+  await expect(fleetForm(page).locator("img")).toHaveCount(0);
   await choice.selectOption({ index: 1 });
   await advanced.click();
   await advanced.click();
@@ -149,12 +147,12 @@ test("fleet parameters allow each fleet to choose its own CPU and memory", async
   );
   await openCreate(page);
   await loadTemplate(page);
-  const dialog = page.getByRole("dialog");
-  await expect(dialog.getByLabel("GitHub authentication profile", { exact: true })).toHaveValue(
+  const form = fleetForm(page);
+  await expect(form.getByLabel("GitHub authentication profile", { exact: true })).toHaveValue(
     "github-build",
   );
-  const cpu = dialog.getByRole("combobox", { name: "CPU request", exact: true });
-  const memory = dialog.getByRole("combobox", { name: "Memory request", exact: true });
+  const cpu = form.getByRole("combobox", { name: "CPU request", exact: true });
+  const memory = form.getByRole("combobox", { name: "Memory request", exact: true });
   await expect(cpu).toBeVisible();
   await expect(memory).toBeVisible();
   await cpu.selectOption({ label: "2" });
@@ -185,9 +183,9 @@ test("Proxmox fleets can choose CPU cores and memory size as typed inputs", asyn
   );
   await openCreate(page);
   await loadTemplate(page, "proxmox");
-  const dialog = page.getByRole("dialog");
-  const cpu = dialog.getByRole("combobox", { name: "CPU cores", exact: true });
-  const memory = dialog.getByRole("combobox", { name: "Memory (MiB)", exact: true });
+  const form = fleetForm(page);
+  const cpu = form.getByRole("combobox", { name: "CPU cores", exact: true });
+  const memory = form.getByRole("combobox", { name: "Memory (MiB)", exact: true });
   await expect(cpu).toBeVisible();
   await expect(memory).toBeVisible();
   await cpu.selectOption({ label: "4" });
@@ -279,7 +277,7 @@ test("object identity treats prototype and Unicode keys as data while distinguis
   await expect(object).not.toHaveValue("");
   await numeric.selectOption({ label: "1.0" });
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(fleetForm(page)).toHaveCount(0);
   expect(await page.evaluate(() => Object.hasOwn(Object.prototype, "allowed"))).toBe(false);
 });
 
@@ -293,11 +291,7 @@ test("malformed approved JSON cannot become a selectable value or an empty fallb
   );
   await openCreate(page);
   await loadTemplate(page);
-  await expect(page.getByRole("dialog")).toContainText(
-    /Invalid input value|Invalid input contract/,
-  );
+  await expect(fleetForm(page)).toContainText(/Invalid input value|Invalid input contract/);
   await expect(page.getByRole("combobox", { name: "Invalid choice", exact: true })).toHaveCount(0);
-  await expect(
-    page.getByRole("dialog").getByRole("button", { name: "Create fleet" }),
-  ).toBeDisabled();
+  await expect(fleetForm(page).getByRole("button", { name: "Create fleet" })).toBeDisabled();
 });

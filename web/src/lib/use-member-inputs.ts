@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, resourcePath } from "./api";
 import { checkInputContract, type InputContract } from "./input-contract";
 import type { TemplateResource } from "./types";
@@ -16,15 +16,12 @@ export function useMemberContract(templateKey: string, canRead: boolean) {
   const [contract, setContract] = useState<InputContract>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const request = useRef<AbortController | null>(null);
-  const sequence = useRef(0);
   const key = templateKey.trim();
 
   useEffect(() => {
+    // The cleanup aborts this read before the next key's read starts, so an
+    // aborted signal is the only staleness check needed when it settles.
     const controller = new AbortController();
-    request.current?.abort();
-    request.current = controller;
-    const generation = ++sequence.current;
     setContract(undefined);
     setError(null);
     if (!key) {
@@ -37,34 +34,34 @@ export function useMemberContract(templateKey: string, canRead: boolean) {
       return;
     }
     setLoading(true);
-    void (async () => {
-      try {
-        const profile = await api<TemplateResource>(resourcePath("template-profiles", key), {
-          signal: controller.signal,
-        });
-        const revision = profile.data.activeRevision;
-        if (!revision) throw new Error("This template has no Active revision.");
-        const response = await api<InputContract>(
-          `${resourcePath("template-profiles", key)}/revisions/${revision}/input-contract`,
-          { signal: controller.signal },
-        );
-        const next = checkInputContract(response.data, key, revision);
-        if (generation !== sequence.current || controller.signal.aborted) return;
-        setContract(next);
-        setError(null);
-      } catch (failure) {
-        if (generation !== sequence.current || controller.signal.aborted) return;
-        setError(failure);
-      } finally {
-        if (generation === sequence.current) setLoading(false);
-      }
-    })();
+    void loadMemberContract(key, controller.signal)
+      .then((next) => {
+        if (!controller.signal.aborted) setContract(next);
+      })
+      .catch((failure: unknown) => {
+        if (!controller.signal.aborted) setError(failure);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
     return () => controller.abort();
     // The member's template key owns this contract read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, canRead]);
 
   return { contract, loading, error, canRead, ready: !!contract && !loading && !error };
+}
+
+/** The Active revision's input contract for one template key. */
+async function loadMemberContract(key: string, signal: AbortSignal): Promise<InputContract> {
+  const profile = await api<TemplateResource>(resourcePath("template-profiles", key), { signal });
+  const revision = profile.data.activeRevision;
+  if (!revision) throw new Error("This template has no Active revision.");
+  const response = await api<InputContract>(
+    `${resourcePath("template-profiles", key)}/revisions/${revision}/input-contract`,
+    { signal },
+  );
+  return checkInputContract(response.data, key, revision);
 }
 
 export type MemberContract = ReturnType<typeof useMemberContract>;

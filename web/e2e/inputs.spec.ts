@@ -45,7 +45,7 @@ test("real daemon activates a legacy Ready template and loads its approved Fleet
     .getByRole("region", { name: "Fleet inventory" })
     .getByRole("button", { name: "Create fleet", exact: true })
     .click();
-  const dialog = page.getByRole("dialog");
+  const form = page.getByRole("region", { name: "Create fleet" });
   for (const [response, key] of [
     [await authList, "browser-auth"],
     [await templateList, "browser-inputs"],
@@ -58,35 +58,35 @@ test("real daemon activates a legacy Ready template and loads its approved Fleet
     );
     expect(JSON.stringify(collection)).not.toContain("browser-fixture-inert-credential");
   }
-  await dialog.getByLabel("Fleet key", { exact: true }).fill("browser-visual-inputs");
-  await dialog.getByLabel("Owner", { exact: true }).fill("example-org");
-  const authentication = dialog.getByRole("combobox", {
+  await form.getByLabel("Fleet key", { exact: true }).fill("browser-visual-inputs");
+  await form.getByLabel("Owner", { exact: true }).fill("example-org");
+  const authentication = form.getByRole("combobox", {
     name: "GitHub authentication profile",
     exact: true,
   });
-  const template = dialog.getByRole("combobox", { name: "Template profile", exact: true });
+  const template = form.getByRole("combobox", { name: "Template profile", exact: true });
   await expect(authentication).toHaveValue("");
   await expect(template).toHaveValue("");
   await authentication.selectOption("browser-auth");
   await template.selectOption("browser-inputs");
-  const image = dialog.getByRole("combobox", { name: "Runner image", exact: true });
+  const image = form.getByRole("combobox", { name: "Runner image", exact: true });
   await expect(image).toBeVisible();
   await expect(image).toHaveValue("");
   await image.selectOption({ label: "runner:approved" });
-  await expect(dialog.getByRole("combobox", { name: "CPU request", exact: true })).toBeVisible();
-  await dialog
+  await expect(form.getByRole("combobox", { name: "CPU request", exact: true })).toBeVisible();
+  await form
     .getByRole("combobox", { name: "CPU request", exact: true })
     .selectOption({ label: "1" });
-  await dialog.getByRole("button", { name: "Advanced settings", exact: true }).click();
-  await dialog.getByRole("button", { name: "Advanced settings", exact: true }).click();
-  await expect(dialog.getByRole("combobox", { name: "CPU request", exact: true })).toBeVisible();
+  await form.getByRole("button", { name: "Advanced settings", exact: true }).click();
+  await form.getByRole("button", { name: "Advanced settings", exact: true }).click();
+  await expect(form.getByRole("combobox", { name: "CPU request", exact: true })).toBeVisible();
 
   const submitted = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/v1/fleets/browser-visual-inputs") &&
       response.request().method() === "PUT",
   );
-  await dialog.getByRole("button", { name: "Create fleet", exact: true }).click();
+  await form.getByRole("button", { name: "Create fleet", exact: true }).click();
   const response = await submitted;
   expect(response.request().postDataJSON()).toMatchObject({
     github: { auth_profile_ref: "browser-auth" },
@@ -104,5 +104,5 @@ test("real daemon activates a legacy Ready template and loads its approved Fleet
   await expect(image.locator("option:checked")).toHaveText("runner:approved");
   await expect(authentication).toHaveValue("browser-auth");
   await expect(template).toHaveValue("browser-inputs");
-  await expect(dialog).toBeVisible();
+  await expect(form).toBeVisible();
 });

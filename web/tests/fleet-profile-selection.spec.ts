@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { authProfile, mockApi, profile, scopes } from "./fixtures";
+import { authProfile, fleetForm, mockApi, profile, scopes } from "./fixtures";
 import { contract, field, loadTemplate, mockContract, openCreate } from "./visual-input-fixtures";
 
 test("server choices are sorted, never preselected, and retain an older Active candidate", async ({
@@ -34,7 +34,7 @@ test("server choices are sorted, never preselected, and retain an older Active c
   const auth = page.getByLabel("GitHub authentication profile", { exact: true });
   const template = page.getByLabel("Template profile", { exact: true });
   await expect(auth).toBeDisabled();
-  await expect(page.getByRole("dialog")).toContainText("Loading github authentication profiles");
+  await expect(fleetForm(page)).toContainText("Loading github authentication profiles");
   release();
   await expect(auth).toBeEnabled();
   await expect(auth).toHaveValue("");
@@ -77,17 +77,17 @@ test("empty, unavailable, forbidden and failed lists stay distinct and refresh r
   );
   await page.goto("/fleets");
   await page.getByRole("button", { name: "Create fleet" }).click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog).toContainText("You do not have permission for this operation.");
-  await expect(dialog).toContainText("No template profiles yet");
-  await expect(dialog.getByRole("button", { name: "Create fleet", exact: true })).toBeDisabled();
+  const form = fleetForm(page);
+  await expect(form).toContainText("You do not have permission for this operation.");
+  await expect(form).toContainText("No template profiles yet");
+  await expect(form.getByRole("button", { name: "Create fleet", exact: true })).toBeDisabled();
   recovered = true;
-  await dialog
+  await form
     .getByRole("button", { name: "Refresh GitHub authentication profiles", exact: true })
     .click();
-  await dialog.getByRole("button", { name: "Refresh Template profiles", exact: true }).click();
+  await form.getByRole("button", { name: "Refresh Template profiles", exact: true }).click();
   await expect(page.getByLabel("GitHub authentication profile", { exact: true })).toBeEnabled();
-  await expect(dialog).toContainText("No profiles are available for new references");
+  await expect(form).toContainText("No profiles are available for new references");
   await expect(
     page.getByLabel("Template profile", { exact: true }).locator('option[value="unvalidated"]'),
   ).toBeDisabled();
@@ -97,9 +97,9 @@ test("empty, unavailable, forbidden and failed lists stay distinct and refresh r
       json: { code: "Unavailable", detail: "Template registry unavailable" },
     }),
   );
-  await dialog.getByRole("button", { name: "Refresh Template profiles", exact: true }).click();
-  await expect(dialog).toContainText("Template registry unavailable");
-  await expect(dialog).not.toContainText("No template profiles yet");
+  await form.getByRole("button", { name: "Refresh Template profiles", exact: true }).click();
+  await expect(form).toContainText("Template registry unavailable");
+  await expect(form).not.toContainText("No template profiles yet");
 });
 
 for (const list of ["github-auth-profiles", "template-profiles"] as const) {
@@ -111,8 +111,8 @@ for (const list of ["github-auth-profiles", "template-profiles"] as const) {
     await openCreate(page);
     await loadTemplate(page);
     await page.getByRole("combobox", { name: "Runner image", exact: true }).selectOption("0");
-    const dialog = page.getByRole("dialog");
-    const submit = dialog.getByRole("button", { name: "Create fleet", exact: true });
+    const form = fleetForm(page);
+    const submit = form.getByRole("button", { name: "Create fleet", exact: true });
     await expect(submit).toBeEnabled();
     let fail = true;
     await page.route(`**/api/v1/${list}`, (route) =>
@@ -127,7 +127,7 @@ for (const list of ["github-auth-profiles", "template-profiles"] as const) {
             },
       ),
     );
-    const refresh = dialog.getByRole("button", {
+    const refresh = form.getByRole("button", {
       name:
         list === "template-profiles"
           ? "Refresh Template profiles"
@@ -135,7 +135,7 @@ for (const list of ["github-auth-profiles", "template-profiles"] as const) {
       exact: true,
     });
     await refresh.click();
-    await expect(dialog).toContainText("Registry read failed");
+    await expect(form).toContainText("Registry read failed");
     await expect(submit).toBeDisabled();
     await expect(page.getByLabel("GitHub authentication profile", { exact: true })).toHaveValue(
       "github-build",
@@ -161,8 +161,8 @@ test("retiring or removed selections remain visible but cannot create a new flee
   await mockApi(page);
   await openCreate(page);
   await loadTemplate(page);
-  const dialog = page.getByRole("dialog");
-  const submit = dialog.getByRole("button", { name: "Create fleet", exact: true });
+  const form = fleetForm(page);
+  const submit = form.getByRole("button", { name: "Create fleet", exact: true });
   await expect(submit).toBeEnabled();
   await page.route("**/api/v1/github-auth-profiles", (route) =>
     route.fulfill({ json: { profiles: [] } }),
@@ -172,12 +172,12 @@ test("retiring or removed selections remain visible but cannot create a new flee
       json: { profiles: [profile("kubernetes-linux", 3, "Retiring")] },
     }),
   );
-  await dialog
+  await form
     .getByRole("button", { name: "Refresh GitHub authentication profiles", exact: true })
     .click();
-  await dialog.getByRole("button", { name: "Refresh Template profiles", exact: true }).click();
-  await expect(dialog).toContainText("github-build: This profile is no longer in the list");
-  await expect(dialog).toContainText("kubernetes-linux: Retirement prevents new references");
+  await form.getByRole("button", { name: "Refresh Template profiles", exact: true }).click();
+  await expect(form).toContainText("github-build: This profile is no longer in the list");
+  await expect(form).toContainText("kubernetes-linux: Retirement prevents new references");
   await expect(submit).toBeDisabled();
   await expect(page.getByLabel("GitHub authentication profile", { exact: true })).toHaveValue(
     "github-build",
@@ -203,10 +203,10 @@ test("missing read permissions issue no profile list requests and prevent creati
   await page.getByRole("button", { name: "Create fleet" }).click();
   await expect(page.getByLabel("GitHub authentication profile", { exact: true })).toBeDisabled();
   await expect(page.getByLabel("Template profile", { exact: true })).toBeDisabled();
-  await expect(page.getByRole("dialog")).toContainText("auth.read permission is required");
-  await expect(page.getByRole("dialog")).toContainText("template.read permission is required");
+  await expect(fleetForm(page)).toContainText("auth.read permission is required");
+  await expect(fleetForm(page)).toContainText("template.read permission is required");
   await expect(
-    page.getByRole("dialog").getByRole("button", { name: "Create fleet", exact: true }),
+    fleetForm(page).getByRole("button", { name: "Create fleet", exact: true }),
   ).toBeDisabled();
   expect(reads).toEqual([]);
 });
@@ -227,14 +227,14 @@ test("a template retired after the list read cannot load a new input contract", 
   });
   await openCreate(page);
   await loadTemplate(page);
-  await expect(page.getByRole("dialog")).toContainText(/retir/i);
+  await expect(fleetForm(page)).toContainText(/retir/i);
   await expect(
-    page.getByRole("dialog").getByRole("button", { name: "Create fleet", exact: true }),
+    fleetForm(page).getByRole("button", { name: "Create fleet", exact: true }),
   ).toBeDisabled();
   expect(contractReads).toBe(0);
 });
 
-test("long server keys fit a narrow dialog and selections remain accessible", async ({ page }) => {
+test("long server keys fit a narrow form and selections remain accessible", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockApi(page);
   const key = `profile-${"a".repeat(55)}`;
@@ -248,10 +248,10 @@ test("long server keys fit a narrow dialog and selections remain accessible", as
   const auth = page.getByRole("combobox", { name: "GitHub authentication profile", exact: true });
   await auth.selectOption(key);
   await expect(auth).toHaveValue(key);
-  const dialog = page.getByRole("dialog");
-  const bounds = await dialog.boundingBox();
+  const form = fleetForm(page);
+  const bounds = await form.boundingBox();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
-  expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await form.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page.screenshot({ path: "test-results/fleet-profile-mobile.png", animations: "disabled" });
 });

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { mockApi } from "./fixtures";
+import { fleetForm, mockApi } from "./fixtures";
 import {
   acceptCreate,
   contract,
@@ -55,7 +55,7 @@ test("promotion never silently replaces the captured revision or retries a rejec
       },
     });
   });
-  await page.getByRole("dialog").getByRole("button", { name: "Create fleet" }).click();
+  await fleetForm(page).getByRole("button", { name: "Create fleet" }).click();
   await expect(page.getByRole("alert")).toContainText("no longer Active");
   expect(writes).toBe(1);
   await expect(page.getByRole("combobox", { name: "Runner image", exact: true })).not.toHaveValue(
@@ -100,13 +100,11 @@ test("failed template switches retain input drafts and cancelling returns to the
     .getByRole("combobox", { name: "Runner image", exact: true })
     .selectOption({ index: 1 });
   await loadTemplate(page, "broken-template");
-  await expect(page.getByRole("dialog")).toContainText("Template registry temporarily unavailable");
+  await expect(fleetForm(page)).toContainText("Template registry temporarily unavailable");
   await expect(page.getByRole("combobox", { name: "Runner image", exact: true })).not.toHaveValue(
     "",
   );
-  await expect(
-    page.getByRole("dialog").getByRole("button", { name: "Create fleet" }),
-  ).toBeDisabled();
+  await expect(fleetForm(page).getByRole("button", { name: "Create fleet" })).toBeDisabled();
   await page.getByRole("button", { name: "Cancel switch", exact: true }).click();
   await expect(page.getByLabel("Template profile", { exact: true })).toHaveValue(
     "kubernetes-linux",
@@ -172,14 +170,10 @@ test("new templates with no Active revision show a blocking reason and can be re
   );
   await openCreate(page);
   await loadTemplate(page);
-  await expect(page.getByRole("dialog")).toContainText(/no Active revision/i);
-  await expect(
-    page.getByRole("dialog").getByRole("button", { name: "Create fleet" }),
-  ).toBeDisabled();
+  await expect(fleetForm(page)).toContainText(/no Active revision/i);
+  await expect(fleetForm(page).getByRole("button", { name: "Create fleet" })).toBeDisabled();
   active = 3;
   await page.getByRole("button", { name: "Retry input contract", exact: true }).click();
-  await expect(page.getByRole("dialog")).toContainText(
-    "This template needs no input configuration.",
-  );
+  await expect(fleetForm(page)).toContainText("This template needs no input configuration.");
   await acceptCreate(page, (body) => expect(JSON.parse(body).template_inputs).toEqual({}));
 });
