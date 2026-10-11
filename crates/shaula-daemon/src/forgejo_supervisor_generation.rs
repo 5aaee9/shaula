@@ -1,15 +1,15 @@
 //! Durable Forgejo Generation creation. Prepare retained inputs before registration.
 
-use sha2::{Digest, Sha256};
-use shaula_core::diagnostics::*;
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::fleet::FleetProviderKind;
 use shaula_core::lifecycle::GenerationState;
-use shaula_core::ports::TemplateCreateRequest;
 use shaula_core::registry::GenerationRecord;
-use shaula_observability::{MetricOperation, MetricResult, TelemetryHandle};
 
 use super::ForgejoPoolSupervisor;
+use stages::{GenerationNames, PinnedRevision, PreparedGeneration};
+
+#[path = "forgejo_supervisor_create_stages.rs"]
+mod stages;
 
 impl ForgejoPoolSupervisor {
     pub(super) async fn create_one_generation(&self, now: i64) -> CoreResult<bool> {
@@ -31,99 +31,26 @@ impl ForgejoPoolSupervisor {
         .await
         .map_err(|_| CoreError::internal("create scheduler stopped"))?;
         // Reserve occupancy under the same exclusive gate used by Fleet writes.
-        // Never borrow a newer revision with a client built for an older one.
         let gate = self.gates.acquire_exclusive(&self.fleet_key).await;
-        if self
-            .current_head()
-            .await?
-            .is_none_or(|head| head.deletion_marker)
-        {
-            return Ok(false);
-        }
-        if self.store.generations_occupancy(&self.fleet_key).await? >= self.capacity.max_runners {
-            return Ok(false);
-        }
-        let Some(snapshot) = self.store.fleet_revision_latest(&self.fleet_key).await? else {
+        let Some((snapshot, spec)) = self.admissible_revision().await? else {
             return Ok(false);
         };
-        if snapshot.revision != self.guard.desired_revision || snapshot.auth_desired != self.auth {
-            return Ok(false);
-        }
-        let spec: shaula_core::fleet::FleetSpec = serde_json::from_str(&snapshot.spec_json)
-            .map_err(|_| CoreError::new(ReasonCode::SpecInvalid, "stored Fleet spec invalid"))?;
-        if spec.kind != FleetProviderKind::Forgejo {
-            return Ok(false);
-        }
         let pooled = spec.template_pool.is_some() || spec.template_pool_ref.is_some();
-        // Pool placeholders never reach storage: the common admission transaction
-        // selects and freezes the exact route before inserting the Generation.
-        let (profile_key, template_revision, artifact_digest, attestation_id) = if pooled {
-            (String::new(), 0, String::new(), String::new())
-        } else {
-            match (
-                snapshot.template_profile_key,
-                snapshot.template_revision,
-                snapshot.template_artifact_digest,
-                snapshot.template_attestation_id,
-            ) {
-                (Some(key), Some(revision), Some(digest), Some(attestation)) => {
-                    (key, revision, digest, attestation)
-                }
-                _ => {
-                    return Err(CoreError::new(
-                        ReasonCode::TemplateInvalid,
-                        "Forgejo revision has no resolved template pin",
-                    ))
-                }
-            }
+        let pinned = PinnedRevision::from_snapshot(pooled, snapshot)?;
+        let names = GenerationNames::mint(self);
+        let record = names.record(&self.fleet_key, pinned, now);
+        let Some((record, parameters)) = self
+            .admit_generation(record, pooled, spec.template_inputs)
+            .await?
+        else {
+            return Ok(false);
         };
-        let generation_id = shaula_core::auth::new_attempt_id();
-        let generation_name = crate::runner_operation::generation_resource_name(&generation_id);
-        let runner_name = format!("{}{}", self.runner_name_prefix, generation_id);
-        let workspace = self.work_root.join(&self.fleet_key).join(&generation_id);
-        let record = GenerationRecord {
-            id: generation_id.clone(),
-            fleet_key: self.fleet_key.clone(),
-            runner_name: runner_name.clone(),
-            generation_name: generation_name.clone(),
-            fleet_revision: snapshot.revision,
-            template_profile_key: profile_key.clone(),
-            pool_member_key: None,
-            template_revision,
-            template_artifact_digest: artifact_digest.clone(),
-            attestation_id,
-            inputs_digest: snapshot.inputs_digest,
-            state: GenerationState::CreatePending,
-            github_runner_id: None,
-            workspace_path: workspace.to_string_lossy().into_owned(),
-            created_at: now,
-            updated_at: now,
-        };
-        let (record, parameters) = if pooled {
-            let Some(admission) = self
-                .lifecycle
-                .generation_admit_pool(record, &self.guard)
-                .await?
-            else {
-                return Ok(false);
-            };
-            (admission.generation, admission.template_inputs)
-        } else {
-            if !self
-                .lifecycle
-                .generation_insert_guarded(record.clone(), &self.guard)
-                .await?
-            {
-                return Ok(false);
-            }
-            (record, spec.template_inputs)
-        };
+        let generation_id = names.generation_id.clone();
         self.lifecycle
             .generation_advance(&generation_id, GenerationState::Creating, now)
             .await?;
         drop(gate);
-        let prepared = self.prepare_generation(&record, &parameters).await;
-        let (artifact_dir, manifest, bindings, bindings_digest) = match prepared {
+        let prepared = match self.prepare_generation(&record, &parameters).await {
             Ok(prepared) => prepared,
             Err(error) => return cleanup_error(self, &generation_id, now, error).await,
         };
@@ -133,53 +60,12 @@ impl ForgejoPoolSupervisor {
         else {
             return Ok(false);
         };
-        let mut input = shaula_core::template::ShaulaInputEnvelope::new(
-            shaula_core::template::GenerationIdentity {
-                fleet_key: self.fleet_key.clone(),
-                scale_set_id: None,
-                id: generation_id.clone(),
-                runner_name,
-                generation_name,
-            },
-            String::new(),
-            shaula_core::template::BindingsDigest(bindings_digest.clone()),
-        );
-        input.bindings = bindings;
-        input.forgejo = Some(bootstrap.identity());
-        if manifest.forgejo_vm_bootstrap_contract.is_some() {
-            input.forgejo_vm =
-                Some(shaula_core::template::ForgejoVmBootstrap::from_registration(&bootstrap));
-        }
-        input.parameters = parameters;
-        if manifest.input_contract_version == 2 {
-            let descriptor = match self.setup_info_issuer.as_deref() {
-                Some(issuer) => issuer
-                    .issue(&generation_id, self.clock.now_unix_ms().div_euclid(1000))
-                    .await
-                    .unwrap_or(shaula_core::template::SetupInfoDescriptor::Disabled),
-                None => shaula_core::template::SetupInfoDescriptor::Disabled,
-            };
-            input = match input.with_setup_info(descriptor) {
-                Ok(input) => input,
-                Err(error) => return cleanup_error(self, &generation_id, now, error).await,
-            };
-        }
-        if let Err(error) = input.validate_for_manifest(&manifest) {
-            return cleanup_error(self, &generation_id, now, error).await;
-        }
-        let apply_intent =
-            crate::apply_intent::TrackedApplyIntentSink::new(self.apply_intent_sink.clone());
-        let request = TemplateCreateRequest {
-            workspace_path: workspace,
-            artifact_dir,
-            pinned_artifact_digest: record.template_artifact_digest.clone(),
-            input,
-            expected_bindings_digest: shaula_core::template::BindingsDigest(bindings_digest),
-            managed_shape: manifest.managed_resource_shape,
-            environment: Vec::new(),
-            timeout: self.operation_timeout,
-            apply_intent_sink: Some(apply_intent.clone()),
-            forgejo_bootstrap: Some(bootstrap),
+        let (request, apply_intent) = match self
+            .create_request(names, prepared, parameters, bootstrap, &record)
+            .await
+        {
+            Ok(built) => built,
+            Err(error) => return cleanup_error(self, &generation_id, now, error).await,
         };
         let mut diagnostic = crate::diagnostic_capture::generation_capture(
             self.store.as_ref(),
@@ -189,73 +75,20 @@ impl ForgejoPoolSupervisor {
             QuestionId::Readiness,
             now,
         );
-        match self.runtime.create(request).await {
-            Ok(result) => {
-                diagnostic.pass(StageId::CreateEffect);
-                diagnostic.reason(
-                    Code::LifecycleAwaitingOnline,
-                    StageId::RunnerInventory,
-                    false,
-                );
-                diagnostic.outcome(Outcome::Progressing);
-                TelemetryHandle::new().record(MetricOperation::IaC, MetricResult::Ok, 1);
-                let result_json = serde_json::json!({
-                    "result": result.result_envelope,
-                    "state_lineage": result.state_lineage,
-                    "state_serial": result.state_serial,
-                })
-                .to_string();
-                let digest = format!(
-                    "sha256:{}",
-                    hex::encode(Sha256::digest(result_json.as_bytes()))
-                );
-                let now = self.clock.now_unix_ms();
-                self.lifecycle
-                    .generation_set_result(&generation_id, &result_json, &digest, now)
-                    .await?;
-                apply_intent.complete(self.lifecycle.as_ref(), now).await?;
-                self.lifecycle
-                    .generation_advance(&generation_id, GenerationState::WaitingOnline, now)
-                    .await?;
-                Ok(true)
-            }
-            Err(error) => {
-                let known = matches!(
-                    error,
-                    shaula_core::ports::TemplateOutcomeError::PlanFailed { .. }
-                );
-                diagnostic.reason(
-                    if known {
-                        Code::LifecycleOperationFailed
-                    } else {
-                        Code::LifecycleApplyOutcomeUnknown
-                    },
-                    StageId::CreateEffect,
-                    known,
-                );
-                TelemetryHandle::new().record(MetricOperation::IaC, MetricResult::Failed, 1);
-                self.lifecycle
-                    .generation_advance(
-                        &generation_id,
-                        GenerationState::CleanupRequired,
-                        self.clock.now_unix_ms(),
-                    )
-                    .await?;
-                Ok(false)
-            }
-        }
+        self.record_create_outcome(
+            &generation_id,
+            self.runtime.create(request).await,
+            &apply_intent,
+            &mut diagnostic,
+        )
+        .await
     }
 
     async fn prepare_generation(
         &self,
         record: &GenerationRecord,
         parameters: &serde_json::Map<String, serde_json::Value>,
-    ) -> CoreResult<(
-        std::path::PathBuf,
-        shaula_core::template::ProfileManifest,
-        serde_json::Map<String, serde_json::Value>,
-        String,
-    )> {
+    ) -> CoreResult<PreparedGeneration> {
         self.store
             .ensure_artifact_cached(&record.template_artifact_digest)
             .await?;
@@ -306,7 +139,12 @@ impl ForgejoPoolSupervisor {
                     "Forgejo workspace preparation failed",
                 )
             })?;
-        Ok((artifact_dir, manifest, bindings, bindings_digest))
+        Ok(PreparedGeneration {
+            artifact_dir,
+            manifest,
+            bindings,
+            bindings_digest,
+        })
     }
 }
 

@@ -66,4 +66,5 @@ pub mod github;
 mod predecessor;
 mod scheduler;
 mod selectors;
+mod step;
 pub use scheduler::AuthWorkerScheduler;
