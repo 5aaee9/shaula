@@ -1,10 +1,12 @@
 use super::{config::https_url, AuthError, OidcConfig};
-use jsonwebtoken::jwk::JwkSet;
+use jsonwebtoken::{jwk::JwkSet, DecodingKey};
 use serde::{de::DeserializeOwned, Deserialize};
-use std::time::{Duration, Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    time::{Duration, Instant},
+};
 
-const TTL: Duration = Duration::from_secs(300);
-const BACKOFF: Duration = Duration::from_secs(10);
+pub(super) const TTL: Duration = Duration::from_secs(300);
 const MAX_BODY: usize = 1024 * 1024;
 #[cfg(test)]
 #[path = "provider_tests.rs"]
@@ -24,15 +26,31 @@ pub(super) struct Metadata {
     pub code_challenge_methods_supported: Option<Vec<String>>,
 }
 
-pub(super) struct ProviderCache {
+/// Immutable view of the provider's discovery document and signing keys.
+/// Readers clone the `Arc` holding it and never wait on network I/O.
+#[derive(Clone)]
+pub(super) struct ProviderSnapshot {
     pub metadata: Metadata,
-    pub keys: JwkSet,
-    loaded: Instant,
-    attempted: Instant,
-    pub(super) failed: bool,
+    /// Every `kid` advertised by the JWKS, usable or not.
+    kids: HashSet<String>,
+    /// Verification keys, parsed once, for the `kid`s passing [`usable_key`].
+    keys: HashMap<String, DecodingKey>,
+    pub(super) loaded: Instant,
 }
 
-impl ProviderCache {
+impl ProviderSnapshot {
+    pub fn knows(&self, kid: &str) -> bool {
+        self.kids.contains(kid)
+    }
+
+    pub fn key(&self, kid: &str) -> Option<&DecodingKey> {
+        self.keys.get(kid)
+    }
+
+    pub fn expired(&self) -> bool {
+        self.loaded.elapsed() >= TTL
+    }
+
     pub async fn load(http: &reqwest::Client, config: &OidcConfig) -> Result<Self, AuthError> {
         let discovery = format!(
             "{}/.well-known/openid-configuration",
@@ -71,65 +89,40 @@ impl ProviderCache {
         ] {
             https_url(endpoint).map_err(|_| AuthError::Provider)?;
         }
-        let keys: JwkSet = json(http.get(&metadata.jwks_uri)).await?;
-        let mut kids = std::collections::HashSet::new();
-        if keys.keys.is_empty()
-            || keys.keys.len() > 64
-            || keys
-                .keys
-                .iter()
-                .filter_map(|k| k.common.key_id.as_ref())
-                .any(|kid| !kids.insert(kid))
-            || !keys.keys.iter().any(usable_key)
-        {
+        let set: JwkSet = json(http.get(&metadata.jwks_uri)).await?;
+        if set.keys.is_empty() || set.keys.len() > 64 {
+            return Err(AuthError::Provider);
+        }
+        let mut kids = HashSet::new();
+        let mut keys = HashMap::new();
+        for jwk in &set.keys {
+            let Some(kid) = jwk.common.key_id.as_ref() else {
+                continue;
+            };
+            if !kids.insert(kid.clone()) {
+                return Err(AuthError::Provider);
+            }
+            if let Some(key) = usable_key(jwk) {
+                keys.insert(kid.clone(), key);
+            }
+        }
+        if keys.is_empty() {
             return Err(AuthError::Provider);
         }
         Ok(Self {
             metadata,
+            kids,
             keys,
             loaded: Instant::now(),
-            attempted: Instant::now() - BACKOFF,
-            failed: false,
         })
-    }
-
-    pub async fn current(
-        &mut self,
-        http: &reqwest::Client,
-        config: &OidcConfig,
-        unknown_key: bool,
-    ) -> Result<(), AuthError> {
-        let expired = self.loaded.elapsed() >= TTL;
-        if !expired && !unknown_key {
-            return Ok(());
-        }
-        if self.attempted.elapsed() < BACKOFF {
-            return if expired || self.failed {
-                Err(AuthError::Provider)
-            } else {
-                Ok(())
-            };
-        }
-        self.attempted = Instant::now();
-        match Self::load(http, config).await {
-            Ok(mut new) => {
-                new.attempted = Instant::now();
-                *self = new;
-                Ok(())
-            }
-            Err(e) => {
-                self.failed = true;
-                Err(e)
-            }
-        }
     }
 }
 
-pub(super) fn usable_key(key: &jsonwebtoken::jwk::Jwk) -> bool {
+fn usable_key(key: &jsonwebtoken::jwk::Jwk) -> Option<DecodingKey> {
     use base64::Engine;
     use jsonwebtoken::jwk::{AlgorithmParameters, KeyAlgorithm, KeyOperations, PublicKeyUse};
     let AlgorithmParameters::RSA(parameters) = &key.algorithm else {
-        return false;
+        return None;
     };
     let modulus = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(&parameters.n);
     let strong_rsa = modulus.is_ok_and(|n| {
@@ -139,7 +132,7 @@ pub(super) fn usable_key(key: &jsonwebtoken::jwk::Jwk) -> bool {
             .saturating_sub(n.first().map_or(8, |byte| byte.leading_zeros() as usize));
         (2048..=8192).contains(&bits)
     });
-    strong_rsa
+    let acceptable = strong_rsa
         && key
             .common
             .key_id
@@ -159,8 +152,11 @@ pub(super) fn usable_key(key: &jsonwebtoken::jwk::Jwk) -> bool {
             .common
             .key_operations
             .as_ref()
-            .is_none_or(|v| v.contains(&KeyOperations::Verify))
-        && jsonwebtoken::DecodingKey::from_jwk(key).is_ok()
+            .is_none_or(|v| v.contains(&KeyOperations::Verify));
+    if !acceptable {
+        return None;
+    }
+    DecodingKey::from_jwk(key).ok()
 }
 
 pub(super) async fn json<T: DeserializeOwned>(

@@ -1,5 +1,6 @@
+use super::provider_cache::Need;
 use super::{AuthError, Authenticated, Oidc};
-use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{decode, decode_header, Algorithm, Validation};
 use serde::Deserialize;
 use shaula_core::registry::Actor;
 
@@ -137,15 +138,15 @@ impl Oidc {
             .as_deref()
             .filter(|k| k.len() <= 256)
             .ok_or(AuthError::Unauthorized)?;
-        let mut provider = self.provider.lock().await;
-        let unknown = provider.keys.find(kid).is_none();
-        provider.current(&self.http, &self.config, unknown).await?;
-        let jwk = provider.keys.find(kid).ok_or(AuthError::Unauthorized)?;
-        if !super::provider::usable_key(jwk) {
+        let provider = self
+            .provider
+            .current(&self.http, &self.config, Need::Kid(kid))
+            .await?;
+        if !provider.knows(kid) {
             return Err(AuthError::Unauthorized);
         }
-        let key = DecodingKey::from_jwk(jwk).map_err(|_| AuthError::Unauthorized)?;
-        drop(provider);
+        // Advertised but unusable keys (weak, wrong use/alg) are rejected.
+        let key = provider.key(kid).ok_or(AuthError::Unauthorized)?;
         let audience = if api {
             &self.config.audience
         } else {
@@ -157,7 +158,7 @@ impl Oidc {
         validation.set_required_spec_claims(&["iss", "sub", "aud", "exp", "iat"]);
         validation.validate_nbf = true;
         validation.leeway = 60;
-        let claims = decode::<Claims>(token, &key, &validation)
+        let claims = decode::<Claims>(token, key, &validation)
             .map_err(|_| AuthError::Unauthorized)?
             .claims;
         let now = jsonwebtoken::get_current_timestamp();

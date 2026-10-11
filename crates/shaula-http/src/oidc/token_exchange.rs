@@ -43,9 +43,14 @@ type LoginClient<A = EndpointNotSet, T = EndpointNotSet> = Client<
 
 impl Oidc {
     pub(super) async fn client(&self) -> Result<LoginClient<EndpointSet, EndpointSet>, AuthError> {
-        let mut provider = self.provider.lock().await;
-        let refresh = provider.failed;
-        provider.current(&self.http, &self.config, refresh).await?;
+        let provider = self
+            .provider
+            .current(
+                &self.http,
+                &self.config,
+                super::provider_cache::Need::Healthy,
+            )
+            .await?;
         Ok(
             LoginClient::new(ClientId::new(self.config.client_id.clone()))
                 .set_client_secret(ClientSecret::new(self.config.secret.expose().to_owned()))

@@ -3,6 +3,7 @@ mod config;
 mod guard;
 mod login;
 mod provider;
+mod provider_cache;
 mod renewal;
 mod session_refresh;
 mod sessions;
@@ -95,7 +96,7 @@ impl<S: Send + Sync> FromRequestParts<S> for Authenticated {
 pub struct Oidc {
     config: OidcConfig,
     http: reqwest::Client,
-    provider: Mutex<provider::ProviderCache>,
+    provider: provider_cache::Provider,
     sessions: Mutex<sessions::Sessions>,
     exchanges: Arc<tokio::sync::Semaphore>,
     login_available: std::sync::atomic::AtomicBool,
@@ -121,11 +122,11 @@ impl Oidc {
         let http = builder
             .build()
             .map_err(|_| AuthError::Configuration("HTTP client"))?;
-        let provider = provider::ProviderCache::load(&http, &config).await?;
+        let provider = provider::ProviderSnapshot::load(&http, &config).await?;
         Ok(Arc::new(Self {
             config,
             http,
-            provider: Mutex::new(provider),
+            provider: provider_cache::Provider::new(provider),
             sessions: Mutex::new(sessions::Sessions::default()),
             exchanges: Arc::new(tokio::sync::Semaphore::new(16)),
             login_available: std::sync::atomic::AtomicBool::new(true),
@@ -158,13 +159,11 @@ impl Oidc {
     }
 
     pub async fn ready(&self) -> bool {
-        let mut provider = self.provider.lock().await;
-        let refresh = provider.failed;
-        provider
-            .current(&self.http, &self.config, refresh)
+        self.provider
+            .current(&self.http, &self.config, provider_cache::Need::Healthy)
             .await
             .is_ok()
-            && !provider.failed
+            && !self.provider.failed()
             && self
                 .login_available
                 .load(std::sync::atomic::Ordering::Relaxed)

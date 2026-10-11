@@ -27,8 +27,7 @@ pub(crate) async fn login(
     let client = oidc.client().await?;
     let profile = oidc
         .provider
-        .lock()
-        .await
+        .snapshot()
         .metadata
         .scopes_supported
         .as_ref()

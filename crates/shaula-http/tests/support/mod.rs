@@ -29,6 +29,8 @@ pub struct Provider {
 pub struct Control {
     pub offline: bool,
     pub keys_offline: bool,
+    /// Stalls discovery responses to model a slow identity provider.
+    pub discovery_delay: Option<std::time::Duration>,
     pub metadata: serde_json::Map<String, Value>,
     pub keys: Option<Value>,
     pub discovery_reads: usize,
@@ -128,8 +130,15 @@ struct Fixture {
 }
 
 async fn metadata(State(s): State<Fixture>) -> Response {
-    let mut control = s.control.lock().unwrap();
-    control.discovery_reads += 1;
+    let delay = {
+        let mut control = s.control.lock().unwrap();
+        control.discovery_reads += 1;
+        control.discovery_delay
+    };
+    if let Some(delay) = delay {
+        tokio::time::sleep(delay).await;
+    }
+    let control = s.control.lock().unwrap();
     if control.offline {
         return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();
     }

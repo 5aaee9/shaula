@@ -1,5 +1,4 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-use super::*;
 use crate::oidc::{support, Oidc};
 use serde_json::json;
 
@@ -70,28 +69,49 @@ async fn oidc_tests_rotation_unknown_key_dedup_and_expired_cache_fail_closed() {
         "one refresh for concurrent unknown keys"
     );
     fixture.control.lock().unwrap().offline = true;
-    {
-        let mut cache = oidc.provider.lock().await;
-        cache.attempted -= BACKOFF;
-    }
+    oidc.provider.elapse_backoff();
     assert!(oidc.claims(&unknown, true).await.is_err());
     assert!(!oidc.ready().await);
     assert!(
         oidc.claims(&rotated, true).await.is_ok(),
         "valid cache survives outage"
     );
-    {
-        let mut cache = oidc.provider.lock().await;
-        cache.loaded -= TTL;
-    }
+    oidc.provider.expire_snapshot();
     assert!(
         oidc.claims(&rotated, true).await.is_err(),
         "expired keys cannot authenticate"
     );
     fixture.control.lock().unwrap().offline = false;
-    oidc.provider.lock().await.attempted -= BACKOFF;
+    oidc.provider.elapse_backoff();
     assert!(oidc.ready().await);
     assert!(oidc.claims(&rotated, true).await.is_ok());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn oidc_tests_slow_refresh_does_not_block_cached_keys() {
+    let fixture = support::start_provider();
+    let oidc = fixture.oidc().await;
+    let claims = support::claims(&fixture.issuer, "api", "ops", support::SCOPES);
+    let known = support::sign(claims.clone(), "at+jwt", "test-key");
+    let unknown = support::sign(claims, "at+jwt", "unknown");
+    let stall = std::time::Duration::from_secs(3);
+    fixture.control.lock().unwrap().discovery_delay = Some(stall);
+    let refreshing = tokio::spawn({
+        let oidc = oidc.clone();
+        async move { oidc.claims(&unknown, true).await.is_err() }
+    });
+    while fixture.control.lock().unwrap().discovery_reads < 2 {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    let started = std::time::Instant::now();
+    assert!(oidc.claims(&known, true).await.is_ok());
+    assert!(oidc.client().await.is_ok());
+    assert!(
+        started.elapsed() < stall / 2,
+        "cached provider state served while a refresh is in flight"
+    );
+    assert!(!refreshing.is_finished(), "refresh still in flight");
+    assert!(refreshing.await.unwrap());
 }
 
 #[tokio::test]
