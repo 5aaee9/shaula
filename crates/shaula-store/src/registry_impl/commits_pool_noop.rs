@@ -20,22 +20,21 @@ impl SqliteControlPlane {
         // Reserve the writer before reading the authority. PUT, cascade and
         // DELETE cannot change the head between this check and the audit.
         let tx = self.store.begin().await.map_err(core_err)?;
-        let Some(current) = template_pools::Entity::find_by_id(key)
+        let current = template_pools::Entity::find_by_id(key)
             .one(&tx)
             .await
             .map_err(|error| core_err(error.into()))?
-        else {
-            return Ok(Err(MutationError::NotFound));
-        };
-        if current.deletion_marker || current.tombstone {
-            return Ok(Err(MutationError::Gone {
-                tombstone: key.into(),
-            }));
-        }
-        if current.incarnation != incarnation || current.desired_revision != revision {
-            return Ok(Err(MutationError::PreconditionFailed {
-                current: (current.incarnation, current.desired_revision),
-            }));
+            .map(|c| {
+                (
+                    c.deletion_marker || c.tombstone,
+                    c.incarnation,
+                    c.desired_revision,
+                )
+            });
+        if let Err(rejection) =
+            super::commits_fleet_noop::noop_cas(key, current, incarnation, revision)
+        {
+            return Ok(Err(rejection));
         }
         self.store
             .audit_append(

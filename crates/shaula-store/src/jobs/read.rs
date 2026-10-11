@@ -59,21 +59,12 @@ impl JobsReadPort for Store {
         )
         .await
         .map_err(unavailable)?;
-        let mut items: Vec<JobSummary> = found
+        let items: Vec<JobSummary> = found
             .iter()
             .map(job_summary)
             .collect::<StoreResult<_>>()
             .map_err(unavailable)?;
-        let more = items.len() > page.limit;
-        items.truncate(page.limit);
-        let next_cursor = if more {
-            items
-                .last()
-                .map(|item| page.next(item.created_at, &item.id))
-                .transpose()?
-        } else {
-            None
-        };
+        let (items, next_cursor) = page.finish(items, |item| (item.created_at, &item.id))?;
         Ok(JobsPage { items, next_cursor })
     }
 
@@ -140,21 +131,12 @@ impl JobsReadPort for Store {
         let found = rows(self.connection(), &page.sql(&select), page.values.clone())
             .await
             .map_err(unavailable)?;
-        let mut items: Vec<GenerationSummary> = found
+        let items: Vec<GenerationSummary> = found
             .iter()
             .map(generation_summary)
             .collect::<StoreResult<_>>()
             .map_err(unavailable)?;
-        let more = items.len() > page.limit;
-        items.truncate(page.limit);
-        let next_cursor = if more {
-            items
-                .last()
-                .map(|item| page.next(item.created_at, &item.id))
-                .transpose()?
-        } else {
-            None
-        };
+        let (items, next_cursor) = page.finish(items, |item| (item.created_at, &item.id))?;
         Ok(GenerationsPage { items, next_cursor })
     }
 

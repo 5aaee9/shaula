@@ -40,13 +40,7 @@ impl Store {
         let result = self
             .auth_apply_full_tx(&tx, key, revision, now, validation)
             .await;
-        match result {
-            Ok(outcome) => tx.commit().await.map(|_| outcome).map_err(StoreError::from),
-            Err(e) => {
-                let _ = tx.rollback().await;
-                Err(e)
-            }
-        }
+        Self::finish(tx, result).await
     }
 
     async fn auth_apply_full_tx(
@@ -317,10 +311,7 @@ impl Store {
             else {
                 continue;
             };
-            let is_forgejo =
-                serde_json::from_str::<shaula_core::fleet::FleetSpec>(&latest.spec_json)
-                    .map(|spec| spec.kind == shaula_core::fleet::FleetProviderKind::Forgejo)
-                    .unwrap_or(false);
+            let is_forgejo = crate::spec_is_forgejo(&latest.spec_json);
             if !is_forgejo {
                 self.fleet_auth_context_commit_tx(
                     tx,

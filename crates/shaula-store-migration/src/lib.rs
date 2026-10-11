@@ -30,6 +30,7 @@ pub mod m0024_personal_tokens;
 pub mod m0025_audit_credentials;
 pub mod m0026_diagnostics;
 pub mod m0027_lifecycle_workers;
+pub mod m0028_query_indexes;
 
 use sea_orm_migration::prelude::*;
 
@@ -68,6 +69,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0025_audit_credentials::Migration),
             Box::new(m0026_diagnostics::Migration),
             Box::new(m0027_lifecycle_workers::Migration),
+            Box::new(m0028_query_indexes::Migration),
         ]
     }
 }

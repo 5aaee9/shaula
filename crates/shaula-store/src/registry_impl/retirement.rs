@@ -174,53 +174,8 @@ impl SqliteControlPlane {
             .exec(&tx)
             .await
             .map_err(|e| core_err(e.into()))?;
-        self.store
-            .audit_append(
-                &tx,
-                shaula_core::registry::AuditAppend {
-                    authentication: facts.authentication.clone(),
-                    resource_kind: facts.resource_kind.into(),
-                    action: "retire".into(),
-                    actor: facts.actor.clone(),
-                    resource_key: facts.resource_key.clone(),
-                    revision: Some(facts.revision),
-                    outcome: "accepted".into(),
-                    detail_json: None,
-                    now: facts.now,
-                },
-            )
-            .await
-            .map_err(core_err)?;
-        self.store
-            .outbox_enqueue(
-                &tx,
-                facts.resource_kind,
-                &facts.outbox_topic,
-                &facts.outbox_payload,
-                facts.now,
-            )
-            .await
-            .map_err(core_err)?;
-        if let Some((key, hash, status, body)) = facts.idempotency {
-            self.store
-                .idempotency_store(
-                    &tx,
-                    shaula_core::registry::IdempotencyInsert {
-                        operation: facts.idempotency_operation.into(),
-                        principal: facts.actor.clone(),
-                        id: format!("idem-{}", facts.change.id),
-                        resource_kind: facts.resource_kind.into(),
-                        resource_key: facts.resource_key,
-                        idempotency_key: key,
-                        request_hash: hash,
-                        response_status: status,
-                        response_body: Some(body),
-                        now: facts.now,
-                    },
-                )
-                .await
-                .map_err(core_err)?;
-        }
+        self.commit_tail(&tx, &facts, facts.resource_kind, "retire", None)
+            .await?;
         tx.commit().await.map_err(|e| core_err(e.into()))?;
         Ok(Ok(()))
     }

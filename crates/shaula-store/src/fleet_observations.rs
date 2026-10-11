@@ -68,10 +68,7 @@ impl Store {
             .filter(fleet_revisions::Column::Revision.eq(observation.guard.desired_revision))
             .one(&tx)
             .await?
-            .and_then(|row| {
-                serde_json::from_str::<shaula_core::fleet::FleetSpec>(&row.spec_json).ok()
-            })
-            .is_some_and(|spec| spec.kind == shaula_core::fleet::FleetProviderKind::Forgejo);
+            .is_some_and(|row| crate::spec_is_forgejo(&row.spec_json));
         if forgejo && active_epoch.is_some() {
             return Ok(false);
         }

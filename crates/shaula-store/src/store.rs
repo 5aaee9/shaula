@@ -217,4 +217,19 @@ impl Store {
         }
         Ok(tx)
     }
+
+    /// Commits `tx` when `result` is Ok (surfacing a commit failure), or
+    /// rolls it back best-effort and returns the original error.
+    pub(crate) async fn finish<T>(
+        tx: sea_orm::DatabaseTransaction,
+        result: StoreResult<T>,
+    ) -> StoreResult<T> {
+        match result {
+            Ok(value) => tx.commit().await.map(|_| value).map_err(StoreError::from),
+            Err(e) => {
+                let _ = tx.rollback().await;
+                Err(e)
+            }
+        }
+    }
 }

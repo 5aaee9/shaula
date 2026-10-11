@@ -10,6 +10,16 @@ use crate::entities::lifecycle::{
 };
 use crate::store::{Store, StoreError, StoreResult};
 
+/// Operation states that still hold (or may yet take) a runner slot.
+pub(crate) const OPEN_OPERATION_STATES: [&str; 6] = [
+    "Pending",
+    "Starting",
+    "ApplyStarting",
+    "BootstrapStarting",
+    "Running",
+    "Blocked",
+];
+
 #[path = "lifecycle_forgejo.rs"]
 mod forgejo;
 #[path = "lifecycle_sessions.rs"]
@@ -342,14 +352,7 @@ impl Store {
     ) -> StoreResult<Vec<runner_operations::Model>> {
         Ok(runner_operations::Entity::find()
             .filter(runner_operations::Column::GenerationId.eq(generation_id))
-            .filter(runner_operations::Column::State.is_in([
-                "Pending",
-                "Starting",
-                "ApplyStarting",
-                "BootstrapStarting",
-                "Running",
-                "Blocked",
-            ]))
+            .filter(runner_operations::Column::State.is_in(OPEN_OPERATION_STATES))
             .all(self.connection())
             .await?)
     }

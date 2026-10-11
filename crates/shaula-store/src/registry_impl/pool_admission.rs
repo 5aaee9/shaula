@@ -177,14 +177,15 @@ impl SqliteControlPlane {
             tx.rollback().await.map_err(|e| core_err(e.into()))?;
             return Ok(None);
         }
-        let occupancy = runner_generations::Entity::find()
+        let fleet_live: Vec<_> = runner_generations::Entity::find()
             .filter(runner_generations::Column::FleetKey.eq(&record.fleet_key))
             .all(&tx)
             .await
             .map_err(|e| core_err(e.into()))?
-            .iter()
+            .into_iter()
             .filter(|g| g.state != "Destroyed")
-            .count() as i64;
+            .collect();
+        let occupancy = fleet_live.len() as i64;
         if occupancy >= spec.capacity.max_runners {
             diagnostic.reason(Code::CapacityOccupancyLimit, StageId::Capacity, true);
             tx.rollback().await.map_err(|e| core_err(e.into()))?;
@@ -196,14 +197,7 @@ impl SqliteControlPlane {
         let generations = if let Some(scope) = &routing.pool_scope {
             super::lifecycle_pool_admit::pool_wide_generations(&tx, scope).await?
         } else {
-            runner_generations::Entity::find()
-                .filter(runner_generations::Column::FleetKey.eq(&record.fleet_key))
-                .all(&tx)
-                .await
-                .map_err(|e| core_err(e.into()))?
-                .into_iter()
-                .filter(|g| g.state != "Destroyed")
-                .collect()
+            fleet_live
         };
         let mut eligible = Vec::new();
         let mut member_at_capacity = false;

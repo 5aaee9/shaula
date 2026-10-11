@@ -37,6 +37,13 @@ pub mod template_repo;
 
 pub use store::{Store, StoreError, StoreResult};
 
+/// True only when `json` parses as a `FleetSpec` whose provider is Forgejo;
+/// unparseable specs are treated as non-Forgejo.
+pub(crate) fn spec_is_forgejo(json: &str) -> bool {
+    serde_json::from_str::<shaula_core::fleet::FleetSpec>(json)
+        .is_ok_and(|spec| spec.kind == shaula_core::fleet::FleetProviderKind::Forgejo)
+}
+
 #[cfg(test)]
 mod tests {
     mod apply_fence;

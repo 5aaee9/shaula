@@ -125,6 +125,7 @@ mod auth_execution;
 #[path = "control_plane_store.rs"]
 mod control_plane_store;
 
+mod commit_tail;
 #[path = "commits.rs"]
 mod commits;
 mod commits_auth;

@@ -178,6 +178,29 @@ impl PageQuery {
         .map_err(|_| JobsReadError::Unavailable)
     }
 
+    /// Trims the `limit + 1` probe row and derives the next cursor from the
+    /// last kept item's (created_at, id) when more rows exist.
+    pub fn finish<T>(
+        &self,
+        mut items: Vec<T>,
+        key: impl Fn(&T) -> (i64, &str),
+    ) -> Result<(Vec<T>, Option<String>), JobsReadError> {
+        let more = items.len() > self.limit;
+        items.truncate(self.limit);
+        let next_cursor = if more {
+            items
+                .last()
+                .map(|item| {
+                    let (created_at, id) = key(item);
+                    self.next(created_at, id)
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        Ok((items, next_cursor))
+    }
+
     pub fn sql(&self, select: &str) -> String {
         format!(
             "{select}{} ORDER BY created_at DESC,id DESC LIMIT {}",

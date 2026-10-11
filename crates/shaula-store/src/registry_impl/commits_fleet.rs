@@ -33,14 +33,10 @@ async fn fleet_replacement_occupancy_in_tx(
     if !ids.is_empty() {
         occupancy += runner_operations::Entity::find()
             .filter(runner_operations::Column::GenerationId.is_in(ids))
-            .filter(runner_operations::Column::State.is_in([
-                "Pending",
-                "Starting",
-                "ApplyStarting",
-                "BootstrapStarting",
-                "Running",
-                "Blocked",
-            ]))
+            .filter(
+                runner_operations::Column::State
+                    .is_in(crate::lifecycle_repo::OPEN_OPERATION_STATES),
+            )
             .count(tx)
             .await? as i64;
     }
@@ -259,10 +255,7 @@ impl SqliteControlPlane {
                 })?;
             // Forgejo has no handoff or installation context. Its exact
             // credential reference lives on the immutable Fleet revision.
-            let is_forgejo =
-                serde_json::from_str::<shaula_core::fleet::FleetSpec>(&facts.spec_json)
-                    .map(|spec| spec.kind == shaula_core::fleet::FleetProviderKind::Forgejo)
-                    .unwrap_or(false);
+            let is_forgejo = crate::spec_is_forgejo(&facts.spec_json);
             if !is_forgejo {
                 self.store
                     .handoff_set_desired(&tx, &facts.resource_key, profile_key, resolved)
@@ -308,53 +301,8 @@ impl SqliteControlPlane {
             )
             .await
             .map_err(core_err)?;
-        self.store
-            .audit_append(
-                &tx,
-                shaula_core::registry::AuditAppend {
-                    authentication: facts.authentication.clone(),
-                    resource_kind: facts.resource_kind.to_string(),
-                    action: "put".into(),
-                    actor: facts.actor.clone(),
-                    resource_key: facts.resource_key.clone(),
-                    revision: Some(facts.revision),
-                    outcome: "accepted".into(),
-                    detail_json: None,
-                    now: facts.now,
-                },
-            )
-            .await
-            .map_err(core_err)?;
-        self.store
-            .outbox_enqueue(
-                &tx,
-                facts.resource_kind,
-                &facts.outbox_topic,
-                &facts.outbox_payload,
-                facts.now,
-            )
-            .await
-            .map_err(core_err)?;
-        if let Some((idem_key, request_hash, status, body)) = &facts.idempotency {
-            self.store
-                .idempotency_store(
-                    &tx,
-                    shaula_core::registry::IdempotencyInsert {
-                        operation: facts.idempotency_operation.into(),
-                        principal: facts.actor.clone(),
-                        id: format!("idem-{}", facts.change.id),
-                        resource_kind: facts.resource_kind.to_string(),
-                        resource_key: facts.resource_key.clone(),
-                        idempotency_key: idem_key.clone(),
-                        request_hash: request_hash.clone(),
-                        response_status: *status,
-                        response_body: Some(body.clone()),
-                        now: facts.now,
-                    },
-                )
-                .await
-                .map_err(core_err)?;
-        }
+        self.commit_tail(&tx, &facts, facts.resource_kind, "put", None)
+            .await?;
         tx.commit()
             .await
             .map_err(|e| core_err(crate::store::StoreError::from(e)))?;

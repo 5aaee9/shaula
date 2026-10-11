@@ -30,13 +30,7 @@ impl Store {
                 expectation,
             )
             .await;
-        match result {
-            Ok(ack) => tx.commit().await.map(|_| ack).map_err(StoreError::from),
-            Err(e) => {
-                let _ = tx.rollback().await;
-                Err(e)
-            }
-        }
+        Self::finish(tx, result).await
     }
 
     async fn handoff_acknowledge_tx(
