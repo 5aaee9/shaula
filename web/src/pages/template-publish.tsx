@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ErrorNotice, Loading } from "@/components/status";
+import { TemplatePublishGate } from "@/components/template-publish-gate";
 import { TemplateForm } from "@/components/template-form";
 import { api, resourcePath } from "@/lib/api";
 import type { TemplateSource } from "@/lib/template-variables";
@@ -52,17 +52,12 @@ export function TemplatePublishPage({ scopes }: { scopes: string[] }) {
           </p>
         </div>
       </div>
-      {!canPublish ? (
-        <ErrorNotice error={new Error("Template publish permission is required.")} />
-      ) : profileKey && !canRead ? (
-        <ErrorNotice
-          error={new Error("Template read permission is required to publish a revision.")}
-        />
-      ) : profileKey && query.isPending ? (
-        <Loading />
-      ) : profileKey && query.error ? (
-        <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-      ) : (
+      <TemplatePublishGate
+        profileKey={profileKey}
+        canPublish={canPublish}
+        canRead={canRead}
+        profile={query}
+      >
         <TemplateForm
           key={location.key}
           resource={profileKey ? query.data : undefined}
@@ -71,7 +66,7 @@ export function TemplatePublishPage({ scopes }: { scopes: string[] }) {
           onClose={() => navigate(backTo, { replace: true })}
           onAccepted={accepted}
         />
-      )}
+      </TemplatePublishGate>
     </div>
   );
 }
