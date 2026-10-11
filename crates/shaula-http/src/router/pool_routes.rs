@@ -10,9 +10,9 @@ use axum::Json;
 use shaula_core::registry::Scope;
 use shaula_core::template_pool::TemplatePoolSpec;
 
-use crate::problem::{mutation_problem, problem};
+use crate::problem::{problem, registry_response};
 use crate::router::{
-    accepted_response, idempotency_header, if_none_match_star, parse_if_match, require_scope,
+    accepted_response, idempotency_header, parse_if_match, put_preconditions, require_scope,
     resource_version_headers, AppState,
 };
 
@@ -35,32 +35,21 @@ pub(crate) async fn template_pool_put(
         )
         .into_response();
     };
-    let create = if_none_match_star(&headers);
-    let if_match = match parse_if_match(&headers) {
+    let (create, if_match) = match put_preconditions(&headers) {
         Ok(v) => v,
         Err(response) => return response,
     };
-    if !create && if_match.is_none() {
-        return problem(
-            StatusCode::PRECONDITION_REQUIRED,
-            "PreconditionRequired",
-            "If-None-Match: * or If-Match required",
-        )
-        .into_response();
-    }
     let idempotency_key = match idempotency_header(&headers) {
         Ok(v) => v,
         Err(response) => return response,
     };
-    match state
-        .pools
-        .template_pool_put(&actor, &pool_key, spec, create, if_match, idempotency_key)
-        .await
-    {
-        Ok(Ok(accepted)) => accepted_response(&accepted),
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+    registry_response(
+        state
+            .pools
+            .template_pool_put(&actor, &pool_key, spec, create, if_match, idempotency_key)
+            .await,
+        |accepted| accepted_response(&accepted),
+    )
 }
 
 pub(crate) async fn template_pool_get(
@@ -72,8 +61,9 @@ pub(crate) async fn template_pool_get(
     if let Err(response) = require_scope(&actor, Scope::TemplateRead) {
         return response;
     }
-    match state.pools.template_pool_get(&actor, &pool_key).await {
-        Ok(Ok(resource)) => {
+    registry_response(
+        state.pools.template_pool_get(&actor, &pool_key).await,
+        |resource| {
             let version = format!("{}:{}", resource.incarnation, resource.revision);
             let body = serde_json::json!({
                 "key": resource.key,
@@ -97,10 +87,8 @@ pub(crate) async fn template_pool_get(
                 }
             });
             (resource_version_headers(&version), Json(body)).into_response()
-        }
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+        },
+    )
 }
 
 pub(crate) async fn template_pool_delete(
@@ -129,15 +117,13 @@ pub(crate) async fn template_pool_delete(
         Ok(v) => v,
         Err(response) => return response,
     };
-    match state
-        .pools
-        .template_pool_delete(&actor, &pool_key, if_match, idempotency_key)
-        .await
-    {
-        Ok(Ok(accepted)) => accepted_response(&accepted),
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+    registry_response(
+        state
+            .pools
+            .template_pool_delete(&actor, &pool_key, if_match, idempotency_key)
+            .await,
+        |accepted| accepted_response(&accepted),
+    )
 }
 
 /// Pool list: every active (non-tombstoned) pool with its desired

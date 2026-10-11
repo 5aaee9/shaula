@@ -8,7 +8,7 @@ use axum::Json;
 
 use shaula_core::registry::Scope;
 
-use crate::problem::{mutation_problem, problem};
+use crate::problem::{problem, registry_response};
 use crate::router::key_page::{ListQuery, RequestPage};
 use crate::router::{accepted_response, idempotency_header, require_scope, AppState};
 
@@ -82,7 +82,7 @@ pub(crate) async fn template_profile_delete(
         Ok(v) => v,
         Err(response) => return response,
     };
-    match state
+    let result = state
         .profiles
         .template_delete(
             &actor,
@@ -93,12 +93,8 @@ pub(crate) async fn template_profile_delete(
                 Err(response) => return response,
             },
         )
-        .await
-    {
-        Ok(Ok(accepted)) => accepted_response(&accepted),
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+        .await;
+    registry_response(result, |accepted| accepted_response(&accepted))
 }
 
 pub(crate) async fn auth_profile_delete(
@@ -119,15 +115,13 @@ pub(crate) async fn auth_profile_delete(
         Ok(v) => v,
         Err(r) => return r,
     };
-    match state
-        .profiles
-        .auth_delete(&actor, &key, idem, expected)
-        .await
-    {
-        Ok(Ok(value)) => accepted_response(&value),
-        Ok(Err(e)) => mutation_problem(&e).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+    registry_response(
+        state
+            .profiles
+            .auth_delete(&actor, &key, idem, expected)
+            .await,
+        |value| accepted_response(&value),
+    )
 }
 
 pub(crate) async fn template_revision_get(
@@ -139,31 +133,31 @@ pub(crate) async fn template_revision_get(
     if let Err(response) = require_scope(&actor, Scope::TemplateRead) {
         return response;
     }
-    match state
-        .profiles
-        .template_revision_get(&actor, &profile_key, revision)
-        .await
-    {
-        Ok(Ok(view)) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "profileKey": view.profile_key,
-                "revision": view.revision,
-                "artifactDigest": view.artifact_digest,
-                "engineRef": view.engine_ref,
-                "sourceKey": view.source_key,
-                "platform": view.platform,
-                "bindingsContract": view.bindings_contract,
-                "state": view.state,
-                "reason": view.reason,
-                "bindingsPresent": view.bindings_present,
-                "bindings": view.bindings,
-            })),
-        )
-            .into_response(),
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+    registry_response(
+        state
+            .profiles
+            .template_revision_get(&actor, &profile_key, revision)
+            .await,
+        |view| {
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "profileKey": view.profile_key,
+                    "revision": view.revision,
+                    "artifactDigest": view.artifact_digest,
+                    "engineRef": view.engine_ref,
+                    "sourceKey": view.source_key,
+                    "platform": view.platform,
+                    "bindingsContract": view.bindings_contract,
+                    "state": view.state,
+                    "reason": view.reason,
+                    "bindingsPresent": view.bindings_present,
+                    "bindings": view.bindings,
+                })),
+            )
+                .into_response()
+        },
+    )
 }
 
 pub(crate) async fn template_attestation_get(
@@ -175,29 +169,29 @@ pub(crate) async fn template_attestation_get(
     if let Err(response) = require_scope(&actor, Scope::TemplateRead) {
         return response;
     }
-    match state
-        .profiles
-        .attestation_get(&actor, &profile_key, revision, &attestation_key)
-        .await
-    {
-        Ok(Ok(view)) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "profileKey": view.profile_key,
-                "revision": view.revision,
-                "subject": view.subject,
-                "result": view.result,
-                "suite": {"name": view.suite.0, "version": view.suite.1},
-                "completedAt": view.completed_at,
-                "subjectVerified": view.subject_verified,
-                "bindingsPresent": view.bindings_present,
-                "bindings": view.bindings,
-            })),
-        )
-            .into_response(),
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+    registry_response(
+        state
+            .profiles
+            .attestation_get(&actor, &profile_key, revision, &attestation_key)
+            .await,
+        |view| {
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "profileKey": view.profile_key,
+                    "revision": view.revision,
+                    "subject": view.subject,
+                    "result": view.result,
+                    "suite": {"name": view.suite.0, "version": view.suite.1},
+                    "completedAt": view.completed_at,
+                    "subjectVerified": view.subject_verified,
+                    "bindingsPresent": view.bindings_present,
+                    "bindings": view.bindings,
+                })),
+            )
+                .into_response()
+        },
+    )
 }
 
 pub(crate) async fn auth_profile_status(
@@ -209,20 +203,21 @@ pub(crate) async fn auth_profile_status(
     if let Err(response) = require_scope(&actor, Scope::AuthRead) {
         return response;
     }
-    match state.profiles.auth_get(&actor, &profile_key).await {
-        Ok(Ok(view)) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "key": view.key,
-                "status": view.status,
-                "desiredRevision": view.desired_revision,
-                "activeRevision": view.active_revision,
-            })),
-        )
-            .into_response(),
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+    registry_response(
+        state.profiles.auth_get(&actor, &profile_key).await,
+        |view| {
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "key": view.key,
+                    "status": view.status,
+                    "desiredRevision": view.desired_revision,
+                    "activeRevision": view.active_revision,
+                })),
+            )
+                .into_response()
+        },
+    )
 }
 
 pub(crate) async fn auth_revision_get(
@@ -234,12 +229,12 @@ pub(crate) async fn auth_revision_get(
     if let Err(response) = require_scope(&actor, Scope::AuthRead) {
         return response;
     }
-    match state
-        .profiles
-        .auth_revision_get(&actor, &profile_key, revision)
-        .await
-    {
-        Ok(Ok(view)) => {
+    registry_response(
+        state
+            .profiles
+            .auth_revision_get(&actor, &profile_key, revision)
+            .await,
+        |view| {
             // Unsupported historical revisions expose metadata only.
             let mut body = serde_json::json!({
                 "profileKey": view.profile_key,
@@ -255,8 +250,6 @@ pub(crate) async fn auth_revision_get(
                 body["bindings"] = serde_json::json!(view.bindings);
             }
             (StatusCode::OK, Json(body)).into_response()
-        }
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+        },
+    )
 }

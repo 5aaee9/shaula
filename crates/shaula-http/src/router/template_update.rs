@@ -8,7 +8,7 @@ use serde::{Deserialize, Deserializer};
 use shaula_core::registry::{Scope, TemplateProfileUpdate};
 
 use super::{accepted_response, idempotency_header, parse_if_match, require_scope, AppState};
-use crate::problem::{mutation_problem, problem};
+use crate::problem::{problem, registry_response};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -79,7 +79,7 @@ pub(super) async fn update(
         Ok(value) => value,
         Err(response) => return response,
     };
-    match state
+    let result = state
         .profiles
         .template_update(
             &actor,
@@ -94,12 +94,6 @@ pub(super) async fn update(
             Some(if_match),
             idempotency_key,
         )
-        .await
-    {
-        Ok(Ok(accepted)) => accepted_response(&accepted),
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(error) => {
-            problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", error.summary).into_response()
-        }
-    }
+        .await;
+    registry_response(result, |accepted| accepted_response(&accepted))
 }

@@ -70,20 +70,52 @@ impl ClientBuilder {
             }
             _ => return Err(Error::Invalid("credential kind and input differ")),
         };
-        let mut client = Client::build(&self.origin, secret, self.loopback, Vec::new())?;
-        let mut builder = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(self.timeout)
-            .connect_timeout(self.connect_timeout)
-            .user_agent(self.user_agent);
-        for root in self.roots {
-            builder = builder.add_root_certificate(root);
-        }
-        client.http = builder
-            .build()
-            .map_err(|_| Error::Invalid("invalid transport configuration"))?;
-        client.timeout = self.timeout;
-        client.upload_timeout = self.upload_timeout;
-        Ok(client)
+        let http = transport_builder(
+            self.timeout,
+            self.connect_timeout,
+            self.user_agent,
+            self.roots,
+        );
+        Client::assemble(
+            &self.origin,
+            secret,
+            self.loopback,
+            http,
+            Error::Invalid("invalid transport configuration"),
+            self.timeout,
+            self.upload_timeout,
+        )
     }
+}
+
+/// The one reqwest configuration every client uses: redirects disabled,
+/// bounded timeouts, a fixed User-Agent and optional extra TLS roots.
+pub(crate) fn transport_builder(
+    timeout: Duration,
+    connect_timeout: Duration,
+    user_agent: impl Into<String>,
+    roots: Vec<reqwest::Certificate>,
+) -> reqwest::ClientBuilder {
+    let mut builder = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(timeout)
+        .connect_timeout(connect_timeout)
+        .user_agent(user_agent.into());
+    for root in roots {
+        builder = builder.add_root_certificate(root);
+    }
+    builder
+}
+
+/// Credential bytes must be non-empty and free of whitespace/control chars.
+pub(crate) fn validate_credential(credential: &Secret) -> Result<(), Error> {
+    if credential.expose().is_empty()
+        || credential
+            .expose()
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control())
+    {
+        return Err(Error::Invalid("invalid credential input"));
+    }
+    Ok(())
 }

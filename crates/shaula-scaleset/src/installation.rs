@@ -13,8 +13,8 @@ use shaula_core::auth_policy::{AccountKind, TargetSelector};
 use shaula_core::ports::Clock;
 use shaula_core::secret::SecretString;
 
-use crate::auth::{app_jwt, transport_error_pub};
-use crate::client::{classify_response, DEFAULT_REQUEST_TIMEOUT, USER_AGENT};
+use crate::auth::{app_jwt, transport_error};
+use crate::client::{classify_response, github_request, retry_after_ms};
 use crate::error::ScalesetError;
 
 /// The required installation permission for ONE selector, classified by
@@ -66,6 +66,27 @@ pub(crate) struct InstallationResponse {
     pub(crate) permissions: std::collections::BTreeMap<String, String>,
 }
 
+/// Extracts the numeric App id from a `GET /app` body and proves it is a
+/// valid GitHub id equal to the operator-declared App id.
+pub(crate) fn declared_app_id(
+    app_id: &str,
+    body: &serde_json::Value,
+) -> Result<i64, ScalesetError> {
+    let id = body
+        .get("id")
+        .and_then(serde_json::Value::as_i64)
+        .filter(|id| crate::route_identity::valid_id(*id))
+        .ok_or_else(|| ScalesetError::MalformedResponse {
+            summary: "app identity response missing numeric id".into(),
+        })?;
+    if id.to_string() != app_id {
+        return Err(ScalesetError::Configuration {
+            summary: "authenticated app differs from the declared app id".into(),
+        });
+    }
+    Ok(id)
+}
+
 /// Resolves installations for an exact App credential. All API hosts are
 /// derived from the fixed `github.com` configuration; no caller URL is
 /// ever used as an endpoint, and credential-bearing requests never follow
@@ -104,17 +125,7 @@ impl AppInstallationResolver {
                 .map_err(|_| ScalesetError::MalformedResponse {
                     summary: "app identity response invalid".into(),
                 })?;
-        let id = body.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
-        if !crate::route_identity::valid_id(id) {
-            return Err(ScalesetError::MalformedResponse {
-                summary: "app identity response missing numeric id".into(),
-            });
-        }
-        if id.to_string() != app_id {
-            return Err(ScalesetError::Configuration {
-                summary: "authenticated app differs from the declared app id".into(),
-            });
-        }
+        let id = declared_app_id(app_id, &body)?;
         Ok(AppVerification { app_id: id })
     }
 
@@ -152,7 +163,7 @@ impl AppInstallationResolver {
                 retry_after_secs, ..
             })) => {
                 return InstallationLookup::Transient {
-                    retry_after_ms: retry_after_secs.map(|s| s.max(0) * 1000),
+                    retry_after_ms: retry_after_ms(retry_after_secs),
                 }
             }
             // An ORDINARY 403 is a real permission denial: terminal, not
@@ -242,20 +253,17 @@ impl AppInstallationResolver {
     ) -> Result<String, ScalesetError> {
         let now = self.clock.now_unix_ms() / 1000;
         let jwt = app_jwt(app_id, private_key.expose(), now)?;
-        let response = self
-            .http
-            .post(format!(
+        let response = github_request(
+            self.http.post(format!(
                 "{}/app/installations/{installation_id}/access_tokens",
                 self.github_api_base
-            ))
-            .bearer_auth(jwt)
-            .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", USER_AGENT)
-            .json(&serde_json::json!({}))
-            .timeout(DEFAULT_REQUEST_TIMEOUT)
-            .send()
-            .await
-            .map_err(transport_error_pub)?;
+            )),
+            jwt,
+        )
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .map_err(transport_error)?;
         let response = classify_response(response, "installation token request failed")?;
         #[derive(serde::Deserialize)]
         struct InstallationAccessToken {
@@ -290,16 +298,13 @@ impl AppInstallationResolver {
     ) -> Result<Result<reqwest::Response, ScalesetError>, ScalesetError> {
         let now = self.clock.now_unix_ms() / 1000;
         let jwt = app_jwt(app_id, private_key.expose(), now)?;
-        let response = self
-            .http
-            .get(format!("{}{path}", self.github_api_base))
-            .bearer_auth(jwt)
-            .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", USER_AGENT)
-            .timeout(DEFAULT_REQUEST_TIMEOUT)
-            .send()
-            .await
-            .map_err(transport_error_pub)?;
+        let response = github_request(
+            self.http.get(format!("{}{path}", self.github_api_base)),
+            jwt,
+        )
+        .send()
+        .await
+        .map_err(transport_error)?;
         Ok(classify_response(response, "app request failed"))
     }
 }

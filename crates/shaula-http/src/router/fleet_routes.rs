@@ -10,10 +10,10 @@ use axum::Json;
 use shaula_core::registry::Scope;
 
 use crate::dto::FleetSpecDto;
-use crate::problem::{mutation_problem, problem};
+use crate::problem::{problem, registry_response};
 use crate::router::key_page::{ListQuery, RequestPage};
 use crate::router::{
-    accepted_response, idempotency_header, if_none_match_star, parse_if_match, require_scope,
+    accepted_response, idempotency_header, parse_if_match, put_preconditions, require_scope,
     resource_version_headers, AppState,
 };
 
@@ -36,39 +36,28 @@ pub(crate) async fn fleet_put(
         )
         .into_response();
     };
-    let create = if_none_match_star(&headers);
-    let if_match = match parse_if_match(&headers) {
+    let (create, if_match) = match put_preconditions(&headers) {
         Ok(v) => v,
         Err(response) => return response,
     };
-    if !create && if_match.is_none() {
-        return problem(
-            StatusCode::PRECONDITION_REQUIRED,
-            "PreconditionRequired",
-            "If-None-Match: * or If-Match required",
-        )
-        .into_response();
-    }
     let idempotency_key = match idempotency_header(&headers) {
         Ok(v) => v,
         Err(response) => return response,
     };
-    match state
-        .fleets
-        .fleet_put(
-            &actor,
-            &fleet_key,
-            spec_dto.into_domain(),
-            create,
-            if_match,
-            idempotency_key,
-        )
-        .await
-    {
-        Ok(Ok(accepted)) => accepted_response(&accepted),
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+    registry_response(
+        state
+            .fleets
+            .fleet_put(
+                &actor,
+                &fleet_key,
+                spec_dto.into_domain(),
+                create,
+                if_match,
+                idempotency_key,
+            )
+            .await,
+        |accepted| accepted_response(&accepted),
+    )
 }
 
 pub(crate) async fn fleet_get(
@@ -80,8 +69,9 @@ pub(crate) async fn fleet_get(
     if let Err(response) = require_scope(&actor, Scope::FleetRead) {
         return response;
     }
-    match state.fleets.fleet_get(&actor, &fleet_key).await {
-        Ok(Ok(resource)) => {
+    registry_response(
+        state.fleets.fleet_get(&actor, &fleet_key).await,
+        |resource| {
             let version = format!("{}:{}", resource.incarnation, resource.revision);
             let spec_json = serde_json::to_value(&resource.spec).unwrap_or(serde_json::Value::Null);
             let resolved_template = resource.resolved_template.as_ref().map(|t| {
@@ -128,10 +118,8 @@ pub(crate) async fn fleet_get(
                 }
             });
             (resource_version_headers(&version), Json(body)).into_response()
-        }
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+        },
+    )
 }
 
 pub(crate) async fn fleet_status(
@@ -143,8 +131,9 @@ pub(crate) async fn fleet_status(
     if let Err(response) = require_scope(&actor, Scope::FleetRead) {
         return response;
     }
-    match state.fleets.fleet_status_get(&actor, &fleet_key).await {
-        Ok(Ok(status)) => {
+    registry_response(
+        state.fleets.fleet_status_get(&actor, &fleet_key).await,
+        |status| {
             let desired_auth = status.dependencies.auth.as_ref().map(|auth| {
                 let mut auth_json = serde_json::json!({
                     "desired": {"profileKey": auth.desired.0, "revision": auth.desired.1},
@@ -186,10 +175,8 @@ pub(crate) async fn fleet_status(
                 "lastError": status.last_error,
             });
             (StatusCode::OK, Json(body)).into_response()
-        }
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+        },
+    )
 }
 
 pub(crate) async fn fleet_delete(
@@ -218,15 +205,13 @@ pub(crate) async fn fleet_delete(
         Ok(v) => v,
         Err(response) => return response,
     };
-    match state
-        .fleets
-        .fleet_delete(&actor, &fleet_key, if_match, idempotency_key)
-        .await
-    {
-        Ok(Ok(accepted)) => accepted_response(&accepted),
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+    registry_response(
+        state
+            .fleets
+            .fleet_delete(&actor, &fleet_key, if_match, idempotency_key)
+            .await,
+        |accepted| accepted_response(&accepted),
+    )
 }
 
 pub(crate) async fn fleet_change_get(

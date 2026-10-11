@@ -1,6 +1,5 @@
 use super::*;
-use crate::problem::http_error;
-use futures::StreamExt;
+use crate::problem::{http_error, read_bounded, BodyRead};
 use serde::de::DeserializeOwned;
 
 impl Client {
@@ -239,15 +238,11 @@ async fn decode_bounded<T: DeserializeOwned>(
     {
         return Err(Error::Protocol);
     }
-    let mut bytes = Vec::new();
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| Error::Transport)?;
-        if bytes.len() + chunk.len() > limit {
-            return Err(Error::Protocol);
-        }
-        bytes.extend_from_slice(&chunk);
-    }
+    let bytes = match read_bounded(response, limit).await {
+        BodyRead::Complete(bytes) => bytes,
+        BodyRead::Interrupted(_) => return Err(Error::Transport),
+        BodyRead::TooLarge => return Err(Error::Protocol),
+    };
     Ok(Resource {
         data: serde_json::from_slice(&bytes).map_err(|_| Error::Protocol)?,
         version,

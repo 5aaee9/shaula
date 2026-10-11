@@ -10,7 +10,7 @@ use shaula_core::registry::Scope;
 
 use super::{idempotency_header, require_scope, AppState};
 use crate::oidc::Authenticated;
-use crate::problem::{mutation_problem, problem};
+use crate::problem::{problem, registry_response};
 
 fn unavailable() -> Response {
     problem(
@@ -151,23 +151,23 @@ pub(super) async fn generation_finalize(
         Ok(value) => value,
         Err(response) => return response,
     };
-    match state
-        .fleets
-        .generation_finalize(&auth.actor, &id, &body.reason, idempotency)
-        .await
-    {
-        Ok(Ok(accepted)) => (
-            StatusCode::ACCEPTED,
-            [(
-                header::LINK,
-                format!("</api/v1/generations/{id}>; rel=\"related\""),
-            )],
-            Json(accepted),
-        )
-            .into_response(),
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+    registry_response(
+        state
+            .fleets
+            .generation_finalize(&auth.actor, &id, &body.reason, idempotency)
+            .await,
+        |accepted| {
+            (
+                StatusCode::ACCEPTED,
+                [(
+                    header::LINK,
+                    format!("</api/v1/generations/{id}>; rel=\"related\""),
+                )],
+                Json(accepted),
+            )
+                .into_response()
+        },
+    )
 }
 
 pub(super) async fn invocations(

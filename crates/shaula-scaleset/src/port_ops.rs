@@ -76,7 +76,7 @@ impl ScalesetClient {
             .timeout(LONG_POLL_TIMEOUT)
             .send()
             .await
-            .map_err(crate::auth::transport_error_pub)
+            .map_err(crate::auth::transport_error)
             .map_err(|e| e.to_access_failure())?;
         self.observe_response(&response);
         match response.status().as_u16() {
@@ -121,7 +121,7 @@ impl ScalesetClient {
             .timeout(crate::client::DEFAULT_REQUEST_TIMEOUT)
             .send()
             .await
-            .map_err(crate::auth::transport_error_pub)
+            .map_err(crate::auth::transport_error)
             .map_err(|e| e.to_access_failure())?;
         self.observe_response(&response);
         match response.status().as_u16() {
@@ -164,7 +164,7 @@ impl ScalesetClient {
             .timeout(crate::client::DEFAULT_REQUEST_TIMEOUT)
             .send()
             .await
-            .map_err(crate::auth::transport_error_pub)
+            .map_err(crate::auth::transport_error)
             .map_err(|e| e.to_access_failure())?;
         self.observe_response(&response);
         // Queue-token expiry: surface as SessionExpired so the caller

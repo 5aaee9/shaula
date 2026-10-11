@@ -1,6 +1,6 @@
 //! One Template Profile representation for list, detail and status reads.
 use super::{require_scope, AppState};
-use crate::problem::{mutation_problem, problem};
+use crate::problem::registry_response;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -34,11 +34,8 @@ pub(super) async fn status(
     if let Err(response) = require_scope(&auth.actor, Scope::TemplateRead) {
         return response;
     }
-    match state.profiles.template_get(&auth.actor, &key).await {
-        Ok(Ok(view)) => (StatusCode::OK, Json(profile(&view))).into_response(),
-        Ok(Err(error)) => mutation_problem(&error).into_response(),
-        Err(error) => {
-            problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", error.summary).into_response()
-        }
-    }
+    registry_response(
+        state.profiles.template_get(&auth.actor, &key).await,
+        |view| (StatusCode::OK, Json(profile(&view))).into_response(),
+    )
 }

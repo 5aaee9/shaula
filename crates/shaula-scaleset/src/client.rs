@@ -20,6 +20,26 @@ pub const USER_AGENT: &str = r#"{"system":"shaula","version":"0.1.0","subsystem"
 /// longer, explicit timeout at the poll call site.
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// G2: GitHub's Retry-After survives every helper boundary — a
+/// rate-limited probe carries the deadline instead of collapsing into
+/// the default backoff. Saturates so a hostile Retry-After never overflows.
+pub(crate) fn retry_after_ms(retry_after_secs: Option<i64>) -> Option<i64> {
+    retry_after_secs.map(|s| s.max(0).saturating_mul(1000))
+}
+
+/// Attaches the standard GitHub REST headers (bearer credential, JSON
+/// media type, the fixed Shaula User-Agent) and the default timeout.
+pub(crate) fn github_request(
+    request: reqwest::RequestBuilder,
+    token: impl std::fmt::Display,
+) -> reqwest::RequestBuilder {
+    request
+        .bearer_auth(token)
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", USER_AGENT)
+        .timeout(DEFAULT_REQUEST_TIMEOUT)
+}
+
 /// THE production HTTP client for GitHub REST/App traffic: the fixed
 /// Shaula User-Agent (GitHub refuses requests without one), a bounded
 /// timeout and redirects DISABLED so credential-bearing requests can never
@@ -124,22 +144,7 @@ impl ScalesetClient {
     ) -> Result<Self, ScalesetError> {
         let http = production_http_client()?;
         let config = GitHubConfig::production(target);
-        let admin = AdminTokenManager::new(
-            credential,
-            config.github_api_base.clone(),
-            config.config_url(),
-            http.clone(),
-            clock.clone(),
-        );
-        Ok(Self {
-            http,
-            admin,
-            config,
-            clock,
-            proof: tokio::sync::Mutex::new(crate::route_proof::RouteProofState::default()),
-            expected_context: None,
-            proof_epoch: std::sync::atomic::AtomicU64::new(0),
-        })
+        Ok(Self::from_parts(config, credential, clock, http))
     }
 
     /// Test-only construction against local servers. Hidden from docs and
@@ -159,6 +164,15 @@ impl ScalesetClient {
             github_api_base,
             allow_test_endpoints: true,
         };
+        Self::from_parts(config, credential, clock, http)
+    }
+
+    fn from_parts(
+        config: GitHubConfig,
+        credential: Credential,
+        clock: Arc<dyn Clock>,
+        http: reqwest::Client,
+    ) -> Self {
         let admin = AdminTokenManager::new(
             credential,
             config.github_api_base.clone(),
@@ -257,10 +271,7 @@ impl ScalesetClient {
         if let Some(body) = body {
             request = request.json(body);
         }
-        let response = request
-            .send()
-            .await
-            .map_err(crate::auth::transport_error_pub)?;
+        let response = request.send().await.map_err(crate::auth::transport_error)?;
         self.observe_response(&response);
         Ok(response)
     }

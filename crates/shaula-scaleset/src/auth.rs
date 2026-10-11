@@ -280,7 +280,7 @@ impl AdminTokenManager {
     }
 }
 
-fn transport_error(e: reqwest::Error) -> ScalesetError {
+pub(crate) fn transport_error(e: reqwest::Error) -> ScalesetError {
     if e.is_timeout() || e.is_connect() {
         ScalesetError::RequestUncertain {
             summary: format!("transport failure: {e}"),
@@ -290,10 +290,6 @@ fn transport_error(e: reqwest::Error) -> ScalesetError {
             summary: format!("request failed: {e}"),
         }
     }
-}
-
-pub(crate) fn transport_error_pub(e: reqwest::Error) -> ScalesetError {
-    transport_error(e)
 }
 
 fn registration_token_path(config_url: &str) -> Option<String> {

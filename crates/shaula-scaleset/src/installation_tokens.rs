@@ -6,19 +6,12 @@ use shaula_core::auth_context::RepositorySelection;
 use shaula_core::auth_policy::AccountKind;
 use shaula_core::secret::SecretString;
 
-use crate::client::{classify_response, DEFAULT_REQUEST_TIMEOUT, USER_AGENT};
+use crate::client::{classify_response, github_request, retry_after_ms};
 use crate::error::ScalesetError;
 use crate::installation::{
     AppInstallationResolver, InstallationLookup, InstallationProof, InstallationResponse,
     MetadataReachability, RepoIdentity,
 };
-
-/// G2: GitHub's Retry-After survives every helper boundary — a
-/// rate-limited probe carries the deadline instead of collapsing into
-/// the default backoff.
-fn retry_after_ms(retry_after_secs: Option<i64>) -> Option<i64> {
-    retry_after_secs.map(|s| s.max(0).saturating_mul(1000))
-}
 
 impl AppInstallationResolver {
     /// Bounded metadata probe of the installation's accessible
@@ -55,18 +48,15 @@ impl AppInstallationResolver {
                 }
             }
         };
-        let response = self
-            .http
-            .get(format!(
+        let response = github_request(
+            self.http.get(format!(
                 "{}/installation/repositories?per_page=1",
                 self.github_api_base
-            ))
-            .bearer_auth(token)
-            .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", USER_AGENT)
-            .timeout(DEFAULT_REQUEST_TIMEOUT)
-            .send()
-            .await;
+            )),
+            token,
+        )
+        .send()
+        .await;
         let response = match response {
             Ok(response) => response,
             Err(_) => {
@@ -123,18 +113,15 @@ impl AppInstallationResolver {
                 }
             }
         };
-        let response = match self
-            .http
-            .get(format!(
+        let response = match github_request(
+            self.http.get(format!(
                 "{}/repos/{owner}/{repository}",
                 self.github_api_base
-            ))
-            .bearer_auth(token)
-            .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", USER_AGENT)
-            .timeout(DEFAULT_REQUEST_TIMEOUT)
-            .send()
-            .await
+            )),
+            token,
+        )
+        .send()
+        .await
         {
             Ok(response) => response,
             Err(_) => {

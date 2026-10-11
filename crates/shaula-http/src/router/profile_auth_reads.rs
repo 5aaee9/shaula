@@ -7,7 +7,7 @@ use axum::response::{IntoResponse, Response};
 
 use shaula_core::registry::Scope;
 
-use crate::problem::{mutation_problem, problem};
+use crate::problem::{problem, registry_response};
 use crate::router::{require_scope, resource_version_headers, AppState};
 
 pub(crate) async fn auth_profile_list(
@@ -35,15 +35,16 @@ pub(crate) async fn auth_profile_impact(
     if let Err(response) = require_scope(&auth.actor, Scope::AuthRead) {
         return response;
     }
-    match state.profiles.auth_get(&auth.actor, &profile_key).await {
-        Ok(Ok(view)) => axum::Json(serde_json::json!({
-            "desiredRevision": view.desired_revision,
-            "liveFleets": view.live_fleets.iter().map(render_live_fleet).collect::<Vec<_>>(),
-        }))
-        .into_response(),
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+    registry_response(
+        state.profiles.auth_get(&auth.actor, &profile_key).await,
+        |view| {
+            axum::Json(serde_json::json!({
+                "desiredRevision": view.desired_revision,
+                "liveFleets": view.live_fleets.iter().map(render_live_fleet).collect::<Vec<_>>(),
+            }))
+            .into_response()
+        },
+    )
 }
 
 pub(crate) async fn auth_profile_get(
@@ -55,8 +56,9 @@ pub(crate) async fn auth_profile_get(
     if let Err(response) = require_scope(&actor, Scope::AuthRead) {
         return response;
     }
-    match state.profiles.auth_get(&actor, &profile_key).await {
-        Ok(Ok(view)) => {
+    registry_response(
+        state.profiles.auth_get(&actor, &profile_key).await,
+        |view| {
             let body = auth_profile_body(&view);
             (
                 StatusCode::OK,
@@ -67,10 +69,8 @@ pub(crate) async fn auth_profile_get(
                 axum::Json(body),
             )
                 .into_response()
-        }
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+        },
+    )
 }
 
 fn render_binding(

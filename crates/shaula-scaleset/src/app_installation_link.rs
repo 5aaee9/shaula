@@ -34,18 +34,7 @@ fn installation_url_for_app(
     app_id: &str,
     body: &serde_json::Value,
 ) -> Result<String, ScalesetError> {
-    let id = body
-        .get("id")
-        .and_then(serde_json::Value::as_i64)
-        .filter(|id| crate::route_identity::valid_id(*id))
-        .ok_or_else(|| ScalesetError::MalformedResponse {
-            summary: "app identity response missing numeric id".into(),
-        })?;
-    if id.to_string() != app_id {
-        return Err(ScalesetError::Configuration {
-            summary: "authenticated app differs from the declared app id".into(),
-        });
-    }
+    crate::installation::declared_app_id(app_id, body)?;
     let slug = body
         .get("slug")
         .and_then(serde_json::Value::as_str)

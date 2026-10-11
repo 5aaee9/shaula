@@ -9,6 +9,7 @@ mod transport;
 mod typed;
 mod typed_registry;
 mod wait;
+use builder::{transport_builder, validate_credential};
 pub use builder::{ClientBuilder, Credential};
 use reqwest::{Method, Url};
 pub use resources::*;
@@ -127,6 +128,34 @@ impl Client {
         loopback: bool,
         roots: Vec<reqwest::Certificate>,
     ) -> Result<Self, Error> {
+        let timeout = Duration::from_secs(30);
+        let http = transport_builder(
+            timeout,
+            Duration::from_secs(10),
+            concat!("shaula-client/", env!("CARGO_PKG_VERSION")),
+            roots,
+        );
+        Self::assemble(
+            origin,
+            credential,
+            loopback,
+            http,
+            Error::Transport,
+            timeout,
+            Duration::from_secs(300),
+        )
+    }
+    /// Validates origin then credential (in that order) and only then builds
+    /// the single reqwest client, mapping a build failure onto `build_error`.
+    pub(crate) fn assemble(
+        origin: &str,
+        credential: Secret,
+        loopback: bool,
+        http: reqwest::ClientBuilder,
+        build_error: Error,
+        timeout: Duration,
+        upload_timeout: Duration,
+    ) -> Result<Self, Error> {
         let url = Url::parse(origin).map_err(|_| Error::Invalid("invalid server origin"))?;
         let local = url
             .host_str()
@@ -145,29 +174,13 @@ impl Client {
                 "server must be an HTTPS origin without userinfo, path, query or fragment",
             ));
         }
-        if credential.expose().is_empty()
-            || credential
-                .expose()
-                .chars()
-                .any(|c| c.is_whitespace() || c.is_control())
-        {
-            return Err(Error::Invalid("invalid credential input"));
-        }
-        let timeout = Duration::from_secs(30);
-        let mut builder = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(timeout)
-            .connect_timeout(Duration::from_secs(10))
-            .user_agent(concat!("shaula-client/", env!("CARGO_PKG_VERSION")));
-        for root in roots {
-            builder = builder.add_root_certificate(root);
-        }
+        validate_credential(&credential)?;
         Ok(Self {
             origin: url,
-            http: builder.build().map_err(|_| Error::Transport)?,
+            http: http.build().map_err(|_| build_error)?,
             credential,
             timeout,
-            upload_timeout: Duration::from_secs(300),
+            upload_timeout,
         })
     }
     pub fn origin(&self) -> &str {
@@ -179,14 +192,7 @@ impl Client {
     }
     /// Retain the origin, TLS roots, redirect policy and timeouts during rotation.
     pub fn with_credential(&self, credential: Secret) -> Result<Self, Error> {
-        if credential.expose().is_empty()
-            || credential
-                .expose()
-                .chars()
-                .any(|c| c.is_whitespace() || c.is_control())
-        {
-            return Err(Error::Invalid("invalid credential input"));
-        }
+        validate_credential(&credential)?;
         Ok(Self {
             credential,
             ..self.clone()

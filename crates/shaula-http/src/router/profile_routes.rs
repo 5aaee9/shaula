@@ -10,9 +10,9 @@ use shaula_core::error::ReasonCode;
 use shaula_core::registry::{AttestationPut, AuthProfilePut, Scope, TemplateProfilePut};
 
 use crate::dto::{AttestationPutDto, AuthProfilePutDto, TemplateProfilePutDto};
-use crate::problem::{mutation_problem, problem};
+use crate::problem::{problem, registry_response};
 use crate::router::{
-    accepted_response, idempotency_header, if_none_match_star, parse_if_match, require_scope,
+    accepted_response, idempotency_header, if_none_match_star, put_preconditions, require_scope,
     resource_version_headers, AppState,
 };
 
@@ -95,19 +95,10 @@ pub(crate) async fn template_profile_put(
     };
     // R9-02 (spec 0005 §3): conditional-write preconditions are parsed
     // and enforced — a stale ETag can never advance the desired head.
-    let create = if_none_match_star(&headers);
-    let if_match = match parse_if_match(&headers) {
+    let (create, if_match) = match put_preconditions(&headers) {
         Ok(v) => v,
         Err(response) => return response,
     };
-    if !create && if_match.is_none() {
-        return problem(
-            StatusCode::PRECONDITION_REQUIRED,
-            "PreconditionRequired",
-            "If-None-Match: * or If-Match required",
-        )
-        .into_response();
-    }
     let payload = TemplateProfilePut {
         source_key: dto.source_key,
         artifact_digest: dto.artifact_digest,
@@ -115,22 +106,20 @@ pub(crate) async fn template_profile_put(
         bindings: dto.bindings,
         fleet_input_policy: dto.fleet_input_policy,
     };
-    match state
-        .profiles
-        .template_put(
-            &actor,
-            &profile_key,
-            payload,
-            create,
-            if_match,
-            idempotency_key,
-        )
-        .await
-    {
-        Ok(Ok(accepted)) => accepted_response(&accepted),
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+    registry_response(
+        state
+            .profiles
+            .template_put(
+                &actor,
+                &profile_key,
+                payload,
+                create,
+                if_match,
+                idempotency_key,
+            )
+            .await,
+        |accepted| accepted_response(&accepted),
+    )
 }
 
 pub(crate) async fn template_attestation_put(
@@ -170,19 +159,19 @@ pub(crate) async fn template_attestation_put(
         suite: (dto.suite.name, dto.suite.version),
         completed_at: dto.completed_at,
     };
-    match state
-        .profiles
-        .attestation_put(&actor, &profile_key, revision, payload)
-        .await
-    {
-        Ok(Ok(attestation_id)) => (
-            StatusCode::CREATED,
-            Json(serde_json::json!({"attestationId": attestation_id})),
-        )
-            .into_response(),
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+    registry_response(
+        state
+            .profiles
+            .attestation_put(&actor, &profile_key, revision, payload)
+            .await,
+        |attestation_id| {
+            (
+                StatusCode::CREATED,
+                Json(serde_json::json!({"attestationId": attestation_id})),
+            )
+                .into_response()
+        },
+    )
 }
 
 pub(crate) async fn auth_profile_put(
@@ -208,39 +197,28 @@ pub(crate) async fn auth_profile_put(
         Ok(v) => v,
         Err(response) => return response,
     };
-    let create = if_none_match_star(&headers);
-    let if_match = match parse_if_match(&headers) {
+    let (create, if_match) = match put_preconditions(&headers) {
         Ok(v) => v,
         Err(response) => return response,
     };
-    if !create && if_match.is_none() {
-        return problem(
-            StatusCode::PRECONDITION_REQUIRED,
-            "PreconditionRequired",
-            "If-None-Match: * or If-Match required",
-        )
-        .into_response();
-    }
     let payload = match build_auth_payload(dto) {
         Ok(payload) => payload,
         Err(response) => return response,
     };
-    match state
-        .profiles
-        .auth_put(
-            &actor,
-            &profile_key,
-            payload,
-            create,
-            if_match,
-            idempotency_key,
-        )
-        .await
-    {
-        Ok(Ok(accepted)) => accepted_response(&accepted),
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+    registry_response(
+        state
+            .profiles
+            .auth_put(
+                &actor,
+                &profile_key,
+                payload,
+                create,
+                if_match,
+                idempotency_key,
+            )
+            .await,
+        |accepted| accepted_response(&accepted),
+    )
 }
 
 pub(crate) fn build_auth_payload(dto: AuthProfilePutDto) -> Result<AuthProfilePut, Response> {
@@ -336,16 +314,20 @@ pub(crate) async fn template_profile_get(
     if let Err(response) = require_scope(&actor, Scope::TemplateRead) {
         return response;
     }
-    match state.profiles.template_get(&actor, &profile_key).await {
-        Ok(Ok(view)) => (
-            StatusCode::OK,
-            resource_version_headers(&format!("{}:{}", view.incarnation, view.desired_revision)),
-            Json(super::template_reads::profile(&view)),
-        )
-            .into_response(),
-        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+    registry_response(
+        state.profiles.template_get(&actor, &profile_key).await,
+        |view| {
+            (
+                StatusCode::OK,
+                resource_version_headers(&format!(
+                    "{}:{}",
+                    view.incarnation, view.desired_revision
+                )),
+                Json(super::template_reads::profile(&view)),
+            )
+                .into_response()
+        },
+    )
 }
 
 // ─── R10-05: the remaining specified Profile read/retire routes ───

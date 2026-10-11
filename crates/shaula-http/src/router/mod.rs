@@ -10,6 +10,7 @@ mod input_contract;
 mod jobs;
 mod key_page;
 mod pool_routes;
+mod preconditions;
 mod profile_auth_policy;
 pub mod profile_auth_reads;
 pub mod profile_reads;
@@ -33,6 +34,8 @@ use tracing::Instrument;
 
 use crate::oidc::{Authenticated, Oidc};
 use crate::problem::problem;
+
+pub(crate) use preconditions::{if_none_match_star, parse_if_match, put_preconditions};
 
 /// Shared handler state.
 #[derive(Clone)]
@@ -112,39 +115,6 @@ pub(crate) fn idempotency_header(headers: &HeaderMap) -> Result<Option<String>, 
     }
 }
 
-pub(crate) fn parse_if_match(headers: &HeaderMap) -> Result<Option<(String, i64)>, Response> {
-    let Some(raw) = headers.get("if-match").and_then(|v| v.to_str().ok()) else {
-        return Ok(None);
-    };
-    // Strong ETag form: "incarnation:revision"
-    let raw = raw.trim().trim_matches('"');
-    let Some((incarnation, revision)) = raw.rsplit_once(':') else {
-        return Err(problem(
-            StatusCode::BAD_REQUEST,
-            "EtagInvalid",
-            "If-Match ETag malformed",
-        )
-        .into_response());
-    };
-    match revision.parse::<i64>() {
-        Ok(revision) => Ok(Some((incarnation.to_string(), revision))),
-        Err(_) => Err(problem(
-            StatusCode::BAD_REQUEST,
-            "EtagInvalid",
-            "If-Match revision malformed",
-        )
-        .into_response()),
-    }
-}
-
-pub(crate) fn if_none_match_star(headers: &HeaderMap) -> bool {
-    headers
-        .get("if-none-match")
-        .and_then(|v| v.to_str().ok())
-        .map(|v| v.trim() == "*")
-        .unwrap_or(false)
-}
-
 /// Keep the origin's mutation version available when a proxy weakens ETag
 /// during compression. Clients copy this quoted value into If-Match.
 pub(crate) fn resource_version_headers(version: &str) -> [(&'static str, String); 2] {
@@ -156,27 +126,19 @@ pub(crate) fn resource_version_headers(version: &str) -> [(&'static str, String)
 }
 
 pub(crate) fn accepted_response(accepted: &MutationAccepted) -> Response {
-    if accepted.no_op {
-        return (
-            StatusCode::OK,
-            resource_version_headers(&accepted.etag),
-            Json(shaula_api_types::NormalMutation {
-                change_id: accepted.change.id.clone(),
-                state: accepted.change.state.clone(),
-                revision: accepted.change.revision,
-                no_op: true,
-            }),
-        )
-            .into_response();
-    }
+    let status = if accepted.no_op {
+        StatusCode::OK
+    } else {
+        StatusCode::ACCEPTED
+    };
     (
-        StatusCode::ACCEPTED,
+        status,
         resource_version_headers(&accepted.etag),
         Json(shaula_api_types::NormalMutation {
             change_id: accepted.change.id.clone(),
             state: accepted.change.state.clone(),
             revision: accepted.change.revision,
-            no_op: false,
+            no_op: accepted.no_op,
         }),
     )
         .into_response()

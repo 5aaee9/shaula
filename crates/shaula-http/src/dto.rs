@@ -1,7 +1,7 @@
 //! Strict Serde DTOs. Unknown fields are rejected everywhere; secret
 //! fields are write-only and appear in no response type.
 
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer};
 
 use shaula_core::fleet::{
     FleetForgejoSection, FleetGithubSection, FleetProviderKind, TemplatePoolSpec,
@@ -44,121 +44,6 @@ impl FleetSpecDto {
     }
 }
 
-/// Desired Fleet representation served by `GET /fleets/{key}`.
-#[derive(Debug, Clone, Serialize)]
-pub struct FleetResourceDto {
-    pub key: String,
-    pub spec: serde_json::Value,
-    pub metadata: FleetMetadataDto,
-    pub resolved: ResolvedDependenciesDto,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct FleetMetadataDto {
-    pub incarnation: String,
-    pub revision: i64,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ResolvedDependenciesDto {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub template: Option<ResolvedTemplateDto>,
-    pub auth_desired: AuthRefDto,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub template_pool: Vec<shaula_core::template_pool::ResolvedTemplatePoolMember>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ResolvedTemplateDto {
-    pub key: String,
-    pub revision: i64,
-    pub artifact_digest: String,
-    pub attestation_id: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct AuthRefDto {
-    pub profile_key: String,
-    pub revision: i64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct FleetStatusDto {
-    pub fleet_key: String,
-    pub desired_revision: i64,
-    pub observed_revision: i64,
-    pub phase: String,
-    pub dependencies: DependenciesDto,
-    pub conditions: Vec<ConditionDto>,
-    pub capacity: CapacityDto,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct DependenciesDto {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub template_profile: Option<TemplateDependencyDto>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub github_auth: Option<AuthDependencyDto>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct TemplateDependencyDto {
-    pub key: String,
-    pub revision: i64,
-    pub artifact_digest: String,
-    pub attestation_id: String,
-    pub state: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct AuthDependencyDto {
-    pub desired: AuthRefDto,
-    pub observed: Option<AuthRefDto>,
-    pub handoff_state: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ConditionDto {
-    #[serde(rename = "type")]
-    pub condition_type: String,
-    pub status: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct CapacityDto {
-    pub assigned_demand: i64,
-    pub target: i64,
-    pub effective: i64,
-    pub occupancy: i64,
-}
-
-/// Accepted mutation response (`202`).
-#[derive(Debug, Clone, Serialize)]
-pub struct MutationAcceptedDto {
-    pub change_id: String,
-    pub change_state: String,
-    pub revision: i64,
-    pub etag: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ChangeDto {
-    pub id: String,
-    pub resource_kind: String,
-    pub resource_key: String,
-    pub revision: i64,
-    pub kind: String,
-    pub state: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-}
-
 /// Template Profile request body; `platform`/`bindings_contract` are
 /// deliberately absent — strict deserialization rejects them as a second
 /// authority.
@@ -173,21 +58,6 @@ pub struct TemplateProfilePutDto {
     pub bindings: serde_json::Value,
     #[serde(default)]
     pub fleet_input_policy: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct TemplateProfileViewDto {
-    pub key: String,
-    pub incarnation: String,
-    pub desired_revision: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub active_revision: Option<i64>,
-    pub status: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub platform: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bindings_contract: Option<String>,
-    pub bindings_present: bool,
 }
 
 /// Strict provider-specific auth request. Unknown legacy fields are

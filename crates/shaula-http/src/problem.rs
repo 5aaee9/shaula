@@ -4,6 +4,7 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use shaula_core::error::CoreResult;
 use shaula_core::registry::MutationError;
 
 /// Bounded problem detail with a stable `code`.
@@ -26,6 +27,19 @@ pub fn problem(status: StatusCode, code: &str, detail: impl Into<String>) -> Pro
         status: status.as_u16(),
         code: code.to_string(),
         detail: detail.into(),
+    }
+}
+
+/// Renders a registry port outcome: success through `ok`, a mutation
+/// rejection through [`mutation_problem`], a core failure as `500 Internal`.
+pub fn registry_response<T>(
+    result: CoreResult<Result<T, MutationError>>,
+    ok: impl FnOnce(T) -> Response,
+) -> Response {
+    match result {
+        Ok(Ok(value)) => ok(value),
+        Ok(Err(mutation)) => mutation_problem(&mutation).into_response(),
+        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
     }
 }
 

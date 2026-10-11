@@ -92,7 +92,7 @@ async fn probe_runner_access(
         Err(crate::ScalesetError::RateLimited {
             retry_after_secs, ..
         }) => ProbeOutcome::Retry {
-            retry_after_ms: retry_after_secs.map(|s| s.max(0).saturating_mul(1000)),
+            retry_after_ms: crate::client::retry_after_ms(retry_after_secs),
         },
         Err(crate::ScalesetError::Status {
             status: 401 | 403, ..
@@ -135,7 +135,7 @@ impl GitHubValidationPort for GitHubValidation {
             Err(crate::ScalesetError::RateLimited {
                 retry_after_secs, ..
             }) => ProbeOutcome::Retry {
-                retry_after_ms: retry_after_secs.map(|s| s.max(0).saturating_mul(1000)),
+                retry_after_ms: crate::client::retry_after_ms(retry_after_secs),
             },
             Err(
                 crate::ScalesetError::Status {
