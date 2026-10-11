@@ -99,14 +99,7 @@ impl DockerSsh {
         executable: &Path,
         helper: &Path,
     ) -> std::io::Result<Self> {
-        let mut builder = tempfile::Builder::new();
-        builder.prefix("shaula-docker-ssh-");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            builder.permissions(std::fs::Permissions::from_mode(0o700));
-        }
-        let directory = builder.tempdir()?;
+        let directory = crate::workspace::private_tempdir("shaula-docker-ssh-")?;
         let root = directory.path();
         link_helper(helper, &root.join(executable_name("ssh")))?;
         let askpass = root.join(executable_name("shaula-ssh-askpass"));

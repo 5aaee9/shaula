@@ -25,14 +25,19 @@ impl TemplateRuntime {
         Ok(())
     }
 
-    pub(super) fn workspace_digest(&self, workspace: &Path) -> CoreResult<String> {
-        match &self.http_backend {
+    /// Template-material digest of the workspace, computed on the blocking
+    /// pool (it walks and hashes every template file).
+    pub(super) async fn workspace_digest(&self, workspace: &Path) -> CoreResult<String> {
+        let backend = self.http_backend.clone();
+        let workspace = workspace.to_path_buf();
+        crate::engine::off_thread(move || match &backend {
             Some(backend) => {
-                backend.verify(workspace, false)?;
-                crate::workspace::http_template_files_digest(workspace)
+                backend.verify(&workspace, false)?;
+                crate::workspace::http_template_files_digest(&workspace)
             }
-            None => crate::workspace::template_files_digest(workspace),
-        }
+            None => crate::workspace::template_files_digest(&workspace),
+        })
+        .await
     }
 
     pub(super) fn require_fresh_http_workspace(
@@ -86,12 +91,16 @@ impl TemplateRuntime {
         crate::manifest::parse_manifest(&manifest)
             .and_then(|manifest| manifest.validate_new_container_profile())
             .map_err(|_| state_err("input.contract"))?;
-        let expected = crate::artifact_integrity::material_digest(artifact_dir, artifact_digest)
-            .map_err(|_| state_err("create.materialize"))?;
+        let expected =
+            crate::artifact_integrity::material_digest_off_thread(artifact_dir, artifact_digest)
+                .await
+                .map_err(|_| state_err("create.materialize"))?;
         self.require_fresh_http_workspace(workspace)?;
-        materialize_into_workspace(&artifact_dir.to_path_buf(), &workspace.to_path_buf())
+        materialize_into_workspace(artifact_dir, workspace)
             .map_err(|_| state_err("create.materialize"))?;
-        if crate::workspace::template_files_digest(workspace)
+        let materialized = workspace.to_path_buf();
+        if crate::engine::off_thread(move || crate::workspace::template_files_digest(&materialized))
+            .await
             .map_err(|_| state_err("create.materialize"))?
             != expected
         {

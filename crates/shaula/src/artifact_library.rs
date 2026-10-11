@@ -86,10 +86,22 @@ impl DbArtifactPublisher {
     }
 }
 
-fn validate_archive(bytes: &[u8], digest: &str, validate_variables: bool) -> CoreResult<()> {
-    shaula_template::artifact::verify_digest(bytes, digest)?;
+/// Verifies the archive digest, then extracts it into a fresh temporary
+/// directory. Digest and extraction failures pass through `wrap`; failing to
+/// create the directory is always a storage error.
+fn extract_verified(
+    bytes: &[u8],
+    digest: &str,
+    wrap: fn(CoreError) -> CoreError,
+) -> CoreResult<tempfile::TempDir> {
+    shaula_template::artifact::verify_digest(bytes, digest).map_err(wrap)?;
     let temp = tempfile::tempdir().map_err(storage)?;
-    shaula_template::artifact::extract_tar_gz(bytes, temp.path(), MAX_EXPANSION)?;
+    shaula_template::artifact::extract_tar_gz(bytes, temp.path(), MAX_EXPANSION).map_err(wrap)?;
+    Ok(temp)
+}
+
+fn validate_archive(bytes: &[u8], digest: &str, validate_variables: bool) -> CoreResult<()> {
+    let temp = extract_verified(bytes, digest, |error| error)?;
     let manifest = std::fs::read_to_string(temp.path().join("profile.yaml"))
         .map_err(|_| invalid("artifact missing or unreadable profile.yaml"))?;
     let manifest = shaula_template::manifest::parse_manifest(&manifest)?;
@@ -157,10 +169,7 @@ impl ArtifactPublisher for DbArtifactPublisher {
         };
         let digest = digest.to_owned();
         tokio::task::spawn_blocking(move || {
-            shaula_template::artifact::verify_digest(&bytes, &digest).map_err(storage)?;
-            let temp = tempfile::tempdir().map_err(storage)?;
-            shaula_template::artifact::extract_tar_gz(&bytes, temp.path(), MAX_EXPANSION)
-                .map_err(storage)?;
+            let temp = extract_verified(&bytes, &digest, storage)?;
             shaula_template::variables::discover_variables(temp.path(), &digest).map(Some)
         })
         .await

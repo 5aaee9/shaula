@@ -27,7 +27,7 @@ pub(crate) async fn build_credential(
     if row.schema_version != 2 || row.kind != "github_app" {
         return Ok(None);
     }
-    let Some(binding) = resolve_binding(store, profile_key, revision, target).await? else {
+    let Some(binding) = resolve_binding(store, &row, profile_key, revision, target).await? else {
         return Ok(None);
     };
     let Some(bytes) = store.auth_credential_bytes(profile_key, revision).await? else {
@@ -45,13 +45,11 @@ pub(crate) async fn build_credential(
 /// revision cannot turn multiple matching routes into first-match authority.
 async fn resolve_binding(
     store: &Arc<dyn ControlPlaneStore>,
+    row: &shaula_core::registry::AuthRevisionRow,
     profile_key: &str,
     revision: i64,
     target: &shaula_core::github::GitHubTarget,
 ) -> CoreResult<Option<shaula_core::auth_context::AccountBinding>> {
-    let Some(row) = store.auth_revision_get(profile_key, revision).await? else {
-        return Ok(None);
-    };
     let Some(policy) = row.target_policy()? else {
         return Ok(None);
     };

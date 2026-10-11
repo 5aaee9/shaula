@@ -27,9 +27,7 @@ pub(super) async fn run(
         if !watch {
             return Ok(Outcome::data(report.raw));
         }
-        if matches!(output, Some(Output::Table))
-            || (output.is_none() && std::io::stdout().is_terminal())
-        {
+        if table_mode(output) {
             table(&report.data);
         } else {
             event(

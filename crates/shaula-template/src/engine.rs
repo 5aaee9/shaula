@@ -108,9 +108,8 @@ pub(crate) fn build_engine_command(
         // A timed-out OR cancelled engine must not outlive the caller:
         // the drop of the child handle kills the process (R5-05); the
         // process-tree fence covers descendants (R6-04, R7-06, R9-09).
-        .kill_on_drop(true)
-        .env("TF_IN_AUTOMATION", "1")
-        .env("TF_INPUT", "0");
+        .kill_on_drop(true);
+    // TF_IN_AUTOMATION/TF_INPUT lead the allowlist (after env_clear).
     for (key, value) in base_allowlist(extra_env) {
         command.env(key, value);
     }
@@ -160,17 +159,50 @@ fn base_allowlist(extra: &[(String, String)]) -> Vec<(String, String)> {
     allowed
 }
 
-/// SHA-256 of the engine binary; re-verified immediately before spawn.
+/// SHA-256 of the engine binary; re-verified immediately before spawn. The
+/// file is streamed in fixed-size chunks rather than read whole.
 pub(crate) fn hash_binary(executable: &Path) -> CoreResult<String> {
-    let bytes = std::fs::read(executable).map_err(|e| {
+    use std::io::Read;
+    let unreadable = |e: std::io::Error| {
         err(
             ReasonCode::Internal,
             format!("engine binary unreadable: {e}"),
         )
-    })?;
+    };
+    let mut file = std::fs::File::open(executable).map_err(unreadable)?;
     let mut hasher = Sha256::new();
-    hasher.update(&bytes);
+    let mut buffer = vec![0u8; 64 * 1024];
+    loop {
+        let count = match file.read(&mut buffer) {
+            Ok(count) => count,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(unreadable(e)),
+        };
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
     Ok(format!("sha256:{}", hex::encode(hasher.finalize())))
+}
+
+/// [`hash_binary`] on the blocking pool, so a large engine binary never
+/// stalls the (possibly current-thread) async runtime.
+pub(crate) async fn hash_binary_off_thread(executable: &Path) -> CoreResult<String> {
+    let executable = executable.to_path_buf();
+    off_thread(move || hash_binary(&executable)).await
+}
+
+/// Runs blocking filesystem/digest work on the blocking pool; a panicked or
+/// cancelled task surfaces as an Internal error.
+pub(crate) async fn off_thread<T, F>(work: F) -> CoreResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> CoreResult<T> + Send + 'static,
+{
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|_| err(ReasonCode::Internal, "blocking task failed"))?
 }
 
 /// Resolves the engine version string (`terraform version`).

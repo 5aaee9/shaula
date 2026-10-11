@@ -70,6 +70,15 @@ impl Outcome {
         }
     }
 }
+/// Human table rendering: explicit `--output table`, or no `--output` with a
+/// terminal stdout. Everything else is the JSON envelope.
+fn table_mode(output: Option<Output>) -> bool {
+    match output {
+        Some(Output::Table) => true,
+        Some(Output::Json) => false,
+        None => std::io::stdout().is_terminal(),
+    }
+}
 pub fn output(args: &ClientArgs, command: &str, outcome: &Outcome) {
     #[derive(serde::Serialize)]
     struct Envelope<'a> {
@@ -88,9 +97,7 @@ pub fn output(args: &ClientArgs, command: &str, outcome: &Outcome) {
         receipt: &outcome.receipt,
         error: &outcome.error,
     };
-    let json = matches!(args.output, Some(Output::Json))
-        || (args.output.is_none() && !std::io::stdout().is_terminal());
-    if json {
+    if !table_mode(args.output) {
         if let Ok(encoded) = serde_json::to_string(&envelope) {
             println!("{encoded}");
         }
@@ -203,11 +210,7 @@ pub async fn run(args: ClientArgs, command: RemoteCommand) -> i32 {
     let streaming = command_name::streaming(&command);
     let result = dispatch(&args, command).await;
     let out = result.unwrap_or_else(Outcome::error);
-    if streaming
-        && name.ends_with(".explain")
-        && (matches!(args.output, Some(Output::Table))
-            || (args.output.is_none() && std::io::stdout().is_terminal()))
-    {
+    if streaming && name.ends_with(".explain") && table_mode(args.output) {
         if out.code != 0 {
             output(&args, &name, &out);
         }

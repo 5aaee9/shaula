@@ -190,15 +190,7 @@ fn truncated_detail(detail: &str) -> String {
 }
 
 fn private_directory() -> std::io::Result<tempfile::TempDir> {
-    let mut builder = tempfile::Builder::new();
-    builder.prefix("shaula-bootstrap-");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        // Apply permissions in mkdir, before any payload can be created.
-        builder.permissions(std::fs::Permissions::from_mode(0o700));
-    }
-    builder.tempdir()
+    crate::workspace::private_tempdir("shaula-bootstrap-")
 }
 
 fn protected_file(

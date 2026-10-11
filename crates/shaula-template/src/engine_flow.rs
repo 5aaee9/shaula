@@ -9,11 +9,13 @@ use shaula_core::error::{CoreResult, ReasonCode};
 use super::build_engine_command;
 use super::engine_process::EngineSpawn;
 use super::engine_state::parse_raw_state_v4;
-use super::{engine_version, err, hash_binary, run_engine, ProcessOutput, TerraformFlow};
+use super::{
+    engine_version, err, hash_binary_off_thread, run_engine, ProcessOutput, TerraformFlow,
+};
 
 impl TerraformFlow {
     pub async fn open(executable: PathBuf, timeout: Duration) -> CoreResult<Self> {
-        let binary_digest = hash_binary(&executable)?;
+        let binary_digest = hash_binary_off_thread(&executable).await?;
         let version = engine_version(&executable, timeout).await?;
         Ok(Self {
             executable,

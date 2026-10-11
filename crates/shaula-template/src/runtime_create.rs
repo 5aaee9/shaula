@@ -18,10 +18,11 @@ impl TemplateRuntime {
             return Err(state_err("create.authorization"));
         }
         let workspace = &request.workspace_path;
-        let expected_material = crate::artifact_integrity::material_digest(
+        let expected_material = crate::artifact_integrity::material_digest_off_thread(
             &request.artifact_dir,
             &request.pinned_artifact_digest,
         )
+        .await
         .map_err(|_| state_err("create.materialize"))?;
         // A supervisor that ran prepare_create before minting the JIT has
         // already materialized + initialized (its `.terraform` marker
@@ -43,6 +44,7 @@ impl TemplateRuntime {
 
         if self
             .workspace_digest(workspace)
+            .await
             .map_err(|_| state_err("create.materialize"))?
             != expected_material
         {
@@ -91,6 +93,7 @@ impl TemplateRuntime {
         // baseline.
         let workspace_template_digest = self
             .workspace_digest(workspace)
+            .await
             .map_err(|_| state_err("create.plan"))?;
         if workspace_template_digest != expected_material {
             return Err(state_err("create.plan"));
@@ -118,41 +121,17 @@ impl TemplateRuntime {
         // (R6-03) is held only through the SPAWN HANDOVER below —
         // released the moment start_apply_saved_plan returns, never
         // held for the child's lifetime.
-        let _admission_claim = match &request.apply_intent_sink {
-            Some(sink) => Some(
-                sink.persist_apply_starting(&provenance)
-                    .await
-                    .map_err(|_| state_err("create.apply"))?,
-            ),
-            None => None,
-        };
-        crate::operation_capture::bind_effect(&provenance.attempt_id);
+        let admitted = Self::admit_apply(
+            request.apply_intent_sink.as_deref(),
+            &provenance,
+            &apply::CREATE_PHASES,
+        )
+        .await?;
 
         // Immediately before spawn: re-hash plan, engine binary, the
         // protected input AND the workspace template files; any mismatch
         // rejects the apply (spec 0004 sec 5).
-        let plan_now =
-            std::fs::read(workspace.join("tfplan")).map_err(|_| state_err("create.apply"))?;
-        if digest_of(&plan_now) != provenance.saved_plan_digest {
-            return Err(exec_err("create.apply"));
-        }
-        let engine_now = crate::engine::hash_binary(&self.engine_executable)
-            .map_err(|_| exec_err("create.apply"))?;
-        if engine_now != provenance.engine_binary_digest {
-            return Err(exec_err("create.apply"));
-        }
-        let input_now = std::fs::read(workspace.join("shaula.tfvars.json"))
-            .map_err(|_| state_err("create.apply"))?;
-        if digest_of(&input_now) != provenance.protected_input_digest {
-            return Err(exec_err("create.apply"));
-        }
-        if self
-            .workspace_digest(workspace)
-            .map_err(|_| state_err("create.apply"))?
-            != provenance.template_material_digest
-        {
-            return Err(exec_err("create.apply"));
-        }
+        self.verify_pre_spawn(workspace, &admitted).await?;
         // Pre-spawn EMPTY-state sentinel re-check (F07, spec 0004 §5):
         // the prior state was proven empty before planning; it must STILL
         // be empty immediately before the apply spawns. A state that
@@ -165,35 +144,10 @@ impl TemplateRuntime {
             return Err(state_err("create.apply"));
         }
 
-        // SPAWN HANDOVER (R6-03): start_apply_saved_plan returns once
-        // the apply process exists under its own process-tree fence
-        // (R6-04). The admission claim is released EXACTLY here — never
-        // earlier (that would reopen the CAS→spawn race, R5-02) and
-        // never held for the child's lifetime (that would block a
-        // waiting DELETE/PUT for the whole apply). From this point the
-        // running child is owned by its fence and the workspace, not by
-        // the admission gate.
-        self.verify_http_workspace(workspace, true)?;
-        let apply_spawn = flow
-            .start_apply_saved_plan(workspace, &request.environment)
-            .await
-            .map_err(|_| exec_err("create.apply"))?;
-        if let Some(sink) = &request.apply_intent_sink {
-            sink.spawn_handover(&provenance)
-                .await
-                .map_err(|_| exec_err("create.handover"))?;
-        }
-        drop(_admission_claim);
-        let apply_result = apply_spawn
-            .wait()
-            .await
-            .and_then(|output| flow.require_success(output, "apply"));
-        if let Some(sink) = &request.apply_intent_sink {
-            sink.command_ended(&provenance)
-                .await
-                .map_err(|_| exec_err("create.completion"))?;
-        }
-        apply_result.map_err(|_| exec_err("create.apply"))?;
+        // SPAWN HANDOVER (R6-03): the admission claim is released once the
+        // apply process exists under its own process-tree fence (R6-04).
+        self.spawn_apply(&flow, workspace, &request.environment, admitted)
+            .await?;
 
         self.verify_http_workspace(workspace, true)?;
         let outputs = flow
@@ -230,6 +184,7 @@ impl TemplateRuntime {
             crate::operation_capture::flush().await;
             if self
                 .workspace_digest(workspace)
+                .await
                 .map_err(|_| state_err("container.bootstrap"))?
                 != provenance.template_material_digest
                 || digest_of(

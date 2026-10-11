@@ -1,11 +1,11 @@
 //! Workspace materialization from the content-addressed artifact,
 //! split to keep files within 400 lines (AGENTS.md).
 
-use std::path::PathBuf;
+use std::path::Path;
 
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 
-pub(crate) fn copy_recursive(src: &PathBuf, dest: &PathBuf) -> CoreResult<()> {
+pub(crate) fn copy_recursive(src: &Path, dest: &Path) -> CoreResult<()> {
     let meta = std::fs::metadata(src)
         .map_err(|e| CoreError::new(ReasonCode::Internal, format!("artifact unreadable: {e}")))?;
     if meta.is_dir() {

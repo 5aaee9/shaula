@@ -52,6 +52,14 @@ pub async fn run(
         let ControlResponse::Desired(directive) = response else {
             return Err(StateError::Invalid);
         };
+        // A re-delivered directive for material this worker already finished
+        // is idle polling, not a second Create/Destroy.
+        if let Directive::Create(reference) | Directive::Destroy(reference) = &directive {
+            if last_completed == Some(reference.id) {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                continue;
+            }
+        }
         match directive {
             Directive::Wait => {}
             Directive::Quiesce => return Ok(()),
@@ -64,10 +72,6 @@ pub async fn run(
                 return Ok(());
             }
             Directive::Create(reference) => {
-                if last_completed == Some(reference.id) {
-                    tokio::time::sleep(Duration::from_millis(200)).await;
-                    continue;
-                }
                 if created {
                     return Err(StateError::Conflict);
                 }
@@ -85,10 +89,6 @@ pub async fn run(
                 last_completed = Some(reference.id);
             }
             Directive::Destroy(reference) => {
-                if last_completed == Some(reference.id) {
-                    tokio::time::sleep(Duration::from_millis(200)).await;
-                    continue;
-                }
                 if !created {
                     return Err(StateError::Conflict);
                 }

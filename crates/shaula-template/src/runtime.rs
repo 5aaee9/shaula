@@ -49,10 +49,7 @@ use input::write_protected_input;
 
 /// Copies the materialized artifact root into the workspace (the working
 /// copy the engine mutates), leaving the store pristine.
-pub(crate) fn materialize_into_workspace(
-    artifact_dir: &PathBuf,
-    workspace: &PathBuf,
-) -> CoreResult<()> {
+pub(crate) fn materialize_into_workspace(artifact_dir: &Path, workspace: &Path) -> CoreResult<()> {
     crate::workspace_materialize::copy_recursive(artifact_dir, workspace)
 }
 
@@ -140,6 +137,8 @@ impl TemplateRuntimePort for TemplateRuntime {
         self.log_destroy(request).await
     }
 }
+#[path = "runtime_apply.rs"]
+mod apply;
 #[path = "runtime_backend.rs"]
 mod backend;
 
