@@ -69,13 +69,18 @@ test("Why explains actual occupancy and exact counts without executing suggestio
   });
   await page.goto("/fleets/linux-build");
   const panel = page.getByRole("region", { name: "Why", exact: true });
+  await expect(panel.getByRole("heading", { name: "Scale-up", exact: true })).toBeVisible();
+  await expect(panel.getByRole("button", { name: /^Why 1 blocked$/ })).toBeVisible();
   await expect(panel.getByText("Blocked", { exact: true })).toBeVisible();
   await expect(
     panel.getByText("Resource occupancy leaves no create headroom", { exact: true }).first(),
   ).toBeVisible();
   await panel.getByText("Evidence and evaluated stages").click();
   await expect(panel.getByText("9007199254740993", { exact: true })).toBeVisible();
-  await expect(panel.getByText("pool: not_evaluated", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("listitem").filter({ hasText: "Pool" })).toContainText(
+    "not evaluated",
+  );
+  await expect(panel.getByText("capacity.occupancy_limit", { exact: true })).toBeVisible();
   await panel.getByRole("button", { name: "Why" }).click();
   const before = reads;
   await page.waitForTimeout(5500);
@@ -90,7 +95,8 @@ test("stale and future outcome are displayed conservatively", async ({ page }) =
   const panel = page.getByRole("region", { name: "Why", exact: true });
   await expect(panel.getByText("Unknown", { exact: true }).first()).toBeVisible();
   await expect(panel.getByText("Blocked", { exact: true })).toHaveCount(0);
-  await expect(panel.getByText(/observed 2026-09-26T00:00:00.000Z/)).toBeVisible();
+  await expect(panel.locator('time[datetime="2026-09-26T00:00:00.000Z"]')).toBeVisible();
+  await expect(panel.getByText(/stale · partial coverage/)).toBeVisible();
 });
 
 test("cleanup distinguishes never-started, provider and operator completion", async ({ page }) => {

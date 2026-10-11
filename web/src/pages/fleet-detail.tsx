@@ -120,13 +120,6 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
         </div>
       </div>
       {status.error && <ErrorNotice error={status.error} retry={() => void status.refetch()} />}
-      <Diagnostics
-        kind="fleet"
-        resourceKey={fleetKey}
-        incarnation={data.metadata.incarnation}
-        revision={data.metadata.revision}
-        scopes={scopes}
-      />
       <ChangeNotice change={change} />
       {status.data && (
         <>
@@ -153,6 +146,13 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
           )}
         </>
       )}
+      <Diagnostics
+        kind="fleet"
+        resourceKey={fleetKey}
+        incarnation={data.metadata.incarnation}
+        revision={data.metadata.revision}
+        scopes={scopes}
+      />
       <Tabs defaultValue="overview">
         <TabsList className="max-w-full justify-start overflow-x-auto" aria-label="Fleet views">
           <TabsTrigger value="overview">Overview</TabsTrigger>
