@@ -14,6 +14,7 @@ use shaula_core::ports::Clock;
 use shaula_core::secret::SecretString;
 
 use crate::auth::{app_jwt, transport_error};
+use crate::body::BoundedBody;
 use crate::client::{classify_response, github_request, retry_after_ms};
 use crate::error::ScalesetError;
 
@@ -120,7 +121,7 @@ impl AppInstallationResolver {
         };
         let body: serde_json::Value =
             response
-                .json()
+                .bounded_json()
                 .await
                 .map_err(|_| ScalesetError::MalformedResponse {
                     summary: "app identity response invalid".into(),
@@ -182,7 +183,7 @@ impl AppInstallationResolver {
                 }
             }
         };
-        let parsed: InstallationResponse = match response.json().await {
+        let parsed: InstallationResponse = match response.bounded_json().await {
             Ok(parsed) => parsed,
             Err(_) => {
                 return InstallationLookup::Transient {
@@ -271,7 +272,7 @@ impl AppInstallationResolver {
         }
         let parsed: InstallationAccessToken =
             response
-                .json()
+                .bounded_json()
                 .await
                 .map_err(|_| ScalesetError::MalformedResponse {
                     summary: "installation token body invalid".into(),

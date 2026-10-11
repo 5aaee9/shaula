@@ -12,6 +12,7 @@ use shaula_core::secret::SecretString;
 use tokio::sync::Mutex;
 use wire::{ActionsServiceAdminConnection, InstallationAccessToken, RegistrationToken};
 
+use crate::body::BoundedBody;
 use crate::error::ScalesetError;
 use crate::wire;
 #[path = "auth_repository.rs"]
@@ -228,7 +229,7 @@ impl AdminTokenManager {
             });
         }
         response
-            .json::<RegistrationToken>()
+            .bounded_json::<RegistrationToken>()
             .await
             .map_err(|e| ScalesetError::MalformedResponse {
                 summary: format!("registration token body invalid: {e}"),
@@ -266,7 +267,7 @@ impl AdminTokenManager {
             });
         }
         let conn = response
-            .json::<ActionsServiceAdminConnection>()
+            .bounded_json::<ActionsServiceAdminConnection>()
             .await
             .map_err(|e| ScalesetError::MalformedResponse {
                 summary: format!("runner-registration body invalid: {e}"),

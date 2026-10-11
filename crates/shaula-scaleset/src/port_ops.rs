@@ -8,6 +8,7 @@ use shaula_core::ports::{
 use super::{
     definite_or_uncertain, port_jobs::parse_job_messages, ScalesetClient, LONG_POLL_TIMEOUT,
 };
+use crate::body::BoundedBody;
 use crate::client::USER_AGENT;
 use crate::error::{ActionsException, ScalesetError};
 use crate::wire;
@@ -83,7 +84,7 @@ impl ScalesetClient {
             202 => Ok(PollOutcome::NoMessage),
             200 => {
                 let parsed = response
-                    .json::<wire::RunnerScaleSetMessageResponse>()
+                    .bounded_json::<wire::RunnerScaleSetMessageResponse>()
                     .await
                     .map_err(|e| ScalesetError::MalformedResponse {
                         summary: format!("message body invalid: {e}"),
@@ -238,7 +239,7 @@ impl ScalesetClient {
             .await
             .map_err(|e| e.to_access_failure())?;
         let list = response
-            .json::<wire::RunnerReferenceList>()
+            .bounded_json::<wire::RunnerReferenceList>()
             .await
             .map_err(|e| ScalesetError::MalformedResponse {
                 summary: format!("runner list body invalid: {e}"),
@@ -333,13 +334,15 @@ impl ScalesetClient {
         let response = Self::expect_ok(response)
             .await
             .map_err(|e| e.to_access_failure())?;
-        let list = response
-            .json::<wire::RunnerReferenceList>()
-            .await
-            .map_err(|e| ScalesetError::MalformedResponse {
-                summary: format!("runner list body invalid: {e}"),
-            })
-            .map_err(|e| e.to_access_failure())?;
+        let list = crate::body::read_json::<wire::RunnerReferenceList>(
+            response,
+            crate::body::MAX_RUNNER_LIST_BYTES,
+        )
+        .await
+        .map_err(|e| ScalesetError::MalformedResponse {
+            summary: format!("runner list body invalid: {e}"),
+        })
+        .map_err(|e| e.to_access_failure())?;
         validate_runner_list(&list)?;
         Ok(list
             .value

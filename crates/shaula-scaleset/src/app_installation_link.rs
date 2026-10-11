@@ -2,6 +2,7 @@
 
 use shaula_core::secret::SecretString;
 
+use crate::body::BoundedBody;
 use crate::installation::AppInstallationResolver;
 use crate::ScalesetError;
 
@@ -21,7 +22,7 @@ impl AppInstallationResolver {
         let response = self.app_request(app_id, private_key, "/app").await??;
         let body: serde_json::Value =
             response
-                .json()
+                .bounded_json()
                 .await
                 .map_err(|_| ScalesetError::MalformedResponse {
                     summary: "app installation metadata invalid".into(),

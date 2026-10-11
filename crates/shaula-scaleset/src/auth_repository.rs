@@ -72,7 +72,7 @@ impl AdminTokenManager {
                 crate::client::classify_response(response, "repository identity lookup failed")?;
             let body: serde_json::Value =
                 response
-                    .json()
+                    .bounded_json()
                     .await
                     .map_err(|_| ScalesetError::MalformedResponse {
                         summary: "repository identity response invalid".into(),
@@ -121,7 +121,7 @@ impl AdminTokenManager {
             });
         }
         response
-            .json::<InstallationAccessToken>()
+            .bounded_json::<InstallationAccessToken>()
             .await
             .map_err(|e| ScalesetError::MalformedResponse {
                 summary: format!("installation token body invalid: {e}"),

@@ -6,6 +6,7 @@ use shaula_core::auth_context::RepositorySelection;
 use shaula_core::auth_policy::AccountKind;
 use shaula_core::secret::SecretString;
 
+use crate::body::BoundedBody;
 use crate::client::{classify_response, github_request, retry_after_ms};
 use crate::error::ScalesetError;
 use crate::installation::{
@@ -146,7 +147,7 @@ impl AppInstallationResolver {
                 }
             }
         };
-        let body = match response.json::<serde_json::Value>().await {
+        let body = match response.bounded_json::<serde_json::Value>().await {
             Ok(body) => body,
             Err(_) => {
                 return RepoIdentity::Transient {
@@ -202,7 +203,7 @@ impl AppInstallationResolver {
                 }
             }
         };
-        let parsed: InstallationResponse = match response.json().await {
+        let parsed: InstallationResponse = match response.bounded_json().await {
             Ok(parsed) => parsed,
             Err(_) => {
                 return InstallationLookup::Transient {

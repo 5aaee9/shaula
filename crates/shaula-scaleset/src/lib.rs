@@ -7,6 +7,7 @@
 
 mod app_installation_link;
 pub mod auth;
+mod body;
 pub mod client;
 pub mod config;
 pub mod error;

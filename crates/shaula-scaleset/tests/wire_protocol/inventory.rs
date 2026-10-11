@@ -160,3 +160,32 @@ async fn a_complete_empty_inventory_can_prove_no_matching_runner() {
         RunnerLookup::None
     ));
 }
+
+#[tokio::test]
+async fn inventory_bodies_are_bounded_but_sized_for_large_organizations() {
+    let runner = |id: usize, padding: usize| {
+        json!({"id": id, "name": format!("runner-{id}"), "runnerScaleSetId": 9,
+            "padding": "x".repeat(padding)})
+    };
+    // ~8 MiB: beyond the single-object ceiling, within the inventory ceiling.
+    let large: Vec<Value> = (1..=8).map(|id| runner(id, 1024 * 1024)).collect();
+    let client = client_for(json!({"count": large.len(), "value": large})).await;
+    assert_eq!(client.list_runners(9).await.unwrap().len(), 8);
+    assert!(
+        matches!(
+            client.get_runner_by_name(9, "runner-1").await,
+            Err(AccessFailure::Unavailable { .. })
+        ),
+        "a by-name lookup keeps the single-object ceiling"
+    );
+
+    let oversized = runner(1, 33 * 1024 * 1024);
+    let client = client_for(json!({"count": 1, "value": [oversized]})).await;
+    assert!(
+        matches!(
+            client.list_runners(9).await,
+            Err(AccessFailure::Unavailable { .. })
+        ),
+        "an inventory beyond its ceiling fails closed"
+    );
+}

@@ -13,6 +13,7 @@ use shaula_core::ports::PollOutcome;
 use shaula_core::ports::ScaleSetView;
 use shaula_core::ports::SessionHandle;
 
+use crate::body::BoundedBody;
 use crate::client::ScalesetClient;
 use crate::error::ActionsException;
 use crate::error::ScalesetError;
@@ -44,9 +45,9 @@ impl ScalesetClient {
             .and_then(|v| v.to_str().ok())
             .unwrap_or_default()
             .to_string();
-        let body = response.text().await.unwrap_or_default();
+        let body = response.bounded_bytes().await.unwrap_or_default();
         if content_type.contains("application/json") {
-            if let Ok(exception) = serde_json::from_str::<wire::ActionsException>(&body) {
+            if let Ok(exception) = serde_json::from_slice::<wire::ActionsException>(&body) {
                 if !exception.type_name.is_empty() {
                     return ScalesetError::Service {
                         exception: crate::error::classify_exception(&exception.type_name),
@@ -94,12 +95,14 @@ where
     T: serde::de::DeserializeOwned,
 {
     match response {
-        Ok(response) if response.status().is_success() => match response.json::<T>().await {
-            Ok(value) => Ok(EffectOutcome::Definite(value)),
-            Err(e) => Err(ScalesetError::MalformedResponse {
-                summary: format!("body invalid: {e}"),
-            }),
-        },
+        Ok(response) if response.status().is_success() => {
+            match response.bounded_json::<T>().await {
+                Ok(value) => Ok(EffectOutcome::Definite(value)),
+                Err(e) => Err(ScalesetError::MalformedResponse {
+                    summary: format!("body invalid: {e}"),
+                }),
+            }
+        }
         Ok(response) => {
             // Definite service-side rejection.
             Err(ScalesetClient::parse_error(response).await)
@@ -134,7 +137,7 @@ impl GitHubAccessPort for ScalesetClient {
             .await
             .map_err(|e| e.to_access_failure())?;
         let list = response
-            .json::<wire::RunnerGroupList>()
+            .bounded_json::<wire::RunnerGroupList>()
             .await
             .map_err(|e| ScalesetError::MalformedResponse {
                 summary: format!("runner group body invalid: {e}"),
@@ -172,7 +175,7 @@ impl GitHubAccessPort for ScalesetClient {
             .await
             .map_err(|e| e.to_access_failure())?;
         let list = response
-            .json::<wire::RunnerScaleSetList>()
+            .bounded_json::<wire::RunnerScaleSetList>()
             .await
             .map_err(|e| ScalesetError::MalformedResponse {
                 summary: format!("scale set list body invalid: {e}"),

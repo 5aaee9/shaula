@@ -4,6 +4,7 @@ use shaula_core::github::GitHubTarget;
 use shaula_core::ports::{AccessFailure, TargetIdentity};
 
 use super::ScalesetClient;
+use crate::body::BoundedBody;
 use crate::client::classify_response;
 use crate::route_identity::invalid_identity;
 
@@ -50,7 +51,10 @@ impl ScalesetClient {
         self.observe_response(&response);
         let response = classify_response(response, "target identity lookup failed")
             .map_err(|e| e.to_access_failure())?;
-        let body: serde_json::Value = response.json().await.map_err(|_| invalid_identity())?;
+        let body: serde_json::Value = response
+            .bounded_json()
+            .await
+            .map_err(|_| invalid_identity())?;
         let identity = crate::route_identity::parse_target_identity(target, &body)?;
         if target != &self.config.target {
             return Err(AccessFailure::PermissionDenied);
