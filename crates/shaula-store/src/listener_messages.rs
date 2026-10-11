@@ -147,6 +147,31 @@ impl Store {
         Ok(Some(result))
     }
 
+    pub(crate) async fn listener_demand_confirmed(
+        &self,
+        fleet: &str,
+        context: &SessionEffectContext,
+        now: i64,
+    ) -> StoreResult<bool> {
+        let tx = self.begin().await?;
+        if !self
+            .listener_context_current_tx(&tx, fleet, context)
+            .await?
+        {
+            return Ok(false);
+        }
+        let touched = tx
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                "UPDATE fleet_demand SET updated_at=? WHERE fleet_key=? AND updated_at<?",
+                [now.into(), fleet.into(), now.into()],
+            ))
+            .await?
+            .rows_affected();
+        tx.commit().await?;
+        Ok(touched > 0)
+    }
+
     pub(crate) async fn listener_message_tx(
         &self,
         tx: &DatabaseTransaction,

@@ -65,7 +65,28 @@ impl FleetListener {
             )
             .await;
         match result {
-            Ok(PollOutcome::NoMessage) => self.recovered(session.epoch).await?,
+            Ok(PollOutcome::NoMessage) => {
+                // An empty reply on the current epoch proves no statistics
+                // changed since the stored snapshot. Its age is diagnostic
+                // freshness only, so a failed refresh never degrades polling.
+                if let Err(error) = self
+                    .deps
+                    .store
+                    .listener_demand_confirmed(
+                        &self.config.fleet_key,
+                        &context,
+                        self.deps.clock.now_unix_ms(),
+                    )
+                    .await
+                {
+                    tracing::warn!(
+                        fleet = %self.config.fleet_key,
+                        code = error.code.as_str(),
+                        "demand confirmation not recorded"
+                    );
+                }
+                self.recovered(session.epoch).await?
+            }
             Ok(PollOutcome::Message(message)) => {
                 let committed = {
                     let _gate = self.deps.gates.acquire_claim(&self.config.fleet_key).await;

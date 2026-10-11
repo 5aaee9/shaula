@@ -25,6 +25,17 @@ pub(crate) fn passed(ticket: &mut Option<ObservationTicket>, stage: StageId) {
         ticket.observation.question.stage(stage, Evaluation::Passed);
     }
 }
+/// How long demand evidence stays current after it was last confirmed.
+/// GitHub demand is re-confirmed by each empty long poll, which the broker
+/// may hold for up to the 70 s client timeout, so the evidence must outlive
+/// one full poll. Forgejo demand is re-read on every reconcile pass.
+fn demand_evidence_ttl_ms(kind: DemandKind) -> i64 {
+    match kind {
+        DemandKind::GithubTotalAssignedJobs => 90_000,
+        DemandKind::ForgejoWaitingJobs | DemandKind::Unknown => 30_000,
+    }
+}
+
 pub(crate) fn capacity_decision(
     ticket: &mut Option<ObservationTicket>,
     policy: shaula_core::capacity::CapacityPolicy,
@@ -49,7 +60,7 @@ pub(crate) fn capacity_decision(
     }
     if let Some(at) = successful_at {
         q.basis.valid_until = timestamp(
-            at.saturating_add(30_000)
+            at.saturating_add(demand_evidence_ttl_ms(kind))
                 .min(ticket.observation.observed_at.saturating_add(30_000)),
         );
         if at > ticket.observation.observed_at {

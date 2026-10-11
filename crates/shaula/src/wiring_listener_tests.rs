@@ -2,6 +2,8 @@
 
 #[path = "wiring_assigned_zero_tests.rs"]
 mod assigned_zero_tests;
+#[path = "wiring_listener_freshness_tests.rs"]
+mod freshness_tests;
 #[path = "wiring_inventory_tests.rs"]
 mod inventory_tests;
 #[path = "wiring_labels_fence_tests.rs"]

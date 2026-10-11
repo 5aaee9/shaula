@@ -43,6 +43,16 @@ pub trait ListenerMessageStore: Send + Sync {
         now: i64,
     ) -> CoreResult<Option<IngestedMessage>>;
 
+    /// Records that an empty long poll on the current epoch confirmed the
+    /// stored demand. Only its confirmation time advances, never backwards;
+    /// the value is untouched. False means stale authority or no snapshot.
+    async fn listener_demand_confirmed(
+        &self,
+        fleet: &str,
+        context: &SessionEffectContext,
+        now: i64,
+    ) -> CoreResult<bool>;
+
     /// Recover unacknowledged messages and acknowledged, unstarted acquisitions.
     async fn listener_pending(
         &self,

@@ -39,6 +39,18 @@ impl ListenerMessageStore for SqliteControlPlane {
             .map_err(core_err)
     }
 
+    async fn listener_demand_confirmed(
+        &self,
+        fleet: &str,
+        context: &SessionEffectContext,
+        now: i64,
+    ) -> CoreResult<bool> {
+        self.store
+            .listener_demand_confirmed(fleet, context, now)
+            .await
+            .map_err(core_err)
+    }
+
     async fn listener_pending(
         &self,
         fleet: &str,
