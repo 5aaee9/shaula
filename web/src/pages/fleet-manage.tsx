@@ -1,10 +1,34 @@
+import type { ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { ErrorNotice, Loading } from "@/components/status";
 import { FleetForm } from "@/components/fleet-form";
-import { api, resourcePath } from "@/lib/api";
+import { api, resourcePath, type Resource } from "@/lib/api";
 import type { ChangeRef, FleetResource } from "@/lib/types";
+
+/** Shows the form only once permissions allow it and, when editing, the fleet has loaded. */
+function FleetFormGate({
+  editing,
+  canRead,
+  canWrite,
+  query,
+  children,
+}: {
+  editing: boolean;
+  canRead: boolean;
+  canWrite: boolean;
+  query: UseQueryResult<Resource<FleetResource>>;
+  children: ReactNode;
+}) {
+  if (!canWrite) return <ErrorNotice error={new Error("Fleet write permission is required.")} />;
+  if (!editing) return children;
+  if (!canRead)
+    return <ErrorNotice error={new Error("Fleet read permission is required to edit a fleet.")} />;
+  if (query.isPending) return <Loading />;
+  if (query.error) return <ErrorNotice error={query.error} retry={() => void query.refetch()} />;
+  return children;
+}
 
 export function FleetManagePage({ scopes, mode }: { scopes: string[]; mode: "create" | "edit" }) {
   const { key } = useParams<{ key: string }>();
@@ -12,7 +36,6 @@ export function FleetManagePage({ scopes, mode }: { scopes: string[]; mode: "cre
   const location = useLocation();
   const editing = mode === "edit";
   const canRead = scopes.includes("fleet.read");
-  const canWrite = scopes.includes("fleet.write");
   const query = useQuery({
     queryKey: ["fleet", key],
     enabled: editing && !!key && canRead,
@@ -21,10 +44,7 @@ export function FleetManagePage({ scopes, mode }: { scopes: string[]; mode: "cre
   });
   const backTo = editing && key ? `/fleets/${encodeURIComponent(key)}` : "/fleets";
   function accepted(change: ChangeRef) {
-    navigate(editing && key ? `/fleets/${encodeURIComponent(key)}` : "/fleets", {
-      replace: true,
-      state: { change },
-    });
+    navigate(backTo, { replace: true, state: { change } });
   }
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -42,15 +62,12 @@ export function FleetManagePage({ scopes, mode }: { scopes: string[]; mode: "cre
           </p>
         </div>
       </div>
-      {!canWrite ? (
-        <ErrorNotice error={new Error("Fleet write permission is required.")} />
-      ) : editing && !canRead ? (
-        <ErrorNotice error={new Error("Fleet read permission is required to edit a fleet.")} />
-      ) : editing && query.isPending ? (
-        <Loading />
-      ) : editing && query.error ? (
-        <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-      ) : (
+      <FleetFormGate
+        editing={editing}
+        canRead={canRead}
+        canWrite={scopes.includes("fleet.write")}
+        query={query}
+      >
         <FleetForm
           key={location.key}
           resource={editing ? query.data : undefined}
@@ -59,7 +76,7 @@ export function FleetManagePage({ scopes, mode }: { scopes: string[]; mode: "cre
           onClose={() => navigate(backTo, { replace: true })}
           onAccepted={accepted}
         />
-      )}
+      </FleetFormGate>
     </div>
   );
 }
