@@ -1,7 +1,7 @@
 //! Coverage includes desired admission and every still-live execution target.
 use crate::entities::fleet::{fleet_revisions, fleets};
 use crate::store::{Store, StoreResult};
-use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{DatabaseTransaction, DbBackend, EntityTrait, Statement};
 use shaula_core::registry::AuthDependentTarget;
 
 impl Store {
@@ -11,14 +11,22 @@ impl Store {
         key: &str,
     ) -> StoreResult<Vec<AuthDependentTarget>> {
         let mut dependents = Vec::new();
+        // One read for every fleet's latest revision at or below its head;
+        // (fleet_key, revision) is unique, so each fleet maps to one row.
+        let mut latest_revisions: std::collections::HashMap<_, _> = fleet_revisions::Entity::find()
+            .from_raw_sql(Statement::from_string(
+                DbBackend::Sqlite,
+                "SELECT r.* FROM fleet_revisions r JOIN fleets f ON f.key=r.fleet_key
+                 WHERE r.revision=(SELECT MAX(h.revision) FROM fleet_revisions h
+                     WHERE h.fleet_key=f.key AND h.revision<=f.desired_revision)",
+            ))
+            .all(tx)
+            .await?
+            .into_iter()
+            .map(|revision| (revision.fleet_key.clone(), revision))
+            .collect();
         for fleet in fleets::Entity::find().all(tx).await? {
-            let Some(latest) = fleet_revisions::Entity::find()
-                .filter(fleet_revisions::Column::FleetKey.eq(&fleet.key))
-                .filter(fleet_revisions::Column::Revision.lte(fleet.desired_revision))
-                .order_by_desc(fleet_revisions::Column::Revision)
-                .one(tx)
-                .await?
-            else {
+            let Some(latest) = latest_revisions.remove(&fleet.key) else {
                 continue;
             };
             // Forgejo DELETE advances the head without a synthetic spec revision.

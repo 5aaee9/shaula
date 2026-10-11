@@ -3,9 +3,11 @@
 //! tombstone path.
 
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait, QueryFilter,
+    QueryOrder, Statement,
+};
 
-use crate::entities::fleet::{fleet_revisions, fleets};
 use crate::entities::template_pool::{
     template_pool_members, template_pool_revisions, template_pools,
 };
@@ -150,24 +152,22 @@ impl Store {
         tx: &DatabaseTransaction,
         key: &str,
     ) -> StoreResult<bool> {
-        let live = fleets::Entity::find()
-            .filter(fleets::Column::Tombstone.eq(false))
-            .filter(fleets::Column::DeletionMarker.eq(false))
-            .all(tx)
+        // (fleet_key, revision) is unique, so MAX(revision) names exactly
+        // one latest row per fleet.
+        let row = tx
+            .query_one(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                "SELECT EXISTS(SELECT 1 FROM fleets f JOIN fleet_revisions r ON r.fleet_key=f.key
+                    WHERE f.tombstone=0 AND f.deletion_marker=0 AND r.template_pool_ref=?
+                      AND r.revision=(SELECT MAX(h.revision) FROM fleet_revisions h
+                          WHERE h.fleet_key=f.key)) AS referenced",
+                [key.into()],
+            ))
             .await?;
-        for fleet in live {
-            if let Some(latest) = fleet_revisions::Entity::find()
-                .filter(fleet_revisions::Column::FleetKey.eq(&fleet.key))
-                .order_by_desc(fleet_revisions::Column::Revision)
-                .one(tx)
-                .await?
-            {
-                if latest.template_pool_ref.as_deref() == Some(key) {
-                    return Ok(true);
-                }
-            }
-        }
-        Ok(false)
+        Ok(match row {
+            Some(row) => row.try_get::<bool>("", "referenced")?,
+            None => false,
+        })
     }
 
     /// Tombstones a pool. A pool owns no runners, so deletion is a
