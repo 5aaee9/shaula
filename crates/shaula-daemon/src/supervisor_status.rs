@@ -35,6 +35,7 @@ impl FleetSupervisor {
         let Some(guard) = &self.runtime_guard else {
             return Ok(());
         };
+        let decommissioned = matches!(result, Ok(r) if r.decommission_complete && !r.blocked);
         let (phase, reason) = match result {
             Ok(report) if report.blocked => (
                 FleetObservationPhase::Degraded,
@@ -56,12 +57,19 @@ impl FleetSupervisor {
             phase,
             reason,
         };
-        if let Some(listener) = &self.listener {
-            listener.publish_observation(observation, now).await?;
-        } else {
-            self.store
-                .fleet_set_observed(&self.config.fleet_key, &observation, now)
-                .await?;
+        // The session guard does not apply to a deletion-marked fleet (spec
+        // 0002 §8): closing the session is best effort, so a listener failure
+        // (e.g. a transferred repository rejecting the session DELETE) must
+        // not degrade a complete decommission and withhold the tombstone.
+        match &self.listener {
+            Some(listener) if !decommissioned => {
+                listener.publish_observation(observation, now).await?;
+            }
+            _ => {
+                self.store
+                    .fleet_set_observed(&self.config.fleet_key, &observation, now)
+                    .await?;
+            }
         }
         Ok(())
     }

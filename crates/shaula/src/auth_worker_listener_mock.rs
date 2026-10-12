@@ -23,6 +23,7 @@ type InventoryBarrier = (Arc<Notify>, Arc<Notify>);
 pub(crate) struct ListenerMock {
     pub session_creates: AtomicUsize,
     pub session_deletes: AtomicUsize,
+    pub session_delete_unavailable: AtomicBool,
     pub polls: AtomicUsize,
     pub acks: AtomicUsize,
     pub acquisitions: AtomicUsize,
@@ -119,7 +120,10 @@ impl ListenerMock {
             }))
             .route("/actions/_apis/runtime/runnerscalesets/42/sessions/{session}", delete(move || {
                 let state = deletes.clone();
-                async move { state.session_deletes.fetch_add(1, Ordering::SeqCst); StatusCode::NO_CONTENT }
+                async move {
+                    state.session_deletes.fetch_add(1, Ordering::SeqCst);
+                    if state.session_delete_unavailable.load(Ordering::SeqCst) { StatusCode::SERVICE_UNAVAILABLE } else { StatusCode::NO_CONTENT }
+                }
             }))
             .route("/queue/f1", get(move |headers: HeaderMap, Query(query): Query<HashMap<String,String>>| {
                 let state = polls.clone();
