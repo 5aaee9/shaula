@@ -62,6 +62,7 @@ pub(super) async fn setup_with_labels(
             limits: LifecycleLimits {
                 create: Arc::new(tokio::sync::Semaphore::new(1)),
                 destroy: Arc::new(tokio::sync::Semaphore::new(1)),
+                template_create: Default::default(),
             },
             store: store.clone(),
             handoff: store.clone(),

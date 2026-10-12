@@ -25,6 +25,7 @@ pub struct ValidatedBootstrap {
     pub max_pending_changes: usize,
     pub create_concurrency: usize,
     pub destroy_concurrency: usize,
+    pub template_create_concurrency: Option<usize>,
     pub operation_timeout: Duration,
     pub runner_max_lifetime: Duration,
     pub terraform_executable: PathBuf,
@@ -52,6 +53,10 @@ impl std::fmt::Debug for ValidatedBootstrap {
             .field("max_pending_changes", &self.max_pending_changes)
             .field("create_concurrency", &self.create_concurrency)
             .field("destroy_concurrency", &self.destroy_concurrency)
+            .field(
+                "template_create_concurrency",
+                &self.template_create_concurrency,
+            )
             .field("operation_timeout", &self.operation_timeout)
             .field("runner_max_lifetime", &self.runner_max_lifetime)
             .field("terraform_executable", &self.terraform_executable)
@@ -221,6 +226,10 @@ impl ValidatedBootstrap {
         }
         if !(1..=1024).contains(&config.execution.create_concurrency)
             || !(1..=1024).contains(&config.execution.destroy_concurrency)
+            || config
+                .execution
+                .template_create_concurrency
+                .is_some_and(|limit| !(1..=1024).contains(&limit))
         {
             return Err("execution concurrency values must be within 1..=1024".into());
         }
@@ -266,6 +275,7 @@ impl ValidatedBootstrap {
             max_pending_changes: config.limits.max_pending_changes,
             create_concurrency: config.execution.create_concurrency,
             destroy_concurrency: config.execution.destroy_concurrency,
+            template_create_concurrency: config.execution.template_create_concurrency,
             operation_timeout: Duration::from_secs(config.execution.operation_timeout_secs),
             runner_max_lifetime: Duration::from_secs(config.runner.max_lifetime_secs),
             terraform_executable,

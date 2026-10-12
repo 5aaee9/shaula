@@ -39,6 +39,8 @@ pub struct FleetSupervisorDeps {
 pub struct LifecycleLimits {
     pub create: Arc<tokio::sync::Semaphore>,
     pub destroy: Arc<tokio::sync::Semaphore>,
+    /// Per-Template bound held only across the Create apply itself.
+    pub template_create: crate::template_create_gate::TemplateCreateGates,
 }
 
 /// Static per-fleet configuration frozen at supervisor construction.

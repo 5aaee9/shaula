@@ -114,6 +114,7 @@ impl Fixture {
                 }),
                 create_limit: Arc::new(tokio::sync::Semaphore::new(1)),
                 destroy_limit: Arc::new(tokio::sync::Semaphore::new(1)),
+                template_create: Default::default(),
                 work_root: self.directory.path().join("work"),
                 artifact_root: self.directory.path().join("artifacts"),
                 operation_timeout: std::time::Duration::from_secs(5),

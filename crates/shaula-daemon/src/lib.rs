@@ -13,6 +13,7 @@ mod runner_operation;
 pub mod service;
 pub mod service_auth_format;
 pub mod supervisor;
+pub mod template_create_gate;
 
 pub mod access_tokens;
 

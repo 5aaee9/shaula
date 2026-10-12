@@ -27,18 +27,10 @@ impl FleetSupervisor {
     /// fleet deletion marker before any external effect (0002 section 8).
     #[tracing::instrument(name = "shaula.iac.generation_create", skip_all, fields(fleet_key = %self.config.fleet_key))]
     pub(crate) async fn create_one_generation(&self, now: i64) -> CoreResult<bool> {
-        use shaula_core::diagnostics::{Code, Guard, Lane, Observer, QuestionId};
-        let observer = self.runtime_guard.as_ref().and_then(|guard| {
-            Observer::register(
-                self.handoff.diagnostic_sink(),
-                Guard::fleet(&self.config.fleet_key, guard),
-                Lane::Operation,
-                QuestionId::ScaleUp,
-            )
-        });
+        use shaula_core::diagnostics::{Code, Lane, QuestionId};
         let _permit = crate::diagnostic_capture::acquire(
             &self.limits.create,
-            observer,
+            self.scale_up_observer(),
             Code::ExecutionCreateSlotWait,
             now,
         )
@@ -100,6 +92,23 @@ impl FleetSupervisor {
                 &record,
             )
             .await?;
+        let template_gate = self
+            .limits
+            .template_create
+            .gate(&record.template_profile_key);
+        let _template_permit = match &template_gate {
+            Some(gate) => Some(
+                crate::diagnostic_capture::acquire(
+                    gate,
+                    self.scale_up_observer(),
+                    Code::ExecutionCreateSlotWait,
+                    self.clock.as_ref().map_or(now, |clock| clock.now_unix_ms()),
+                )
+                .await
+                .map_err(|_| CoreError::internal("create scheduler stopped"))?,
+            ),
+            None => None,
+        };
         let mut diagnostic = crate::diagnostic_capture::generation_capture(
             self.handoff.as_ref(),
             self.runtime_guard.as_ref(),
@@ -116,6 +125,17 @@ impl FleetSupervisor {
             &mut diagnostic,
         )
         .await
+    }
+
+    fn scale_up_observer(&self) -> Option<shaula_core::diagnostics::Observer> {
+        use shaula_core::diagnostics::{Guard, Lane, Observer, QuestionId};
+        let guard = self.runtime_guard.as_ref()?;
+        Observer::register(
+            self.handoff.diagnostic_sink(),
+            Guard::fleet(&self.config.fleet_key, guard),
+            Lane::Operation,
+            QuestionId::ScaleUp,
+        )
     }
 }
 #[path = "supervisor_create_result.rs"]

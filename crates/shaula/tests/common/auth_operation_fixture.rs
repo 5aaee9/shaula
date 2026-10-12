@@ -4,7 +4,7 @@ use super::common::*;
 use shaula_core::{plan::PlanIntent, ports::*, template::ShaulaResultEnvelope};
 use shaula_daemon::supervisor::*;
 use std::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     Arc,
 };
 use tower::ServiceExt;
@@ -18,6 +18,10 @@ pub struct Runtime {
     pub destroy_uncertain_once: AtomicBool,
     pub creates: AtomicUsize,
     pub destroys: AtomicUsize,
+    /// How long each Create apply runs, so overlapping applies are observable.
+    pub create_delay_ms: AtomicU64,
+    pub creates_in_flight: AtomicUsize,
+    pub peak_creates_in_flight: AtomicUsize,
 }
 
 #[async_trait::async_trait]
@@ -48,6 +52,12 @@ impl TemplateRuntimePort for Runtime {
             .await
             .unwrap();
         drop(claim);
+        let in_flight = self.creates_in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+        self.peak_creates_in_flight
+            .fetch_max(in_flight, Ordering::SeqCst);
+        let delay = self.create_delay_ms.load(Ordering::SeqCst);
+        tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+        self.creates_in_flight.fetch_sub(1, Ordering::SeqCst);
         if self.create_uncertain.load(Ordering::SeqCst) {
             return Err(TemplateOutcomeError::ExecutionFailed {
                 phase: "create.apply".into(),
@@ -201,12 +211,23 @@ impl Harness {
     }
 
     pub fn supervisor(&self, revision: i64) -> FleetSupervisor {
+        let limits = LifecycleLimits {
+            create: Arc::new(tokio::sync::Semaphore::new(1)),
+            destroy: Arc::new(tokio::sync::Semaphore::new(1)),
+            template_create: Default::default(),
+        };
+        self.supervisor_with(revision, limits, 1)
+    }
+
+    pub fn supervisor_with(
+        &self,
+        revision: i64,
+        limits: LifecycleLimits,
+        max_runners: i64,
+    ) -> FleetSupervisor {
         let supervisor = FleetSupervisor::new(
             FleetSupervisorDeps {
-                limits: LifecycleLimits {
-                    create: Arc::new(tokio::sync::Semaphore::new(1)),
-                    destroy: Arc::new(tokio::sync::Semaphore::new(1)),
-                },
+                limits,
                 store: self.store.clone(),
                 handoff: self.store.clone(),
                 github: self.github.clone(),
@@ -216,7 +237,7 @@ impl Harness {
                 fleet_key: "f1".into(),
                 capacity: shaula_core::capacity::CapacityPolicy {
                     min_runners: 0,
-                    max_runners: 1,
+                    max_runners,
                 },
                 work_root: self.root.join("work"),
                 artifact_root: self.root.clone(),

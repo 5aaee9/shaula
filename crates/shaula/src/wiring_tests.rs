@@ -50,6 +50,7 @@ pub(crate) async fn wiring_with(
     let limits = shaula_daemon::supervisor::LifecycleLimits {
         create: Arc::new(tokio::sync::Semaphore::new(1)),
         destroy: Arc::new(tokio::sync::Semaphore::new(1)),
+        template_create: Default::default(),
     };
     SupervisorWiring::new(
         control_plane.clone(),

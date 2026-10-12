@@ -105,6 +105,9 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
             destroy: std::sync::Arc::new(tokio::sync::Semaphore::new(
                 bootstrap.destroy_concurrency,
             )),
+            template_create: shaula_daemon::template_create_gate::TemplateCreateGates::new(
+                bootstrap.template_create_concurrency,
+            ),
         },
     )
     .with_runner_max_lifetime(bootstrap.runner_max_lifetime)

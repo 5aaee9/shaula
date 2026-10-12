@@ -13,18 +13,10 @@ mod stages;
 
 impl ForgejoPoolSupervisor {
     pub(super) async fn create_one_generation(&self, now: i64) -> CoreResult<bool> {
-        use shaula_core::diagnostics::{Code, Guard, Lane, Observer, QuestionId};
-        let observer = Some(&self.guard).and_then(|guard| {
-            Observer::register(
-                self.store.diagnostic_sink(),
-                Guard::fleet(&self.fleet_key, guard),
-                Lane::Operation,
-                QuestionId::ScaleUp,
-            )
-        });
+        use shaula_core::diagnostics::{Code, Lane, QuestionId};
         let _permit = crate::diagnostic_capture::acquire(
             &self.create_limit,
-            observer,
+            self.scale_up_observer(),
             Code::ExecutionCreateSlotWait,
             now,
         )
@@ -67,6 +59,20 @@ impl ForgejoPoolSupervisor {
             Ok(built) => built,
             Err(error) => return cleanup_error(self, &generation_id, now, error).await,
         };
+        let template_gate = self.template_create.gate(&record.template_profile_key);
+        let _template_permit = match &template_gate {
+            Some(gate) => Some(
+                crate::diagnostic_capture::acquire(
+                    gate,
+                    self.scale_up_observer(),
+                    Code::ExecutionCreateSlotWait,
+                    self.clock.now_unix_ms(),
+                )
+                .await
+                .map_err(|_| CoreError::internal("create scheduler stopped"))?,
+            ),
+            None => None,
+        };
         let mut diagnostic = crate::diagnostic_capture::generation_capture(
             self.store.as_ref(),
             Some(&self.guard),
@@ -82,6 +88,16 @@ impl ForgejoPoolSupervisor {
             &mut diagnostic,
         )
         .await
+    }
+
+    fn scale_up_observer(&self) -> Option<shaula_core::diagnostics::Observer> {
+        use shaula_core::diagnostics::{Guard, Lane, Observer, QuestionId};
+        Observer::register(
+            self.store.diagnostic_sink(),
+            Guard::fleet(&self.fleet_key, &self.guard),
+            Lane::Operation,
+            QuestionId::ScaleUp,
+        )
     }
 
     async fn prepare_generation(

@@ -87,6 +87,7 @@ impl SupervisorWiring {
                     }),
                     create_limit: self.limits.create.clone(),
                     destroy_limit: self.limits.destroy.clone(),
+                    template_create: self.limits.template_create.clone(),
                     work_root: self.work_root.clone(),
                     artifact_root: self.artifact_root.clone(),
                     operation_timeout: self.operation_timeout,

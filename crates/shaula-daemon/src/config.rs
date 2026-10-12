@@ -154,6 +154,10 @@ pub struct ExecutionConfig {
     pub create_concurrency: usize,
     #[serde(default = "default_destroy_concurrency")]
     pub destroy_concurrency: usize,
+    /// Optional bound on concurrent Create applies per Template Profile,
+    /// for platforms that lock a shared clone source. Unset: unbounded.
+    #[serde(default)]
+    pub template_create_concurrency: Option<usize>,
     #[serde(default = "default_operation_timeout_secs")]
     pub operation_timeout_secs: u64,
     pub engines: EnginesConfig,
@@ -179,6 +183,7 @@ impl Default for ExecutionConfig {
         Self {
             create_concurrency: default_create_concurrency(),
             destroy_concurrency: default_destroy_concurrency(),
+            template_create_concurrency: None,
             operation_timeout_secs: default_operation_timeout_secs(),
             engines: EnginesConfig {
                 terraform: EngineConfig {

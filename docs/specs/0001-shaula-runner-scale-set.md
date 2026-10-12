@@ -223,6 +223,8 @@ execution:
   executor: exec
   create_concurrency: 8
   destroy_concurrency: 8
+  # 可选：同一 Template Profile 并发 Create apply 上限（未设置则不限）
+  # template_create_concurrency: 1
   operation_timeout: 30m
   engines:
     terraform:
@@ -409,6 +411,8 @@ createCount[fleet] = min(
 串行等待 N 次 JIT+init+plan+apply 链路。已启动的 Create 全部结束后才传播首个
 错误——不得取消已越过效果边界（JIT 已 mint / apply 已跑）的兄弟；下一 tick
 从账本 level-triggered 地重算容量，不盲目重发。
+
+可选的 `template_create_concurrency` 另按 Template Profile 限制并发 Create apply（跨 Fleet 共享，仅在 JIT 之后、apply 期间持有）。克隆时锁定共享源的平台（Proxmox 克隆会锁模板 VM 配置，并发克隆会超时失败而非排队）应设为 1：失败且留下部分 state 的 Create 按设计进入 quarantine，因此必须在 apply 前避免争用。
 
 scale-down 优先选择 observed Idle；由于 Completed 可能丢失，stale Busy observation 不能永久阻塞候选检查，但普通清退中 GitHub removal 的 `JobStillRunning` 仍是 Destroy 前的 authoritative safety gate；§5.3 硬超时例外。Retirement 一旦开始即单调前进；需求回升会在 occupancy 允许时新建 Generation，而不 Update 或恢复旧 Generation。
 
