@@ -1,0 +1,89 @@
+{
+  "kind": "shaula-gitlab-lifecycle/v1",
+  "suite": "demand",
+  "covers": "G3",
+  "platform": "docker",
+  "serverImage": "gitlab/gitlab-ce:19.4.2-ce.0",
+  "checks": {
+    "pollFailure": {
+      "lastError": {
+        "shaula-gitlab-533bd679-poll": "AccessVerificationFailed",
+        "shaula-gitlab-533bd679-hold": "AccessVerificationFailed"
+      },
+      "heldPasses": 20,
+      "fleetCodes": [
+        "control.demand_unavailable",
+        "observation.missing"
+      ],
+      "snapshotKept": true,
+      "idleRetainedWhileStale": true,
+      "retiredOnceProven": true,
+      "anchorsReplaced": "revision change only"
+    },
+    "anchorDeleted": {
+      "lastError": {
+        "shaula-gitlab-533bd679-deleted": "OwnershipProofFailed",
+        "shaula-gitlab-533bd679-hold": "OwnershipProofFailed"
+      },
+      "heldPasses": 20,
+      "fleetCodes": [
+        "control.demand_unavailable",
+        "observation.missing"
+      ],
+      "snapshotKept": true,
+      "idleRetainedWhileStale": true,
+      "retiredOnceProven": true,
+      "anchorsReplaced": "both Fleets"
+    },
+    "anchorUnpaused": {
+      "lastError": {
+        "shaula-gitlab-533bd679-unpaused": "OwnershipProofFailed",
+        "shaula-gitlab-533bd679-hold": "OwnershipProofFailed"
+      },
+      "heldPasses": 20,
+      "fleetCodes": [
+        "control.demand_unavailable",
+        "observation.missing"
+      ],
+      "snapshotKept": true,
+      "idleRetainedWhileStale": true,
+      "retiredOnceProven": true,
+      "anchorsReplaced": "both Fleets"
+    },
+    "permissionRevoked": {
+      "lastError": {
+        "shaula-gitlab-533bd679-permission": "OwnershipProofFailed",
+        "shaula-gitlab-533bd679-hold": "OwnershipProofFailed"
+      },
+      "heldPasses": 20,
+      "fleetCodes": [
+        "control.demand_unavailable",
+        "observation.missing"
+      ],
+      "snapshotKept": true,
+      "idleRetainedWhileStale": true,
+      "retiredOnceProven": true,
+      "anchorsReplaced": "revision change only"
+    }
+  },
+  "passed": true,
+  "runtimeTuple": {
+    "sourceCommit": "41f284c5f02c7662ba5cc80c69d2f2d45d3c6e57",
+    "binaryDigest": "sha256:7bbd0660a92598ff71d01e1539d486b0be6fe26e35602045f182c8f0eeec0e7f",
+    "kernel": "6.17.0-1022-azure",
+    "terraformVersion": "1.9.8",
+    "providerLockDigest": "sha256:541a79ea1f8f922d68c5e0b00dbaaf8d78c3a43bd172d32a8a209ce12c7c951a"
+  },
+  "engineVersion": "28.0.4",
+  "artifactDigest": "sha256:572af279272ca63a884b59e36c2f3445c5fa440465156fcba4303ae25972c2d2",
+  "runnerImage": "gitlab/gitlab-runner:v19.4.1@sha256:77d03a5c881ff8f97381de4f96a66c080733eeab9c9cf502bd19916a18969113",
+  "gitlabVersion": "19.4.2",
+  "proxyRequests": {
+    "other": 619,
+    "inventory": 94,
+    "register": 29,
+    "graphql": 55,
+    "delete": 13,
+    "pause": 4
+  }
+}

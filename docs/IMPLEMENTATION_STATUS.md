@@ -50,8 +50,7 @@ first slice: group/project scope, Docker, Kubernetes and VM templates, `shell` e
     `gitlab` section; Web Jobs list/detail render them. A local adapter E2E run
     (`live_gitlab.rs`, GitLab CE 19.4.2 under Podman) read `job.runner` as the
     Generation registration while running and `null` with `success` after its
-    deletion. G7 lifecycle evidence (`report.checks.jobs`) is pending the GitHub
-    Actions run.
+    deletion. G7 lifecycle evidence: see below.
   - VM templates (Proxmox, AWS, TencentCloud, AliCloud) `runner_backend: gitlab`
     under `gitlab_vm_bootstrap_contract: shaula.gitlab-vm-cloud-init/v1`, admitted by
     `validate_gitlab_generation_target` (separate from the container check). The
@@ -68,13 +67,15 @@ first slice: group/project scope, Docker, Kubernetes and VM templates, `shell` e
   - [Lifecycle E2E](evidence/gitlab-lifecycle-e2e-2026-10-13/README.md):
     - G1 closed loop through actual `shaula serve` + Terraform;
     - G2 partial: an incompatible job stays pending;
-    - G7 partial: `job.runner` is the owned registration (the Jobs view check
-      in `jobs.mjs` awaits its first Actions run);
+    - G7 partial: `job.runner` is the owned registration;
     - G8: leak scan.
   - [Adapter E2E](evidence/gitlab-adapter-e2e-2026-10-13/README.md).
   - G9: Forgejo E2E (all 8 jobs) and Nix/Playwright passed on the same commits.
-  - Kubernetes: the lifecycle harness runs on Kind (`lifecycle` matrix entry
-    `kubernetes` in `gitlab-e2e.yml`); evidence pending its first Actions run.
+  - [G1–G8 acceptance, 2026-10-14](evidence/gitlab-acceptance-2026-10-14/README.md)
+    (run 38453877721, commit `41f284c`): baseline on Docker **and Kubernetes
+    (Kind)**, G7 Jobs view (association kept after registration deletion), and
+    the G3–G6 suites below all passed. Forgejo E2E and Nix/Playwright passed on
+    the merged code (G9).
 - **[VM evidence](evidence/gitlab-vm-bootstrap-2026-10-14/README.md) (local, no cloud):** `scripts/template-backends/vm.mjs` renders the
   real user-data of all four VM templates with Terraform 1.9.8, then runs each
   GitLab bootstrap with relocated guest paths. The real official binary passes the
@@ -84,7 +85,7 @@ first slice: group/project scope, Docker, Kubernetes and VM templates, `shell` e
   checksum, missing config/name, Proxmox seed protection) never reach GitLab, and a
   replay is refused by the marker. Not proven: real cloud-init/systemd/`runuser`,
   a job executed on a VM, or VM/ISO cleanup against a real GitLab.
-- **Real-instance harness implemented, evidence pending CI** (`scripts/gitlab-lifecycle/suite.mjs`,
+- **Real-instance suites, passing** (`scripts/gitlab-lifecycle/suite.mjs`,
   job `lifecycle-suites` in `.github/workflows/gitlab-e2e.yml`; transport faults through a
   GitLab API fault proxy on the Docker bridge, never a simulated runtime):
   - G3 `demand`: failed demand poll, deleted anchor, unpaused anchor, revoked
@@ -100,11 +101,15 @@ first slice: group/project scope, Docker, Kubernetes and VM templates, `shell` e
     anchor ExactlyOne adopted, anchor Multiple deleted and rebuilt.
   - Fixed while writing them: an unpaused anchor is replaced as drift (§3.1)
     instead of being re-paused; registration ExactlyOne also matches tags and
-    `run_untagged` (§6).
+    `run_untagged` (§6); a hidden `maintenance_note` (a token that lost update
+    permission reads `null`) is unobservable, not foreign: readiness waits
+    instead of quarantining, and anchors are left alone (§3).
 - **Open:**
-  - G3 in CE: listing group runners already needs Owner, so a demoted token is
-    first seen by the inventory read; GraphQL `updateRunner=false` with a
-    readable inventory needs an EE custom role and stays unexercised.
+  - G3 in CE: a demoted (Maintainer) token still lists and reads runners but
+    sees `maintenance_note: null` and gets 403 on `PUT`, so ownership proof
+    fails first. The GraphQL `updateRunner=false` path, with notes still
+    visible, needs an EE custom role and stays unexercised.
+  - VM templates: no real cloud VM run yet.
 
 ## Contract fixes and application policy ownership (2026-10-05)
 

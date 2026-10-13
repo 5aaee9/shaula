@@ -41,6 +41,7 @@ adapter 只依赖以下 GitLab 面；超时、无重定向、大小上限、失�
 
 - 需求查询 MUST 在同一 GraphQL 请求中证明 Anchor 存在、`userPermissions.updateRunner=true`、`paused=true` 且 tags / `run_untagged` 与 Fleet 当前 revision 一致。任一不满足时本轮需求为**不可证明**：保留上一份快照并记录 staleness，MUST NOT 解释为零需求。仅凭 runner 可见不足以证明（instance runner 对非管理员可见）。
 - 未知 `status` / `job_execution_status` 值 MUST 按不可证明处理。
+- 失去 runner 更新权限的令牌仍能列出与读取注册，但 GitLab 返回 `maintenance_note: null`（19.4.2 观测：group 令牌 bot 降为 Maintainer）。隐藏的 note 既不证明所有权也不证明非本 Fleet：readiness 与清退 MUST 等待重试，MUST NOT 据此 Quarantine 或删除；Anchor 记录保持不变，需求保持 stale。
 - 需求与库存是覆盖式快照；`count` 超过 Fleet 上限时只按上限使用，不分页拉取 job 明细作为容量依据。
 - 每轮最多一次需求查询与一次库存分页遍历；interval、backoff、分页上限归 D7。
 
