@@ -141,11 +141,13 @@ impl GitlabPoolSupervisor {
                 Ok(demand) => match demand.proven_for(&self.matching) {
                     Some(pending) => Ok(pending),
                     None => {
-                        // Self-heal drift; the next tick re-proves from scratch.
-                        if demand.anchor_present && demand.anchor_matching != self.matching {
+                        // Drift is replaced, never repaired in place: an
+                        // unpaused anchor counts as drift too (spec 0043
+                        // §3.1). The next tick converges to a new anchor.
+                        if demand.anchor_present
+                            && (demand.anchor_matching != self.matching || !demand.anchor_paused)
+                        {
                             let _ = self.gitlab.delete_runner(id).await;
-                        } else if demand.anchor_present && !demand.anchor_paused {
-                            let _ = self.gitlab.pause_runner(id).await;
                         }
                         Err(if demand.anchor_present && !demand.anchor_manageable {
                             ReasonCode::PermissionDenied

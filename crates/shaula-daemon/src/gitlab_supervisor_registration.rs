@@ -135,7 +135,15 @@ impl GitlabPoolSupervisor {
                     .collect();
                 match named.as_slice() {
                     [] => GenerationState::CleanupRequired,
-                    [candidate] if is_owned_generation(candidate, &self.fleet_key, generation) => {
+                    // Joint evidence (spec 0043 §6): description, note and the
+                    // matching attributes; runner type and scope are proven by
+                    // the scoped read itself.
+                    [candidate]
+                        if is_owned_generation(candidate, &self.fleet_key, generation)
+                            && self
+                                .matching
+                                .matches(&candidate.tags, candidate.run_untagged) =>
+                    {
                         match i64::try_from(candidate.id) {
                             Ok(id) => {
                                 self.lifecycle
