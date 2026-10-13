@@ -7,8 +7,8 @@
   "properties": {
     "runner_backend": {
       "type": "string",
-      "enum": ["github", "forgejo"],
-      "description": "Runner backend, fixed when publishing this Template Revision. Defaults to GitHub. Must match the Fleet provider; never a Fleet input.",
+      "enum": ["github", "forgejo", "gitlab"],
+      "description": "Runner backend (github, forgejo or gitlab), fixed when publishing this Template Revision. Defaults to GitHub. Must match the Fleet provider; never a Fleet input.",
       "sensitive": false
     },
     "namespace": {
@@ -22,7 +22,7 @@
     "kubeconfig": {
       "type": "string",
       "minLength": 1,
-      "description": "Protected kubeconfig file path for the pinned provider and Shaula bootstrap owner, authorized to read the existing namespace and manage its Pods/Secrets. Bootstrap adds only the prepared .setup_info key and freezes its Generation Secret. Schema-sensitive: write-only value stored in the immutable SQLite Revision; never enters the Runner Execution Domain.",
+      "description": "Protected kubeconfig file path for the pinned provider and Shaula bootstrap owner, authorized to read the existing namespace and manage its Pods/Secrets. Bootstrap adds only the prepared .setup_info, token or config.toml key and freezes its Generation Secret. Schema-sensitive: write-only value stored in the immutable SQLite Revision; never enters the Runner Execution Domain.",
       "sensitive": true
     }
   }

@@ -1,4 +1,7 @@
+use super::super::pool::{patch, validate_pod};
 use super::*;
+use base64::{engine::general_purpose::STANDARD, Engine};
+use serde_json::json;
 use shaula_core::{ports::forgejo::ForgejoBootstrapMaterial, secret::SecretString};
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -15,7 +18,7 @@ fn pending_pod_gate_is_nonroot_single_use_and_has_no_extra_mounts() -> TestResul
     let runner = &mut pod["spec"]["containers"][0];
     runner["image"] = json!("official-image");
     runner["command"] = json!(["/usr/bin/dumb-init", "--", "/bin/forgejo-runner"]);
-    runner["args"] = command(&material);
+    runner["args"] = json!(material.one_job_args());
     runner["env"] = json!([]);
     runner["securityContext"] = json!({"runAsNonRoot":true,"runAsUser":1000,"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}});
     runner["volumeMounts"][0]["mountPath"] = json!("/data/.forgejo-token");
@@ -25,31 +28,32 @@ fn pending_pod_gate_is_nonroot_single_use_and_has_no_extra_mounts() -> TestResul
     request.input.generation.scale_set_id = None;
     request.input.forgejo = Some(material.identity());
     request.forgejo_bootstrap = Some(material);
-    validate_pod(&pod, "official-image", &request).map_err(|_| "valid pod refused")?;
+    let shape = shape(&request).ok_or("shape")?;
+    validate_pod(&pod, "official-image", &request, &shape).map_err(|_| "valid pod refused")?;
     let mut changed = pod.clone();
     changed["spec"]["containers"][0]["securityContext"]["allowPrivilegeEscalation"] = json!(true);
-    assert!(validate_pod(&changed, "official-image", &request).is_err());
+    assert!(validate_pod(&changed, "official-image", &request, &shape).is_err());
     let mut changed = pod.clone();
     changed["spec"]["volumes"]
         .as_array_mut()
         .ok_or("volumes")?
         .push(json!({"name":"host","hostPath":{"path":"/"}}));
-    assert!(validate_pod(&changed, "official-image", &request).is_err());
+    assert!(validate_pod(&changed, "official-image", &request, &shape).is_err());
     assert!(!pod.to_string().contains("one-shot"));
 
     let mut secret = super::super::super::tests::kubernetes_fixture(&request, "Secret");
     secret["data"] = json!({});
-    let payload = patch(&secret, &request).map_err(|_| "empty gate refused")?;
+    let payload = patch(&secret, &shape).map_err(|_| "empty gate refused")?;
     assert_eq!(payload[2]["value"]["token"], STANDARD.encode("one-shot"));
     assert_eq!(payload[3]["value"], true);
     secret["data"] = json!({"runner_backend":STANDARD.encode("forgejo")});
-    assert!(patch(&secret, &request).is_ok());
+    assert!(patch(&secret, &shape).is_ok());
     secret["data"]["token"] = json!(STANDARD.encode("prepopulated"));
-    assert!(patch(&secret, &request).is_err());
+    assert!(patch(&secret, &shape).is_err());
     secret["data"] = json!({"runner_backend":STANDARD.encode("github")});
-    assert!(patch(&secret, &request).is_err());
+    assert!(patch(&secret, &shape).is_err());
     secret["data"] = json!({});
     secret["immutable"] = json!(true);
-    assert!(patch(&secret, &request).is_err());
+    assert!(patch(&secret, &shape).is_err());
     Ok(())
 }

@@ -21,10 +21,11 @@ impl ProfileManifest {
     }
 
     /// GitLab runs `run-single` with the `shell` executor inside the official
-    /// Docker container; Kubernetes and VM bootstrap are not admitted yet.
+    /// container (Docker container or Kubernetes Pod); VM bootstrap is not
+    /// admitted yet.
     pub fn validate_gitlab_target(&self) -> CoreResult<()> {
         self.validate_for_provider(crate::fleet::FleetProviderKind::Gitlab)?;
-        if self.platform != "docker"
+        if !matches!(self.platform.as_str(), "docker" | "kubernetes")
             || self.container_bootstrap_contract.as_deref() != Some(CONTAINER_BOOTSTRAP_CONTRACT)
         {
             return Err(CoreError::new(

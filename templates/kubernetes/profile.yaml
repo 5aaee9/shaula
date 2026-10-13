@@ -1,7 +1,7 @@
 api_version: shaula.io/template-profile/v1
 kind: RunnerTemplateProfile
 platform: kubernetes
-runner_backends: [github, forgejo]
+runner_backends: [github, forgejo, gitlab]
 runtime:
   protocol: terraform-cli/v1
   engine: terraform
@@ -23,4 +23,5 @@ managed_resource_shape:
 runner_image_digests:
   - ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4
   - code.forgejo.org/forgejo/runner:13.1.0@sha256:c4af85fd9f0dd03788676a534781a87c71aa2c6a37737143e017eb94d4312952
-runtime_policy_digest: sha256:2ff42f03bae1b6b7e7a330b028eed84d03bf0586e7d5ae96b7108331585623f8
+  - gitlab/gitlab-runner:v19.4.1@sha256:77d03a5c881ff8f97381de4f96a66c080733eeab9c9cf502bd19916a18969113
+runtime_policy_digest: sha256:5c1e0fa7a661d397e1225798e59fecb9a75b7d143d9e012394c475d2770927e4

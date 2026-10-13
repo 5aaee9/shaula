@@ -75,25 +75,29 @@ try {
     const directory = `-chdir=${path.join(root, platform)}`;
     await run([directory, 'init', '-backend=false', '-input=false', '-lockfile=readonly', '-no-color']);
     await run([directory, 'validate', '-no-color']);
-    for (const backend of ['github', 'forgejo']) {
-      const forgejo = backend === 'forgejo';
+    for (const backend of ['github', 'forgejo', 'gitlab']) {
+      const forgejo = backend === 'forgejo', pool = backend !== 'github';
       const input = { contract_version: 1, generation: { fleet_key: 'fleet',
         id: '50a2dd2d-e48e-4b23-88de-b4bca9cf3b90', runner_name: 'runner', generation_name: 'generation',
-        ...(forgejo ? {} : { scale_set_id: 1 }) }, jit_config: forgejo ? '' : 'frozen-jit',
+        ...(pool ? {} : { scale_set_id: 1 }) }, jit_config: pool ? '' : 'frozen-jit',
       bindings_digest: 'commitment', parameters: {},
       bindings: platform === 'docker' ? { docker_host: `unix://${socket}` } : { namespace: 'runners', kubeconfig } };
       if (forgejo) {
         input.bindings.runner_backend = 'forgejo';
         input.forgejo = { instance_url: 'https://forgejo.test', uuid: 'runner-uuid', labels: ['linux:host'] };
       }
+      if (backend === 'gitlab') {
+        input.bindings.runner_backend = 'gitlab';
+        input.gitlab = { instance_url: 'https://gitlab.test', runner_id: 42, runner_name: 'runner-gitlab' };
+      }
       await fs.writeFile(path.join(root, platform, 'fixture.tfvars.json'), JSON.stringify({ shaula: input }));
       await run([directory, 'plan', '-input=false', '-refresh=false', '-no-color', '-var-file=fixture.tfvars.json', '-out=fixture.plan']);
       const plan = await run([directory, 'show', '-json', 'fixture.plan']);
-      await fs.writeFile(path.join(root, `${forgejo ? 'forgejo' : 'official'}-${platform}-plan.json`), plan);
+      await fs.writeFile(path.join(root, `${pool ? backend : 'official'}-${platform}-plan.json`), plan);
     }
   }
   if (unexpected.length) throw new Error(`unexpected provider calls: ${unexpected.join(', ')}`);
-  console.log('Validated both templates and saved four plans (fixture reads only; no apply).');
+  console.log('Validated both templates and saved six plans (fixture reads only; no apply).');
   console.log(`SHAULA_BOOTSTRAP_PLAN_ORACLES='${root}' cargo nextest run -p shaula-template -E 'test(captured_)'`);
   console.log(`Remove the temporary fixture directory after verification: ${root}`);
 } finally {

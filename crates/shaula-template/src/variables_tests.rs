@@ -80,7 +80,7 @@ fn bundled_variables_are_discovered_from_terraform_defaults() -> TestResult {
         .iter()
         .filter(|field| field.key != "runner_backend")
         .all(|field| field.required));
-    for (projection, backends) in [(&docker, 3), (&kubernetes, 2)] {
+    for (projection, backends) in [(&docker, 3), (&kubernetes, 3)] {
         let backend = projection
             .bindings
             .iter()

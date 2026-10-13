@@ -9,6 +9,22 @@ use std::{path::Path, time::Duration};
 
 #[path = "runtime_bootstrap_kubernetes_forgejo.rs"]
 mod forgejo;
+#[path = "runtime_bootstrap_kubernetes_gitlab.rs"]
+mod gitlab;
+#[path = "runtime_bootstrap_kubernetes_pool.rs"]
+mod pool;
+
+/// The Pool backend's exact Pod shape; `None` for GitHub or missing material.
+pub(super) fn pool_shape<'a>(
+    request: &'a TemplateCreateRequest,
+    backend: &str,
+) -> Option<pool::PoolPod<'a>> {
+    match backend {
+        "forgejo" => forgejo::shape(request),
+        "gitlab" => gitlab::shape(request),
+        _ => None,
+    }
+}
 
 pub(super) async fn launch(
     request: &TemplateCreateRequest,
@@ -19,8 +35,9 @@ pub(super) async fn launch(
     temporary: &Path,
     timeout: Duration,
 ) -> Result<(), TemplateOutcomeError> {
-    if backend == "forgejo" {
-        return forgejo::launch(request, envelope, image, temporary, timeout).await;
+    if backend != "github" {
+        let shape = pool_shape(request, backend).ok_or_else(failed)?;
+        return pool::launch(request, envelope, image, temporary, timeout, &shape).await;
     }
     let namespace = binding(request, "namespace")?;
     let name = &request.input.generation.generation_name;

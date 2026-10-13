@@ -5,9 +5,10 @@
 # pre-provisioned namespace selected by the publisher-owned binding.
 # The namespace is never created, imported or managed by this Profile.
 #
-# The publisher selects GitHub (default) or Forgejo on this same template.
-# Shaula releases the required Secret key gate after apply: GitHub Setup Info
-# or a Forgejo token file. Tokens never appear in Forgejo argv or environment.
+# The publisher selects GitHub (default), Forgejo or GitLab on this same
+# template. Shaula releases the required Secret key gate after apply: GitHub
+# Setup Info, a Forgejo token file or a GitLab config.toml. Pool tokens never
+# appear in argv or environment.
 
 terraform {
   required_version = ">= 1.9, < 2.0"
@@ -34,8 +35,10 @@ data "kubernetes_namespace" "target" {
 }
 
 locals {
-  forgejo       = var.shaula.bindings.runner_backend == "forgejo"
-  image_prefix  = local.forgejo ? "code.forgejo.org/forgejo/runner:" : "ghcr.io/actions/actions-runner:"
+  backend       = var.shaula.bindings.runner_backend
+  forgejo       = local.backend == "forgejo"
+  gitlab        = local.backend == "gitlab"
+  image_prefix  = { github = "ghcr.io/actions/actions-runner:", forgejo = "code.forgejo.org/forgejo/runner:", gitlab = "gitlab/gitlab-runner:" }[local.backend]
   runner_images = { for image in yamldecode(file("${path.module}/profile.yaml")).runner_image_digests : split("@", image)[0] => image if startswith(image, local.image_prefix) }
   runner_image  = var.shaula.parameters.runner_image == "auto" ? one(values(local.runner_images)) : local.runner_images[var.shaula.parameters.runner_image]
   forgejo_args = local.forgejo ? concat(
@@ -43,7 +46,20 @@ locals {
     flatten([for label in var.shaula.forgejo.labels : ["--label", label]]),
     ["--wait"]
   ) : []
-  bootstrap_key = local.forgejo ? "token" : ".setup_info"
+  # The registration token is never a Terraform input: Shaula patches the
+  # protected config.toml into the Secret. 600 s equals the Pool idle
+  # deadline (RUNNER_WAIT_TIMEOUT_SECS).
+  gitlab_args = local.gitlab ? [
+    "run-single", "--config", "/home/gitlab-runner/config.toml",
+    "--runner", var.shaula.gitlab.runner_name, "--max-builds", "1", "--wait-timeout", "600"
+  ] : []
+  command = {
+    github  = ["/home/runner/bin/Runner.Listener", "run"]
+    forgejo = ["/usr/bin/dumb-init", "--", "/bin/forgejo-runner"]
+    gitlab  = ["/usr/bin/dumb-init", "--", "/usr/bin/gitlab-runner"]
+  }[local.backend]
+  bootstrap_key  = { github = ".setup_info", forgejo = "token", gitlab = "config.toml" }[local.backend]
+  bootstrap_path = { github = "/home/runner/.setup_info", forgejo = "/data/.forgejo-token", gitlab = "/home/gitlab-runner/config.toml" }[local.backend]
   # Exact generation-scoped metadata.name persisted by Shaula before any
   # external effect; the Secret and the Pod share it, kind separates the
   # Resource Keys. Not a Kubernetes UID; never reconstructed after state
@@ -65,15 +81,16 @@ resource "kubernetes_secret_v1" "bootstrap" {
   type = "Opaque"
 
   # A nonsecret marker keeps data known in Kubernetes 2.33.0 plans; the
-  # required token key stays absent until the host-owned bootstrap patch.
-  data = local.forgejo ? { runner_backend = "forgejo" } : {
-    # GitHub Listener input; Forgejo's token never enters Terraform inputs.
+  # required token or config.toml key stays absent until the host-owned
+  # bootstrap patch.
+  data = local.forgejo || local.gitlab ? { runner_backend = local.backend } : {
+    # GitHub Listener input; Pool tokens never enter Terraform inputs.
     "jit_config" = var.shaula.jit_config
   }
 
-  # Deliberately omit the bootstrap key (.setup_info or token): its required
-  # volume prevents startup until Shaula finishes apply and adds that key
-  # together with immutable=true in a single identity-checked API patch.
+  # Deliberately omit the bootstrap key (.setup_info, token or config.toml):
+  # its required volume prevents startup until Shaula finishes apply and adds
+  # that key together with immutable=true in a single identity-checked patch.
   immutable = false
 
   lifecycle {
@@ -104,17 +121,20 @@ resource "kubernetes_pod_v1" "runner" {
     # serviceAccountName "default", the invariant is the absent token.
     automount_service_account_token = false
 
+    # A restarted gitlab-runner would claim a second job with the same token.
     restart_policy = "Never"
 
     container {
-      name  = "runner"
-      image = local.runner_image
-
-      command = local.forgejo ? ["/usr/bin/dumb-init", "--", "/bin/forgejo-runner"] : ["/home/runner/bin/Runner.Listener", "run"]
-      args    = local.forgejo_args
+      name    = "runner"
+      image   = local.runner_image
+      command = local.command
+      args    = local.gitlab ? local.gitlab_args : local.forgejo_args
+      # The official GitLab image declares no working directory; its shell
+      # executor builds below this Generation-owned emptyDir instead of /.
+      working_dir = local.gitlab ? "/home/gitlab-runner" : null
 
       dynamic "env" {
-        for_each = local.forgejo ? [] : [1]
+        for_each = local.forgejo || local.gitlab ? [] : [1]
         content {
           name = "ACTIONS_RUNNER_INPUT_JITCONFIG"
           value_from {
@@ -128,10 +148,12 @@ resource "kubernetes_pod_v1" "runner" {
       }
 
       dynamic "security_context" {
-        for_each = local.forgejo ? [1] : []
+        for_each = local.forgejo || local.gitlab ? [1] : []
         content {
-          run_as_non_root            = true
-          run_as_user                = 1000
+          run_as_non_root = true
+          # The GitLab image defaults to root; 999 is its packaged
+          # gitlab-runner user. The Forgejo image's runner user is 1000.
+          run_as_user                = local.gitlab ? 999 : 1000
           allow_privilege_escalation = false
           capabilities {
             drop = ["ALL"]
@@ -150,9 +172,20 @@ resource "kubernetes_pod_v1" "runner" {
       # fixed before start and Shaula freezes the Secret when releasing it.
       volume_mount {
         name       = "setup-info"
-        mount_path = local.forgejo ? "/data/.forgejo-token" : "/home/runner/.setup_info"
+        mount_path = local.bootstrap_path
         sub_path   = local.bootstrap_key
         read_only  = true
+      }
+
+      # gitlab-runner writes .runner_system_id next to its config and builds
+      # below its working directory. Both live in this writable, Generation-
+      # scoped emptyDir; the read-only config.toml file mount sits inside it.
+      dynamic "volume_mount" {
+        for_each = local.gitlab ? [1] : []
+        content {
+          name       = "home"
+          mount_path = "/home/gitlab-runner"
+        }
       }
     }
 
@@ -165,6 +198,14 @@ resource "kubernetes_pod_v1" "runner" {
           key  = local.bootstrap_key
           path = local.bootstrap_key
         }
+      }
+    }
+
+    dynamic "volume" {
+      for_each = local.gitlab ? [1] : []
+      content {
+        name = "home"
+        empty_dir {}
       }
     }
   }
@@ -205,6 +246,7 @@ variable "shaula" {
     generation       = any
     jit_config       = string
     forgejo          = optional(any)
+    gitlab           = optional(any)
     bindings_digest  = string
     bindings = object({
       runner_backend = optional(string, "github")

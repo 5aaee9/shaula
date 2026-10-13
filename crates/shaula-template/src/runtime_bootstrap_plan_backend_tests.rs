@@ -1,6 +1,9 @@
 use super::{admit_plan, fixture, ProfileManifest, TemplateCreateRequest, TestResult, Value};
 use serde_json::json;
-use shaula_core::{ports::forgejo::ForgejoBootstrapMaterial, secret::SecretString};
+use shaula_core::{
+    ports::{forgejo::ForgejoBootstrapMaterial, gitlab::GitlabBootstrapMaterial},
+    secret::SecretString,
+};
 
 fn forgejo_fixture(
     platform: &str,
@@ -118,7 +121,7 @@ fn forgejo_plan_keeps_token_gate_and_volume_cleanup() -> TestResult {
 }
 
 #[test]
-fn captured_forgejo_provider_plans_match_when_explicitly_requested() -> TestResult {
+fn captured_pool_provider_plans_match_when_explicitly_requested() -> TestResult {
     let Ok(directory) = std::env::var("SHAULA_BOOTSTRAP_PLAN_ORACLES") else {
         return Ok(());
     };
@@ -137,6 +140,20 @@ fn captured_forgejo_provider_plans_match_when_explicitly_requested() -> TestResu
         )?);
         admit_plan(&manifest, &request, &plan)
             .map_err(|_| format!("{platform} Forgejo oracle rejected"))?;
+        let plan: Value = serde_json::from_slice(&std::fs::read(
+            std::path::Path::new(&directory).join(format!("gitlab-{platform}-plan.json")),
+        )?)?;
+        request.input = serde_json::from_value(plan["variables"]["shaula"]["value"].clone())?;
+        let identity = request.input.gitlab.as_ref().ok_or("identity missing")?;
+        request.forgejo_bootstrap = None;
+        request.gitlab_bootstrap = Some(GitlabBootstrapMaterial::new(
+            identity.instance_url.clone(),
+            identity.runner_id,
+            identity.runner_name.clone(),
+            SecretString::new("glrt-test-token"),
+        )?);
+        admit_plan(&manifest, &request, &plan)
+            .map_err(|_| format!("{platform} GitLab oracle rejected"))?;
     }
     Ok(())
 }
