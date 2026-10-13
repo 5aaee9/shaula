@@ -21,7 +21,7 @@ _: {
         ];
         RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";
         shellHook = ''
-          echo 'Shaula: run npm ci --prefix web once before cargo build/test.'
+          echo 'Shaula: run npm ci --prefix web once before cargo build/test.' >&2
         '';
       };
     };
