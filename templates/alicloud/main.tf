@@ -17,14 +17,17 @@ provider "alicloud" {
 }
 
 locals {
-  forgejo = var.shaula.bindings.runner_backend == "forgejo"
-  user_data = base64encode(templatefile("${path.module}/${local.forgejo ? "user-data-forgejo" : "user-data"}.tftpl", {
+  # GitHub keeps the original unsuffixed bootstrap files.
+  backend_suffix = { github = "", forgejo = "-forgejo", gitlab = "-gitlab" }[var.shaula.bindings.runner_backend]
+  user_data = base64encode(templatefile("${path.module}/user-data${local.backend_suffix}.tftpl", {
     jit_config = var.shaula.jit_config
     forgejo    = var.shaula.forgejo
     forgejo_vm = var.shaula.forgejo_vm
+    gitlab     = var.shaula.gitlab
+    gitlab_vm  = var.shaula.gitlab_vm
     pre_start  = var.shaula.bindings.alicloud_cloud_init_cmd
-    bootstrap  = file("${path.module}/${local.forgejo ? "bootstrap-forgejo" : "bootstrap"}.tftpl")
-    service    = file("${path.module}/${local.forgejo ? "runner-service-forgejo" : "runner-service"}.tftpl")
+    bootstrap  = file("${path.module}/bootstrap${local.backend_suffix}.tftpl")
+    service    = file("${path.module}/runner-service${local.backend_suffix}.tftpl")
   }))
 }
 
@@ -91,6 +94,8 @@ variable "shaula" {
     jit_config       = string
     forgejo          = optional(any)
     forgejo_vm       = optional(any)
+    gitlab           = optional(any)
+    gitlab_vm        = optional(any)
     bindings_digest  = string
     bindings = object({
       runner_backend                      = optional(string, "github")

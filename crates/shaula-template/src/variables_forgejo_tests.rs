@@ -17,12 +17,18 @@ fn vm_contract_alone_admits_optional_protected_bootstrap_member() -> TestResult 
             "forgejo_vm = any",
             "forgejo_vm = optional(any, null)",
             "forgejo_vm = optional(string)",
+            "forgejo_vm = optional(any)",
+            "forgejo_vm = optional(any)\n    gitlab_vm = any",
+            "forgejo_vm = optional(any)\n    gitlab_vm = optional(any, null)",
+            "forgejo_vm = optional(any)\n    gitlab_vm = optional(string)",
         ] {
             std::fs::write(
                 &path,
                 original.replace(
                     "jit_config = string",
-                    &format!("jit_config = string\n    forgejo = optional(any)\n    {member}"),
+                    &format!(
+                        "jit_config = string\n    forgejo = optional(any)\n    gitlab = optional(any)\n    {member}"
+                    ),
                 ),
             )?;
             assert!(
@@ -34,7 +40,7 @@ fn vm_contract_alone_admits_optional_protected_bootstrap_member() -> TestResult 
             &path,
             original.replace(
                 "jit_config = string",
-                "jit_config = string\n    forgejo = optional(any)\n    forgejo_vm = optional(any)",
+                "jit_config = string\n    forgejo = optional(any)\n    forgejo_vm = optional(any)\n    gitlab = optional(any)\n    gitlab_vm = optional(any)",
             ),
         )?;
         assert!(discover_variables(directory.path(), "fixture")?.available);
@@ -51,7 +57,7 @@ fn vm_contract_alone_admits_optional_protected_bootstrap_member() -> TestResult 
                 .iter()
                 .map(|option| option.value_json.as_str())
                 .collect::<Vec<_>>(),
-            ["\"github\"", "\"forgejo\""]
+            ["\"github\"", "\"forgejo\"", "\"gitlab\""]
         );
         assert!(!backend.required && !backend.sensitive);
         assert!(!variables

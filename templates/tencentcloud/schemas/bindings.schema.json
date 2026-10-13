@@ -16,8 +16,8 @@
   "properties": {
     "runner_backend": {
       "type": "string",
-      "enum": ["github", "forgejo"],
-      "description": "Runner backend for this Template Revision, default github. Forgejo delivers a single ephemeral Runner token through protected cloud-init/user-data and Terraform state; never a management token.",
+      "enum": ["github", "forgejo", "gitlab"],
+      "description": "Runner backend for this Template Revision, default github. Forgejo and GitLab deliver a single pre-registered Runner token (GitLab inside config.toml, shell executor) through protected cloud-init/user-data and Terraform state; never a management or Auth Profile token.",
       "sensitive": false
     },
     "tencentcloud_region": {

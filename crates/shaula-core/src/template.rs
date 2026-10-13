@@ -125,6 +125,9 @@ pub struct ProfileManifest {
     /// VM-only cloud-init delivery of the ephemeral Runner token (not an API/admin token).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forgejo_vm_bootstrap_contract: Option<String>,
+    /// VM-only cloud-init delivery of one pre-registered GitLab Runner `config.toml`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gitlab_vm_bootstrap_contract: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -158,6 +161,7 @@ impl ProfileManifest {
     pub fn validate(&self) -> CoreResult<()> {
         self.validate_runner_backends()?;
         self.validate_forgejo_vm_bootstrap()?;
+        self.validate_gitlab_vm_bootstrap()?;
         self.validate_container_bootstrap()?;
         match (
             self.input_contract_version,
@@ -302,6 +306,9 @@ mod backend;
 #[path = "template_forgejo_vm.rs"]
 mod forgejo_vm;
 pub use forgejo_vm::{ForgejoVmBootstrap, FORGEJO_VM_BOOTSTRAP_CONTRACT};
+#[path = "template_gitlab_vm.rs"]
+mod gitlab_vm;
+pub use gitlab_vm::{GitlabVmBootstrap, GITLAB_VM_BOOTSTRAP_CONTRACT};
 #[path = "template_container.rs"]
 mod container;
 pub use container::CONTAINER_BOOTSTRAP_CONTRACT;

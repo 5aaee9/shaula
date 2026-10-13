@@ -32,16 +32,19 @@ impl ProfileManifest {
         let vm = self.forgejo_vm_bootstrap_contract.as_deref()
             == Some(super::FORGEJO_VM_BOOTSTRAP_CONTRACT);
         let declared = |name: &str| self.runner_backends.iter().filter(|b| *b == name).count();
-        // GitLab is admitted only through the container contract so far.
+        // GitLab needs the container contract or its own VM cloud-init contract.
         let gitlab = declared("gitlab");
+        let gitlab_vm = vm
+            && self.gitlab_vm_bootstrap_contract.as_deref()
+                == Some(super::GITLAB_VM_BOOTSTRAP_CONTRACT);
         if (!container && !vm)
             || self.runner_backends.len() != 2 + gitlab
             || declared("github") != 1
             || declared("forgejo") != 1
-            || gitlab > usize::from(container)
+            || gitlab > usize::from(container || gitlab_vm)
             || self.runner_backend != "github"
         {
-            return Err(invalid("selectable runner_backends requires github and forgejo (optionally gitlab on containers), a github default and an admitted bootstrap contract"));
+            return Err(invalid("selectable runner_backends requires github and forgejo (optionally gitlab), a github default and an admitted bootstrap contract"));
         }
         if !container {
             return Ok(());

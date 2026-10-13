@@ -12,7 +12,8 @@ impl TemplateRuntime {
             .map_err(|_| state_err("input.contract"))?;
         if (self.http_backend.is_some()
             || manifest.container_bootstrap_contract.is_some()
-            || manifest.forgejo_vm_bootstrap_contract.is_some())
+            || manifest.forgejo_vm_bootstrap_contract.is_some()
+            || manifest.gitlab_vm_bootstrap_contract.is_some())
             && request.apply_intent_sink.is_none()
         {
             return Err(state_err("create.authorization"));

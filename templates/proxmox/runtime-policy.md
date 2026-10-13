@@ -1,8 +1,8 @@
 # Proxmox runner runtime policy
 
-`bindings.runner_backend` selects `github` (default) or `forgejo` for this
-immutable Template Revision, never a Fleet parameter. JIT/Listener details
-below describe GitHub; the Forgejo cloud-init contract is specified separately.
+`bindings.runner_backend` selects `github` (default), `forgejo` or `gitlab` for
+this immutable Template Revision, never a Fleet parameter. JIT/Listener details
+below describe GitHub; the Forgejo and GitLab cloud-init contracts follow.
 
 Each Generation owns exactly one cloned QEMU VM and one NoCloud seed ISO.
 Terraform provider `indexyz/proxmox` 0.5.1 owns their entire resource lifecycle.
@@ -96,3 +96,39 @@ remain credential-grade; permissions/base64 are not encryption or hypervisor
 isolation. Management/provider credentials never enter guest materials. No
 Setup Info is added; real Forgejo boot/job/VM-and-ISO cleanup needs separate
 acceptance on the target Proxmox deployment.
+
+## GitLab cloud-init contract
+
+`shaula.gitlab-vm-cloud-init/v1` explicitly permits `shaula.gitlab_vm.config_toml`
+in protected Terraform input and the NoCloud ISO. Shaula first registers exactly one
+GitLab Runner, then renders its single-registration token into that canonical
+`config.toml` (URL, Runner id/name, token, `executor = "shell"`). Any other
+executor, extra key or non-`glrt-` token is rejected; the GitLab Auth Profile
+token and Proxmox credentials never enter the guest. The guest needs Ubuntu
+x86_64 or arm64 with cloud-init/systemd and util-linux. Bootstrap installs the
+official `gitlab-runner-linux-<arch>` 19.4.1 binary from
+`gitlab-runner-downloads.s3.amazonaws.com`, pinned to SHA-256
+`5a159b36c5ff54fda9248e00bb0cdfb62c1112ab3741f5282c04a41e94da1306` (amd64) or
+`9763a63f7bc2319119f80de41d1d414465b5268d072bcd55266020b989e93ee9` (arm64).
+There is no guest `register`, `.deb` package service, custom build or latest lookup.
+
+The root bootstrap claims the one-use marker before preparation, protects
+cloud-init caches, requires the CIDATA seed to be root-only and unmounted, copies
+the handoff to `/run/shaula-gitlab/config.toml` (0600 inside a runner-owned 0700
+directory) and removes it. It drops to the non-root `runner` user and runs
+`gitlab-runner run-single --config <file> --runner <name> --max-builds 1
+--wait-timeout 600`; the token is neither argv nor environment. The service has
+Restart=no, NoNewPrivileges=true and no boot enablement, because a restarted
+process would claim a second job with the same token. The shell executor runs
+the job directly on this disposable VM as `runner` and ignores job `image:` and
+`services:`. Runner journal output contains the short token and is
+credential-adjacent. Ubuntu packages, the GitLab download endpoint and the
+selected instance must be reachable.
+
+`--max-builds 1` ends the process after one job; it does not delete the
+VM and ISO. Shaula pauses the registration, verifies it idle, deletes it and then
+destroys owned resources, or applies the shared hard lifetime (default 7200
+seconds after Create succeeds, even Busy). Failed bootstrap never replays this
+seed. Terraform inputs/plans/state and the remote ISO retain the Runner token;
+base64 and sensitive flags are not encryption or job isolation. No Setup Info
+is added. Real GitLab job and cleanup acceptance remains deployment-specific.

@@ -1,0 +1,49 @@
+#cloud-config
+${yamlencode({
+  write_files = [
+    {
+      path        = "/var/lib/shaula/gitlab-config.toml"
+      owner       = "root:root"
+      permissions = "0600"
+      encoding    = "b64"
+      content     = base64encode(gitlab_vm.config_toml)
+    },
+    {
+      path        = "/var/lib/shaula/gitlab-runner-name"
+      owner       = "root:root"
+      permissions = "0600"
+      encoding    = "b64"
+      content     = base64encode(gitlab.runner_name)
+    },
+    {
+      path        = "/var/lib/shaula/pre-start"
+      owner       = "root:root"
+      permissions = "0600"
+      encoding    = "b64"
+      content     = base64encode(pre_start)
+    },
+    {
+      path        = "/usr/local/libexec/shaula-runner"
+      owner       = "root:root"
+      permissions = "0700"
+      encoding    = "b64"
+      content     = base64encode(bootstrap)
+    },
+    {
+      path        = "/etc/systemd/system/shaula-runner.service"
+      owner       = "root:root"
+      permissions = "0644"
+      content     = service
+    },
+    {
+      path        = "/etc/udev/rules.d/99-shaula-seed.rules"
+      owner       = "root:root"
+      permissions = "0644"
+      content     = "SUBSYSTEM==\"block\", ENV{ID_FS_LABEL}==\"CIDATA\", OWNER=\"root\", GROUP=\"root\", MODE=\"0600\"\n"
+    }
+  ]
+  runcmd = [
+    ["systemctl", "daemon-reload"],
+    ["systemctl", "start", "--no-block", "shaula-runner.service"]
+  ]
+})}

@@ -12,7 +12,7 @@ use shaula_core::ports::gitlab::GitlabBootstrapMaterial;
 use shaula_core::ports::TemplateCreateRequest;
 use shaula_core::registry::GenerationRecord;
 use shaula_core::template::{
-    BindingsDigest, GenerationIdentity, SetupInfoDescriptor, ShaulaInputEnvelope,
+    BindingsDigest, GenerationIdentity, GitlabVmBootstrap, SetupInfoDescriptor, ShaulaInputEnvelope,
 };
 
 use super::GitlabPoolSupervisor;
@@ -70,7 +70,7 @@ impl GitlabPoolSupervisor {
         drop(gate);
         let prepared = match create
             .prepare_generation(&record, &parameters, |manifest| {
-                manifest.validate_gitlab_target()
+                manifest.validate_gitlab_generation_target()
             })
             .await
         {
@@ -159,6 +159,9 @@ impl GitlabPoolSupervisor {
         );
         input.bindings = bindings;
         input.gitlab = Some(bootstrap.identity());
+        if manifest.gitlab_vm_bootstrap_contract.is_some() {
+            input.gitlab_vm = Some(GitlabVmBootstrap::from_registration(&bootstrap));
+        }
         input.parameters = parameters;
         if manifest.input_contract_version == 2 {
             let descriptor = match self.setup_info_issuer.as_deref() {
