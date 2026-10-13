@@ -37,6 +37,15 @@ impl GitlabPoolSupervisor {
         now: i64,
     ) -> CoreResult<Option<u64>> {
         let _claim = self.gates.acquire_claim(&self.fleet_key).await;
+        // A hidden note on an anchor-named registration (lost update
+        // permission) proves nothing: keep the recorded anchors and stay stale.
+        let anchor_prefix = format!("{}anchor-r", self.runner_name_prefix);
+        if runners
+            .iter()
+            .any(|r| r.ownership_hidden() && r.description.starts_with(&anchor_prefix))
+        {
+            return Ok(None);
+        }
         let rows = self.lifecycle.gitlab_anchors(&self.fleet_key).await?;
         let anchors: Vec<&GitlabRunnerRef> = runners.iter().filter(|r| self.is_anchor(r)).collect();
         let revision = self.guard.desired_revision;

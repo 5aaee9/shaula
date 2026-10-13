@@ -64,6 +64,10 @@ impl GitlabRegistrations<'_> {
         Ok(match self.gitlab.get_runner(id).await {
             Err(_) => Observed::Verdict(Registration::Unavailable),
             Ok(None) => Observed::Verdict(Registration::Gone),
+            // Lost update permission hides the note: retry, never misclassify.
+            Ok(Some(remote)) if remote.ownership_hidden() => {
+                Observed::Verdict(Registration::Unavailable)
+            }
             Ok(Some(remote)) if is_owned_generation(&remote, self.fleet_key, generation) => {
                 Observed::Runner(remote)
             }

@@ -154,6 +154,13 @@ pub struct GitlabRunnerRef {
 }
 
 impl GitlabRunnerRef {
+    /// GitLab returns `maintenance_note: null` to a token that can no longer
+    /// update the registration (observed for a demoted group token on 19.4.2),
+    /// so a hidden note proves neither ownership nor its absence.
+    pub fn ownership_hidden(&self) -> bool {
+        self.maintenance_note.is_none()
+    }
+
     /// Unknown statuses prove neither online nor absent. GitLab reports a
     /// paused registration as `paused` regardless of contact state.
     pub fn is_known(&self) -> bool {

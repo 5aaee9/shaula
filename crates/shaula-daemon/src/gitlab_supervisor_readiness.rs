@@ -175,7 +175,12 @@ impl GitlabPoolSupervisor {
             };
             Ok::<_, shaula_core::ports::AccessFailure>((runner, jobs))
         };
-        let Ok((runner, jobs)) = read.await else {
+        let read = read.await.ok().filter(|(runner, _)| {
+            !runner
+                .as_ref()
+                .is_some_and(GitlabRunnerRef::ownership_hidden)
+        });
+        let Some((runner, jobs)) = read else {
             diagnostic.reason(
                 Code::ControlInventoryUnavailable,
                 StageId::RunnerInventory,
