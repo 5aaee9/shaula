@@ -9,7 +9,7 @@ import { issuer, scopes } from "./oidc.mjs";
 import { faultProxy } from "./faults.mjs";
 import { ControlProxy } from "./control-proxy.mjs";
 import { fenceFixture } from "./worker-fence.mjs";
-import { command, freePort, json, until, serverImage, runnerImage } from "./support.mjs";
+import { command, containerLogs, freePort, json, until, serverImage, runnerImage } from "./support.mjs";
 
 export class Fixture {
   prefix = `shaula-lifecycle-${randomUUID().slice(0, 8)}`;
@@ -23,6 +23,7 @@ export class Fixture {
   platform = "docker";
 
   async cli(...args) { return command(this.docker, ["--host", this.socket, ...args]); }
+  logs(id) { return containerLogs(this.docker, this.socket, id); }
   api(path, method, body, expected, headers) {
     return json(`${this.url}/api/v1${path}`, this.oidc.token, method, body, expected, headers);
   }

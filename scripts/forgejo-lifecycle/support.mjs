@@ -15,6 +15,15 @@ export async function command(binary, args, options = {}) {
     throw new Error(`fixture command failed: ${binary.split("/").at(-1)} ${args[0]}`);
   }
 }
+// Docker splits a container log into two streams; credential scans need both.
+export async function containerLogs(docker, socket, id) {
+  try {
+    const { stdout, stderr } = await execute(docker, ["--host", socket, "logs", id], { timeout: 60_000, maxBuffer: 16 * 1024 * 1024 });
+    return stdout + stderr;
+  } catch {
+    throw new Error("fixture command failed: docker logs");
+  }
+}
 export async function until(label, predicate, timeout = 120_000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {

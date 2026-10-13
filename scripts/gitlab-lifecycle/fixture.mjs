@@ -2,8 +2,7 @@
 // Never targets an existing GitLab; never prunes or searches by name: teardown
 // removes only the exact container IDs this fixture created or observed.
 import assert from "node:assert/strict";
-import { execFile, spawn } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdtemp, writeFile, readFile, open, rm } from "node:fs/promises";
@@ -11,9 +10,8 @@ import { tmpdir, release } from "node:os";
 import { join, resolve } from "node:path";
 import { issuer, scopes } from "../forgejo-lifecycle/oidc.mjs";
 import { fenceFixture } from "../forgejo-lifecycle/worker-fence.mjs";
-import { command, freePort, json, until } from "../forgejo-lifecycle/support.mjs";
+import { command, containerLogs, freePort, json, until } from "../forgejo-lifecycle/support.mjs";
 
-const execute = promisify(execFile);
 
 export const serverImage = "gitlab/gitlab-ce:19.4.2-ce.0";
 
@@ -38,14 +36,7 @@ export class GitlabFixture {
 
   async cli(...args) { return command(this.docker, ["--host", this.socket, ...args]); }
   /** Container output on both streams; `docker logs` replays stderr on stderr. */
-  async logs(id) {
-    try {
-      const { stdout, stderr } = await execute(this.docker, ["--host", this.socket, "logs", id], { timeout: 60_000, maxBuffer: 16 * 1024 * 1024 });
-      return stdout + stderr;
-    } catch {
-      throw new Error("fixture command failed: docker logs");
-    }
-  }
+  logs(id) { return containerLogs(this.docker, this.socket, id); }
   api(path, method, body, expected, headers) {
     return json(`${this.url}/api/v1${path}`, this.oidc.token, method, body, expected, headers);
   }

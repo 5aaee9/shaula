@@ -68,7 +68,7 @@ export async function leakScan(fixture, key, observed, secrets, alive) {
   inspect(await readFile(join(fixture.directory, "daemon.log"), "utf8"), "daemon log");
   if (alive && fixture.platform === "docker") {
     inspect(await fixture.cli("inspect", observed.id), "container argv/environment/metadata");
-    inspect(await fixture.cli("logs", observed.id), "runner log");
+    inspect(await fixture.logs(observed.id), "runner log");
   } else if (alive) {
     inspect(await fixture.kube("get", "pod", observed.id, "-o", "json"), "Pod argv/environment/metadata");
     const secret = JSON.parse(await fixture.kube("get", "secret", observed.id, "-o", "json"));
