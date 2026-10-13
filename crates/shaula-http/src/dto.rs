@@ -18,6 +18,8 @@ pub struct FleetSpecDto {
     pub github: Option<FleetGithubSection>,
     #[serde(default)]
     pub forgejo: Option<FleetForgejoSection>,
+    #[serde(default)]
+    pub gitlab: Option<shaula_core::fleet::FleetGitlabSection>,
     pub capacity: shaula_core::fleet::CapacityPolicyDto,
     #[serde(default)]
     pub template_profile_ref: TemplateProfileRefDto,
@@ -35,6 +37,7 @@ impl FleetSpecDto {
             kind: self.kind,
             github: self.github.unwrap_or_default(),
             forgejo: self.forgejo,
+            gitlab: self.gitlab,
             capacity: self.capacity,
             template_profile_ref: self.template_profile_ref,
             template_pool: self.template_pool,
@@ -69,11 +72,12 @@ pub struct AuthProfilePutDto {
     pub app_id: Option<String>,
     /// Write-only GitHub App private key bytes.
     pub private_key: Option<String>,
-    /// Write-only Forgejo token bytes.
+    /// Write-only Forgejo or GitLab token bytes.
     pub token: Option<String>,
-    /// Forgejo target authority, required for `forgejo_token`.
+    /// Token target authority, required for `forgejo_token`/`gitlab_token`.
     pub instance_url: Option<String>,
-    pub scope: Option<shaula_core::forgejo::ForgejoScope>,
+    /// Provider-typed scope, parsed per `kind` (Forgejo or GitLab).
+    pub scope: Option<serde_json::Value>,
     /// v2 Target policy selectors (schema_version 2).
     pub target_policy: Option<Vec<shaula_core::auth_policy::TargetSelector>>,
 }
@@ -98,7 +102,7 @@ impl<'de> Deserialize<'de> for AuthProfilePutDto {
             #[serde(default)]
             instance_url: Option<String>,
             #[serde(default)]
-            scope: Option<shaula_core::forgejo::ForgejoScope>,
+            scope: Option<serde_json::Value>,
             #[serde(default)]
             target_policy: Option<Vec<shaula_core::auth_policy::TargetSelector>>,
         }
@@ -113,9 +117,10 @@ impl<'de> Deserialize<'de> for AuthProfilePutDto {
         let token = wire.token;
         let instance_url = wire.instance_url;
         let scope = wire.scope;
-        if wire.kind != "forgejo_token" && forgejo_fields_present {
+        if !matches!(wire.kind.as_str(), "forgejo_token" | "gitlab_token") && forgejo_fields_present
+        {
             return Err(serde::de::Error::custom(
-                "Forgejo authentication fields require kind: forgejo_token",
+                "token authentication fields require kind: forgejo_token or gitlab_token",
             ));
         }
         Ok(Self {

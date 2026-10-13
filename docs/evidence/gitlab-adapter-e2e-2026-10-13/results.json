@@ -1,0 +1,41 @@
+{
+  "demand": {
+    "idle": 0,
+    "pending": 1,
+    "unpausedAnchorProven": false
+  },
+  "generation": {
+    "associatedJob": {
+      "name": "match",
+      "projectPath": "fleet/app"
+    },
+    "executionStatusesAfterExit": [
+      [
+        "paused",
+        "idle"
+      ]
+    ],
+    "exitCode": 0,
+    "idleLagSeconds": 0,
+    "jobStatus": "success",
+    "neverContactedBeforeStart": true,
+    "pausedWhileBusy": true,
+    "runningAfterExit": 0,
+    "statusAfterExit": "paused",
+    "tokenInInspectLogsOrTrace": false,
+    "traceHasTaskOutput": true
+  },
+  "probe": {
+    "serverVersion": "19.4.2",
+    "tokenExpiresAt": "2026-10-15"
+  },
+  "removal": {
+    "anchor": "Done",
+    "generation": "Done then AlreadyAbsent",
+    "inventoryEmpty": true
+  },
+  "images": {
+    "server": "docker.io/gitlab/gitlab-ce:19.4.2-ce.0",
+    "runner": "docker.io/gitlab/gitlab-runner:v19.4.1"
+  }
+}

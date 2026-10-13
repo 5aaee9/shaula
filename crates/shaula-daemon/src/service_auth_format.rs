@@ -63,6 +63,58 @@ impl ForgejoAuthPutFormat {
     }
 }
 
+/// Canonical non-secret publication body of a GitLab token Candidate
+/// (spec 0043 §7). Never a fallback for any other provider.
+#[derive(Debug, Clone)]
+pub(crate) struct GitlabAuthPutFormat {
+    pub target_json: String,
+}
+
+impl GitlabAuthPutFormat {
+    pub(crate) fn parse(payload: &AuthProfilePut) -> Result<Self, (ReasonCode, String)> {
+        if payload.kind != shaula_core::auth::AuthKind::GitlabToken
+            || payload.schema_version != Some(1)
+        {
+            return Err((
+                ReasonCode::SpecInvalid,
+                "gitlab_token with schema_version: 1 is required".into(),
+            ));
+        }
+        let Some(target) = payload.gitlab_target.clone() else {
+            return Err((
+                ReasonCode::SpecInvalid,
+                "gitlab_token target is required".into(),
+            ));
+        };
+        target
+            .validate()
+            .map_err(|error| (error.code, error.summary))?;
+        if payload.app_id.is_some()
+            || payload.target_policy.is_some()
+            || payload.forgejo_target.is_some()
+        {
+            return Err((
+                ReasonCode::SpecInvalid,
+                "gitlab_token cannot carry GitHub or Forgejo fields".into(),
+            ));
+        }
+        let secret = payload.secret.expose();
+        if secret.trim().is_empty() || secret.len() > 4096 || secret.chars().any(char::is_control) {
+            return Err((
+                ReasonCode::CredentialMalformed,
+                "GitLab token must be 1..=4096 bytes without control characters".into(),
+            ));
+        }
+        let target_json = serde_json::to_string(&target)
+            .map_err(|error| (ReasonCode::Internal, error.to_string()))?;
+        Ok(Self { target_json })
+    }
+
+    pub(crate) fn canonical_body(&self) -> String {
+        format!("gitlab_token|1|{}", self.target_json)
+    }
+}
+
 /// Canonical non-secret publication body of one Auth Candidate.
 #[derive(Debug, Clone)]
 pub(crate) struct AuthPutFormat {

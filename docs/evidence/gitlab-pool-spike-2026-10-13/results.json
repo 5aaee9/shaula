@@ -1,0 +1,134 @@
+{
+  "generatedAt": "2026-10-13T10:28:56.621Z",
+  "cases": {
+    "demand": {
+      "projectPendingJobs": [
+        {
+          "name": "untagged",
+          "tags": []
+        },
+        {
+          "name": "mismatch",
+          "tags": [
+            "gpu",
+            "shaula-spike"
+          ]
+        },
+        {
+          "name": "match",
+          "tags": [
+            "shaula-spike"
+          ]
+        }
+      ],
+      "pausedAnchorCompatible": {
+        "count": 1,
+        "names": [
+          "match"
+        ],
+        "runnerVisible": true,
+        "runnerManageable": true
+      },
+      "operatorWithoutRunnerFilterCount": 0,
+      "operatorOnForeignRunner": {
+        "count": 0,
+        "names": [],
+        "runnerVisible": true,
+        "runnerManageable": false
+      },
+      "adminOnForeignRunnerCount": 1
+    },
+    "closedLoop": {
+      "busy": {
+        "status": "online",
+        "jobExecutionStatus": "active",
+        "jobRunnerId": 3
+      },
+      "exitCode": 0,
+      "jobStatus": "success",
+      "jobRunnerIdAfterExit": 3,
+      "registrationAfterExit": {
+        "exists": true,
+        "status": "online",
+        "jobExecutionStatus": "idle"
+      },
+      "leakScan": {
+        "argvContainsToken": false,
+        "envContainsToken": false,
+        "logsContainFullToken": false,
+        "logsShortTokenIsTokenSubstring": true
+      },
+      "removal": {
+        "deleteStatus": 204,
+        "afterStatus": 404
+      }
+    },
+    "noJob": {
+      "exitCode": 0,
+      "elapsedSeconds": 13,
+      "jobsProcessed": 0,
+      "removal": {
+        "deleteStatus": 204,
+        "afterStatus": 404
+      }
+    },
+    "pause": {
+      "pausedBeforeStart": {
+        "exitCode": 0,
+        "jobsProcessed": 0,
+        "compatibleStillPending": 1,
+        "removal": {
+          "deleteStatus": 204,
+          "afterStatus": 404
+        }
+      },
+      "pausedWhileRunning": {
+        "runningJobs": [
+          true
+        ],
+        "jobRunnerId": true,
+        "jobExecutionStatus": "active",
+        "exitCode": 0,
+        "finalJobStatus": "success",
+        "jobRunnerRetained": true,
+        "removal": {
+          "deleteStatus": 204,
+          "afterStatus": 404
+        }
+      }
+    },
+    "deleteWhileRunning": {
+      "removal": {
+        "deleteStatus": 204,
+        "afterStatus": 404
+      },
+      "jobStatusRightAfterDelete": "running",
+      "jobRunnerAfterDelete": null,
+      "exitCode": 0,
+      "finalJobStatus": "success"
+    },
+    "tokenReuse": {
+      "concurrentJobsOnOneRegistration": 2,
+      "removal": {
+        "deleteStatus": 204,
+        "afterStatus": 404
+      }
+    },
+    "identity": {
+      "duplicateDescriptionAccepted": true,
+      "exactDescriptionMatches": 2,
+      "maintenanceNoteRoundTrip": true
+    },
+    "mismatchStillPending": 10
+  },
+  "versions": {
+    "gitlab": "19.4.2",
+    "revision": "ecff27ae760",
+    "runnerImage": "docker.io/gitlab/gitlab-runner:v19.4.1",
+    "serverImage": "docker.io/gitlab/gitlab-ce:19.4.2-ce.0"
+  },
+  "imageIds": {
+    "server": "0be3fd698d4e2afb23fa7d583caae2fe369876de3fbbc320ec13e4f792e3d26c",
+    "runner": "7206f451698da88f8f8f4d181674fb1bc23cb48db3b86fbe31132c33c81fa52b"
+  }
+}

@@ -95,6 +95,15 @@ fn selectable_backend_requires_optional_nonsecret_identity_without_a_default() -
             "jit_config = string\n    forgejo = optional(any)",
         ),
     )?;
+    // The Docker source also declares GitLab, whose member is required too.
+    assert!(discover_variables(directory.path(), "fixture").is_err());
+    std::fs::write(
+        &path,
+        original.replace(
+            "jit_config = string",
+            "jit_config = string\n    forgejo = optional(any)\n    gitlab = optional(any)",
+        ),
+    )?;
     assert!(discover_variables(directory.path(), "fixture")?.available);
     Ok(())
 }

@@ -80,6 +80,7 @@ pub(super) fn envelope(
     expr: &Expression,
     input_version: u32,
     forgejo: ForgejoMember,
+    gitlab: bool,
 ) -> CoreResult<BTreeMap<String, Node>> {
     let fields = object(expr)?;
     let mut nodes = BTreeMap::new();
@@ -94,14 +95,17 @@ pub(super) fn envelope(
             "generation" => Some("any"),
             "forgejo" if forgejo != ForgejoMember::Absent => Some("any"),
             "forgejo_vm" if forgejo == ForgejoMember::OptionalVm => Some("any"),
+            // GitLab is only ever one of several selectable backends.
+            "gitlab" if gitlab => Some("any"),
             "setup_info" if input_version == 2 => Some("any"),
             "jit_config" | "bindings_digest" => Some("string"),
             "bindings" | "parameters" => None,
             _ => return Err(invalid("shaula variable declares an unknown system member")),
         };
         if let Some(expected) = expected {
-            let expr = if matches!(field, "forgejo" | "forgejo_vm")
-                && matches!(forgejo, ForgejoMember::Optional | ForgejoMember::OptionalVm)
+            let expr = if field == "gitlab"
+                || matches!(field, "forgejo" | "forgejo_vm")
+                    && matches!(forgejo, ForgejoMember::Optional | ForgejoMember::OptionalVm)
             {
                 match call(expr, "optional") {
                     Some([inner]) => inner,
@@ -132,7 +136,8 @@ pub(super) fn envelope(
     let expected_count = 6
         + usize::from(input_version == 2)
         + usize::from(forgejo != ForgejoMember::Absent)
-        + usize::from(forgejo == ForgejoMember::OptionalVm);
+        + usize::from(forgejo == ForgejoMember::OptionalVm)
+        + usize::from(gitlab);
     if names.len() != expected_count {
         return Err(invalid(
             "shaula variable is missing a system envelope member",

@@ -11,6 +11,7 @@ fn base_spec() -> FleetSpec {
             labels: vec!["shaula-linux-x64".into()],
         },
         forgejo: None,
+        gitlab: None,
         capacity: CapacityPolicyDto {
             min_runners: 0,
             max_runners: 20,

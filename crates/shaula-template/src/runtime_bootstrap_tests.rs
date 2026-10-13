@@ -30,6 +30,7 @@ pub(super) fn request() -> TemplateCreateRequest {
         timeout: Duration::from_secs(60),
         apply_intent_sink: None,
         forgejo_bootstrap: None,
+        gitlab_bootstrap: None,
     }
 }
 

@@ -31,13 +31,17 @@ impl ProfileManifest {
                 == Some(super::CONTAINER_BOOTSTRAP_CONTRACT);
         let vm = self.forgejo_vm_bootstrap_contract.as_deref()
             == Some(super::FORGEJO_VM_BOOTSTRAP_CONTRACT);
+        let declared = |name: &str| self.runner_backends.iter().filter(|b| *b == name).count();
+        // GitLab is admitted only through the container contract so far.
+        let gitlab = declared("gitlab");
         if (!container && !vm)
-            || self.runner_backends.len() != 2
-            || !self.runner_backends.iter().any(|b| b == "github")
-            || !self.runner_backends.iter().any(|b| b == "forgejo")
+            || self.runner_backends.len() != 2 + gitlab
+            || declared("github") != 1
+            || declared("forgejo") != 1
+            || gitlab > usize::from(container)
             || self.runner_backend != "github"
         {
-            return Err(invalid("selectable runner_backends requires github and forgejo, a github default and an admitted bootstrap contract"));
+            return Err(invalid("selectable runner_backends requires github and forgejo (optionally gitlab on containers), a github default and an admitted bootstrap contract"));
         }
         if !container {
             return Ok(());
@@ -68,7 +72,7 @@ impl ProfileManifest {
             match bindings.get("runner_backend") {
                 Some(Value::String(backend)) => backend,
                 None => self.runner_backend.as_str(),
-                _ => return Err(invalid("runner_backend binding must be github or forgejo")),
+                _ => return Err(invalid("runner_backend binding must be a declared backend")),
             }
         };
         if !self.supports_runner_backend(selected) {
@@ -143,5 +147,6 @@ fn backend_name(provider: FleetProviderKind) -> &'static str {
     match provider {
         FleetProviderKind::Github => "github",
         FleetProviderKind::Forgejo => "forgejo",
+        FleetProviderKind::Gitlab => "gitlab",
     }
 }

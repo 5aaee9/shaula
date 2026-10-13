@@ -33,6 +33,7 @@ impl ControlPlane {
                 match manifest.runner_backend_for_bindings(&bindings).ok()? {
                     "github" => Some(FleetProviderKind::Github),
                     "forgejo" => Some(FleetProviderKind::Forgejo),
+                    "gitlab" => Some(FleetProviderKind::Gitlab),
                     _ => None,
                 }
             });

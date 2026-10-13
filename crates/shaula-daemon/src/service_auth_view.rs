@@ -107,6 +107,7 @@ impl ControlPlane {
                     "pat" => Some(shaula_core::auth::AuthKind::Pat),
                     "github_app" => Some(shaula_core::auth::AuthKind::GithubApp),
                     "forgejo_token" => Some(shaula_core::auth::AuthKind::ForgejoToken),
+                    "gitlab_token" => Some(shaula_core::auth::AuthKind::GitlabToken),
                     _ => None,
                 }),
             credential_present: active.is_some(),
@@ -121,6 +122,7 @@ impl ControlPlane {
                     phase: dependent.fleet_phase,
                     target: serde_json::from_str(&dependent.target_json).ok(),
                     forgejo_target: serde_json::from_str(&dependent.target_json).ok(),
+                    gitlab_target: serde_json::from_str(&dependent.target_json).ok(),
                 })
                 .collect(),
         }))
@@ -137,6 +139,7 @@ impl ControlPlane {
             target_policy: None,
             bindings: Vec::new(),
             forgejo: None,
+            gitlab: None,
         };
         if row.is_github_app_v2() {
             state.app_id = row.app_id.clone();
@@ -160,6 +163,21 @@ impl ControlPlane {
                 .transpose()
                 .map_err(parse_error)?;
             state.forgejo = Some(shaula_core::registry::ForgejoAuthState { target, validation });
+        } else if row.is_gitlab_token_v1() {
+            let parse_error = |_| {
+                shaula_core::error::CoreError::internal(
+                    "stored GitLab authentication metadata is invalid",
+                )
+            };
+            let target = serde_json::from_str(row.policy_json.as_deref().unwrap_or("null"))
+                .map_err(parse_error)?;
+            let validation = row
+                .validation_snapshot_json
+                .as_deref()
+                .map(serde_json::from_str)
+                .transpose()
+                .map_err(parse_error)?;
+            state.gitlab = Some(shaula_core::registry::GitlabAuthState { target, validation });
         } else {
             state.state = "Unsupported".into();
             state.reason = Some("UnsupportedAuthenticationFormat".into());
@@ -169,5 +187,5 @@ impl ControlPlane {
 }
 
 fn supported(row: &AuthRevisionRow) -> bool {
-    row.is_github_app_v2() || row.is_forgejo_token_v1()
+    row.is_github_app_v2() || row.is_forgejo_token_v1() || row.is_gitlab_token_v1()
 }

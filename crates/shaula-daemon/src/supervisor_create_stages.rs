@@ -382,6 +382,7 @@ impl FleetSupervisor {
             timeout: self.config.operation_timeout,
             apply_intent_sink: Some(apply_intent.clone()),
             forgejo_bootstrap: None,
+            gitlab_bootstrap: None,
         };
         Ok((request, apply_intent))
     }

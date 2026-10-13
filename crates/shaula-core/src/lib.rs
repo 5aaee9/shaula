@@ -14,6 +14,7 @@ pub mod error;
 pub mod fleet;
 pub mod forgejo;
 pub mod github;
+pub mod gitlab;
 pub mod jobs;
 pub mod lifecycle;
 pub mod lockfile;

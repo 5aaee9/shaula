@@ -26,9 +26,7 @@ impl ControlPlane {
         let spec = latest
             .as_ref()
             .and_then(|r| serde_json::from_str::<FleetSpec>(&r.spec_json).ok());
-        let forgejo = spec
-            .as_ref()
-            .is_some_and(|spec| spec.kind == shaula_core::fleet::FleetProviderKind::Forgejo);
+        let pool = spec.as_ref().is_some_and(|spec| spec.kind.is_pool());
         let capacity_policy =
             spec.map(|spec| shaula_core::capacity::CapacityPolicy::from(spec.capacity));
 
@@ -72,7 +70,7 @@ impl ControlPlane {
                 observed_route,
             }
         });
-        let auth = if forgejo {
+        let auth = if pool {
             latest.map(|row| AuthRolloutSummary {
                 observed: (fleet.phase == "Ready"
                     && fleet.observed_revision == fleet.desired_revision)
@@ -96,7 +94,7 @@ impl ControlPlane {
         let auth_lag_reason = auth.as_ref().and_then(|a| {
             if a.observed != Some(a.desired.clone()) {
                 Some(
-                    if forgejo {
+                    if pool {
                         "RunnerRebuildPending"
                     } else {
                         "AuthHandoffLag"

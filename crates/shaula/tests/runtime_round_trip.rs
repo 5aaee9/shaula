@@ -95,6 +95,7 @@ exit /b 1
             timeout: std::time::Duration::from_secs(10),
             apply_intent_sink: None,
             forgejo_bootstrap: None,
+            gitlab_bootstrap: None,
         })
         .await
         .unwrap();

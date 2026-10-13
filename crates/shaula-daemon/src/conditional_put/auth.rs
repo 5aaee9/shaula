@@ -10,11 +10,12 @@ use shaula_core::registry::{
 use super::request::{internal, Commit, Identity, Plan};
 use super::{ControlPlane, Outcome, Resource};
 use crate::service::unprocessable;
-use crate::service_auth_format::{AuthPutFormat, ForgejoAuthPutFormat};
+use crate::service_auth_format::{AuthPutFormat, ForgejoAuthPutFormat, GitlabAuthPutFormat};
 
 enum Format {
     Github(AuthPutFormat),
     Forgejo(ForgejoAuthPutFormat),
+    Gitlab(GitlabAuthPutFormat),
 }
 
 pub(in crate::service) struct Auth {
@@ -34,7 +35,9 @@ impl Auth {
             return Ok(Err(unprocessable(error.code, error.summary)));
         }
         // Unsupported formats are rejected BEFORE looking for historical replay.
-        let format = if payload.kind == AuthKind::ForgejoToken {
+        let format = if payload.kind == AuthKind::GitlabToken {
+            GitlabAuthPutFormat::parse(&payload).map(Format::Gitlab)
+        } else if payload.kind == AuthKind::ForgejoToken {
             ForgejoAuthPutFormat::parse(&payload).map(Format::Forgejo)
         } else {
             AuthPutFormat::parse(&payload).map(Format::Github)
@@ -46,6 +49,7 @@ impl Auth {
         let canonical = match &format {
             Format::Github(format) => format.canonical_body(),
             Format::Forgejo(format) => format.canonical_body(),
+            Format::Gitlab(format) => format.canonical_body(),
         };
         let canonical = serde_json::json!({"body": canonical, "if_none_match": if_none_match, "if_match": if_match}).to_string();
         Ok(Ok(Self {
@@ -134,6 +138,40 @@ impl Auth {
         }
         Ok(Ok(()))
     }
+
+    /// A GitLab profile's kind and target are fixed per incarnation.
+    async fn gitlab_identity(
+        &self,
+        plane: &ControlPlane,
+        key: &str,
+        current: Option<&ProfileHead>,
+        format: &GitlabAuthPutFormat,
+    ) -> Outcome<()> {
+        let Some(current) = current else {
+            return Ok(Ok(()));
+        };
+        let Some(head) = plane
+            .store
+            .auth_revision_get(key, current.desired_revision)
+            .await?
+        else {
+            return Ok(Err(MutationError::IdentityConflict));
+        };
+        if !head.is_gitlab_token_v1() {
+            return Ok(Err(MutationError::IdentityConflict));
+        }
+        let target: shaula_core::gitlab::GitlabTarget = serde_json::from_str(
+            head.policy_json.as_deref().unwrap_or("null"),
+        )
+        .map_err(|error| CoreError::internal(format!("GitLab target is invalid: {error}")))?;
+        let submitted: shaula_core::gitlab::GitlabTarget =
+            serde_json::from_str(&format.target_json)
+                .map_err(|error| CoreError::internal(error.to_string()))?;
+        if target != submitted {
+            return Ok(Err(MutationError::IdentityConflict));
+        }
+        Ok(Ok(()))
+    }
 }
 
 #[async_trait]
@@ -147,6 +185,7 @@ impl Resource for Auth {
             kind: match self.format {
                 Format::Github(_) => "github_auth_profile",
                 Format::Forgejo(_) => "forgejo_auth_profile",
+                Format::Gitlab(_) => "gitlab_auth_profile",
             },
             canonical: &self.canonical,
             includes_precondition: false,
@@ -194,6 +233,16 @@ impl Resource for Auth {
                     "Publish"
                 }
             }
+            Format::Gitlab(format) => {
+                if let Err(error) = self.gitlab_identity(plane, key, head, format).await? {
+                    return Ok(Err(error));
+                }
+                if head.is_some() {
+                    "Rotate"
+                } else {
+                    "Publish"
+                }
+            }
         };
         // Deliberately preserve the existing Candidate/revalidation behaviour.
         // Auth no-op versus explicit revalidation is a separate contract decision.
@@ -214,6 +263,7 @@ impl Resource for Auth {
                 2,
             ),
             Format::Forgejo(format) => (None, format.target_json.clone(), "forgejo_token", 1),
+            Format::Gitlab(format) => (None, format.target_json.clone(), "gitlab_token", 1),
         };
         let row = AuthRevisionRow {
             profile_key: commit.key.into(),

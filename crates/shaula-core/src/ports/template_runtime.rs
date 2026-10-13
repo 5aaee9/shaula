@@ -29,6 +29,8 @@ pub struct TemplateCreateRequest {
     /// outside [`ShaulaInputEnvelope`] so the token cannot enter tfvars,
     /// Terraform variables, or operation-log projections.
     pub forgejo_bootstrap: Option<crate::ports::forgejo::ForgejoBootstrapMaterial>,
+    /// GitLab `run-single` material; delivered only as a protected `config.toml`.
+    pub gitlab_bootstrap: Option<crate::ports::gitlab::GitlabBootstrapMaterial>,
 }
 // The executable is deliberately NOT caller-supplied: the runtime adapter
 // holds THE single engine authority (its configured binary), so "verify B,

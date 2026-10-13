@@ -16,6 +16,7 @@ pub mod fleet_auth_repo;
 mod fleet_observations;
 pub mod fleet_repo;
 mod generation_counts;
+mod gitlab_pool_repo;
 pub mod http_state;
 pub mod jobs;
 mod key_pages;
@@ -43,6 +44,13 @@ pub use store::{Store, StoreError, StoreResult};
 pub(crate) fn spec_is_forgejo(json: &str) -> bool {
     serde_json::from_str::<shaula_core::fleet::FleetSpec>(json)
         .is_ok_and(|spec| spec.kind == shaula_core::fleet::FleetProviderKind::Forgejo)
+}
+
+/// True when `json` parses as a Pool Fleet spec (Forgejo or GitLab): no Auth
+/// Handoff or installation context. Unparseable specs are treated as GitHub.
+pub(crate) fn spec_is_pool(json: &str) -> bool {
+    serde_json::from_str::<shaula_core::fleet::FleetSpec>(json)
+        .is_ok_and(|spec| spec.kind.is_pool())
 }
 
 #[cfg(test)]

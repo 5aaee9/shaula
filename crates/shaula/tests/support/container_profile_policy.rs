@@ -99,6 +99,7 @@ async fn legacy_container_create_and_prepare_are_rejected_before_engine_spawn() 
             timeout: Duration::from_secs(1),
             apply_intent_sink: None,
             forgejo_bootstrap: None,
+            gitlab_bootstrap: None,
         })
         .await;
     assert!(matches!(result, Err(error) if error == rejected));

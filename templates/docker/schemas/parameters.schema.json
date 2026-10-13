@@ -6,7 +6,7 @@
   "properties": {
     "runner_image": {
       "type": "string",
-      "enum": ["auto", "ghcr.io/actions/actions-runner:2.337.0", "code.forgejo.org/forgejo/runner:13.1.0"],
+      "enum": ["auto", "ghcr.io/actions/actions-runner:2.337.0", "code.forgejo.org/forgejo/runner:13.1.0", "gitlab/gitlab-runner:v19.4.1"],
       "description": "auto (default) selects the official pinned image for the publisher's runner_backend. An explicit alias must match that backend."
     }
   }

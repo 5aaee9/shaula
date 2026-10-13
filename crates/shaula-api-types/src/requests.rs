@@ -109,6 +109,12 @@ impl AuthPublish {
                 scope: Document,
                 token: String,
             },
+            #[serde(rename = "gitlab_token")]
+            Gitlab {
+                instance_url: String,
+                scope: Document,
+                token: String,
+            },
         }
         // Destructure to ensure fields are deliberately checked rather than silently dropped.
         let valid = match value.decode::<Wire>()? {
@@ -124,6 +130,11 @@ impl AuthPublish {
                     && target_policy.raw().starts_with('[')
             }
             Wire::Forgejo {
+                instance_url,
+                scope,
+                token,
+            }
+            | Wire::Gitlab {
                 instance_url,
                 scope,
                 token,

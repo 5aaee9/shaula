@@ -16,6 +16,7 @@ fn legacy() -> AuthRevisionState {
         target_policy: None,
         bindings: vec![],
         forgejo: None,
+        gitlab: None,
     }
 }
 
@@ -149,6 +150,7 @@ fn forgejo_reads_expose_only_provider_metadata_and_validation() {
         phase: "Ready".into(),
         target: None,
         forgejo_target: Some(target),
+        gitlab_target: None,
     });
     let body = auth_profile_body(&view);
     assert_eq!(body["status"], "Active");

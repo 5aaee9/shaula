@@ -23,6 +23,8 @@ pub struct AuthRevisionState {
     pub bindings: Vec<crate::auth_context::AccountBinding>,
     /// Forgejo-only target and authentication observation, never GitHub bindings.
     pub forgejo: Option<ForgejoAuthState>,
+    /// GitLab-only target and authentication observation.
+    pub gitlab: Option<GitlabAuthState>,
 }
 
 /// Non-secret Forgejo token revision metadata. A probe is historical validation
@@ -31,6 +33,13 @@ pub struct AuthRevisionState {
 pub struct ForgejoAuthState {
     pub target: crate::forgejo::ForgejoTarget,
     pub validation: Option<crate::ports::forgejo::ForgejoAuthProbe>,
+}
+
+/// Non-secret GitLab token revision metadata (spec 0043 §7).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct GitlabAuthState {
+    pub target: crate::gitlab::GitlabTarget,
+    pub validation: Option<crate::ports::gitlab::GitlabAuthProbe>,
 }
 
 /// Current route health, separate from immutable revision bindings.
@@ -56,6 +65,8 @@ pub struct AuthLiveFleet {
     pub target: Option<crate::github::GitHubTarget>,
     /// Present instead of `target` for a Forgejo Fleet.
     pub forgejo_target: Option<crate::forgejo::ForgejoTarget>,
+    /// Present instead of `target` for a GitLab Fleet.
+    pub gitlab_target: Option<crate::gitlab::GitlabTarget>,
 }
 
 /// Non-secret Auth Profile summary; only `credential_present` metadata.
@@ -113,6 +124,11 @@ impl AuthRevisionRow {
     /// Whether this row is the executable Forgejo token format (schema v1).
     pub fn is_forgejo_token_v1(&self) -> bool {
         self.schema_version == 1 && self.kind == crate::auth::AuthKind::ForgejoToken.as_str()
+    }
+
+    /// Whether this row is the executable GitLab token format (schema v1).
+    pub fn is_gitlab_token_v1(&self) -> bool {
+        self.schema_version == 1 && self.kind == crate::auth::AuthKind::GitlabToken.as_str()
     }
 
     /// The stored Target policy of a v2 revision. Legacy rows have none;

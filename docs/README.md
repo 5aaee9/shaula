@@ -24,6 +24,7 @@
 | Forgejo 四种 scope 的最小权限与只读激活探测边界 | [Forgejo 最小权限](forgejo-permissions.md) |
 | Forgejo Busy-safe drain 的源码证据、竞态与发布阻塞 | [Forgejo drain](forgejo-drain.md) |
 | Forgejo Docker / 本地 Kubernetes 真实验收与 A1–A8 边界 | [Forgejo follow-up evidence](evidence/forgejo-followup-2026-09-22/README.md) |
+| GitLab Pool 后端的上游协议事实（需求 Anchor、关联、暂停/删除、token 复用） | [GitLab 协议实验](evidence/gitlab-pool-spike-2026-10-13/README.md) |
 
 ## 设计与决策
 
@@ -56,6 +57,7 @@
 | Generation readiness 对账（WaitingOnline → Idle / CleanupRequired 的库存驱动） | [spec 0024](specs/0024-generation-readiness-reconciliation.md) / [ARD-0030](ard/0030-drive-generation-readiness-from-inventory.md) |
 | JIT mint 不确定性恢复（精确名查找分类：落地即移除、缺失即清理、歧义隔离） | [spec 0025](specs/0025-jit-mint-uncertainty-recovery.md) / [ARD-0031](ard/0031-classify-uncertain-jit-mints-by-exact-name-lookup.md)；从未开始 Create apply 的 Generation 直接 `Destroyed` 见 [ARD-0040](ard/0040-destroy-generations-that-never-started-a-create-apply.md) |
 | Forgejo Runner Backend（provider 维度、Pool 切片、未验证关联、Busy-safe removal） | [spec 0026](specs/0026-forgejo-runner-backend.md) / [ARD-0033](ard/0033-admit-forgejo-through-a-pool-backend-first.md)；Draft + `proposed`，尚未接受 |
+| GitLab Runner Backend（共享 Pool driver、需求 Anchor、Verified 关联、暂停后清退） | [spec 0043](specs/0043-gitlab-runner-backend.md) / [ARD-0043](ard/0043-admit-gitlab-as-the-second-pool-backend.md)；Draft + `proposed`，尚未接受，无实现 |
 | Fleet authentication/template Profile 服务端列表选择 | [spec 0016](specs/0016-fleet-profile-selection.md) / [ARD-0020](ard/0020-load-fleet-profile-choices-from-registry.md) |
 | Template 静态校验后的自动激活与旧 Ready 升级 | [spec 0017](specs/0017-automatic-template-activation.md) / [ARD-0021](ard/0021-activate-templates-after-static-validation.md) |
 | 仅支持 v2 GitHub App authentication、历史格式停用与部署检查 | [spec 0018](specs/0018-github-app-only-authentication.md) / [ARD-0022](ard/0022-retire-legacy-github-authentication.md) |
@@ -97,10 +99,12 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 | D4 | 持久格式，阻塞发布冻结 | `bindings_digest` 是否继续作为独立 commitment，以及 exact Revision/incarnation 绑定、编码和兼容迁移；本轮不新增 bd2/HMAC 格式，不重写旧记录 | 0004 §3 / 0005 §5 |
 | D5 | 跨版本协议验收 | `forgejo_token` schema、四 scope 的权限映射和只读激活探测已在 Forgejo 16.0.4 核验，见 [最小权限](forgejo-permissions.md)；其它支持版本/定制权限部署尚需运行同一矩阵，不属于 GitHub credential fallback | 0026 §7 |
 | D6 | 运行策略 | Forgejo 轮询的规模边界与默认值：jobs 无分页且 labels 在服务端内存过滤，inventory 按可变活动时间分页；需要最终 interval/backoff/条数上限、idle deadline 与可支持的实例规模上限 | 0026 §3 / §4 |
+| D7 | 运行策略 | GitLab 需求查询（`compatibleRunnerId` count）与库存分页在大实例上的成本、interval/backoff、Anchor 被 stale-runner 清理时的重建节奏 | 0043 §3 |
 | R1 | 发布配置与验收 | Rust toolchain/features、Terraform binary、provider locks/checksums、官方 Runner image/宿主 bootstrap CLI、runtime/trust policy 与 conformance suite 的 exact tuple | 0003 / 0004 / 0006 / 0007 |
 | R2 | 协议验收 | Go oracle 的 commit/module/checksum、获取方式和完整 differential suite；真实已注册 OIDC Provider 的 browser/API 验收 | 0007 §4 / 0009 §7 |
 | R3 | 平台验收 | Kubernetes CPU/memory/ephemeral-storage、安全上下文、seccomp/capabilities、namespace sharing/network policy 和所需 RBAC；host OS 的 worker/descendant fencing | 0003 §10 |
 | R4 | 发布配置与验收 | Forgejo Backend 的 exact tuple：Forgejo 最低版本、forgejo-runner 版本、官方 runner 镜像 registry/digest、labels backend target 与 Template Platform 的组合、runtime policy 与 conformance suite | 0026 §3 / §5 |
+| R5 | 发布配置与验收 | GitLab Backend 的 exact tuple：GitLab 最低版本（`compatibleRunnerId` 与 `POST /user/runners` 行为）、gitlab-runner 版本、官方镜像 digest、VM 二进制 SHA-256、instance scope 与 VM `docker` executor 是否纳入 | 0043 §2 / §5 |
 
 代码或 manifest 已选择某个库/字段，不自动等于其兼容性验收通过；已有实现也不应继续作为“完全未实现”记录。
 
@@ -108,7 +112,7 @@ ARD 保存选择的理由、代价与历史；详细协议在其引用的 spec �
 
 多账户 GitHub authentication 已按 [spec 0011](specs/0011-multi-account-github-authentication.md) 与 [ADR-0015](ard/0015-route-one-github-app-profile-to-multiple-accounts.md) 接受并完成本地实现：一份 App credential、多个明确账户/Target selector、个人未来仓库的按需验证。它替代单 installation、同 key policy 不可变的旧基线条款。[spec 0018](specs/0018-github-app-only-authentication.md) 进一步取消 GitHub PAT、v1 publication/replay、旧格式升级和 reference-only execution。历史 rows/credential bytes 保留且不自动转换；部署前必须确认没有仍依赖旧格式的 active/desired 或 retained execution 引用。真实验收与部署证据以 [implementation status](IMPLEMENTATION_STATUS.md) 为准。
 
-以下需要新的决定和对应验收，不阻塞按现有基线实现：额外 high-trust Runner-socket Profile、Docker memory-only JIT、pre-JIT provider-backed namespace preflight、每 Profile 独立 OS identity/sandbox、OpenTofu advertisement、远程 Executor Driver、多主/HA、自动删除 Scale Set、Quarantine force-recovery、Forgejo Runner Backend（spec 0026 Draft，Pool 切片先行，见 ARD-0033）。它们不能作为匿名认证、跳过 locking 或丢弃可能残留资源的理由。
+以下需要新的决定和对应验收，不阻塞按现有基线实现：额外 high-trust Runner-socket Profile、Docker memory-only JIT、pre-JIT provider-backed namespace preflight、每 Profile 独立 OS identity/sandbox、OpenTofu advertisement、远程 Executor Driver、多主/HA、自动删除 Scale Set、Quarantine force-recovery、Forgejo Runner Backend（spec 0026 Draft，Pool 切片先行，见 ARD-0033）、GitLab Runner Backend（spec 0043 Draft，以共享 Pool driver 为前提，见 ARD-0043）。它们不能作为匿名认证、跳过 locking 或丢弃可能残留资源的理由。
 
 ## 维护与验收
 

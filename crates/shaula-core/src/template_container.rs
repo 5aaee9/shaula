@@ -20,6 +20,21 @@ impl ProfileManifest {
         Ok(())
     }
 
+    /// GitLab runs `run-single` with the `shell` executor inside the official
+    /// Docker container; Kubernetes and VM bootstrap are not admitted yet.
+    pub fn validate_gitlab_target(&self) -> CoreResult<()> {
+        self.validate_for_provider(crate::fleet::FleetProviderKind::Gitlab)?;
+        if self.platform != "docker"
+            || self.container_bootstrap_contract.as_deref() != Some(CONTAINER_BOOTSTRAP_CONTRACT)
+        {
+            return Err(CoreError::new(
+                ReasonCode::TemplateInvalid,
+                "GitLab bootstrap requires the admitted container contract",
+            ));
+        }
+        Ok(())
+    }
+
     /// Admission for new publications and Create, never retained reads or Destroy.
     pub fn validate_new_container_profile(&self) -> CoreResult<()> {
         self.validate()?;
@@ -49,7 +64,7 @@ impl ProfileManifest {
             || self.input_contract_version != 1
             || self.setup_info_contract.is_some()
             || self.runner_image_digests.iter().any(|image| {
-                !["github", "forgejo"].iter().any(|backend| {
+                !["github", "forgejo", "gitlab"].iter().any(|backend| {
                     self.supports_runner_backend(backend) && official_runner_image(backend, image)
                 })
             })
@@ -86,6 +101,9 @@ pub(super) fn official_runner_image(backend: &str, image: &str) -> bool {
         "forgejo" => repository
             .strip_prefix("code.forgejo.org/forgejo/runner:")
             .is_some_and(crate::forgejo::supports_runner_version),
+        "gitlab" => repository
+            .strip_prefix("gitlab/gitlab-runner:")
+            .is_some_and(crate::gitlab::supports_runner_version),
         _ => false,
     }
 }

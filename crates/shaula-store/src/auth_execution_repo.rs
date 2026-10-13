@@ -222,6 +222,15 @@ impl Store {
 pub(crate) fn target_from_spec(spec: &str) -> StoreResult<String> {
     let spec: serde_json::Value =
         serde_json::from_str(spec).map_err(|e| StoreError::Corrupt(e.to_string()))?;
+    if spec["kind"] == "gitlab" {
+        let target = shaula_core::gitlab::GitlabTarget {
+            instance_url: serde_json::from_value(spec["gitlab"]["instance_url"].clone())
+                .map_err(|e| StoreError::Corrupt(format!("GitLab instance corrupt: {e}")))?,
+            scope: serde_json::from_value(spec["gitlab"]["scope"].clone())
+                .map_err(|e| StoreError::Corrupt(format!("GitLab scope corrupt: {e}")))?,
+        };
+        return serde_json::to_string(&target).map_err(|e| StoreError::Corrupt(e.to_string()));
+    }
     if spec["kind"] == "forgejo" {
         let target = shaula_core::forgejo::ForgejoTarget {
             instance_url: serde_json::from_value(spec["forgejo"]["instance_url"].clone())

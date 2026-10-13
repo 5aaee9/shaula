@@ -28,11 +28,13 @@ pub(crate) fn passed(ticket: &mut Option<ObservationTicket>, stage: StageId) {
 /// How long demand evidence stays current after it was last confirmed.
 /// GitHub demand is re-confirmed by each empty long poll, which the broker
 /// may hold for up to the 70 s client timeout, so the evidence must outlive
-/// one full poll. Forgejo demand is re-read on every reconcile pass.
+/// one full poll. Forgejo and GitLab demand is re-read on every reconcile pass.
 fn demand_evidence_ttl_ms(kind: DemandKind) -> i64 {
     match kind {
         DemandKind::GithubTotalAssignedJobs => 90_000,
-        DemandKind::ForgejoWaitingJobs | DemandKind::Unknown => 30_000,
+        DemandKind::ForgejoWaitingJobs | DemandKind::GitlabPendingJobs | DemandKind::Unknown => {
+            30_000
+        }
     }
 }
 

@@ -3,13 +3,14 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::auth::validate_profile_key_for_fleet_ref;
 use crate::auth::AuthRevisionRef;
 use crate::capacity::CapacityPolicy;
 use crate::error::{CoreError, CoreResult, ReasonCode};
 pub use crate::forgejo::FleetForgejoSection;
-use crate::forgejo::{validate_labels as validate_forgejo_labels, ForgejoTarget};
+use crate::forgejo::ForgejoTarget;
 use crate::github::{GitHubTarget, Label, ScaleSetIdentity};
+pub use crate::gitlab::FleetGitlabSection;
+use crate::gitlab::GitlabTarget;
 use crate::template::TemplateProfileKey;
 pub use crate::template_pool::{
     PoolFailurePolicy, ResolvedTemplatePoolMember, TemplatePoolMember, TemplatePoolSpec,
@@ -28,6 +29,8 @@ pub struct FleetSpec {
     pub github: FleetGithubSection,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forgejo: Option<FleetForgejoSection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gitlab: Option<FleetGitlabSection>,
     pub capacity: CapacityPolicyDto,
     #[serde(default)]
     pub template_profile_ref: TemplateProfileRefDto,
@@ -63,11 +66,21 @@ pub enum FleetProviderKind {
     #[default]
     Github,
     Forgejo,
+    Gitlab,
 }
 
 impl FleetProviderKind {
     fn is_github(&self) -> bool {
         matches!(self, Self::Github)
+    }
+
+    /// Pool backends pre-register runners and have no scale-set session,
+    /// Auth Handoff or installation context.
+    pub fn is_pool(&self) -> bool {
+        match self {
+            Self::Github => false,
+            Self::Forgejo | Self::Gitlab => true,
+        }
     }
 }
 
@@ -79,6 +92,10 @@ impl FleetSpec {
                 .forgejo
                 .as_ref()
                 .map_or("", |forgejo| forgejo.auth_profile_ref.as_str()),
+            FleetProviderKind::Gitlab => self
+                .gitlab
+                .as_ref()
+                .map_or("", |gitlab| gitlab.auth_profile_ref.as_str()),
         }
     }
 }
@@ -179,155 +196,15 @@ pub struct NormalizedFleet {
     pub provider: FleetProviderKind,
     pub identity: Option<ScaleSetIdentity>,
     pub forgejo_target: Option<ForgejoTarget>,
+    pub gitlab_target: Option<GitlabTarget>,
     pub labels: Vec<Label>,
     pub capacity: CapacityPolicy,
     pub inputs_digest: String,
 }
 
-/// Canonical validation shared by create, replace and decommission paths.
-pub fn validate_fleet_spec(spec: &FleetSpec) -> CoreResult<()> {
-    // Exactly one template source: a profile ref, a shared pool ref, or the
-    // legacy inline pool. The three are mutually exclusive.
-    let pool_ref = spec
-        .template_pool_ref
-        .as_ref()
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty());
-    let sources = [
-        !spec.template_profile_ref.is_empty(),
-        pool_ref.is_some(),
-        spec.template_pool.is_some(),
-    ]
-    .iter()
-    .filter(|present| **present)
-    .count();
-    if sources > 1 {
-        return Err(CoreError::new(
-            ReasonCode::SpecInvalid,
-            "template_profile_ref, template_pool_ref and template_pool are mutually exclusive",
-        ));
-    }
-    if sources == 0 {
-        return Err(CoreError::new(
-            ReasonCode::SpecInvalid,
-            "one of template_profile_ref, template_pool_ref or template_pool is required",
-        ));
-    }
-    if let Some(pool) = &spec.template_pool {
-        pool.validate()?;
-    }
-    if let Some(pool_ref) = pool_ref {
-        if pool_ref.len() > 128 {
-            return Err(CoreError::new(
-                ReasonCode::SpecInvalid,
-                "template_pool_ref must be a template pool key",
-            ));
-        }
-    }
-    if (spec.template_pool.is_some() || spec.template_pool_ref.is_some())
-        && !spec.template_inputs.is_empty()
-    {
-        return Err(CoreError::new(
-            ReasonCode::SpecInvalid,
-            "template_inputs must be empty when template_pool is declared",
-        ));
-    }
-    match spec.kind {
-        FleetProviderKind::Github => {
-            if spec.forgejo.is_some() {
-                return Err(CoreError::new(
-                    ReasonCode::SpecInvalid,
-                    "github fleets must not declare a forgejo section",
-                ));
-            }
-            if spec.github.scale_set_name.trim().is_empty()
-                || spec.github.scale_set_name.len() > 100
-            {
-                return Err(CoreError::new(
-                    ReasonCode::SpecInvalid,
-                    "scale_set_name must be 1..=100 characters",
-                ));
-            }
-            if spec.github.runner_group.trim().is_empty() || spec.github.runner_group.len() > 100 {
-                return Err(CoreError::new(
-                    ReasonCode::SpecInvalid,
-                    "runner_group must be 1..=100 characters",
-                ));
-            }
-            validate_labels(&spec.github.labels)?;
-            validate_profile_key_for_fleet_ref(&spec.github.auth_profile_ref)?;
-        }
-        FleetProviderKind::Forgejo => {
-            if !is_placeholder_github(&spec.github) {
-                return Err(CoreError::new(
-                    ReasonCode::SpecInvalid,
-                    "forgejo fleets must not declare a github section",
-                ));
-            }
-            let Some(forgejo) = &spec.forgejo else {
-                return Err(CoreError::new(
-                    ReasonCode::SpecInvalid,
-                    "forgejo fleets must declare a forgejo section",
-                ));
-            };
-            forgejo.validate()?;
-            validate_forgejo_labels(&forgejo.labels)?;
-        }
-    }
-    CapacityPolicy::from(spec.capacity)
-        .validate()
-        .map_err(|e| CoreError::new(ReasonCode::SpecInvalid, e))?;
-    Ok(())
-}
-
-fn validate_labels(labels: &[String]) -> CoreResult<()> {
-    if labels.len() > 32 {
-        return Err(CoreError::new(ReasonCode::SpecInvalid, "at most 32 labels"));
-    }
-    for label in labels {
-        let label = label.trim();
-        if label.is_empty() || label.len() > 64 {
-            return Err(CoreError::new(
-                ReasonCode::SpecInvalid,
-                "each label must be 1..=64 characters",
-            ));
-        }
-    }
-    Ok(())
-}
-
-/// Normalizes a validated spec into its immutable identity parts.
-pub fn normalize_fleet(spec: &FleetSpec, inputs_digest: String) -> CoreResult<NormalizedFleet> {
-    validate_fleet_spec(spec)?;
-    let (identity, forgejo_target, labels) = match spec.kind {
-        FleetProviderKind::Github => (
-            Some(ScaleSetIdentity {
-                target: spec.github.target.clone(),
-                runner_group: spec.github.runner_group.trim().to_string(),
-                scale_set_name: spec.github.scale_set_name.trim().to_string(),
-            }),
-            None,
-            spec.github.labels.clone(),
-        ),
-        FleetProviderKind::Forgejo => {
-            let forgejo = spec.forgejo.as_ref().ok_or_else(|| {
-                CoreError::new(ReasonCode::SpecInvalid, "forgejo section is required")
-            })?;
-            (None, Some(forgejo.target()), forgejo.labels.clone())
-        }
-    };
-    Ok(NormalizedFleet {
-        provider: spec.kind,
-        identity,
-        forgejo_target,
-        labels: labels
-            .iter()
-            .map(|label| Label::system(label.trim()))
-            .collect::<CoreResult<Vec<_>>>()?,
-        capacity: CapacityPolicy::from(spec.capacity),
-        inputs_digest,
-    })
-}
+#[path = "fleet_normalize.rs"]
+mod normalize;
+pub use normalize::{normalize_fleet, validate_fleet_spec};
 
 /// Stable Fleet Key identifying one incarnation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

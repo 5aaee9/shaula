@@ -39,8 +39,8 @@ pub async fn validate(
     let Some(row) = store.auth_revision_get(&key, head.desired_revision).await? else {
         return Ok(WorkerFlow::Done);
     };
-    if row.is_forgejo_token_v1() {
-        return forgejo::validate(&store, &clock, &key, &row, factory).await;
+    if row.is_forgejo_token_v1() || row.is_gitlab_token_v1() {
+        return token::validate(&store, &clock, &key, &row, factory).await;
     }
     if !row.is_github_app_v2() {
         return Err(CoreError::new(
@@ -61,10 +61,10 @@ pub async fn validate(
     }
 }
 
-mod forgejo;
 pub mod github;
 mod predecessor;
 mod scheduler;
 mod selectors;
 mod step;
+mod token;
 pub use scheduler::AuthWorkerScheduler;

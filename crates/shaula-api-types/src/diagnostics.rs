@@ -66,7 +66,8 @@ wire_enum!(EvidenceKind {
 });
 wire_enum!(DemandKind {
     GithubTotalAssignedJobs,
-    ForgejoWaitingJobs
+    ForgejoWaitingJobs,
+    GitlabPendingJobs
 });
 wire_enum!(StageId {
     Authority,

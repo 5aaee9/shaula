@@ -176,6 +176,17 @@ pub struct CreateMaterial {
     pub managed_shape: Vec<ManagedResourceRole>,
     pub environment: Vec<(String, String)>,
     pub forgejo: Option<ForgejoMaterial>,
+    #[serde(default)]
+    pub gitlab: Option<GitlabMaterial>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GitlabMaterial {
+    instance_url: String,
+    runner_id: u64,
+    runner_name: String,
+    token: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -203,6 +214,15 @@ impl CreateMaterial {
                     token: material.token().to_owned(),
                     labels: material.labels.clone(),
                 }),
+            gitlab: request
+                .gitlab_bootstrap
+                .as_ref()
+                .map(|material| GitlabMaterial {
+                    instance_url: material.instance_url.clone(),
+                    runner_id: material.runner_id,
+                    runner_name: material.runner_name.clone(),
+                    token: material.token().to_owned(),
+                }),
         }
     }
 
@@ -226,6 +246,18 @@ impl CreateMaterial {
                 .map_err(|_| StateError::Invalid)
             })
             .transpose()?;
+        let gitlab_bootstrap = self
+            .gitlab
+            .map(|material| {
+                crate::ports::gitlab::GitlabBootstrapMaterial::new(
+                    material.instance_url,
+                    material.runner_id,
+                    material.runner_name,
+                    SecretString::new(material.token),
+                )
+                .map_err(|_| StateError::Invalid)
+            })
+            .transpose()?;
         Ok(TemplateCreateRequest {
             workspace_path: launch.workspace.clone(),
             artifact_dir: launch.artifact.clone(),
@@ -237,6 +269,7 @@ impl CreateMaterial {
             timeout: launch.operation_timeout,
             apply_intent_sink: Some(sink),
             forgejo_bootstrap,
+            gitlab_bootstrap,
         })
     }
 }

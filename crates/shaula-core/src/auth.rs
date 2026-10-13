@@ -39,6 +39,7 @@ pub enum AuthKind {
     GithubApp,
     Pat,
     ForgejoToken,
+    GitlabToken,
 }
 
 impl AuthKind {
@@ -47,6 +48,7 @@ impl AuthKind {
             AuthKind::GithubApp => "github_app",
             AuthKind::Pat => "pat",
             AuthKind::ForgejoToken => "forgejo_token",
+            AuthKind::GitlabToken => "gitlab_token",
         }
     }
 }

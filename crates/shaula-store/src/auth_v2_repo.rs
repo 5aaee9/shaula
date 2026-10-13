@@ -119,6 +119,22 @@ impl Store {
                     Err(error) => return Err(error),
                 }
             }
+            ValidationResult::Accepted(promotion)
+                if candidate.schema_version == 1 && candidate.kind == "gitlab_token" =>
+            {
+                match self
+                    .auth_promote_gitlab(tx, &candidate, &profile, promotion, now)
+                    .await
+                {
+                    Ok(()) => (AuthPromotionOutcome::Promoted, None),
+                    Err(StoreError::PolicyDenied { reason }) => {
+                        self.auth_reject_candidate(tx, &candidate, Some(reason), &profile, now)
+                            .await?;
+                        (AuthPromotionOutcome::Rejected, Some(reason))
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
             ValidationResult::Accepted(_) => {
                 return Err(StoreError::PolicyDenied {
                     reason: "UnsupportedAuthFormat",
@@ -144,13 +160,15 @@ impl Store {
                 profile_changes::Column::UpdatedAt,
                 sea_orm::sea_query::Expr::value(now),
             )
-            .filter(profile_changes::Column::ResourceKind.eq(
-                if candidate.kind == "forgejo_token" {
+            .filter(
+                profile_changes::Column::ResourceKind.eq(if candidate.kind == "gitlab_token" {
+                    "gitlab_auth_profile"
+                } else if candidate.kind == "forgejo_token" {
                     "forgejo_auth_profile"
                 } else {
                     "github_auth_profile"
-                },
-            ))
+                }),
+            )
             .filter(profile_changes::Column::ProfileKey.eq(key))
             .filter(profile_changes::Column::Revision.eq(revision))
             .exec(tx)
@@ -311,7 +329,7 @@ impl Store {
             else {
                 continue;
             };
-            let is_forgejo = crate::spec_is_forgejo(&latest.spec_json);
+            let is_forgejo = crate::spec_is_pool(&latest.spec_json);
             if !is_forgejo {
                 self.fleet_auth_context_commit_tx(
                     tx,
@@ -366,6 +384,10 @@ impl Store {
 mod candidate_state;
 #[path = "auth_forgejo.rs"]
 mod forgejo;
+#[path = "auth_gitlab.rs"]
+mod gitlab;
+#[path = "auth_token_promotion.rs"]
+mod token_promotion;
 
 /// Classification of one v2 promotion attempt inside the transaction.
 enum V2Promotion {

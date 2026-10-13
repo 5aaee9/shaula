@@ -32,6 +32,7 @@ pub mod m0026_diagnostics;
 pub mod m0027_lifecycle_workers;
 pub mod m0028_query_indexes;
 pub mod m0029_generation_count_indexes;
+pub mod m0030_gitlab_pool;
 
 use sea_orm_migration::prelude::*;
 
@@ -72,6 +73,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0027_lifecycle_workers::Migration),
             Box::new(m0028_query_indexes::Migration),
             Box::new(m0029_generation_count_indexes::Migration),
+            Box::new(m0030_gitlab_pool::Migration),
         ]
     }
 }

@@ -80,7 +80,7 @@ fn bundled_variables_are_discovered_from_terraform_defaults() -> TestResult {
         .iter()
         .filter(|field| field.key != "runner_backend")
         .all(|field| field.required));
-    for projection in [&docker, &kubernetes] {
+    for (projection, backends) in [(&docker, 3), (&kubernetes, 2)] {
         let backend = projection
             .bindings
             .iter()
@@ -88,7 +88,7 @@ fn bundled_variables_are_discovered_from_terraform_defaults() -> TestResult {
             .ok_or("backend missing")?;
         assert!(!backend.required && !backend.sensitive);
         assert_eq!(backend.default_value_json.as_deref(), Some("\"github\""));
-        assert_eq!(backend.options.len(), 2);
+        assert_eq!(backend.options.len(), backends);
         assert!(!projection
             .parameters
             .iter()

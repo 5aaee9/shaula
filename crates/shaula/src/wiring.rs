@@ -165,17 +165,21 @@ impl SupervisorWiring {
         // the supervisor alongside the revision-driven rebuild (R10-01).
         for (key, revision, phase) in self.store.fleet_list(&actor, Default::default()).await? {
             live_keys.insert(key.clone());
-            let is_forgejo = self
+            let kind = self
                 .store
                 .fleet_revision_latest(&key)
                 .await?
                 .and_then(|row| {
                     serde_json::from_str::<shaula_core::fleet::FleetSpec>(&row.spec_json)
                         .ok()
-                        .map(|spec| spec.kind == shaula_core::fleet::FleetProviderKind::Forgejo)
+                        .map(|spec| spec.kind)
                 })
-                .unwrap_or(false);
-            if is_forgejo {
+                .unwrap_or_default();
+            if kind == shaula_core::fleet::FleetProviderKind::Gitlab {
+                self.schedule_gitlab(&key, revision).await;
+                continue;
+            }
+            if kind == shaula_core::fleet::FleetProviderKind::Forgejo {
                 match self.forgejo_supervisor_for(&key, revision).await {
                     Ok(Some(supervisor)) => {
                         let history_key = format!("forgejo-jobs/{key}");
@@ -261,5 +265,7 @@ pub(crate) mod http_tests;
 
 #[path = "wiring_forgejo.rs"]
 mod forgejo;
+#[path = "wiring_gitlab.rs"]
+mod gitlab;
 #[path = "wiring_supervisor.rs"]
 mod supervisor;

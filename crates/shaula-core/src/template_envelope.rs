@@ -35,6 +35,8 @@ pub struct ShaulaInputEnvelope {
     pub forgejo: Option<crate::forgejo::ForgejoBootstrapIdentity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forgejo_vm: Option<super::ForgejoVmBootstrap>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gitlab: Option<crate::gitlab::GitlabBootstrapIdentity>,
     pub bindings_digest: BindingsDigest,
     #[serde(default)]
     pub bindings: serde_json::Map<String, serde_json::Value>,
@@ -54,6 +56,8 @@ struct InputWire {
     forgejo: Option<crate::forgejo::ForgejoBootstrapIdentity>,
     #[serde(default)]
     forgejo_vm: Option<super::ForgejoVmBootstrap>,
+    #[serde(default)]
+    gitlab: Option<crate::gitlab::GitlabBootstrapIdentity>,
     bindings_digest: BindingsDigest,
     #[serde(default)]
     bindings: serde_json::Map<String, serde_json::Value>,
@@ -78,6 +82,7 @@ impl TryFrom<InputWire> for ShaulaInputEnvelope {
             jit_config: wire.jit_config,
             forgejo: wire.forgejo,
             forgejo_vm: wire.forgejo_vm,
+            gitlab: wire.gitlab,
             bindings_digest: wire.bindings_digest,
             bindings: wire.bindings,
             parameters: wire.parameters,
@@ -119,6 +124,7 @@ impl ShaulaInputEnvelope {
             jit_config,
             forgejo: None,
             forgejo_vm: None,
+            gitlab: None,
             bindings_digest,
             bindings: serde_json::Map::new(),
             parameters: serde_json::Map::new(),
@@ -172,9 +178,21 @@ impl ShaulaInputEnvelope {
             ));
         }
         match manifest.runner_backend_for_bindings(&self.bindings)? {
-            "github" if self.forgejo.is_none() && self.forgejo_vm.is_none() => {}
+            "github"
+                if self.forgejo.is_none() && self.forgejo_vm.is_none() && self.gitlab.is_none() => {
+            }
+            "gitlab"
+                if self.gitlab.is_some()
+                    && self.forgejo.is_none()
+                    && self.forgejo_vm.is_none()
+                    && self.jit_config.is_empty()
+                    && self.generation.scale_set_id.is_none() =>
+            {
+                manifest.validate_gitlab_target()?;
+            }
             "forgejo"
                 if self.forgejo.is_some()
+                    && self.gitlab.is_none()
                     && self.jit_config.is_empty()
                     && self.generation.scale_set_id.is_none()
                     && self.forgejo_vm.is_some()

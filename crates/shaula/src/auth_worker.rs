@@ -3,7 +3,8 @@ use shaula_core::{
     auth_validation::{AuthValidationFactory, GitHubValidationPort, ProbeOutcome},
     error::CoreResult,
     forgejo::ForgejoTarget,
-    ports::{forgejo::ForgejoAuthProbe, Clock},
+    gitlab::GitlabTarget,
+    ports::{forgejo::ForgejoAuthProbe, gitlab::GitlabAuthProbe, Clock},
     secret::SecretString,
 };
 use std::sync::Arc;
@@ -28,5 +29,12 @@ impl AuthValidationFactory for Adapters {
         token: SecretString,
     ) -> CoreResult<Result<ForgejoAuthProbe, ProbeOutcome>> {
         shaula_forgejo::validation::probe(target, token).await
+    }
+    async fn gitlab(
+        &self,
+        target: &GitlabTarget,
+        token: SecretString,
+    ) -> CoreResult<Result<GitlabAuthProbe, ProbeOutcome>> {
+        shaula_gitlab::validation::probe(target, token).await
     }
 }

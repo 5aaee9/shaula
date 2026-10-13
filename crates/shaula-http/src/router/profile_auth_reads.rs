@@ -103,6 +103,17 @@ fn auth_profile_body(view: &shaula_core::registry::AuthProfileView) -> serde_jso
                 "reason": state.reason,
                 "forgejo": state.forgejo,
             })
+        } else if state.schema_version == 1
+            && state.state != "Unsupported"
+            && state.gitlab.is_some()
+        {
+            serde_json::json!({
+                "revision": state.revision,
+                "schema_version": state.schema_version,
+                "state": state.state,
+                "reason": state.reason,
+                "gitlab": state.gitlab,
+            })
         } else if state.schema_version == 2 && state.state != "Unsupported" {
             serde_json::json!({
                 "revision": state.revision,
@@ -123,19 +134,23 @@ fn auth_profile_body(view: &shaula_core::registry::AuthProfileView) -> serde_jso
             })
         }
     };
-    let format_supported = |schema_version, forgejo| match view.kind {
+    let token_state = |state: &AuthRevisionState| match view.kind {
+        Some(shaula_core::auth::AuthKind::GitlabToken) => state.gitlab.is_some(),
+        _ => state.forgejo.is_some(),
+    };
+    let format_supported = |schema_version, token: bool| match view.kind {
         Some(shaula_core::auth::AuthKind::GithubApp) => schema_version == 2,
-        Some(shaula_core::auth::AuthKind::ForgejoToken) => schema_version == 1 && forgejo,
+        Some(
+            shaula_core::auth::AuthKind::ForgejoToken | shaula_core::auth::AuthKind::GitlabToken,
+        ) => schema_version == 1 && token,
         _ => false,
     };
     let head = view.desired.as_ref().or(view.active.as_ref());
-    let supported = format_supported(
-        view.schema_version,
-        head.is_some_and(|s| s.forgejo.is_some()),
-    ) && view.active.as_ref().is_none_or(|active| {
-        format_supported(active.schema_version, active.forgejo.is_some())
-            && active.state != "Unsupported"
-    });
+    let supported = format_supported(view.schema_version, head.is_some_and(token_state))
+        && view.active.as_ref().is_none_or(|active| {
+            format_supported(active.schema_version, token_state(active))
+                && active.state != "Unsupported"
+        });
     let mut body = serde_json::json!({
         "key": view.key,
         "incarnation": view.incarnation,
@@ -159,7 +174,12 @@ fn auth_profile_body(view: &shaula_core::registry::AuthProfileView) -> serde_jso
     body
 }
 fn render_live_fleet(fleet: &shaula_core::registry::AuthLiveFleet) -> serde_json::Value {
-    if let Some(target) = &fleet.forgejo_target {
+    if let Some(target) = &fleet.gitlab_target {
+        serde_json::json!({
+            "fleetKey": fleet.fleet_key, "phase": fleet.phase,
+            "kind": "gitlab", "target": target,
+        })
+    } else if let Some(target) = &fleet.forgejo_target {
         serde_json::json!({
             "fleetKey": fleet.fleet_key, "phase": fleet.phase,
             "kind": "forgejo", "target": target,

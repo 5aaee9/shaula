@@ -5,7 +5,8 @@ use crate::{
     error::CoreResult,
     forgejo::ForgejoTarget,
     github::GitHubTarget,
-    ports::forgejo::ForgejoAuthProbe,
+    gitlab::GitlabTarget,
+    ports::{forgejo::ForgejoAuthProbe, gitlab::GitlabAuthProbe},
     secret::SecretString,
 };
 
@@ -120,4 +121,9 @@ pub trait AuthValidationFactory: Send + Sync {
         target: &ForgejoTarget,
         token: SecretString,
     ) -> CoreResult<Result<ForgejoAuthProbe, ProbeOutcome>>;
+    async fn gitlab(
+        &self,
+        target: &GitlabTarget,
+        token: SecretString,
+    ) -> CoreResult<Result<GitlabAuthProbe, ProbeOutcome>>;
 }

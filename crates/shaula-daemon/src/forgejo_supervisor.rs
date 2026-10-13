@@ -7,8 +7,10 @@ use shaula_core::capacity::CapacityPolicy;
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::fleet::FleetForgejoSection;
 use shaula_core::ports::forgejo::ForgejoPoolPort;
-use shaula_core::ports::{AccessFailure, ApplyIntentSink, Clock, TemplateRuntimePort};
+use shaula_core::ports::{ApplyIntentSink, Clock, TemplateRuntimePort};
 use shaula_core::registry::{ControlPlaneStore, FleetRuntimeGuard, LifecycleStore};
+
+use crate::pool_driver::{access_reason, create_count};
 
 use crate::runner_operation::forgejo::is_owned_runner;
 
@@ -248,17 +250,8 @@ impl ForgejoPoolSupervisor {
     }
 
     fn target(&self, waiting_jobs: u64) -> u64 {
-        u64::try_from(self.capacity.min_runners)
-            .unwrap_or(0)
-            .saturating_add(waiting_jobs)
-            .min(u64::try_from(self.capacity.max_runners).unwrap_or(0))
+        crate::pool_driver::target(self.capacity, waiting_jobs)
     }
-}
-
-fn create_count(capacity: CapacityPolicy, target: u64, effective: i64, occupancy: i64) -> u64 {
-    target
-        .saturating_sub(u64::try_from(effective).unwrap_or(u64::MAX))
-        .min(u64::try_from(capacity.max_runners.saturating_sub(occupancy)).unwrap_or(0))
 }
 
 fn normalized_labels(labels: &[String]) -> CoreResult<Vec<String>> {
@@ -267,16 +260,6 @@ fn normalized_labels(labels: &[String]) -> CoreResult<Vec<String>> {
         .iter()
         .map(|label| label.split(':').next().unwrap_or_default().to_string())
         .collect())
-}
-
-fn access_reason(failure: &AccessFailure) -> ReasonCode {
-    match failure {
-        AccessFailure::Unauthenticated => ReasonCode::Unauthenticated,
-        AccessFailure::PermissionDenied => ReasonCode::PermissionDenied,
-        AccessFailure::TargetHiddenOrNotFound => ReasonCode::TargetHiddenOrNotFound,
-        AccessFailure::RateLimited { .. } => ReasonCode::RateLimited,
-        _ => ReasonCode::AccessVerificationFailed,
-    }
 }
 
 #[path = "forgejo_supervisor_destroy.rs"]

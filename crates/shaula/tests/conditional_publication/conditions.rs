@@ -77,6 +77,7 @@ async fn unsupported_auth_formats_are_rejected_before_historical_lookup() -> Tes
             secret: shaula_core::secret::SecretString::new("unused"),
             target_policy: None,
             forgejo_target: None,
+            gitlab_target: None,
         };
         let result = fixture
             .service

@@ -9,20 +9,28 @@ mkdir /var/lib/shaula/started
 rm -- /var/lib/shaula/pre-start
 
 export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y --no-install-recommends ca-certificates curl python3 git
+# Base VMs that already ship the tools (e.g. Quantum github-runner) skip apt.
+if ! command -v curl >/dev/null || ! command -v python3 >/dev/null || ! command -v git >/dev/null; then
+  apt-get update
+  apt-get install -y --no-install-recommends ca-certificates curl python3 git
+fi
 test "$(uname -m)" = x86_64
 id runner >/dev/null 2>&1 || useradd --create-home --user-group --shell /bin/bash runner
 test "$(id -u runner)" -ne 0
 install -d -m 0755 /opt/forgejo-runner
 RUNNER_VERSION=13.1.0
 RUNNER_SHA256=29dae21e93f0eab5cdf3564008d44603c74770b41a4f4f1aceed172c774bc376
-curl --fail --location --retry 3 --connect-timeout 10 --max-time 300 \
-  "https://code.forgejo.org/forgejo/runner/releases/download/v$RUNNER_VERSION/forgejo-runner-$RUNNER_VERSION-linux-amd64" \
-  --output /opt/forgejo-runner/download
-printf '%s  %s\n' "$RUNNER_SHA256" /opt/forgejo-runner/download | sha256sum --check --status
-install -m 0755 /opt/forgejo-runner/download /opt/forgejo-runner/forgejo-runner
-rm -- /opt/forgejo-runner/download
+# A pre-installed binary is used only when it is exactly the pinned artifact.
+if ! printf '%s  %s\n' "$RUNNER_SHA256" /opt/forgejo-runner/forgejo-runner | sha256sum --check --status 2>/dev/null; then
+  curl --fail --location --retry 3 --connect-timeout 10 --max-time 300 \
+    "https://code.forgejo.org/forgejo/runner/releases/download/v$RUNNER_VERSION/forgejo-runner-$RUNNER_VERSION-linux-amd64" \
+    --output /opt/forgejo-runner/download
+  printf '%s  %s\n' "$RUNNER_SHA256" /opt/forgejo-runner/download | sha256sum --check --status
+  install -m 0755 /opt/forgejo-runner/download /opt/forgejo-runner/forgejo-runner
+  rm -- /opt/forgejo-runner/download
+fi
+chown root:root /opt/forgejo-runner/forgejo-runner
+chmod 0755 /opt/forgejo-runner/forgejo-runner
 
 # cloud-final has finished. Protect caches and the raw NoCloud seed before jobs.
 # The remote ISO and Terraform state still require privileged protection.

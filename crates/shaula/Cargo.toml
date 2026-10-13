@@ -25,6 +25,7 @@ shaula-scaleset = { workspace = true }
 shaula-template = { workspace = true }
 shaula-observability = { workspace = true }
 shaula-forgejo = { workspace = true }
+shaula-gitlab = { workspace = true }
 shaula-worker.workspace = true
 shaula-executor.workspace = true
 zeroize.workspace = true

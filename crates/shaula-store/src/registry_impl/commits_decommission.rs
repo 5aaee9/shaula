@@ -41,7 +41,7 @@ impl SqliteControlPlane {
             .one(&tx)
             .await
             .map_err(|e| core_err(e.into()))?
-            .is_some_and(|row| crate::spec_is_forgejo(&row.spec_json));
+            .is_some_and(|row| crate::spec_is_pool(&row.spec_json));
         if !forgejo {
             if let Some((profile_key, revision)) = &facts.auth_desired {
                 self.store

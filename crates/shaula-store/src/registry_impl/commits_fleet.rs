@@ -249,9 +249,9 @@ impl SqliteControlPlane {
                         facts.resource_key
                     )))
                 })?;
-            // Forgejo has no handoff or installation context. Its exact
+            // Pool Fleets have no handoff or installation context. Their exact
             // credential reference lives on the immutable Fleet revision.
-            let is_forgejo = crate::spec_is_forgejo(&facts.spec_json);
+            let is_forgejo = crate::spec_is_pool(&facts.spec_json);
             if !is_forgejo {
                 self.store
                     .handoff_set_desired(&tx, &facts.resource_key, profile_key, resolved)

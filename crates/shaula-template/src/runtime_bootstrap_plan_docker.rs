@@ -1,7 +1,7 @@
 use super::{modules, rejected, Planned, TemplateCreateRequest, TemplateOutcomeError};
 
-#[path = "runtime_bootstrap_plan_docker_forgejo.rs"]
-mod forgejo;
+#[path = "runtime_bootstrap_plan_docker_pool.rs"]
+mod pool;
 use serde_json::{json, Value};
 
 pub(super) fn admit(
@@ -11,8 +11,8 @@ pub(super) fn admit(
     request: &TemplateCreateRequest,
     backend: &str,
 ) -> Result<(), TemplateOutcomeError> {
-    if backend == "forgejo" {
-        return forgejo::admit(runner, plan, image, request);
+    if matches!(backend, "forgejo" | "gitlab") {
+        return pool::admit(runner, plan, image, request, backend);
     }
     let identity = &request.input.generation;
     let short: String = identity.id.chars().take(24).collect();

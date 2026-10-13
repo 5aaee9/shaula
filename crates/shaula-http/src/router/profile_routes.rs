@@ -222,56 +222,15 @@ pub(crate) async fn auth_profile_put(
 }
 
 pub(crate) fn build_auth_payload(dto: AuthProfilePutDto) -> Result<AuthProfilePut, Response> {
-    if dto.kind == "forgejo_token" {
-        let (Some(instance_url), Some(scope), Some(token)) =
-            (dto.instance_url, dto.scope, dto.token)
-        else {
-            return Err(problem(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "SpecInvalid",
-                "forgejo_token requires instance_url, scope, and token",
-            )
-            .into_response());
-        };
-        if dto.app_id.is_some()
-            || dto.private_key.is_some()
-            || dto.target_policy.is_some()
-            || dto.schema_version.is_some()
-        {
-            return Err(problem(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "SpecInvalid",
-                "forgejo_token does not accept GitHub authentication fields",
-            )
-            .into_response());
-        }
-        let target = shaula_core::forgejo::ForgejoTarget {
-            instance_url,
-            scope,
-        };
-        if let Err(error) = target.validate() {
-            return Err(problem(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "SpecInvalid",
-                error.summary,
-            )
-            .into_response());
-        }
-        return Ok(AuthProfilePut {
-            kind: shaula_core::auth::AuthKind::ForgejoToken,
-            app_id: None,
-            secret: shaula_core::secret::SecretString::new(token),
-            schema_version: Some(1),
-            target_policy: None,
-            forgejo_target: Some(target),
-        });
+    if matches!(dto.kind.as_str(), "forgejo_token" | "gitlab_token") {
+        return build_token_payload(dto);
     }
 
     if dto.kind != "github_app" || dto.schema_version != Some(2) {
         return Err(problem(
             StatusCode::UNPROCESSABLE_ENTITY,
             "SpecInvalid",
-            "github_app requires schema_version: 2; forgejo_token requires its own target",
+            "github_app requires schema_version: 2; token kinds require their own target",
         )
         .into_response());
     }
@@ -279,7 +238,7 @@ pub(crate) fn build_auth_payload(dto: AuthProfilePutDto) -> Result<AuthProfilePu
         return Err(problem(
             StatusCode::UNPROCESSABLE_ENTITY,
             "SpecInvalid",
-            "Forgejo authentication fields are only valid for forgejo_token",
+            "token authentication fields are only valid for forgejo_token or gitlab_token",
         )
         .into_response());
     }
@@ -298,7 +257,62 @@ pub(crate) fn build_auth_payload(dto: AuthProfilePutDto) -> Result<AuthProfilePu
         schema_version: Some(2),
         target_policy: dto.target_policy,
         forgejo_target: None,
+        gitlab_target: None,
     })
+}
+
+/// `forgejo_token` and `gitlab_token`: a scoped target plus write-only token.
+fn build_token_payload(dto: AuthProfilePutDto) -> Result<AuthProfilePut, Response> {
+    let invalid = |summary: String| {
+        problem(StatusCode::UNPROCESSABLE_ENTITY, "SpecInvalid", summary).into_response()
+    };
+    let (Some(instance_url), Some(scope), Some(token)) = (dto.instance_url, dto.scope, dto.token)
+    else {
+        return Err(invalid(format!(
+            "{} requires instance_url, scope, and token",
+            dto.kind
+        )));
+    };
+    if dto.app_id.is_some()
+        || dto.private_key.is_some()
+        || dto.target_policy.is_some()
+        || dto.schema_version.is_some()
+    {
+        return Err(invalid(format!(
+            "{} does not accept GitHub authentication fields",
+            dto.kind
+        )));
+    }
+    let mut payload = AuthProfilePut {
+        kind: shaula_core::auth::AuthKind::ForgejoToken,
+        app_id: None,
+        secret: shaula_core::secret::SecretString::new(token),
+        schema_version: Some(1),
+        target_policy: None,
+        forgejo_target: None,
+        gitlab_target: None,
+    };
+    if dto.kind == "gitlab_token" {
+        let scope = serde_json::from_value(scope)
+            .map_err(|_| invalid("gitlab_token scope must be a group or project".into()))?;
+        let target = shaula_core::gitlab::GitlabTarget {
+            instance_url,
+            scope,
+        };
+        target.validate().map_err(|error| invalid(error.summary))?;
+        payload.kind = shaula_core::auth::AuthKind::GitlabToken;
+        payload.gitlab_target = Some(target);
+    } else {
+        let scope = serde_json::from_value(scope)
+            .map_err(|_| invalid("forgejo_token scope is invalid".into()))?;
+        let target = shaula_core::forgejo::ForgejoTarget {
+            instance_url,
+            scope,
+        };
+        target.validate().map_err(|error| invalid(error.summary))?;
+        payload.forgejo_target = Some(target);
+    }
+    Ok(payload)
 }
 
 #[cfg(test)]

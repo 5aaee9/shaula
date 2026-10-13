@@ -9,6 +9,9 @@ use std::sync::Arc;
 #[path = "wiring_credential_forgejo.rs"]
 mod forgejo;
 pub(crate) use forgejo::build_client as build_forgejo_client;
+#[path = "wiring_credential_gitlab.rs"]
+mod gitlab;
+pub(crate) use gitlab::build_client as build_gitlab_client;
 
 /// Loads the exact accepted credential for the ACTIVE auth revision
 /// (bytes never leave the store seam until this protected handoff).

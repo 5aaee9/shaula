@@ -2,7 +2,7 @@
 
 use shaula_core::error::{CoreResult, ReasonCode};
 use shaula_core::ports::forgejo::{ForgejoDemandSnapshot, ForgejoRunnerRef};
-use shaula_core::registry::{FleetObservation, FleetObservationPhase};
+use shaula_core::registry::FleetObservation;
 
 use super::{access_reason, is_owned_runner, ForgejoPoolSupervisor, ForgejoReconcileReport};
 
@@ -175,33 +175,16 @@ impl ForgejoPoolSupervisor {
             }
             return Ok(());
         }
-        let quarantined = generations.iter().any(|g| g.state.is_quarantined());
-        let converging = generations.iter().any(|g| {
-            g.state.counts_occupancy()
-                && (g.fleet_revision != self.guard.desired_revision
-                    || !matches!(
-                        g.state,
-                        shaula_core::lifecycle::GenerationState::Idle
-                            | shaula_core::lifecycle::GenerationState::Busy
-                    ))
-        });
-        let reason = report
-            .reason
-            .or(quarantined.then_some(ReasonCode::OwnershipProofFailed));
-        let phase = if report.stale_demand || report.stale_inventory || reason.is_some() {
-            FleetObservationPhase::Degraded
-        } else if !converging
-            && generations
-                .iter()
-                .filter(|g| g.state.counts_occupancy())
-                .count() as u64
-                == report.target
-            && report.idle_runners.saturating_add(report.active_runners) == report.target
-        {
-            FleetObservationPhase::Ready
-        } else {
-            FleetObservationPhase::Reconciling
-        };
+        let (phase, reason) = crate::pool_driver::phase(
+            &generations,
+            self.guard.desired_revision,
+            &crate::pool_driver::PassFacts {
+                stale: report.stale_demand || report.stale_inventory,
+                reason: report.reason,
+                target: report.target,
+                serving: report.idle_runners.saturating_add(report.active_runners),
+            },
+        );
         self.lifecycle
             .fleet_set_observed(
                 &self.fleet_key,

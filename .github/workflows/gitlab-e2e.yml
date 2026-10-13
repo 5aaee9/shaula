@@ -1,0 +1,74 @@
+name: GitLab runner E2E
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  adapter:
+    name: GitLab adapter against real GitLab CE
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@b85815f71a6de0ddee80b8a80a98d43f4bcc66c7 # v31
+        with:
+          extra_nix_config: "extra-experimental-features = nix-command flakes"
+      - name: Build the live adapter test
+        run: nix develop --command cargo test --locked -p shaula-gitlab --test live_gitlab --no-run
+      - name: Drive the adapter through a full Generation
+        run: |
+          CONTAINER_ENGINE=docker nix develop --command node scripts/gitlab-pool-spike/adapter-e2e.mjs \
+            > "$RUNNER_TEMP/gitlab-adapter-e2e.json"
+          cat "$RUNNER_TEMP/gitlab-adapter-e2e.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: gitlab-adapter-e2e
+          path: ${{ runner.temp }}/gitlab-adapter-e2e.json
+          if-no-files-found: ignore
+
+  lifecycle:
+    name: Shaula Terraform lifecycle (GitLab, docker)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@b85815f71a6de0ddee80b8a80a98d43f4bcc66c7 # v31
+        with:
+          extra_nix_config: "extra-experimental-features = nix-command flakes"
+      - name: Build the actual daemon and UI
+        run: |
+          npm ci --prefix web
+          npm run build --prefix web
+          nix develop --command cargo build --locked -p shaula
+      # This job owns a disposable hosted VM. Never apply this compatibility
+      # setting to an operator's existing Docker daemon.
+      - name: Permit the pinned Docker provider API on this disposable Engine
+        run: |
+          sudo mkdir -p /etc/systemd/system/docker.service.d
+          printf '[Service]\nEnvironment=DOCKER_MIN_API_VERSION=1.24\n' | sudo tee /etc/systemd/system/docker.service.d/shaula-acceptance.conf >/dev/null
+          sudo systemctl daemon-reload
+          sudo systemctl restart docker
+      - name: Demand → Create → claim → pause → retire → Destroy, plus leak scan
+        run: |
+          sudo systemd-run --unit=shaula-gitlab-acceptance --wait --pipe --collect \
+            --property=Delegate=yes --property="User=$(id -un)" \
+            --working-directory="$PWD" --setenv="PATH=$PATH" --setenv="HOME=$HOME" \
+            --setenv="SHAULA_GITLAB_REPORT=$RUNNER_TEMP/gitlab-lifecycle.json" \
+            "$(command -v nix)" develop --command bash scripts/gitlab-lifecycle-acceptance.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: gitlab-lifecycle
+          path: ${{ runner.temp }}/gitlab-lifecycle.json
+          if-no-files-found: ignore

@@ -149,6 +149,7 @@ mod mapping;
 
 #[path = "control_plane_pool.rs"]
 mod control_plane_pool;
+mod gitlab_impl;
 #[path = "lifecycle_impl.rs"]
 mod lifecycle_impl;
 #[path = "lifecycle_pool_admit.rs"]

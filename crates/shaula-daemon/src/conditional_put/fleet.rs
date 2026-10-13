@@ -49,6 +49,16 @@ impl Fleet {
             (FleetProviderKind::Forgejo, FleetProviderKind::Forgejo) => {
                 previous_spec.forgejo != spec.forgejo
             }
+            // Tags, run_untagged and the credential may change through a new
+            // revision (the anchor is rebuilt); the remote identity may not.
+            (FleetProviderKind::Gitlab, FleetProviderKind::Gitlab) => {
+                let identity = |spec: &FleetSpec| {
+                    spec.gitlab
+                        .as_ref()
+                        .map(|gitlab| (gitlab.target(), gitlab.runner_name_prefix.clone()))
+                };
+                identity(&previous_spec) != identity(spec)
+            }
             _ => true,
         };
         if identity_changed {

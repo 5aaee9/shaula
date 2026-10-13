@@ -2536,6 +2536,7 @@ dependencies = [
  "shaula-daemon",
  "shaula-executor",
  "shaula-forgejo",
+ "shaula-gitlab",
  "shaula-http",
  "shaula-observability",
  "shaula-scaleset",
@@ -2642,6 +2643,22 @@ dependencies = [
 
 [[package]]
 name = "shaula-forgejo"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "futures",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "shaula-core",
+ "thiserror 2.0.20",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "shaula-gitlab"
 version = "0.1.0"
 dependencies = [
  "async-trait",

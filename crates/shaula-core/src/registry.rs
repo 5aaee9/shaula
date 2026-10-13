@@ -129,6 +129,8 @@ pub struct AuthProfilePut {
     /// absent; keeping it typed prevents Forgejo routing data from being
     /// smuggled through GitHub policy fields.
     pub forgejo_target: Option<crate::forgejo::ForgejoTarget>,
+    /// Provider-specific GitLab target, typed for the same reason.
+    pub gitlab_target: Option<crate::gitlab::GitlabTarget>,
 }
 
 impl std::fmt::Debug for AuthProfilePut {
@@ -320,6 +322,7 @@ pub trait HealthPort: Send + Sync {
 
 pub mod attestation_port;
 pub mod auth_port;
+pub mod gitlab_port;
 pub mod lifecycle_port;
 mod mutation_facts;
 pub mod store_port;
@@ -333,7 +336,9 @@ pub use auth_port::{
     AuthIdentityProof, AuthLiveFleet, AuthProfileView, AuthPromotion, AuthPromotionOutcome,
     AuthRepoProof, AuthRevisionRow, AuthRevisionState, AuthRouteObservation,
     AuthValidationSnapshot, FleetAuthContextRow, FleetContextAck, ForgejoAuthState,
+    GitlabAuthState,
 };
+pub use gitlab_port::{GitlabAnchorRow, GitlabAnchorState, GitlabJobAssociation, GitlabPoolStore};
 pub use lifecycle_port::{FleetHeadGuard, LifecycleStore};
 pub use lifecycle_port::{GenerationRecord, OperationRow, ScaleSetRow};
 mod runtime_port;

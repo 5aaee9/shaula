@@ -10,6 +10,7 @@
 mod destroy;
 pub(crate) mod forgejo;
 pub(crate) mod github;
+pub(crate) mod gitlab;
 mod lifetime;
 #[cfg(test)]
 mod tests;
@@ -53,7 +54,7 @@ pub(crate) enum RemovalGate {
 }
 
 /// The Runner Backend seam: the registration questions a Runner Operation
-/// asks. GitHub and Forgejo are the two adapters.
+/// asks. GitHub, Forgejo and GitLab are the adapters.
 ///
 /// Retirement is recorded only once removal is admitted. What "admitted"
 /// means is backend-specific: GitHub's busy-safe gate is the removal call

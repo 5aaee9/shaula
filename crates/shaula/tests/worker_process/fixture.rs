@@ -196,6 +196,7 @@ impl Fixture {
             timeout: Duration::from_secs(30),
             apply_intent_sink: Some(self.sink.clone()),
             forgejo_bootstrap: None,
+            gitlab_bootstrap: None,
         }
     }
     pub async fn create(&self) -> TestResult<TemplateCreateResult> {

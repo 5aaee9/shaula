@@ -41,7 +41,7 @@ fn read_text(path: &Path, budget: &mut usize) -> CoreResult<String> {
 /// Legacy `type = any` is reported explicitly without invalidating its artifact.
 pub fn discover_variables(dir: &Path, digest: &str) -> CoreResult<TemplateVariables> {
     let manifest_path = dir.join("profile.yaml");
-    let (input_version, forgejo) = if manifest_path.exists() {
+    let (input_version, forgejo, gitlab) = if manifest_path.exists() {
         let manifest = crate::manifest::parse_manifest(&read_text(&manifest_path, &mut 0)?)?;
         (
             manifest.input_contract_version,
@@ -54,9 +54,10 @@ pub fn discover_variables(dir: &Path, digest: &str) -> CoreResult<TemplateVariab
             } else {
                 types::ForgejoMember::Absent
             },
+            manifest.supports_runner_backend("gitlab"),
         )
     } else {
-        (1, types::ForgejoMember::Absent)
+        (1, types::ForgejoMember::Absent, false)
     };
     let mut paths = Vec::new();
     for entry in std::fs::read_dir(dir)
@@ -156,7 +157,7 @@ pub fn discover_variables(dir: &Path, digest: &str) -> CoreResult<TemplateVariab
         result.reason = Some("This template declares shaula as any; typed bindings and parameters are required to discover variables.".into());
         return Ok(result);
     }
-    let envelope = types::envelope(&expression, input_version, forgejo)?;
+    let envelope = types::envelope(&expression, input_version, forgejo, gitlab)?;
     for (name, output) in [
         ("bindings", &mut result.bindings),
         ("parameters", &mut result.parameters),

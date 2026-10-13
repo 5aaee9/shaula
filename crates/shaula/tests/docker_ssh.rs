@@ -133,6 +133,7 @@ async fn docker_ssh_authentication_survives_create_bootstrap_and_reconstructed_d
                 timeout: Duration::from_secs(60),
                 apply_intent_sink: Some(sink.clone()),
                 forgejo_bootstrap: None,
+                gitlab_bootstrap: None,
             })
             .await;
         if authentication["ssh_password"] == "wrong-secret" {

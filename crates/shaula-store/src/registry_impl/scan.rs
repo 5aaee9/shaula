@@ -57,6 +57,10 @@ impl SqliteControlPlane {
                         serde_json::from_str::<shaula_core::forgejo::ForgejoTarget>(json)
                             .is_ok_and(|target| target.validate().is_ok())
                     }),
+                    ("gitlab_token", 1) => candidate.policy_json.as_deref().is_some_and(|json| {
+                        serde_json::from_str::<shaula_core::gitlab::GitlabTarget>(json)
+                            .is_ok_and(|target| target.validate().is_ok())
+                    }),
                     _ => false,
                 };
             if !structurally_valid {

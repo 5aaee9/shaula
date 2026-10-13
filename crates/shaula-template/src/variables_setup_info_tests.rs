@@ -13,7 +13,7 @@ fn manifest_v2_requires_setup_info_and_v1_rejects_its_extra_field() -> TestResul
             "container_bootstrap_contract: shaula.container-bootstrap/v1\n",
             "",
         )
-        .replace("runner_backends: [github, forgejo]\n", "");
+        .replace("runner_backends: [github, forgejo, gitlab]\n", "");
     std::fs::write(
         directory.path().join("profile.yaml"),
         format!("{v1}\ninput_contract_version: 2\nsetup_info_contract: shaula.setup-info/v1\n"),

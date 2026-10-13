@@ -69,6 +69,39 @@ impl ControlPlane {
                     ));
                 }
             }
+            FleetProviderKind::Gitlab => {
+                if !revision.is_gitlab_token_v1() {
+                    return Err(CoreError::new(
+                        ReasonCode::AuthTargetDenied,
+                        "active authentication revision is not a GitLab token",
+                    ));
+                }
+                let probe = revision
+                    .validation_snapshot_json
+                    .as_deref()
+                    .and_then(|json| {
+                        serde_json::from_str::<shaula_core::ports::gitlab::GitlabAuthProbe>(json)
+                            .ok()
+                    });
+                if probe.as_ref().is_none_or(|probe| {
+                    !shaula_core::gitlab::supports_server_version(&probe.server_version)
+                }) {
+                    return Err(CoreError::new(ReasonCode::AuthTargetDenied,
+                        "GitLab server version is unverified; publish and validate a new token revision"));
+                }
+                let section = spec.gitlab.as_ref().ok_or_else(|| {
+                    CoreError::new(ReasonCode::SpecInvalid, "gitlab section is required")
+                })?;
+                let target = revision.policy_json.as_deref().and_then(|json| {
+                    serde_json::from_str::<shaula_core::gitlab::GitlabTarget>(json).ok()
+                });
+                if target.as_ref() != Some(&section.target()) {
+                    return Err(CoreError::new(
+                        ReasonCode::AuthTargetDenied,
+                        "GitLab auth profile target does not match the fleet scope",
+                    ));
+                }
+            }
         }
         Ok(())
     }

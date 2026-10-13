@@ -255,6 +255,7 @@ impl Kind {
                                     "instance_url": body["instance_url"], "scope": body["scope"],
                                 }))?)
                             },
+                            gitlab_target: None,
                         },
                         create,
                         expected,

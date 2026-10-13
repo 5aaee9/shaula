@@ -366,6 +366,9 @@ pub use effect::EffectOutcome;
 #[path = "ports/forgejo.rs"]
 pub mod forgejo;
 
+#[path = "ports/gitlab.rs"]
+pub mod gitlab;
+
 #[path = "ports/provenance.rs"]
 mod provenance;
 pub use provenance::{PlanProvenance, StateLineage};

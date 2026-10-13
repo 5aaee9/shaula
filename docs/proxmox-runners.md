@@ -11,7 +11,9 @@
 默认名称为 `GitHub-Runner`，在 API 可见范围内必须唯一且标记为 template。
 准备 Linux、systemd、cloud-init、udev、bash、util-linux（runuser/blkid/findmnt/umount）、
 DHCP 网络，以及拥有 `/opt/actions-runner` 的 `runner` 用户和已安装依赖的 GitHub Actions runner。
-不要预先注册 runner，也不要启用旧 runner 服务。cloud-init 状态须按镜像制作流程清理，
+不要预先注册 runner，也不要启用旧 runner 服务。
+选择 Forgejo 时，基础 VM 可预装 `/opt/forgejo-runner/forgejo-runner`：仅当其 SHA-256 与模板固定版本一致时直接使用，
+否则仍下载并校验；已有 curl、python3、git 时跳过 apt。cloud-init 状态须按镜像制作流程清理，
 让每次 clone 的新 instance-id 触发初始化。
 
 模板继承原 VM 的磁盘和 NIC；Fleet 可在批准的选项中选择 CPU 核心数和内存大小。使用单张名称以 `en` 或 `eth` 开头的 Ethernet NIC；

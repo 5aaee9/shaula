@@ -1,0 +1,130 @@
+//! GitLab composition never enters the GitHub handoff/session path.
+
+use super::SupervisorWiring;
+use shaula_core::error::{CoreError, CoreResult, ReasonCode};
+use shaula_core::fleet::FleetProviderKind;
+use shaula_core::registry::FleetRuntimeGuard;
+use shaula_daemon::apply_intent::LedgerApplyIntentSink;
+use shaula_daemon::gitlab_supervisor::{GitlabPoolSupervisor, GitlabPoolSupervisorDeps};
+use std::sync::Arc;
+
+impl SupervisorWiring {
+    pub(super) async fn gitlab_supervisor_for(
+        &self,
+        key: &str,
+        revision: i64,
+    ) -> CoreResult<Option<Arc<GitlabPoolSupervisor>>> {
+        let Some(head) = self.store.fleet_get(key).await? else {
+            return Ok(None);
+        };
+        use shaula_core::diagnostics::*;
+        let mut diagnostic = Capture::start(
+            self.store.diagnostic_sink(),
+            Guard::fleet(key, &FleetRuntimeGuard::from(&head)),
+            Lane::Assembly,
+            QuestionId::ScaleUp,
+            self.clock.now_unix_ms(),
+        );
+        diagnostic.reason(Code::ControlDependencyUnavailable, StageId::Authority, true);
+        let Some(latest) = self.store.fleet_revision_latest(key).await? else {
+            return Ok(None);
+        };
+        // DELETE advances the head/fence, not the immutable specification.
+        if head.tombstone
+            || head.desired_revision != revision
+            || (!head.deletion_marker && latest.revision != revision)
+        {
+            return Ok(None);
+        }
+        let spec = serde_json::from_str::<shaula_core::fleet::FleetSpec>(&latest.spec_json)
+            .map_err(|_| CoreError::new(ReasonCode::SpecInvalid, "stored Fleet spec is invalid"))?;
+        if spec.kind != FleetProviderKind::Gitlab {
+            return Ok(None);
+        }
+        let Some(section) = spec.gitlab.as_ref() else {
+            return Ok(None);
+        };
+        let (profile, mut auth_revision) = latest.auth_desired;
+        // A revoked predecessor must not strand a deleting Fleet. GitLab
+        // profile targets and scope IDs are immutable on rotation.
+        if head.deletion_marker {
+            if let Some(active) = self
+                .store
+                .auth_profile_get(&profile)
+                .await?
+                .and_then(|p| p.active_revision)
+            {
+                auth_revision = active;
+            }
+        }
+        let Some(gitlab) = crate::wiring_credential::build_gitlab_client(
+            &self.store,
+            &profile,
+            auth_revision,
+            &section.target(),
+        )
+        .await?
+        else {
+            return Ok(None);
+        };
+        let supervisor = Arc::new(
+            GitlabPoolSupervisor::new(
+                key,
+                section,
+                spec.capacity.into(),
+                GitlabPoolSupervisorDeps {
+                    guard: FleetRuntimeGuard::from(&head),
+                    auth: (profile, auth_revision),
+                    gates: self.gates.clone(),
+                    store: self.store.clone(),
+                    lifecycle: self.lifecycle.clone(),
+                    gitlab,
+                    clock: self.clock.clone(),
+                    runtime: self.runtime.clone(),
+                    apply_intent_sink: Arc::new(LedgerApplyIntentSink {
+                        store: self.lifecycle.clone(),
+                        gates: self.gates.clone(),
+                    }),
+                    create_limit: self.limits.create.clone(),
+                    destroy_limit: self.limits.destroy.clone(),
+                    template_create: self.limits.template_create.clone(),
+                    work_root: self.work_root.clone(),
+                    artifact_root: self.artifact_root.clone(),
+                    operation_timeout: self.operation_timeout,
+                    setup_info_issuer: self.setup_info_issuer.clone(),
+                },
+            )?
+            .with_runner_max_lifetime(self.runner_max_lifetime),
+        );
+        diagnostic.0 = None;
+        Ok(Some(supervisor))
+    }
+}
+
+impl SupervisorWiring {
+    /// One tick task per Fleet; a failed wiring is retried on the next pass.
+    pub(super) async fn schedule_gitlab(&mut self, key: &str, revision: i64) {
+        match self.gitlab_supervisor_for(key, revision).await {
+            Ok(Some(supervisor)) => {
+                if !self.tasks.contains(key) {
+                    self.tasks.spawn(key.to_owned(), async move {
+                        let report = supervisor.tick().await?;
+                        if report.stale_demand || report.stale_inventory {
+                            tracing::warn!(
+                                pending = report.pending_jobs,
+                                stale_demand = report.stale_demand,
+                                stale_inventory = report.stale_inventory,
+                                "GitLab Pool observation is stale"
+                            );
+                        }
+                        Ok(())
+                    });
+                }
+            }
+            Ok(None) => {}
+            Err(e) => {
+                tracing::warn!(fleet = %key, summary = %e.summary, "GitLab Pool wiring failed")
+            }
+        }
+    }
+}

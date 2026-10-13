@@ -9,6 +9,10 @@ use std::{path::Path, time::Duration};
 
 #[path = "runtime_bootstrap_docker_forgejo.rs"]
 mod forgejo;
+#[path = "runtime_bootstrap_docker_gitlab.rs"]
+mod gitlab;
+#[path = "runtime_bootstrap_docker_pool.rs"]
+mod pool;
 
 pub(super) async fn launch(
     request: &TemplateCreateRequest,
@@ -53,16 +57,18 @@ pub(super) async fn launch(
     let info = commands
         .json(&["container", "inspect", "--", &runner.id])
         .await?;
-    if backend == "forgejo" {
-        forgejo::validate(single(&info)?, &runner.id, image_id, request)?;
-    } else {
-        validate(single(&info)?, &runner.id, image_id, request)?;
+    match backend {
+        "forgejo" => forgejo::validate(single(&info)?, &runner.id, image_id, request)?,
+        "gitlab" => gitlab::validate(single(&info)?, &runner.id, image_id, request)?,
+        _ => validate(single(&info)?, &runner.id, image_id, request)?,
     }
 
     // Diagnostics have their own failure boundary. JIT was frozen in the
     // stopped container by Terraform; an optional copy cannot bypass start.
     if backend == "forgejo" {
         forgejo::launch(&commands, &runner.id, image_id, request, temporary).await?;
+    } else if backend == "gitlab" {
+        gitlab::launch(&commands, &runner.id, image_id, request, temporary).await?;
     } else {
         if let Some(file) =
             temporary.and_then(|directory| protected_file(directory, setup, true).ok())

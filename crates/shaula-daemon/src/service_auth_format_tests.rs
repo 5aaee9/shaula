@@ -19,6 +19,7 @@ fn payload() -> AuthProfilePut {
             TargetSelector::account_repositories(AccountKind::User, "5aaee9").unwrap(),
         ]),
         forgejo_target: None,
+        gitlab_target: None,
     }
 }
 

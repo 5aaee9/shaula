@@ -29,9 +29,10 @@ Plaintext TCP endpoints remain forbidden. Direct Terraform invocation does not
 prepare these helpers and is not the supported SSH execution path.
 
 Each Generation owns one container using the unmodified official image from
-`ghcr.io/actions/actions-runner` or `code.forgejo.org/forgejo/runner`, pinned by
-immutable digest. The publisher's `runner_backend` binding selects GitHub
-(default) or Forgejo on this same Docker template and is frozen per Revision. Derived images,
+`ghcr.io/actions/actions-runner`, `code.forgejo.org/forgejo/runner` or
+`gitlab/gitlab-runner`, pinned by immutable digest. The publisher's
+`runner_backend` binding selects GitHub (default), Forgejo or GitLab on this
+same Docker template and is frozen per Revision. Derived images,
 custom image builds, injected bootstrap programs, and container-side Setup Info
 fetching or processing are forbidden. The image is preloaded shared data.
 The container runs as the image's non-root runner user with a 4 GiB memory
@@ -72,6 +73,21 @@ The container never restarts; Terraform Destroy removes its anonymous volume
 (`remove_volumes=true`). Exit/idle alone does not prove a task was unassigned.
 Normal recycling retains the backend's ownership and safe-removal gates; the
 shared hard lifetime is a separate, explicitly task-interrupting safeguard.
+
+For GitLab, Shaula verifies the stopped container, which runs as the image's
+packaged non-root `gitlab-runner` user, and exactly the image's two anonymous
+volumes (`/etc/gitlab-runner`, `/home/gitlab-runner`). It copies the protected
+`config.toml` (one `shell` executor runner, the registration token, nothing
+else) to `/home/gitlab-runner/config.toml` and starts the container. The official
+`dumb-init` entrypoint executes `/usr/bin/gitlab-runner run-single` with that
+config, the frozen runner name, `--max-builds 1` and `--wait-timeout 600`; the
+image's CA-update wrapper is not used. The fixed `SHAULA_RUNNER_BACKEND=gitlab`
+marker plays the same plan-admission role as for Forgejo. Token bytes never
+enter Terraform, argv or environment. The `shell` executor runs jobs inside
+this container and ignores `.gitlab-ci.yml` `image:`. GitLab does not enforce
+one job per token, so Shaula pauses the registration once a job is claimed and
+requires pause → recheck before deletion; the runner log prints a 9-character
+token prefix and is credential-adjacent output.
 
 Operators must preload the selected backend's exact official image before executing the Template.
 Changing image, bootstrap contract, bindings, engine, provider lock, or this

@@ -42,6 +42,7 @@ pub(super) fn fixture(
         timeout: Duration::from_secs(60),
         apply_intent_sink: None,
         forgejo_bootstrap: None,
+        gitlab_bootstrap: None,
     };
     let plan = if platform == "docker" {
         docker(image, &request)

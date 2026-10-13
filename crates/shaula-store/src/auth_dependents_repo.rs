@@ -29,11 +29,11 @@ impl Store {
             let Some(latest) = latest_revisions.remove(&fleet.key) else {
                 continue;
             };
-            // Forgejo DELETE advances the head without a synthetic spec revision.
+            // Pool (Forgejo/GitLab) DELETE advances the head without a synthetic spec revision.
             // Keep its scope/credential dependency until cleanup is complete.
             if latest.revision != fleet.desired_revision
                 && !serde_json::from_str::<serde_json::Value>(&latest.spec_json)
-                    .is_ok_and(|spec| spec["kind"] == "forgejo")
+                    .is_ok_and(|spec| matches!(spec["kind"].as_str(), Some("forgejo" | "gitlab")))
             {
                 continue;
             }

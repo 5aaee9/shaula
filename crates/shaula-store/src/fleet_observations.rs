@@ -68,7 +68,7 @@ impl Store {
             .filter(fleet_revisions::Column::Revision.eq(observation.guard.desired_revision))
             .one(&tx)
             .await?
-            .is_some_and(|row| crate::spec_is_forgejo(&row.spec_json));
+            .is_some_and(|row| crate::spec_is_pool(&row.spec_json));
         if forgejo && active_epoch.is_some() {
             return Ok(false);
         }

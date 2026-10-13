@@ -7,8 +7,8 @@
   "properties": {
     "runner_backend": {
       "type": "string",
-      "enum": ["github", "forgejo"],
-      "description": "Runner backend, fixed when publishing this Template Revision. Defaults to GitHub. Must match the Fleet provider; never a Fleet input.",
+      "enum": ["github", "forgejo", "gitlab"],
+      "description": "Runner backend (github, forgejo or gitlab), fixed when publishing this Template Revision. Defaults to GitHub. Must match the Fleet provider; never a Fleet input.",
       "sensitive": false
     },
     "docker_host": {

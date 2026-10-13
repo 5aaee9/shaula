@@ -5,9 +5,10 @@
 # restarts or auto-removes, and the default Profile never mounts
 # /var/run/docker.sock into the Runner.
 #
-# The publisher selects GitHub (default) or Forgejo on this same template.
-# Shaula bootstraps the stopped official container after apply: GitHub Setup
-# Info or the Forgejo token file, then starts the corresponding one-job runner.
+# The publisher selects GitHub (default), Forgejo or GitLab on this same
+# template. Shaula bootstraps the stopped official container after apply:
+# GitHub Setup Info, the Forgejo token file or the GitLab config.toml, then
+# starts the corresponding one-job runner.
 
 terraform {
   required_version = ">= 1.9, < 2.0"
@@ -27,8 +28,10 @@ provider "docker" {
 }
 
 locals {
-  forgejo       = var.shaula.bindings.runner_backend == "forgejo"
-  image_prefix  = local.forgejo ? "code.forgejo.org/forgejo/runner:" : "ghcr.io/actions/actions-runner:"
+  backend       = var.shaula.bindings.runner_backend
+  forgejo       = local.backend == "forgejo"
+  gitlab        = local.backend == "gitlab"
+  image_prefix  = { github = "ghcr.io/actions/actions-runner:", forgejo = "code.forgejo.org/forgejo/runner:", gitlab = "gitlab/gitlab-runner:" }[local.backend]
   runner_images = { for image in yamldecode(file("${path.module}/profile.yaml")).runner_image_digests : split("@", image)[0] => image if startswith(image, local.image_prefix) }
   runner_image  = var.shaula.parameters.runner_image == "auto" ? one(values(local.runner_images)) : local.runner_images[var.shaula.parameters.runner_image]
   forgejo_args = local.forgejo ? concat(
@@ -36,6 +39,13 @@ locals {
     flatten([for label in var.shaula.forgejo.labels : ["--label", label]]),
     ["--wait"]
   ) : []
+  # The registration token is never a Terraform input: Shaula copies the
+  # protected config.toml into the stopped container. 600 s equals the Pool
+  # idle deadline (RUNNER_WAIT_TIMEOUT_SECS).
+  gitlab_command = local.gitlab ? [
+    "/usr/bin/gitlab-runner", "run-single", "--config", "/home/gitlab-runner/config.toml",
+    "--runner", var.shaula.gitlab.runner_name, "--max-builds", "1", "--wait-timeout", "600"
+  ] : []
   # Deterministic container name derived from the already-persisted
   # Generation identity; never randomized per attempt.
   container_name = "shaula-${var.shaula.generation.fleet_key}-${substr(var.shaula.generation.id, 0, 24)}"
@@ -73,15 +83,19 @@ resource "docker_container" "runner" {
   # GitHub's Listener captures and removes this supported input variable
   # before workflow execution. Docker metadata and Terraform state remain
   # credential-grade; no JIT value is placed in argv or a shell script.
-  command        = local.forgejo ? concat(["/bin/forgejo-runner"], local.forgejo_args) : ["/home/runner/bin/Runner.Listener", "run"]
-  entrypoint     = local.forgejo ? ["/usr/bin/dumb-init"] : null
-  working_dir    = local.forgejo ? "/data" : null
+  command     = local.gitlab ? local.gitlab_command : local.forgejo ? concat(["/bin/forgejo-runner"], local.forgejo_args) : ["/home/runner/bin/Runner.Listener", "run"]
+  entrypoint  = local.forgejo || local.gitlab ? ["/usr/bin/dumb-init"] : null
+  working_dir = local.gitlab ? "/home/gitlab-runner" : local.forgejo ? "/data" : null
+  # The official GitLab image defaults to root; run as its packaged user.
+  user           = local.gitlab ? "gitlab-runner" : null
   remove_volumes = true
   # A fixed nonsecret marker avoids Docker 3.0.2 treating an empty env set
   # as computed/unknown in the saved plan. Unknown launch controls fail closed.
-  env = local.forgejo ? ["SHAULA_RUNNER_BACKEND=forgejo"] : ["ACTIONS_RUNNER_INPUT_JITCONFIG=${var.shaula.jit_config}"]
+  env = local.forgejo || local.gitlab ? ["SHAULA_RUNNER_BACKEND=${local.backend}"] : ["ACTIONS_RUNNER_INPUT_JITCONFIG=${var.shaula.jit_config}"]
   # Forgejo's token is copied into the official image's anonymous /data
   # volume by Shaula, never Terraform. Destroy removes that volume too.
+  # GitLab's config.toml goes to the image's anonymous /home/gitlab-runner
+  # volume the same way; /etc/gitlab-runner is the second anonymous volume.
 
   # Do not start during apply: its completed, sanitized log projection is
   # prepared outside the container before Shaula releases this start gate.
@@ -119,6 +133,7 @@ variable "shaula" {
     generation       = any
     jit_config       = string
     forgejo          = optional(any)
+    gitlab           = optional(any)
     bindings_digest  = string
     bindings = object({
       runner_backend             = optional(string, "github")
