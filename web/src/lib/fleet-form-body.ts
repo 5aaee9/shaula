@@ -1,10 +1,12 @@
 import type { FleetInputs } from "./use-fleet-inputs";
 import type { ProfileChoices } from "./profile-choice";
 import { canChooseProfile } from "./profile-choice";
-import type { ForgejoTarget } from "./runner-backend";
+import type { ForgejoTarget, GitlabTarget } from "./runner-backend";
 import type {
+  FleetSpec,
   ForgejoFleetSpec,
   GitHubFleetSpec,
+  GitlabFleetSpec,
   TemplatePoolMemberSpec,
   TemplatePoolSpec,
 } from "./types";
@@ -141,7 +143,7 @@ export function githubFleetBody({
   );
 }
 
-function invalidForgejoMember(member: TemplatePoolMemberSpec) {
+function invalidTokenPoolMember(member: TemplatePoolMemberSpec) {
   const cap = member.max_runners;
   return (
     !memberKeyPattern.test(member.key) ||
@@ -152,48 +154,48 @@ function invalidForgejoMember(member: TemplatePoolMemberSpec) {
   );
 }
 
-function forgejoPoolValid(pool: TemplatePoolSpec) {
+function tokenPoolValid(pool: TemplatePoolSpec) {
   const keys = new Set(pool.members.map((member) => member.key));
   return (
     keys.size === pool.members.length &&
     pool.members.length <= 32 &&
-    !pool.members.some(invalidForgejoMember)
+    !pool.members.some(invalidTokenPoolMember)
   );
 }
 
-/** Validates a Forgejo fleet draft and serializes it, throwing the first user-facing problem. */
-export function forgejoFleetBody({
-  fleetKey,
-  target,
-  allowed,
-  auth,
-  prefix,
-  labels,
-  capacity,
-  draft,
-  editor,
-}: {
+/** Draft fields shared by the token backends (Forgejo and GitLab). */
+interface TokenFleetDraft<T> {
   fleetKey: string;
-  target?: ForgejoTarget;
+  target?: T;
   allowed: boolean;
   auth: string;
   prefix: string;
-  labels: string;
-  capacity: ForgejoFleetSpec["capacity"];
+  capacity: FleetSpec["capacity"];
   draft: { placement: Placement; pool: TemplatePoolSpec; poolRef: string };
   editor: Pick<FleetInputs, "reference" | "json">;
-}) {
+}
+
+/** Throws the first problem common to every token backend, then returns the target. */
+function checkTokenDraft<T>(provider: string, input: TokenFleetDraft<T>): T {
+  const { target, allowed, draft, capacity } = input;
   if (!target || !allowed)
     throw new Error(
-      "Choose an available Forgejo authentication profile and compatible template placement before submitting.",
+      `Choose an available ${provider} authentication profile and compatible template placement before submitting.`,
     );
-  if (draft.placement === "pool" && !forgejoPoolValid(draft.pool))
+  if (draft.placement === "pool" && !tokenPoolValid(draft.pool))
     throw new Error(
       "Use 1–32 uniquely named members, integer weights 1–10000 and non-negative runner caps.",
     );
   if (capacity.min_runners > capacity.max_runners)
     throw new Error("Minimum runners cannot exceed maximum runners.");
-  const names = parseLabels(labels);
+  return target;
+}
+
+/** Validates a Forgejo fleet draft and serializes it, throwing the first user-facing problem. */
+export function forgejoFleetBody(input: TokenFleetDraft<ForgejoTarget> & { labels: string }) {
+  const { fleetKey, auth, prefix, capacity, draft, editor } = input;
+  const target = checkTokenDraft("Forgejo", input);
+  const names = parseLabels(input.labels);
   if (!names.length)
     throw new Error(
       "Declare at least one label with an explicit backend target, for example linux:host.",
@@ -212,8 +214,35 @@ export function forgejoFleetBody({
   return placementBody(spec, draft.placement, editor, draft.pool, draft.poolRef);
 }
 
-/** Whether the chosen Forgejo placement can be submitted as-is. */
-export function forgejoPlacementAllowed({
+/** Validates a GitLab fleet draft and serializes it, throwing the first user-facing problem. */
+export function gitlabFleetBody(
+  input: TokenFleetDraft<GitlabTarget> & { tags: string; runUntagged: boolean },
+) {
+  const { fleetKey, auth, capacity, draft, editor, runUntagged } = input;
+  const target = checkTokenDraft("GitLab", input);
+  const prefix = input.prefix || `shaula-${fleetKey}-`;
+  if (prefix.trim() !== prefix || prefix.length > 100)
+    throw new Error("Use a runner name prefix of 1–100 characters without surrounding spaces.");
+  const tags = parseLabels(input.tags);
+  if (!tags.length && !runUntagged)
+    throw new Error("Declare at least one runner tag, or allow this fleet to run untagged jobs.");
+  const spec: GitlabFleetSpec = {
+    kind: "gitlab",
+    gitlab: {
+      instance_url: target.instance_url,
+      scope: target.scope,
+      auth_profile_ref: auth,
+      runner_name_prefix: prefix,
+      tags,
+      run_untagged: runUntagged,
+    },
+    capacity,
+  };
+  return placementBody(spec, draft.placement, editor, draft.pool, draft.poolRef);
+}
+
+/** Whether the chosen token-backend placement can be submitted as-is. */
+export function tokenPlacementAllowed({
   placement,
   editor,
   templateAllowed,

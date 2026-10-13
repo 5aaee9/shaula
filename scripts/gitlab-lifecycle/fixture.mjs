@@ -2,15 +2,18 @@
 // Never targets an existing GitLab; never prunes or searches by name: teardown
 // removes only the exact container IDs this fixture created or observed.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdtemp, writeFile, readFile, open } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, open, rm } from "node:fs/promises";
 import { tmpdir, release } from "node:os";
 import { join, resolve } from "node:path";
 import { issuer, scopes } from "../forgejo-lifecycle/oidc.mjs";
 import { fenceFixture } from "../forgejo-lifecycle/worker-fence.mjs";
 import { command, freePort, json, until } from "../forgejo-lifecycle/support.mjs";
+
+const execute = promisify(execFile);
 
 export const serverImage = "gitlab/gitlab-ce:19.4.2-ce.0";
 
@@ -34,6 +37,15 @@ export class GitlabFixture {
   platform = "docker";
 
   async cli(...args) { return command(this.docker, ["--host", this.socket, ...args]); }
+  /** Container output on both streams; `docker logs` replays stderr on stderr. */
+  async logs(id) {
+    try {
+      const { stdout, stderr } = await execute(this.docker, ["--host", this.socket, "logs", id], { timeout: 60_000, maxBuffer: 16 * 1024 * 1024 });
+      return stdout + stderr;
+    } catch {
+      throw new Error("fixture command failed: docker logs");
+    }
+  }
   api(path, method, body, expected, headers) {
     return json(`${this.url}/api/v1${path}`, this.oidc.token, method, body, expected, headers);
   }
@@ -166,8 +178,9 @@ export class GitlabFixture {
       artifact_digest: this.digest, engine_ref: "terraform", fleet_input_policy: {},
       bindings: { docker_host: this.socket, runner_backend: "gitlab" },
     }, 202, { "if-none-match": "*" });
-    await this.api("/github-auth-profiles/gitlab", "PUT", { kind: "gitlab_token", instance_url: this.instance,
-      scope: { kind: "group", path: this.group.full_path }, token: this.token }, 202, { "if-none-match": "*" });
+    // The auth profile and Fleets go through the actual CLI (docs/cli.md).
+    await this.shaula("auth-profiles", "create", "gitlab", { kind: "gitlab_token", instance_url: this.instance,
+      scope: { kind: "group", path: this.group.full_path }, token: this.token });
     for (const kind of ["template-profiles", "github-auth-profiles"]) {
       await until(`${kind} Active`, async () => {
         const profile = await this.api(`/${kind}/gitlab`);
@@ -179,10 +192,26 @@ export class GitlabFixture {
 
   async createFleet(key, min = 0, max = 1) {
     this.fleets.add(key);
-    await this.api(`/fleets/${key}`, "PUT", { kind: "gitlab", gitlab: {
+    await this.shaula("fleets", "create", key, { kind: "gitlab", gitlab: {
       instance_url: this.instance, scope: { kind: "group", path: this.group.full_path },
       auth_profile_ref: "gitlab", runner_name_prefix: `${key}-`, tags: [key],
-    }, capacity: { min_runners: min, max_runners: max }, template_profile_ref: "gitlab", template_inputs: {} }, 202, { "if-none-match": "*" });
+    }, capacity: { min_runners: min, max_runners: max }, template_profile_ref: "gitlab", template_inputs: {} });
+  }
+
+  /** `shaula <kind> <action> <key> --file` with a 0600 request file removed after use. */
+  async shaula(kind, action, key, body) {
+    const credential = join(this.directory, "cli-credential");
+    await writeFile(credential, this.oidc.token, { mode: 0o600 });
+    const file = join(this.directory, `${kind}-${key}.json`);
+    await writeFile(file, JSON.stringify(body), { mode: 0o600, flag: "wx" });
+    try {
+      const output = JSON.parse(await command(this.binary, ["--server", this.url, "--allow-loopback-http",
+        "--credential-kind", "oidc", "--token-file", credential, "--output", "json", kind, action, key, "--file", file]));
+      assert.equal(output.error, null, `shaula ${kind} ${action}: accepted`);
+      return output;
+    } finally {
+      await rm(file, { force: true });
+    }
   }
 
   async retireFleet(key) {

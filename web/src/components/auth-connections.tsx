@@ -3,7 +3,7 @@ import { RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { useAuthProfiles } from "@/lib/queries";
 import { selectorKey } from "@/lib/auth-policy";
 import { selectorLabel, type AuthResource } from "@/lib/types";
-import { authKindLabel, forgejoTargetName } from "@/lib/runner-backend";
+import { authKindLabel, forgejoTargetName, gitlabTargetName } from "@/lib/runner-backend";
 import { Empty, ErrorNotice, Loading, StatusBadge } from "./status";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -109,6 +109,8 @@ function ActiveTargets({ profile }: { profile: AuthResource }) {
   if (!profile.activeRevision) return "--";
   if (profile.active?.forgejo)
     return <span className="break-all">{forgejoTargetName(profile.active.forgejo.target)}</span>;
+  if (profile.active?.gitlab)
+    return <span className="break-all">{gitlabTargetName(profile.active.gitlab.target)}</span>;
   const labels = (profile.active?.target_policy || []).map((selector) => ({
     key: selectorKey(selector),
     label: selectorLabel(selector),

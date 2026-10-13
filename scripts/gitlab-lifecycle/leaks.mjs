@@ -13,9 +13,11 @@ function clean(body, secrets, surface) {
   }
 }
 
-export async function leakScan(fixture, key, observed, secrets, alive) {
+// `adjacent` is the short token the runner itself logs (spec 0043 G8): it may
+// appear only in the runner log, never on a Shaula-owned surface.
+export async function leakScan(fixture, key, observed, secrets, alive, adjacent = []) {
   let surfaces = 0;
-  const inspect = (body, label) => { clean(body, secrets, label); surfaces++; };
+  const inspect = (body, label, own = true) => { clean(body, own ? [...secrets, ...adjacent] : secrets, label); surfaces++; };
   const generations = await fixture.api(`/generations?fleet_key=${key}`);
   inspect(JSON.stringify(generations), "Generation API");
   const id = observed.generation;
@@ -25,7 +27,7 @@ export async function leakScan(fixture, key, observed, secrets, alive) {
   if (alive) {
     inspect(await fixture.cli("inspect", observed.id), "container argv/environment/metadata");
     // The runner prints a 9-character token prefix; the full token must not appear.
-    inspect(await fixture.cli("logs", observed.id), "runner log");
+    inspect(await fixture.logs(observed.id), "runner log", false);
   }
   const database = join(fixture.directory, "data", "shaula.db");
   assert.equal((await stat(database)).mode & 0o077, 0, "control-plane database must be owner-only");

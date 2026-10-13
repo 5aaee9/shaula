@@ -67,6 +67,26 @@ top-level null is rejected, and per-field keep sentinels retain their meaning.
 Auth rotation/policy changes display their impact before confirmation. Secrets
 in Auth request files remain write-only. Installation links are displayed only.
 
+GitLab uses the same commands. `auth.json` carries a group or project access
+token (`create_runner`, `manage_runner`, `read_api`); the Fleet takes its target
+from that profile and selects jobs by tags:
+
+```json
+{"kind":"gitlab_token","instance_url":"https://gitlab.example.com",
+ "scope":{"kind":"group","path":"platform/ci"},"token":"glpat-…"}
+```
+
+```json
+{"kind":"gitlab","gitlab":{"instance_url":"https://gitlab.example.com",
+  "scope":{"kind":"group","path":"platform/ci"},"auth_profile_ref":"gitlab",
+  "runner_name_prefix":"linux-","tags":["linux"],"run_untagged":false},
+ "capacity":{"min_runners":0,"max_runners":4},"template_profile_ref":"docker-gitlab",
+ "template_inputs":{}}
+```
+
+The template must be published with the binding `"runner_backend":"gitlab"`; see
+[GitLab runner backend](specs/0043-gitlab-runner-backend.md).
+
 `fleets list` and `templates list` follow every server page (`next_cursor`) and
 return the merged list. `templates artifacts get` shows an archive's size and the
 sources/revisions that reference it, never the archive bytes.

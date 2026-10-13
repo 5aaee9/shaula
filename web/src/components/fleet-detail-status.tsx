@@ -6,8 +6,8 @@ import { TableColumns } from "@/components/table-columns";
 
 /** Phase, revisions and capacity metrics from the fleet's live status. */
 export function FleetStatusSummary({ status, spec }: { status: FleetStatus; spec: FleetSpec }) {
-  // Forgejo has no assignment step, so its demand is the queue of waiting jobs.
-  const demandLabel = spec.kind === "forgejo" ? "Waiting jobs" : "Assigned demand";
+  // Token backends have no assignment step, so their demand is the queue of waiting jobs.
+  const demandLabel = !spec.kind || spec.kind === "github" ? "Assigned demand" : "Waiting jobs";
   return (
     <>
       <div className="mb-6 flex flex-wrap items-center gap-3">

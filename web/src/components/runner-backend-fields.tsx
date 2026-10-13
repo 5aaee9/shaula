@@ -1,4 +1,9 @@
-import type { ForgejoScope, ForgejoTarget, RunnerBackend } from "@/lib/runner-backend";
+import type {
+  ForgejoScope,
+  ForgejoTarget,
+  GitlabTarget,
+  RunnerBackend,
+} from "@/lib/runner-backend";
 import { Field } from "./status";
 import { Input } from "./ui/input";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select";
@@ -15,6 +20,7 @@ export function BackendSelector({
       <NativeSelect value={value} onChange={(e) => onChange(e.target.value as RunnerBackend)}>
         <NativeSelectOption value="github">GitHub Actions</NativeSelectOption>
         <NativeSelectOption value="forgejo">Forgejo</NativeSelectOption>
+        <NativeSelectOption value="gitlab">GitLab</NativeSelectOption>
       </NativeSelect>
       <p className="text-sm text-muted-foreground">Changing backend starts a new configuration.</p>
     </Field>
@@ -86,6 +92,60 @@ export function ForgejoTargetFields({
           />
         </Field>
       )}
+    </div>
+  );
+}
+
+export function GitlabTargetFields({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: GitlabTarget;
+  onChange: (target: GitlabTarget) => void;
+  disabled?: boolean;
+}) {
+  const scope = value.scope;
+  const project = scope.kind === "project";
+  return (
+    <div className="form-stack min-w-0">
+      <Field label="GitLab instance URL">
+        <Input
+          required
+          type="url"
+          disabled={disabled}
+          value={value.instance_url}
+          placeholder="https://gitlab.example.com"
+          onChange={(e) => onChange({ ...value, instance_url: e.target.value })}
+        />
+      </Field>
+      <Field label="GitLab scope">
+        <NativeSelect
+          disabled={disabled}
+          value={scope.kind}
+          onChange={(e) =>
+            onChange({
+              ...value,
+              scope: { kind: e.target.value as GitlabTarget["scope"]["kind"], path: scope.path },
+            })
+          }
+        >
+          <NativeSelectOption value="group">Group</NativeSelectOption>
+          <NativeSelectOption value="project">Project</NativeSelectOption>
+        </NativeSelect>
+      </Field>
+      <Field label={project ? "Project path" : "Group path"}>
+        <Input
+          required
+          disabled={disabled}
+          value={scope.path}
+          // Project paths always include their namespace.
+          pattern={project ? "[^/]+(/[^/]+)+" : "[^/]+(/[^/]+)*"}
+          title={project ? "Full path, for example my-group/my-project" : undefined}
+          placeholder={project ? "my-group/my-project" : "my-group/subgroup"}
+          onChange={(e) => onChange({ ...value, scope: { ...scope, path: e.target.value } })}
+        />
+      </Field>
     </div>
   );
 }

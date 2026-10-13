@@ -5,7 +5,8 @@ export function authManageCopy(mode: AuthFormMode, profileKey: string) {
     case "create":
       return {
         title: "Create authentication profile",
-        description: "Connect a GitHub App or a scoped Forgejo token for runner management.",
+        description:
+          "Connect a GitHub App or a scoped Forgejo or GitLab token for runner management.",
       };
     case "policy":
       return {

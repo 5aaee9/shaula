@@ -67,7 +67,9 @@ try {
   assert(runnerToken, "delivered config.toml carries the registration token");
   await until(`${key}: claimed registration paused`, async () => (await fixture.gitlab(`/runners/${claimed.runner.id}`)).paused, 120_000);
   const secrets = [fixture.token, runnerToken];
-  report.leakScanWhileRunning = await leakScan(fixture, key, observed, secrets, true);
+  const short = /with token (\S+)/.exec(await fixture.logs(observed.id))?.[1];
+  assert(short && short.length >= 6 && runnerToken.includes(short), "runner logs its short token");
+  report.leakScanWhileRunning = await leakScan(fixture, key, observed, secrets, true, [short]);
   report.checks.claim = "job.runner is the owned Generation registration; paused while the job runs";
 
   phase = "finish";
@@ -78,7 +80,7 @@ try {
   }, 300_000);
   const trace = await fixture.gitlab(`/projects/${fixture.project.id}/jobs/${match.id}/trace`);
   assert(trace.includes(`${marker} job=${match.id} runner=${claimed.runner.id}`), "job output names the Generation registration");
-  for (const secret of secrets) assert(!trace.includes(secret), "credential leak in job trace");
+  for (const secret of [...secrets, short]) assert(!trace.includes(secret), "credential leak in job trace");
   const mismatch = await fixture.gitlab(`/projects/${fixture.project.id}/jobs/${jobs.find(j => j.name === "mismatch").id}`);
   assert.equal(mismatch.status, "pending", "an incompatible job is never served");
   report.checks.finish = { job: finished.status, durationSeconds: finished.duration, traceHasTaskOutput: true };
@@ -93,7 +95,7 @@ try {
   const volumes = (await fixture.cli("volume", "ls", "-q")).split("\n");
   assert(observed.volumes.every(v => !volumes.includes(v)), "credential volume remains");
   fixture.containers.delete(observed.id);
-  report.leakScanAfterDestroy = await leakScan(fixture, key, observed, secrets, false);
+  report.leakScanAfterDestroy = await leakScan(fixture, key, observed, secrets, false, [short]);
   report.checks.reclaim = "registration deleted after pause → recheck; container and volumes destroyed";
 
   phase = "retire";

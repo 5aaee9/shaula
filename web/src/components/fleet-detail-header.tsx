@@ -31,7 +31,7 @@ export function FleetDetailHeader({
           <h1 className="break-all">{fleetKey}</h1>
           <p>
             {fleetTargetName(spec)}
-            {spec.kind !== "forgejo" && (
+            {(!spec.kind || spec.kind === "github") && (
               <>
                 {" "}
                 <span className="mx-2">/</span> {spec.github.scale_set_name}

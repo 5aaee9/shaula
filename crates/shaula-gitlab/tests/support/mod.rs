@@ -150,7 +150,9 @@ impl Engine {
         let mut create = vec!["create", "--network", &config.network, "--restart", "no"];
         create.push(&config.runner_image);
         create.extend(args.iter().map(String::as_str));
-        let id = self.run(&create)?;
+        // A cold image pull writes progress before the ID; the ID is the last line.
+        let output = self.run(&create)?;
+        let id = output.lines().last().unwrap_or_default().trim().to_owned();
         if id.len() != 64 || !id.chars().all(|c| c.is_ascii_hexdigit()) {
             return Err("unexpected container id".into());
         }

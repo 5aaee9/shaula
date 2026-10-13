@@ -49,7 +49,7 @@ pub enum RemoteCommand {
         #[command(subcommand)]
         action: ResourceAction,
     },
-    /// Manage GitHub and Forgejo authentication profiles.
+    /// Manage GitHub, Forgejo and GitLab authentication profiles.
     AuthProfiles {
         #[command(subcommand)]
         action: ResourceAction,

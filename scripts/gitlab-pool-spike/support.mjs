@@ -103,6 +103,8 @@ export class Fixture {
       serverImage,
     );
     await this.command("start", this.server);
+    // Pre-pull so a later `create` prints only the container ID.
+    await this.command("pull", runnerImage);
     await until(
       "disposable GitLab API ready",
       async () => {

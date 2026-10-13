@@ -5,6 +5,7 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api, resourcePath } from "@/lib/api";
 import type { AuthResource, ChangeRef } from "@/lib/types";
 import { ForgejoAuthDetails } from "@/components/forgejo-auth-details";
+import { GitlabAuthDetails } from "@/components/gitlab-auth-details";
 import { canManageAuthProfile } from "@/lib/auth-policy";
 import { AuthBindings } from "@/components/auth-bindings";
 import { AuthConnections } from "@/components/auth-connections";
@@ -26,7 +27,7 @@ export function AuthPage({ scopes }: { scopes: string[] }) {
       <div className="page-heading">
         <div>
           <h1>Authentication</h1>
-          <p>GitHub and Forgejo connections, targets, and validated profile revisions.</p>
+          <p>GitHub, Forgejo and GitLab connections, targets, and validated profile revisions.</p>
         </div>
         <Button disabled={!scopes.includes("auth.write")} onClick={() => navigate("/auth/new")}>
           <Plus />
@@ -88,6 +89,7 @@ function AuthDetails({
       )}
       <AuthProfileFacts profile={data} />
       {data.active?.forgejo && <ForgejoAuthDetails state={data.active.forgejo} />}
+      {data.active?.gitlab && <GitlabAuthDetails state={data.active.gitlab} />}
       {data.status === "Unsupported" && (
         <p className="text-sm text-muted-foreground">
           This authentication format is no longer supported. Create a GitHub App profile to use it

@@ -58,7 +58,7 @@ export function FleetManagePage({ scopes, mode }: { scopes: string[]; mode: "cre
           <p>
             {editing
               ? "Update capacity, authentication, and template placement."
-              : "A fleet manages short-lived runners for GitHub Actions or Forgejo."}
+              : "A fleet manages short-lived runners for GitHub Actions, Forgejo or GitLab."}
           </p>
         </div>
       </div>

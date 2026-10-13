@@ -40,7 +40,16 @@ export interface ForgejoFleetSpec extends FleetPlacement {
     labels: string[];
   };
 }
-export type FleetSpec = GitHubFleetSpec | ForgejoFleetSpec;
+export interface GitlabFleetSpec extends FleetPlacement {
+  kind: "gitlab";
+  gitlab: import("./runner-backend").GitlabTarget & {
+    auth_profile_ref: string;
+    runner_name_prefix: string;
+    tags: string[];
+    run_untagged: boolean;
+  };
+}
+export type FleetSpec = GitHubFleetSpec | ForgejoFleetSpec | GitlabFleetSpec;
 interface FleetPlacement {
   capacity: { min_runners: number; max_runners: number };
   template_profile_ref?: string;
@@ -206,6 +215,7 @@ export type AuthLiveFleet = {
 } & (
   | { kind?: "github"; target: GitHubTarget | null }
   | { kind: "forgejo"; target: import("./runner-backend").ForgejoTarget | null }
+  | { kind: "gitlab"; target: import("./runner-backend").GitlabTarget | null }
 );
 export type TargetSelector =
   | { kind: "organization"; owner: string }
@@ -242,6 +252,17 @@ export interface AuthRevisionState {
       checked_at_unix_ms: number;
       valid_until_unix_ms: number;
       runner_count: number;
+    } | null;
+  };
+  gitlab?: {
+    target: import("./runner-backend").GitlabTarget;
+    validation: {
+      server_version: string;
+      target_id: number;
+      checked_at_unix_ms: number;
+      valid_until_unix_ms: number;
+      runner_count: number;
+      token_expires_at: string | null;
     } | null;
   };
 }

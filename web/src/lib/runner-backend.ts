@@ -1,7 +1,7 @@
 import { targetName, type AuthResource, type FleetSpec } from "./types";
 import type { ProfileChoices } from "./profile-choice";
 
-export type RunnerBackend = "github" | "forgejo";
+export type RunnerBackend = "github" | "forgejo" | "gitlab";
 export type ForgejoScope =
   | { kind: "instance" }
   | { kind: "user" }
@@ -10,6 +10,22 @@ export type ForgejoScope =
 export interface ForgejoTarget {
   instance_url: string;
   scope: ForgejoScope;
+}
+/** A full group path, or a namespace/project path that always contains '/'. */
+export type GitlabScope = { kind: "group"; path: string } | { kind: "project"; path: string };
+export interface GitlabTarget {
+  instance_url: string;
+  scope: GitlabScope;
+}
+
+/** Credential kind per token backend; every other kind belongs to GitHub. */
+const tokenKinds: Record<Exclude<RunnerBackend, "github">, string> = {
+  forgejo: "forgejo_token",
+  gitlab: "gitlab_token",
+};
+
+export function backendLabel(backend: RunnerBackend | undefined): string {
+  return backend === "forgejo" ? "Forgejo" : backend === "gitlab" ? "GitLab" : "GitHub Actions";
 }
 
 export function forgejoTargetName(target: ForgejoTarget): string {
@@ -25,18 +41,26 @@ export function forgejoTargetName(target: ForgejoTarget): string {
   return `${target.instance_url} / ${name}`;
 }
 
+export function gitlabTargetName(target: GitlabTarget): string {
+  return `${target.instance_url} / ${target.scope.path} (${target.scope.kind})`;
+}
+
 export function fleetTargetName(spec: FleetSpec): string {
-  return spec.kind === "forgejo" ? forgejoTargetName(spec.forgejo) : targetName(spec.github.target);
+  if (spec.kind === "forgejo") return forgejoTargetName(spec.forgejo);
+  if (spec.kind === "gitlab") return gitlabTargetName(spec.gitlab);
+  return targetName(spec.github.target);
 }
 
 export function authKindLabel(kind: string | null): string {
   return kind === "forgejo_token"
     ? "Forgejo token"
-    : kind === "github_app"
-      ? "GitHub App"
-      : kind === "pat"
-        ? "Personal access token"
-        : "--";
+    : kind === "gitlab_token"
+      ? "GitLab token"
+      : kind === "github_app"
+        ? "GitHub App"
+        : kind === "pat"
+          ? "Personal access token"
+          : "--";
 }
 
 /** Preserve query health and refresh semantics while showing only compatible choices. */
@@ -55,6 +79,7 @@ export function templateChoices(query: ProfileChoices, backend: RunnerBackend): 
 }
 
 export function authChoices(query: ProfileChoices, backend: RunnerBackend): ProfileChoices {
+  const tokens: (string | null)[] = Object.values(tokenKinds);
   return {
     ...query,
     data: query.data && {
@@ -62,8 +87,8 @@ export function authChoices(query: ProfileChoices, backend: RunnerBackend): Prof
       data: {
         profiles: query.data.data.profiles.filter((p) => {
           const profile = p as AuthResource;
-          if (backend === "github") return profile.kind !== "forgejo_token";
-          return profile.kind === "forgejo_token";
+          if (backend === "github") return !tokens.includes(profile.kind);
+          return profile.kind === tokenKinds[backend];
         }),
       },
     },

@@ -2,7 +2,7 @@ import { RotateCw, SlidersHorizontal, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import type { AuthResource, TargetSelector } from "@/lib/types";
 import { selectorLabel } from "@/lib/types";
-import { authKindLabel, forgejoTargetName } from "@/lib/runner-backend";
+import { authKindLabel, forgejoTargetName, gitlabTargetName } from "@/lib/runner-backend";
 import { selectorKey } from "@/lib/auth-policy";
 import { Button } from "@/components/ui/button";
 import { KeyValue, StatusBadge } from "@/components/status";
@@ -87,6 +87,8 @@ export function AuthProfileFacts({ profile }: { profile: AuthResource }) {
           {profile.desired.reason && <p className="text-red-600">{profile.desired.reason}</p>}
           {profile.desired.forgejo ? (
             forgejoTargetName(profile.desired.forgejo.target)
+          ) : profile.desired.gitlab ? (
+            gitlabTargetName(profile.desired.gitlab.target)
           ) : (
             <TargetPolicyChips policy={profile.desired.target_policy} />
           )}
