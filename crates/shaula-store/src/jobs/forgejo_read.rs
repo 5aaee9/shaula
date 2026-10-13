@@ -40,6 +40,7 @@ pub(super) async fn detail<C: ConnectionTrait>(tx: &C, job: JobSummary) -> Store
         job,
         observations: Vec::new(),
         forgejo_observations: observations,
+        gitlab_observations: Vec::new(),
         observations_truncated,
         generations: Vec::new(),
     })

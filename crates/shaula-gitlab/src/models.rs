@@ -106,3 +106,21 @@ pub(crate) struct RawTokenSelf {
     #[serde(default)]
     pub expires_at: Option<String>,
 }
+
+#[derive(Deserialize)]
+pub(crate) struct RawJobDetailPipeline {
+    pub id: u64,
+    pub project_id: u64,
+}
+
+/// `GET /projects/:id/jobs/:job_id`. `runner` is null once the registration
+/// that ran the job has been deleted; `web_url` is deliberately not decoded.
+#[derive(Deserialize)]
+pub(crate) struct RawJobDetail {
+    pub id: u64,
+    pub name: String,
+    pub status: String,
+    pub pipeline: RawJobDetailPipeline,
+    #[serde(default)]
+    pub runner: Option<RawScopeRef>,
+}

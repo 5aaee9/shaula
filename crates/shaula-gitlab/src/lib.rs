@@ -29,11 +29,14 @@
 //! 10. Pause/delete transport errors: `RequestUncertain`; the caller rereads.
 //! 11. Oversized or unbounded responses: streamed bodies are capped.
 //! 12. An unverified server version: refused before any registration.
+//! 13. A Jobs read reaches a project outside the scope, or returns another
+//!     job: `InvalidResponse`. The response `web_url` is never decoded.
 
 mod body;
 mod client;
 mod error;
 mod graphql;
+mod jobs;
 mod models;
 mod port;
 mod runners;

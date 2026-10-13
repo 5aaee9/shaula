@@ -15,6 +15,7 @@ pub trait LifecycleStore:
     super::ListenerMessageStore
     + crate::runner_lifetime::RunnerLifetimeStore
     + crate::jobs::ForgejoJobsStore
+    + crate::jobs::GitlabJobsStore
     + super::GitlabPoolStore
     + Send
     + Sync

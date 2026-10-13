@@ -9,6 +9,11 @@ mod forgejo_results;
 mod forgejo_scope;
 #[cfg(test)]
 mod forgejo_tests;
+mod gitlab;
+mod gitlab_projection;
+mod gitlab_read;
+mod gitlab_results;
+mod gitlab_scope;
 mod ingest;
 mod query;
 mod read;

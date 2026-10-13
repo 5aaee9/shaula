@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use shaula_core::ports::gitlab::{
-    GitlabAnchorDemand, GitlabAuthProbe, GitlabPoolPort, GitlabRegistration, GitlabRemovalOutcome,
-    GitlabRunnerRef, GitlabRunnerSpec, GitlabRunningJob,
+    GitlabAnchorDemand, GitlabAuthProbe, GitlabJobDetail, GitlabPoolPort, GitlabRegistration,
+    GitlabRemovalOutcome, GitlabRunnerRef, GitlabRunnerSpec, GitlabRunningJob,
 };
 use shaula_core::ports::{AccessFailure, EffectOutcome};
 
@@ -42,6 +42,14 @@ impl GitlabPoolPort for GitlabClient {
         runner_id: u64,
     ) -> Result<Option<Vec<GitlabRunningJob>>, AccessFailure> {
         self.running_jobs(runner_id).await.map_err(map_error)
+    }
+
+    async fn job(
+        &self,
+        project_id: u64,
+        job_id: u64,
+    ) -> Result<Option<GitlabJobDetail>, AccessFailure> {
+        self.job(project_id, job_id).await.map_err(map_error)
     }
 
     async fn pause_runner(&self, id: u64) -> Result<GitlabRemovalOutcome, AccessFailure> {

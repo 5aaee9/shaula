@@ -84,6 +84,24 @@ impl GitlabTarget {
         };
         format!("{}|{scope}", self.instance_url)
     }
+
+    /// A job link constructed beneath the configured instance from a validated
+    /// project path; a response-supplied `web_url` is never trusted.
+    pub fn job_url(&self, project_path: &str, job_id: u64) -> Option<String> {
+        let project = GitlabScope::Project {
+            path: project_path.to_owned(),
+        };
+        if job_id == 0 || project.validate().is_err() {
+            return None;
+        }
+        let mut url = Url::parse(&self.instance_url).ok()?;
+        url.path_segments_mut()
+            .ok()?
+            .pop_if_empty()
+            .extend(project_path.split('/'))
+            .extend(["-", "jobs", &job_id.to_string()]);
+        Some(url.to_string())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

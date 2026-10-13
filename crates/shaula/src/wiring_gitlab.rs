@@ -106,6 +106,13 @@ impl SupervisorWiring {
     pub(super) async fn schedule_gitlab(&mut self, key: &str, revision: i64) {
         match self.gitlab_supervisor_for(key, revision).await {
             Ok(Some(supervisor)) => {
+                // Read-only Jobs reads run apart from the tick (spec 0043 §6.1).
+                let history_key = format!("gitlab-jobs/{key}");
+                if !self.tasks.contains(&history_key) {
+                    let history = supervisor.clone();
+                    self.tasks
+                        .spawn(history_key, async move { history.enrich_jobs().await });
+                }
                 if !self.tasks.contains(key) {
                     self.tasks.spawn(key.to_owned(), async move {
                         let report = supervisor.tick().await?;

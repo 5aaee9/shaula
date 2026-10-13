@@ -2,6 +2,7 @@
 
 mod forgejo;
 mod forgejo_result;
+mod gitlab;
 mod metadata;
 mod projection;
 pub use forgejo::{
@@ -9,6 +10,10 @@ pub use forgejo::{
 };
 pub use forgejo_result::{
     ForgejoJobLookup, ForgejoJobResult, ForgejoTaskConclusion, ForgejoTaskResult,
+};
+pub use gitlab::{
+    gitlab_observed_status, GitlabJobConclusion, GitlabJobLookup, GitlabJobObservation,
+    GitlabJobResult, GitlabJobState, GitlabJobsStore, GitlabObservationSource,
 };
 
 pub use metadata::JobMetadata;
@@ -97,6 +102,8 @@ pub struct JobSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forgejo: Option<ForgejoJobState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gitlab: Option<GitlabJobState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scale_set_id: Option<i64>,
     pub protocol_job_id: String,
     #[serde(flatten)]
@@ -121,6 +128,8 @@ pub struct JobDetail {
     pub observations: Vec<JobObservation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forgejo_observations: Vec<ForgejoJobObservation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gitlab_observations: Vec<GitlabJobObservation>,
     pub observations_truncated: bool,
     pub generations: Vec<GenerationSummary>,
 }
@@ -135,6 +144,8 @@ pub struct GenerationSummary {
     pub github_runner_id: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forgejo_runner_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gitlab_runner_id: Option<String>,
     pub state: String,
     pub subphase: Option<String>,
     pub template_profile_key: String,
