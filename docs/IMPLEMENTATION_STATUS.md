@@ -22,7 +22,7 @@ integration boundaries are recorded below.
 ## GitLab runner backend (2026-10-13)
 
 [Spec 0043](specs/0043-gitlab-runner-backend.md) / [ARD-0043](ard/0043-admit-gitlab-as-the-second-pool-backend.md)
-first slice: group/project scope, Docker template, `shell` executor.
+first slice: group/project scope, Docker and Kubernetes templates, `shell` executor.
 
 - **Implemented:**
   - `shaula-gitlab` adapter, `gitlab_token` auth profile, Fleet `gitlab` section,
@@ -32,9 +32,19 @@ first slice: group/project scope, Docker template, `shell` executor.
     claim → `Verified` association → pause; pause → recheck → delete.
   - Docker template `runner_backend: gitlab` (official `gitlab/gitlab-runner:v19.4.1`
     pinned by digest, run as `gitlab-runner`, `config.toml` copied before start).
+  - Kubernetes template `runner_backend: gitlab` (2026-10-14): same pinned image as
+    UID 999 (`gitlab-runner`), non-root, ALL capabilities dropped, `restartPolicy:
+    Never`, no service-account token; `config.toml` released into the bootstrap
+    Secret by the identity-checked patch that also freezes it, mounted read-only
+    inside a Generation-owned `emptyDir` home (`run-single` writes
+    `.runner_system_id` beside it; a read-only directory only degrades to a
+    warning, verified against the pinned image with Podman). Shared Kubernetes
+    Pool Pod proof and plan admission for Forgejo and GitLab. Saved-plan
+    admission checked against real Terraform 1.9.8 / Kubernetes 2.33.0 plans
+    (`scripts/template-backends/plan.mjs`).
   - Web UI forms and details; CLI documents.
 - **Not implemented:**
-  - Kubernetes and VM templates (`validate_gitlab_target` admits Docker only).
+  - VM templates (`validate_gitlab_target` admits Docker and Kubernetes only).
   - GitLab Jobs projection (§6.1), instance scope, fault injection for lost
     registration responses.
 - **Real-instance evidence (GitHub Actions, disposable GitLab CE 19.4.2, Docker 28.0.4):**
@@ -45,6 +55,8 @@ first slice: group/project scope, Docker template, `shell` executor.
     - G8: leak scan.
   - [Adapter E2E](evidence/gitlab-adapter-e2e-2026-10-13/README.md).
   - G9: Forgejo E2E (all 8 jobs) and Nix/Playwright passed on the same commits.
+  - Kubernetes: the lifecycle harness runs on Kind (`lifecycle` matrix entry
+    `kubernetes` in `gitlab-e2e.yml`); evidence pending its first Actions run.
 - **Open:**
   - G3 (stale demand scenarios), G4 (Busy-safe Destroy under load), G5 (second
     process on the same token) and G6 (registration Uncertain) have no
