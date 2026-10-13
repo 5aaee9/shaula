@@ -10,12 +10,15 @@ import { until } from "../forgejo-lifecycle/support.mjs";
 import { anchors, containers, demandRow, diagnosticCodes, fleetGone, generations, named, pipeline,
   reclaimed, retired, runningGeneration, setCapacity, status, steady } from "./scenario-support.mjs";
 
-/** The group access token is a bot member; its role is its permission. */
+/** The group access token is a bot member; its role is its permission. The
+ * members API refuses to edit token bots (403), so change the membership
+ * row itself. */
 async function setTokenRole(fixture, level) {
   const tokens = await fixture.gitlab(`/groups/${fixture.group.id}/access_tokens`);
   const bot = tokens.find(t => t.name === "shaula" && t.active);
   assert(bot?.user_id, "operator token bot user");
-  await fixture.gitlab(`/groups/${fixture.group.id}/members/${bot.user_id}`, { method: "PUT", body: { access_level: level } });
+  await fixture.cli("exec", fixture.server, "gitlab-rails", "runner",
+    `GroupMember.find_by!(source_id: ${Number(fixture.group.id)}, user_id: ${Number(bot.user_id)}).update!(access_level: ${Number(level)})`);
 }
 
 async function phases(fixture, keys) {
