@@ -59,19 +59,31 @@ impl FleetSupervisor {
                 .generation_advance(&names.generation_id, GenerationState::Creating, now)
                 .await?;
         }
-        let scale_set_id = self.bound_scale_set_id().await?;
-        if !self
-            .fence_holds(&names.generation_id, snapshot.revision, now)
-            .await?
-        {
-            return Ok(false);
+        let local: CoreResult<Option<_>> = async {
+            let scale_set_id = self.bound_scale_set_id().await?;
+            if !self
+                .fence_holds(&names.generation_id, snapshot.revision, now)
+                .await?
+            {
+                return Ok(None);
+            }
+            let artifact_dir = self.prepare_workspace(&record, &names.workspace).await?;
+            // The backend selection and images belong to the exact protected
+            // Template Revision. Check them before minting any remote JIT.
+            let material = self
+                .template_material(&artifact_dir, &record, &parameters)
+                .await?;
+            Ok(Some((scale_set_id, artifact_dir, material)))
         }
-        let artifact_dir = self.prepare_workspace(&record, &names.workspace).await?;
-        // The backend selection and images belong to the exact protected
-        // Template Revision. Check them before minting any remote JIT.
-        let material = self
-            .template_material(&artifact_dir, &record, &parameters)
-            .await?;
+        .await;
+        let (scale_set_id, artifact_dir, material) = match local {
+            Ok(Some(prepared)) => prepared,
+            Ok(None) => return Ok(false),
+            Err(error) => {
+                self.abandon_before_jit(&names.generation_id, now).await;
+                return Err(error);
+            }
+        };
         let Some(jit) = self
             .mint_generation_jit(&names, &record, scale_set_id, now)
             .await?
@@ -125,6 +137,24 @@ impl FleetSupervisor {
             &mut diagnostic,
         )
         .await
+    }
+
+    /// A failure before JIT has crossed no remote effect, but a generation
+    /// left in `Creating` still counts as occupancy and nothing resumes it
+    /// until restart recovery. Hand it to the Destroy chain, which settles a
+    /// never-started Create without touching any runner resource.
+    async fn abandon_before_jit(&self, generation_id: &str, now: i64) {
+        if let Err(error) = self
+            .store
+            .generation_advance(generation_id, GenerationState::CleanupRequired, now)
+            .await
+        {
+            tracing::warn!(
+                generation = %generation_id,
+                code = error.code.as_str(),
+                "failed pre-JIT create not handed to cleanup"
+            );
+        }
     }
 
     fn scale_up_observer(&self) -> Option<shaula_core::diagnostics::Observer> {

@@ -22,10 +22,27 @@ pub struct Runtime {
     pub create_delay_ms: AtomicU64,
     pub creates_in_flight: AtomicUsize,
     pub peak_creates_in_flight: AtomicUsize,
+    /// Fail the local pre-JIT workspace preparation (terraform init).
+    pub prepare_fails: AtomicBool,
 }
 
 #[async_trait::async_trait]
 impl TemplateRuntimePort for Runtime {
+    async fn prepare_create(
+        &self,
+        _workspace: &std::path::Path,
+        _artifact_dir: &std::path::Path,
+        _artifact_digest: &str,
+        _timeout: std::time::Duration,
+    ) -> Result<(), TemplateOutcomeError> {
+        if self.prepare_fails.load(Ordering::SeqCst) {
+            return Err(TemplateOutcomeError::StateUnavailable {
+                phase: "worker.unavailable".into(),
+            });
+        }
+        Ok(())
+    }
+
     async fn create(
         &self,
         request: TemplateCreateRequest,
