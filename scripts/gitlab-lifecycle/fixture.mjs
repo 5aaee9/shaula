@@ -15,9 +15,9 @@ import { command, containerLogs, freePort, json, until } from "../forgejo-lifecy
 
 export const serverImage = "gitlab/gitlab-ce:19.4.2-ce.0";
 
-/** The exact pinned GitLab image from the bundled Docker profile. */
-export async function runnerImage() {
-  const profile = await readFile(resolve("templates/docker/profile.yaml"), "utf8");
+/** The exact pinned GitLab image from the bundled platform profile. */
+export async function runnerImage(platform = "docker") {
+  const profile = await readFile(resolve(`templates/${platform}/profile.yaml`), "utf8");
   const image = profile.split("\n").map(line => line.trim().replace(/^- /, ""))
     .find(line => line.startsWith("gitlab/gitlab-runner:"));
   assert.match(image ?? "", /^gitlab\/gitlab-runner:v[0-9.]+@sha256:[a-f0-9]{64}$/);
@@ -60,12 +60,12 @@ export class GitlabFixture {
       binaryDigest: `sha256:${binaryHash.digest("hex")}`,
       kernel: release(),
       terraformVersion: JSON.parse(await command(this.terraform, ["version", "-json"])).terraform_version,
-      providerLockDigest: `sha256:${createHash("sha256").update(await readFile(resolve("templates/docker/.terraform.lock.hcl"))).digest("hex")}`,
+      providerLockDigest: `sha256:${createHash("sha256").update(await readFile(resolve(`templates/${this.platform}/.terraform.lock.hcl`))).digest("hex")}`,
     };
     this.engine = JSON.parse(await this.cli("version", "--format", "{{json .Server}}"));
     assert(this.engine.Components?.some(c => c.Name === "Engine" && c.Details?.Os === "linux"), "real Linux Docker Engine required (not Podman)");
     this.directory = await mkdtemp(join(tmpdir(), `${this.prefix}-`));
-    this.runnerImage = await runnerImage();
+    this.runnerImage = await runnerImage(this.platform);
     await this.cli("pull", serverImage);
     await this.cli("pull", this.runnerImage);
     await this.startGitlab();
@@ -88,18 +88,23 @@ export class GitlabFixture {
   // Published on the Docker bridge gateway: both this host (the daemon) and
   // Generation containers on the default bridge reach the same external_url,
   // so clone URLs in job payloads resolve inside the runner too.
+  async endpoint(gateway) {
+    const port = await freePort(gateway);
+    return { port, publish: `${gateway}:${port}:${port}` };
+  }
+
   async startGitlab() {
     const bridge = JSON.parse(await this.cli("network", "inspect", "bridge"))[0];
     const gateway = bridge.IPAM.Config[0].Gateway;
     assert.match(gateway, /^\d+\.\d+\.\d+\.\d+$/);
-    const port = await freePort(gateway);
+    const { port, publish } = await this.endpoint(gateway);
     this.instance = `http://${gateway}:${port}`;
     const omnibus = [
       `external_url '${this.instance}'`, "puma['worker_processes'] = 0", "sidekiq['concurrency'] = 5",
       "prometheus_monitoring['enable'] = false", "gitlab_sshd['enable'] = false", "registry['enable'] = false",
       "gitlab_kas['enable'] = false", "letsencrypt['enable'] = false",
     ].join("; ");
-    this.server = await this.cli("create", "--name", this.prefix, "--publish", `${gateway}:${port}:${port}`,
+    this.server = await this.cli("create", "--name", this.prefix, "--publish", publish,
       "--shm-size", "256m", "-e", `GITLAB_ROOT_PASSWORD=${randomBytes(24).toString("base64url")}`,
       "-e", `GITLAB_OMNIBUS_CONFIG=${omnibus}`, serverImage);
     assert.match(this.server, /^[a-f0-9]{64}$/);
@@ -157,9 +162,11 @@ export class GitlabFixture {
     }
   }
 
+  bindings() { return { docker_host: this.socket, runner_backend: "gitlab" }; }
+
   async publish() {
-    const archive = join(this.directory, "docker.tar.gz");
-    await command("tar", ["-czf", archive, "-C", resolve("templates/docker"), "profile.yaml", "main.tf", ".terraform.lock.hcl", "runtime-policy.md", "schemas"]);
+    const archive = join(this.directory, `${this.platform}.tar.gz`);
+    await command("tar", ["-czf", archive, "-C", resolve(`templates/${this.platform}`), "profile.yaml", "main.tf", ".terraform.lock.hcl", "runtime-policy.md", "schemas"]);
     const bytes = await readFile(archive);
     this.digest = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
     const response = await fetch(`${this.url}/api/v1/template-artifacts/${this.digest}`, { method: "PUT",
@@ -167,7 +174,7 @@ export class GitlabFixture {
     assert.equal(response.status, 201, "artifact publication");
     await this.api("/template-profiles/gitlab", "PUT", {
       artifact_digest: this.digest, engine_ref: "terraform", fleet_input_policy: {},
-      bindings: { docker_host: this.socket, runner_backend: "gitlab" },
+      bindings: this.bindings(),
     }, 202, { "if-none-match": "*" });
     // The auth profile and Fleets go through the actual CLI (docs/cli.md).
     await this.shaula("auth-profiles", "create", "gitlab", { kind: "gitlab_token", instance_url: this.instance,
@@ -233,6 +240,41 @@ export class GitlabFixture {
       actions: [{ action: "create", file_path: ".gitlab-ci.yml", content }],
     } });
   }
+
+  // Platform surface used by run.mjs; kubernetes.mjs overrides each method.
+  /** The Fleet's single running Generation container, or false while pending. */
+  async runningGeneration(key, rows) {
+    const ids = await this.cli("ps", "-a", "--no-trunc", "-q", "--filter", `label=shaula.fleet=${key}`);
+    if (!ids) return false;
+    assert.equal(ids.split("\n").length, 1, "one matching job must produce exactly one container");
+    this.containers.add(ids);
+    const [container] = JSON.parse(await this.cli("inspect", ids));
+    if (!container.State.Running) return false;
+    return { id: ids, generation: rows.items[0].id, volumes: container.Mounts.filter(m => m.Type === "volume").map(m => m.Name) };
+  }
+  async assertCreated(observed) {
+    assert.equal(observed.volumes.length, 2, "exactly the image's two anonymous volumes");
+    const [container] = JSON.parse(await this.cli("inspect", observed.id));
+    assert.equal(container.Config.User, "gitlab-runner");
+    assert.equal(container.HostConfig.RestartPolicy.Name, "no");
+    return "one Generation, official image as gitlab-runner, no restart, two anonymous volumes";
+  }
+  /** Reads the delivered credential from inside the domain, for the leak scan only. */
+  deliveredConfig(observed) { return this.cli("exec", observed.id, "cat", "/home/gitlab-runner/config.toml"); }
+  /** [label, body, shaulaOwned] runtime surfaces for the leak scan. */
+  async runtimeSurfaces(observed) {
+    return [["container argv/environment/metadata", await this.cli("inspect", observed.id), true],
+      ["runner log", await this.logs(observed.id), false]];
+  }
+  async assertDestroyed(observed) {
+    assert(!(await this.cli("ps", "-a", "-q", "--no-trunc")).split("\n").includes(observed.id), "container remains");
+    const volumes = (await this.cli("volume", "ls", "-q")).split("\n");
+    assert(observed.volumes.every(v => !volumes.includes(v)), "credential volume remains");
+    this.containers.delete(observed.id);
+    return "registration deleted after pause → recheck; container and volumes destroyed";
+  }
+  /** Terraform state body as scanned; Docker state never holds the token. */
+  protectedState(body) { return body; }
 
   async close() {
     await this.stopDaemon();

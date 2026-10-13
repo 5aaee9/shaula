@@ -1,17 +1,20 @@
 #!/usr/bin/env node
-// Actual shaula serve + real GitLab CE + real Terraform/Docker (spec 0043 §10).
+// Actual shaula serve + real GitLab CE + real Terraform/Docker or Kubernetes
+// (spec 0043 §10).
 // One demand-driven Generation: anchor → Create → claim → pause → finish →
 // retire → Destroy, then Fleet retirement removes the anchor.
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { GitlabFixture, serverImage } from "./fixture.mjs";
+import { KubernetesGitlabFixture } from "./kubernetes.mjs";
 import { leakScan } from "./leaks.mjs";
 import { until } from "../forgejo-lifecycle/support.mjs";
 
 process.umask(0o077);
-const fixture = new GitlabFixture();
-const report = { kind: "shaula-gitlab-lifecycle/v1", platform: "docker", serverImage, checks: {}, passed: false };
+assert([undefined, "docker", "kubernetes"].includes(process.env.SHAULA_ACCEPTANCE_BACKEND), "unsupported acceptance backend");
+const fixture = process.env.SHAULA_ACCEPTANCE_BACKEND === "kubernetes" ? new KubernetesGitlabFixture() : new GitlabFixture();
+const report = { kind: "shaula-gitlab-lifecycle/v1", platform: fixture.platform, serverImage, checks: {}, passed: false };
 const marker = "SHAULA_GITLAB_TASK_EXECUTED";
 let phase = "setup";
 let completed = false;
@@ -34,22 +37,12 @@ try {
 
   phase = "create";
   const pipeline = await fixture.gitlab(`/projects/${fixture.project.id}/pipeline?ref=main`, { method: "POST", expected: 201 });
-  const observed = await until(`${key}: Generation container running`, async () => {
+  const observed = await until(`${key}: Generation runner running`, async () => {
     const rows = await fixture.api(`/generations?fleet_key=${key}`);
     assert(rows.items.every(g => !["Quarantined", "CleanupRequired"].includes(g.state)), "unexpected quarantine/create failure; inspect protected daemon log");
-    const ids = await fixture.cli("ps", "-a", "--no-trunc", "-q", "--filter", `label=shaula.fleet=${key}`);
-    if (!ids) return false;
-    assert.equal(ids.split("\n").length, 1, "one matching job must produce exactly one container");
-    fixture.containers.add(ids);
-    const [container] = JSON.parse(await fixture.cli("inspect", ids));
-    if (!container.State.Running) return false;
-    return { id: ids, generation: rows.items[0].id, volumes: container.Mounts.filter(m => m.Type === "volume").map(m => m.Name) };
+    return fixture.runningGeneration(key, rows);
   }, 300_000);
-  assert.equal(observed.volumes.length, 2, "exactly the image's two anonymous volumes");
-  const [container] = JSON.parse(await fixture.cli("inspect", observed.id));
-  assert.equal(container.Config.User, "gitlab-runner");
-  assert.equal(container.HostConfig.RestartPolicy.Name, "no");
-  report.checks.create = "one Generation, official image as gitlab-runner, no restart, two anonymous volumes";
+  report.checks.create = await fixture.assertCreated(observed);
 
   phase = "claim";
   const jobs = await fixture.gitlab(`/projects/${fixture.project.id}/pipelines/${pipeline.id}/jobs`);
@@ -61,8 +54,7 @@ try {
   const registration = await fixture.gitlab(`/runners/${claimed.runner.id}`);
   assert(registration.description.startsWith(`${key}-`) && registration.description !== anchor.description);
   assert.equal(registration.maintenance_note, `shaula:fleet=${key};role=generation;name=${registration.description}`);
-  // Read the delivered credential from inside the domain for the leak scan only.
-  const config = await fixture.cli("exec", observed.id, "cat", "/home/gitlab-runner/config.toml");
+  const config = await fixture.deliveredConfig(observed);
   const runnerToken = /token = "(glrt-[^"]+)"/.exec(config)?.[1];
   assert(runnerToken, "delivered config.toml carries the registration token");
   await until(`${key}: claimed registration paused`, async () => (await fixture.gitlab(`/runners/${claimed.runner.id}`)).paused, 120_000);
@@ -94,12 +86,9 @@ try {
   assert.equal(generations.items.length, 1, "no duplicate Generation for one job");
   assert.equal(generations.items[0].state, "Destroyed");
   await fixture.gitlab(`/runners/${claimed.runner.id}`, { expected: 404 });
-  assert(!(await fixture.cli("ps", "-a", "-q", "--no-trunc")).split("\n").includes(observed.id), "container remains");
-  const volumes = (await fixture.cli("volume", "ls", "-q")).split("\n");
-  assert(observed.volumes.every(v => !volumes.includes(v)), "credential volume remains");
-  fixture.containers.delete(observed.id);
+  const destroyed = await fixture.assertDestroyed(observed);
   report.leakScanAfterDestroy = await leakScan(fixture, key, observed, secrets, false, [short]);
-  report.checks.reclaim = "registration deleted after pause → recheck; container and volumes destroyed";
+  report.checks.reclaim = destroyed;
 
   phase = "retire";
   await fixture.retireFleet(key);

@@ -36,9 +36,17 @@ jobs:
           if-no-files-found: ignore
 
   lifecycle:
-    name: Shaula Terraform lifecycle (GitLab, docker)
+    name: Shaula Terraform lifecycle (GitLab, ${{ matrix.platform }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [docker, kubernetes]
+    env:
+      SHAULA_ACCEPTANCE_BACKEND: ${{ matrix.platform }}
+      KUBECONFIG: ${{ github.workspace }}/.acceptance-kubeconfig
+      SHAULA_ACCEPTANCE_KUBE_CONTEXT: kind-shaula-gitlab
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -59,16 +67,36 @@ jobs:
           printf '[Service]\nEnvironment=DOCKER_MIN_API_VERSION=1.24\n' | sudo tee /etc/systemd/system/docker.service.d/shaula-acceptance.conf >/dev/null
           sudo systemctl daemon-reload
           sudo systemctl restart docker
+      # Exact upstream bytes, installed only on this disposable hosted runner.
+      # Kind's compiled default node image is pinned by this release binary.
+      - name: Create isolated Kubernetes acceptance cluster
+        if: matrix.platform == 'kubernetes'
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64 \
+            --output "$RUNNER_TEMP/kind"
+          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
+          chmod 0755 "$RUNNER_TEMP/kind"
+          "$RUNNER_TEMP/kind" create cluster --name shaula-gitlab --kubeconfig "$KUBECONFIG" --wait 180s
+          kubectl --kubeconfig "$KUBECONFIG" --context "$SHAULA_ACCEPTANCE_KUBE_CONTEXT" get nodes
       - name: Demand → Create → claim → pause → retire → Destroy, plus leak scan
         run: |
           sudo systemd-run --unit=shaula-gitlab-acceptance --wait --pipe --collect \
             --property=Delegate=yes --property="User=$(id -un)" \
             --working-directory="$PWD" --setenv="PATH=$PATH" --setenv="HOME=$HOME" \
+            --setenv="KUBECONFIG=$KUBECONFIG" --setenv="SHAULA_ACCEPTANCE_KUBE_CONTEXT=$SHAULA_ACCEPTANCE_KUBE_CONTEXT" \
+            --setenv="SHAULA_ACCEPTANCE_BACKEND=$SHAULA_ACCEPTANCE_BACKEND" \
             --setenv="SHAULA_GITLAB_REPORT=$RUNNER_TEMP/gitlab-lifecycle.json" \
             "$(command -v nix)" develop --command bash scripts/gitlab-lifecycle-acceptance.sh
+      - name: Remove disposable Kubernetes cluster
+        if: always() && matrix.platform == 'kubernetes'
+        run: |
+          if test -x "$RUNNER_TEMP/kind"; then
+            "$RUNNER_TEMP/kind" delete cluster --name shaula-gitlab
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: gitlab-lifecycle
+          name: gitlab-lifecycle-${{ matrix.platform }}
           path: ${{ runner.temp }}/gitlab-lifecycle.json
           if-no-files-found: ignore

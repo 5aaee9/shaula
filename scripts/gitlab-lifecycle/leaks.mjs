@@ -1,5 +1,6 @@
 // Credentials stay in memory; assertions name only the inspected surface.
-// The GitLab registration token must exist only in the copied config.toml.
+// The GitLab registration token must exist only in the delivered config.toml
+// (copied file on Docker, released bootstrap Secret item on Kubernetes).
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -25,9 +26,9 @@ export async function leakScan(fixture, key, observed, secrets, alive, adjacent 
   inspect(JSON.stringify(await fixture.api(`/fleets/${key}/status`)), "Fleet status API");
   inspect(await readFile(join(fixture.directory, "daemon.log"), "utf8"), "daemon log");
   if (alive) {
-    inspect(await fixture.cli("inspect", observed.id), "container argv/environment/metadata");
-    // The runner prints a 9-character token prefix; the full token must not appear.
-    inspect(await fixture.logs(observed.id), "runner log", false);
+    // Container/Pod metadata, plus the runner log, which prints a 9-character
+    // token prefix; there only the full token must not appear.
+    for (const [label, body, own] of await fixture.runtimeSurfaces(observed)) inspect(body, label, own);
   }
   const database = join(fixture.directory, "data", "shaula.db");
   assert.equal((await stat(database)).mode & 0o077, 0, "control-plane database must be owner-only");
@@ -38,7 +39,7 @@ export async function leakScan(fixture, key, observed, secrets, alive, adjacent 
   } finally { db.close(); }
   assert(durable?.state_bytes && durable.protected_input, "authoritative HTTP state and original input required");
   inspect(Buffer.from(durable.protected_input).toString(), "retained Terraform inputs");
-  inspect(Buffer.from(durable.state_bytes).toString(), "Terraform state");
+  inspect(fixture.protectedState(Buffer.from(durable.state_bytes).toString(), observed, secrets), "Terraform state");
   let cursor;
   do {
     const page = await fixture.api(`/generations/${id}/invocations${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
