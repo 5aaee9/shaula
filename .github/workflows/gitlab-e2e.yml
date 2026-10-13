@@ -25,8 +25,9 @@ jobs:
         run: nix develop --command cargo test --locked -p shaula-gitlab --test live_gitlab --no-run
       - name: Drive the adapter through a full Generation
         run: |
-          CONTAINER_ENGINE=docker nix develop --command node scripts/gitlab-pool-spike/adapter-e2e.mjs \
-            > "$RUNNER_TEMP/gitlab-adapter-e2e.json"
+          # Redirect inside the dev shell: its shellHook prints to stdout.
+          CONTAINER_ENGINE=docker nix develop --command bash -c \
+            'node scripts/gitlab-pool-spike/adapter-e2e.mjs > "$RUNNER_TEMP/gitlab-adapter-e2e.json"'
           cat "$RUNNER_TEMP/gitlab-adapter-e2e.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()

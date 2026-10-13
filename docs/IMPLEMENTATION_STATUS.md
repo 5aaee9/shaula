@@ -19,6 +19,37 @@ used an owner-approved temporary Nix Rust environment. The repository now provid
 a locked flake development/build environment; verification and remaining
 integration boundaries are recorded below.
 
+## GitLab runner backend (2026-10-13)
+
+[Spec 0043](specs/0043-gitlab-runner-backend.md) / [ARD-0043](ard/0043-admit-gitlab-as-the-second-pool-backend.md)
+first slice: group/project scope, Docker template, `shell` executor.
+
+- **Implemented:**
+  - `shaula-gitlab` adapter, `gitlab_token` auth profile, Fleet `gitlab` section,
+    migration 0030.
+  - Shared `pool_driver` / `pool_create`, with Forgejo moved onto them.
+  - GitLab supervisor: paused, tokenless anchor demand; registration intent;
+    claim → `Verified` association → pause; pause → recheck → delete.
+  - Docker template `runner_backend: gitlab` (official `gitlab/gitlab-runner:v19.4.1`
+    pinned by digest, run as `gitlab-runner`, `config.toml` copied before start).
+  - Web UI forms and details; CLI documents.
+- **Not implemented:**
+  - Kubernetes and VM templates (`validate_gitlab_target` admits Docker only).
+  - GitLab Jobs projection (§6.1), instance scope, fault injection for lost
+    registration responses.
+- **Real-instance evidence (GitHub Actions, disposable GitLab CE 19.4.2, Docker 28.0.4):**
+  - [Lifecycle E2E](evidence/gitlab-lifecycle-e2e-2026-10-13/README.md):
+    - G1 closed loop through actual `shaula serve` + Terraform;
+    - G2 partial: an incompatible job stays pending;
+    - G7 partial: `job.runner` is the owned registration (no Jobs view yet);
+    - G8: leak scan.
+  - [Adapter E2E](evidence/gitlab-adapter-e2e-2026-10-13/README.md).
+  - G9: Forgejo E2E (all 8 jobs) and Nix/Playwright passed on the same commits.
+- **Open:**
+  - G3 (stale demand scenarios), G4 (Busy-safe Destroy under load), G5 (second
+    process on the same token) and G6 (registration Uncertain) have no
+    real-instance or fault-injection evidence yet.
+
 ## Contract fixes and application policy ownership (2026-10-05)
 
 - Template Profile `/status` now requires `template.read` and exposes desired

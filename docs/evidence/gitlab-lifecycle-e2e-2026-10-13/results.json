@@ -1,0 +1,36 @@
+{
+  "kind": "shaula-gitlab-lifecycle/v1",
+  "platform": "docker",
+  "serverImage": "gitlab/gitlab-ce:19.4.2-ce.0",
+  "checks": {
+    "anchor": "paused, tokenless; zero demand creates no Generation",
+    "create": "one Generation, official image as gitlab-runner, no restart, two anonymous volumes",
+    "claim": "job.runner is the owned Generation registration; paused while the job runs",
+    "finish": {
+      "job": "success",
+      "durationSeconds": 30.789455,
+      "traceHasTaskOutput": true,
+      "traceShowsUpstreamShortToken": true
+    },
+    "reclaim": "registration deleted after pause → recheck; container and volumes destroyed",
+    "retire": "Fleet tombstoned (410); anchor deleted"
+  },
+  "passed": true,
+  "runtimeTuple": {
+    "sourceCommit": "b41b292889bdab95f29ceb8d7d280d719312b1aa",
+    "binaryDigest": "sha256:c5c265a73bad3c17d73024bcc2c2a533913f3f44ddd32290a81673f7783b8623",
+    "kernel": "6.17.0-1022-azure",
+    "terraformVersion": "1.9.8",
+    "providerLockDigest": "sha256:541a79ea1f8f922d68c5e0b00dbaaf8d78c3a43bd172d32a8a209ce12c7c951a"
+  },
+  "engineVersion": "28.0.4",
+  "artifactDigest": "sha256:f749f0632213cbbf7dffe138b64f3e24001cba177790fe8b640e6d95bb00b86c",
+  "runnerImage": "gitlab/gitlab-runner:v19.4.1@sha256:77d03a5c881ff8f97381de4f96a66c080733eeab9c9cf502bd19916a18969113",
+  "gitlabVersion": "19.4.2",
+  "leakScanWhileRunning": {
+    "surfaces": 11
+  },
+  "leakScanAfterDestroy": {
+    "surfaces": 10
+  }
+}
