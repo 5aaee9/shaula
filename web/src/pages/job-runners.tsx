@@ -176,9 +176,18 @@ export function RunnerDetail({ scopes }: { scopes: string[] }) {
                 </Link>
               </KeyValue>
               <KeyValue
-                label={generation.forgejo_runner_id ? "Forgejo runner ID" : "Remote runner ID"}
+                label={
+                  generation.forgejo_runner_id
+                    ? "Forgejo runner ID"
+                    : generation.gitlab_runner_id
+                      ? "GitLab runner ID"
+                      : "Remote runner ID"
+                }
               >
-                {generation.forgejo_runner_id || generation.github_runner_id || "Unknown"}
+                {generation.forgejo_runner_id ||
+                  generation.gitlab_runner_id ||
+                  generation.github_runner_id ||
+                  "Unknown"}
               </KeyValue>
               <KeyValue label="Generation">{generation.id}</KeyValue>
               <KeyValue label="Job association">

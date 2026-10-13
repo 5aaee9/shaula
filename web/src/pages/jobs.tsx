@@ -90,8 +90,9 @@ export function JobsPage({ scopes }: { scopes: string[] }) {
               <>
                 {jobs.data.items.length === 0 ? (
                   <Empty title="No observed jobs">
-                    Jobs appear from GitHub listener observations or Forgejo snapshots. Runners
-                    without a verified job association are available separately.
+                    Jobs appear from GitHub listener observations, Forgejo snapshots or GitLab jobs
+                    claimed by Shaula runners. Runners without a verified job association are
+                    available separately.
                   </Empty>
                 ) : (
                   <div className="rounded-md border">
@@ -117,7 +118,11 @@ export function JobsPage({ scopes }: { scopes: string[] }) {
                                 {job.job_display_name || job.protocol_job_id}
                               </Link>
                               <p className="text-xs text-muted-foreground">
-                                {job.forgejo ? "Forgejo / " : "GitHub / "}
+                                {job.forgejo
+                                  ? "Forgejo / "
+                                  : job.gitlab
+                                    ? "GitLab / "
+                                    : "GitHub / "}
                                 {job.association_status} association
                               </p>
                             </TableCell>
@@ -126,9 +131,11 @@ export function JobsPage({ scopes }: { scopes: string[] }) {
                               <p className="text-xs text-muted-foreground">
                                 {job.forgejo
                                   ? `Run ${job.forgejo.result?.run_number || (job.forgejo.run_id === "0" ? "unknown" : job.forgejo.run_id)}, attempt ${job.forgejo.attempt}`
-                                  : job.workflow_run_id
-                                    ? `Run ${job.workflow_run_id}`
-                                    : "Run unknown"}
+                                  : job.gitlab
+                                    ? `Pipeline ${job.gitlab.pipeline_id}, job ${job.gitlab.job_id}`
+                                    : job.workflow_run_id
+                                      ? `Run ${job.workflow_run_id}`
+                                      : "Run unknown"}
                               </p>
                             </TableCell>
                             <TableCell>
@@ -138,7 +145,7 @@ export function JobsPage({ scopes }: { scopes: string[] }) {
                             </TableCell>
                             <TableCell>
                               <StatusBadge value={job.observed_status} />
-                              {job.forgejo && (
+                              {(job.forgejo || job.gitlab) && (
                                 <p className="text-xs text-muted-foreground">
                                   {snapshotFreshness(job)}
                                 </p>

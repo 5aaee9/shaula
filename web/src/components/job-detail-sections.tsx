@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { TableColumns } from "@/components/table-columns";
 import { historyTime, type JobDetail } from "@/lib/jobs";
 import { ForgejoJobObservations } from "@/components/forgejo-job-details";
+import { GitlabJobObservations } from "@/components/gitlab-job-details";
 import { OperationLogs } from "@/components/operation-logs";
 
 export function GitHubJobFacts({ job }: { job: JobDetail }) {
@@ -85,6 +86,8 @@ export function JobObservations({ job }: { job: JobDetail }) {
       )}
       {job.forgejo ? (
         <ForgejoJobObservations job={job} />
+      ) : job.gitlab ? (
+        <GitlabJobObservations job={job} />
       ) : (
         <Table>
           <TableColumns
