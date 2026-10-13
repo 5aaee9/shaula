@@ -65,7 +65,7 @@ adapter 只依赖以下 GitLab 面；超时、无重定向、大小上限、失�
 ## 5. Runner Bootstrap Material、执行器与模板
 
 - Runner Bootstrap Material 为 `{instance_url, runner_id, token, runner_name, executor}`。它以单个受保护的 `config.toml` 投递，进程以 `gitlab-runner run-single --config <path> --runner <runner_name> --max-builds 1 --wait-timeout <s>` 启动。token MUST NOT 出现于 argv、环境（含 `CI_SERVER_TOKEN`）、资源 tags/labels、Setup Info、Operation Log 或日志投影。
-- gitlab-runner 进程日志打印 token 的 short token 子串（实验中为完整 token 的 9 字符子串）。runner stdout/stderr 属于 credential-adjacent：MUST NOT 进入 Operation Log 或 Setup Info，平台日志采集按凭据边界处理。
+- gitlab-runner 进程日志打印 token 的 short token 子串（实验中为完整 token 的 9 字符子串）。runner stdout/stderr 属于 credential-adjacent：MUST NOT 进入 Operation Log 或 Setup Info，平台日志采集按凭据边界处理。GitLab 自身也在每个 job trace 的开头打印 short token（`on <runner> <short token>`，2026-10-13 生命周期 E2E 观测）；job trace 归 GitLab 所有、对项目成员可见，不属于 Shaula 可控的输出面。
 - 资源 MUST 禁止任何重启策略（Docker `--restart no`、Kubernetes `restartPolicy: Never`、systemd 不自动重启）：重启后的进程会以同一 token 领取第二个 job。
 - 执行器：
   - 容器模板（Docker / Kubernetes）MUST 使用 `shell` executor。`kubernetes` executor 会在 Generation 之外创建 Pod（违反 [ARD-0006](../ard/0006-realize-each-kubernetes-runner-generation-as-one-pod-and-one-bootstrap-secret.md)），`docker` executor 需要宿主 socket（违反 Docker 默认不挂 socket 的基线），二者 MUST 在静态校验阶段拒绝。
@@ -126,5 +126,5 @@ GitLab 对这些接缝的额外要求：
 - **G5 token 重用**：重启策略被模板校验拒绝；领取后暂停使同一 token 的第二个进程无法领取。
 - **G6 注册 Uncertain**：注入响应丢失，`ExactlyOne` / `None` / `Multiple` 分别按 §6 收敛。
 - **G7 关联**：Jobs 视图显示 `Verified` 关联，注册删除后关联保留。
-- **G8 泄漏扫描**：argv、环境、资源 metadata、Setup Info、Operation Log 与普通日志中不含 token 或 short token；容器 Terraform 输入不含 token。
+- **G8 泄漏扫描**：argv、环境、资源 metadata、Setup Info、Operation Log 与 Shaula 日志中不含 token 或 short token；容器 Terraform 输入不含 token。runner 进程日志与 GitLab job trace 只要求不含完整 token（二者由上游打印 short token，见 §5）。
 - **G9 无回归**：GitHub 与 Forgejo Fleet 的本地测试与既有真实路径证据在 Pool 抽象后复跑通过。

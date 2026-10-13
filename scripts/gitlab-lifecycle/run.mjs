@@ -80,10 +80,13 @@ try {
   }, 300_000);
   const trace = await fixture.gitlab(`/projects/${fixture.project.id}/jobs/${match.id}/trace`);
   assert(trace.includes(`${marker} job=${match.id} runner=${claimed.runner.id}`), "job output names the Generation registration");
-  for (const secret of [...secrets, short]) assert(!trace.includes(secret), "credential leak in job trace");
+  for (const secret of secrets) assert(!trace.includes(secret), "credential leak in job trace");
   const mismatch = await fixture.gitlab(`/projects/${fixture.project.id}/jobs/${jobs.find(j => j.name === "mismatch").id}`);
   assert.equal(mismatch.status, "pending", "an incompatible job is never served");
-  report.checks.finish = { job: finished.status, durationSeconds: finished.duration, traceHasTaskOutput: true };
+  // gitlab-runner itself writes "on <runner> <short token>" into every job
+  // trace; that GitLab-owned surface is recorded, not asserted (spec 0043 G8).
+  report.checks.finish = { job: finished.status, durationSeconds: finished.duration, traceHasTaskOutput: true,
+    traceShowsUpstreamShortToken: trace.includes(short) };
 
   phase = "reclaim";
   await until(`${key}: full reclaim`, async () => (await fixture.api(`/fleets/${key}/status`)).capacity.occupancy === 0, 900_000);
