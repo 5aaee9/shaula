@@ -47,6 +47,10 @@ cloud-init 缓存、Terraform plan/state 和诊断日志在实例生命周期内
 能获取 root 权限或访问 metadata 的 workflow 可能读取 JIT；不要将这类 Runner
 视为针对恶意 workflow 的隔离边界。
 
+选择 GitLab backend 时，user-data 携带的是单注册 Runner token 所在的 `config.toml`
+（仅 `shell` executor），同样属于上述敏感材料；引导、校验和与边界见
+[Proxmox Runner 的 GitLab 小节](proxmox-runners.md#gitlabproxmox--aws--tencentcloud--alicloud-通用)。
+
 ## 验收
 
 仓库测试只覆盖 artifact、manifest、变量、provider schema 和静态 Terraform 校验。

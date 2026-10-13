@@ -22,7 +22,7 @@ integration boundaries are recorded below.
 ## GitLab runner backend (2026-10-13)
 
 [Spec 0043](specs/0043-gitlab-runner-backend.md) / [ARD-0043](ard/0043-admit-gitlab-as-the-second-pool-backend.md)
-first slice: group/project scope, Docker template, `shell` executor.
+first slice: group/project scope, Docker and VM templates, `shell` executor.
 
 - **Implemented:**
   - `shaula-gitlab` adapter, `gitlab_token` auth profile, Fleet `gitlab` section,
@@ -33,8 +33,18 @@ first slice: group/project scope, Docker template, `shell` executor.
   - Docker template `runner_backend: gitlab` (official `gitlab/gitlab-runner:v19.4.1`
     pinned by digest, run as `gitlab-runner`, `config.toml` copied before start).
   - Web UI forms and details; CLI documents.
+  - VM templates (Proxmox, AWS, TencentCloud, AliCloud) `runner_backend: gitlab`
+    under `gitlab_vm_bootstrap_contract: shaula.gitlab-vm-cloud-init/v1`, admitted by
+    `validate_gitlab_generation_target` (separate from the container check). The
+    envelope member `gitlab_vm.config_toml` is the same `config_toml()` rendering,
+    accepted only in canonical `shell` form for exactly the `gitlab` identity.
+    Cloud-init installs the official gitlab-runner 19.4.1 (amd64/arm64 SHA-256 from
+    upstream `release.sha256`; Proxmox reuses an exact preinstalled binary) and
+    runs `run-single` once as non-root `runner` with `Restart=no`. See
+    [GitLab VM](proxmox-runners.md#gitlabproxmox--aws--tencentcloud--alicloud-通用).
 - **Not implemented:**
-  - Kubernetes and VM templates (`validate_gitlab_target` admits Docker only).
+  - Kubernetes template (`validate_gitlab_target` admits Docker only).
+  - VM `docker` executor.
   - GitLab Jobs projection (§6.1), instance scope, fault injection for lost
     registration responses.
 - **Real-instance evidence (GitHub Actions, disposable GitLab CE 19.4.2, Docker 28.0.4):**
@@ -45,6 +55,15 @@ first slice: group/project scope, Docker template, `shell` executor.
     - G8: leak scan.
   - [Adapter E2E](evidence/gitlab-adapter-e2e-2026-10-13/README.md).
   - G9: Forgejo E2E (all 8 jobs) and Nix/Playwright passed on the same commits.
+- **[VM evidence](evidence/gitlab-vm-bootstrap-2026-10-14/README.md) (local, no cloud):** `scripts/template-backends/vm.mjs` renders the
+  real user-data of all four VM templates with Terraform 1.9.8, then runs each
+  GitLab bootstrap with relocated guest paths. The real official binary passes the
+  bootstrap's own SHA-256 check and `run-single` polls a loopback API fixture with
+  the rendered token and `executor: shell`; `/proc` shows the exact argv, no token in
+  argv/env, `0600`/`0700` config modes and the work directory. Failure cases (pre-start,
+  checksum, missing config/name, Proxmox seed protection) never reach GitLab, and a
+  replay is refused by the marker. Not proven: real cloud-init/systemd/`runuser`,
+  a job executed on a VM, or VM/ISO cleanup against a real GitLab.
 - **Open:**
   - G3 (stale demand scenarios), G4 (Busy-safe Destroy under load), G5 (second
     process on the same token) and G6 (registration Uncertain) have no
