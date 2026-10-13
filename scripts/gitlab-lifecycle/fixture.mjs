@@ -33,6 +33,8 @@ export class GitlabFixture {
   binary = resolve(process.env.SHAULA_BIN || "target/debug/shaula");
   terraform = process.env.TERRAFORM_BIN || "terraform";
   platform = "docker";
+  /** URL the daemon and Generation runners use; a fault-proxy subclass overrides it. */
+  get endpoint() { return this.instance; }
 
   async cli(...args) { return command(this.docker, ["--host", this.socket, ...args]); }
   /** Container output on both streams; `docker logs` replays stderr on stderr. */
@@ -170,7 +172,7 @@ export class GitlabFixture {
       bindings: { docker_host: this.socket, runner_backend: "gitlab" },
     }, 202, { "if-none-match": "*" });
     // The auth profile and Fleets go through the actual CLI (docs/cli.md).
-    await this.shaula("auth-profiles", "create", "gitlab", { kind: "gitlab_token", instance_url: this.instance,
+    await this.shaula("auth-profiles", "create", "gitlab", { kind: "gitlab_token", instance_url: this.endpoint,
       scope: { kind: "group", path: this.group.full_path }, token: this.token });
     for (const kind of ["template-profiles", "github-auth-profiles"]) {
       await until(`${kind} Active`, async () => {
@@ -184,7 +186,7 @@ export class GitlabFixture {
   async createFleet(key, min = 0, max = 1) {
     this.fleets.add(key);
     await this.shaula("fleets", "create", key, { kind: "gitlab", gitlab: {
-      instance_url: this.instance, scope: { kind: "group", path: this.group.full_path },
+      instance_url: this.endpoint, scope: { kind: "group", path: this.group.full_path },
       auth_profile_ref: "gitlab", runner_name_prefix: `${key}-`, tags: [key],
     }, capacity: { min_runners: min, max_runners: max }, template_profile_ref: "gitlab", template_inputs: {} });
   }
