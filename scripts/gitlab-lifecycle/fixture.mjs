@@ -33,6 +33,8 @@ export class GitlabFixture {
   binary = resolve(process.env.SHAULA_BIN || "target/debug/shaula");
   terraform = process.env.TERRAFORM_BIN || "terraform";
   platform = "docker";
+  /** URL the daemon and Generation runners use; a fault-proxy subclass overrides it. */
+  get endpoint() { return this.instance; }
 
   async cli(...args) { return command(this.docker, ["--host", this.socket, ...args]); }
   /** Container output on both streams; `docker logs` replays stderr on stderr. */
@@ -88,7 +90,7 @@ export class GitlabFixture {
   // Published on the Docker bridge gateway: both this host (the daemon) and
   // Generation containers on the default bridge reach the same external_url,
   // so clone URLs in job payloads resolve inside the runner too.
-  async endpoint(gateway) {
+  async gitlabPublish(gateway) {
     const port = await freePort(gateway);
     return { port, publish: `${gateway}:${port}:${port}` };
   }
@@ -97,7 +99,7 @@ export class GitlabFixture {
     const bridge = JSON.parse(await this.cli("network", "inspect", "bridge"))[0];
     const gateway = bridge.IPAM.Config[0].Gateway;
     assert.match(gateway, /^\d+\.\d+\.\d+\.\d+$/);
-    const { port, publish } = await this.endpoint(gateway);
+    const { port, publish } = await this.gitlabPublish(gateway);
     this.instance = `http://${gateway}:${port}`;
     const omnibus = [
       `external_url '${this.instance}'`, "puma['worker_processes'] = 0", "sidekiq['concurrency'] = 5",
@@ -177,7 +179,7 @@ export class GitlabFixture {
       bindings: this.bindings(),
     }, 202, { "if-none-match": "*" });
     // The auth profile and Fleets go through the actual CLI (docs/cli.md).
-    await this.shaula("auth-profiles", "create", "gitlab", { kind: "gitlab_token", instance_url: this.instance,
+    await this.shaula("auth-profiles", "create", "gitlab", { kind: "gitlab_token", instance_url: this.endpoint,
       scope: { kind: "group", path: this.group.full_path }, token: this.token });
     for (const kind of ["template-profiles", "github-auth-profiles"]) {
       await until(`${kind} Active`, async () => {
@@ -191,7 +193,7 @@ export class GitlabFixture {
   async createFleet(key, min = 0, max = 1) {
     this.fleets.add(key);
     await this.shaula("fleets", "create", key, { kind: "gitlab", gitlab: {
-      instance_url: this.instance, scope: { kind: "group", path: this.group.full_path },
+      instance_url: this.endpoint, scope: { kind: "group", path: this.group.full_path },
       auth_profile_ref: "gitlab", runner_name_prefix: `${key}-`, tags: [key],
     }, capacity: { min_runners: min, max_runners: max }, template_profile_ref: "gitlab", template_inputs: {} });
   }

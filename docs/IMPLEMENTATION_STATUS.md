@@ -84,10 +84,27 @@ first slice: group/project scope, Docker, Kubernetes and VM templates, `shell` e
   checksum, missing config/name, Proxmox seed protection) never reach GitLab, and a
   replay is refused by the marker. Not proven: real cloud-init/systemd/`runuser`,
   a job executed on a VM, or VM/ISO cleanup against a real GitLab.
+- **Real-instance harness implemented, evidence pending CI** (`scripts/gitlab-lifecycle/suite.mjs`,
+  job `lifecycle-suites` in `.github/workflows/gitlab-e2e.yml`; transport faults through a
+  GitLab API fault proxy on the Docker bridge, never a simulated runtime):
+  - G3 `demand`: failed demand poll, deleted anchor, unpaused anchor, revoked
+    permission (token bot demoted to Maintainer) each freeze the demand snapshot,
+    report `Degraded` and keep an Idle Generation through a capacity change;
+    proven demand then retires it and replaces every drifted anchor.
+  - G4 `busy`: a Retirement pause raced by a claim → Busy, `cleanup.job_busy`,
+    resources kept through Fleet retirement; job success → delete → Destroy.
+  - G5 `token`: `restart = "always"` refused before any resource; a second
+    `run-single` on the same `config.toml` cannot claim a pending job while paused.
+  - G6 `uncertain`: lost registration response → ExactlyOne (deleted,
+    `CleanupRequired`), None (zero resources, retry), Multiple (`Quarantined`);
+    anchor ExactlyOne adopted, anchor Multiple deleted and rebuilt.
+  - Fixed while writing them: an unpaused anchor is replaced as drift (§3.1)
+    instead of being re-paused; registration ExactlyOne also matches tags and
+    `run_untagged` (§6).
 - **Open:**
-  - G3 (stale demand scenarios), G4 (Busy-safe Destroy under load), G5 (second
-    process on the same token) and G6 (registration Uncertain) have no
-    real-instance or fault-injection evidence yet.
+  - G3 in CE: listing group runners already needs Owner, so a demoted token is
+    first seen by the inventory read; GraphQL `updateRunner=false` with a
+    readable inventory needs an EE custom role and stays unexercised.
 
 ## Contract fixes and application policy ownership (2026-10-05)
 

@@ -29,7 +29,7 @@ export class KubernetesGitlabFixture extends GitlabFixture {
   // is therefore published on loopback only, and an in-process TCP relay on
   // the Docker bridge gateway serves the one external_url to the daemon and
   // to Generation Pods alike.
-  async endpoint(gateway) {
+  async gitlabPublish(gateway) {
     const port = await freePort(gateway);
     const local = await freePort();
     this.relay = createServer(client => {

@@ -81,3 +81,64 @@ The report prints to stdout, and to `$SHAULA_GITLAB_REPORT` when set. It names
 only checks, versions and digests. Teardown removes only the GitLab server ID,
 containers carrying this run's random Fleet key and, on Kubernetes, the exact
 namespace the run created.
+
+## Fault suites (G3–G6)
+
+```sh
+SHAULA_GITLAB_SUITE=demand nix develop --command bash scripts/gitlab-lifecycle-acceptance.sh
+```
+
+`SHAULA_GITLAB_SUITE` selects one suite per run (`baseline`, the default, is
+`run.mjs` above). Each suite boots its own GitLab and writes its report to
+`$SHAULA_GITLAB_REPORT`. `demand`, `busy` and `uncertain` point the auth
+profile and every Fleet at `faults.mjs`: a proxy on the Docker bridge gateway
+in front of GitLab. Generation runners use it too, but runner job traffic is
+never faulted. The proxy never reads a response body (registration responses
+carry a token). From requests it keeps only the registration fields (no
+credential); it never keeps headers. `node --test` covers its fault modes.
+
+- **`demand` (G3).** A `max_runners: 0` Fleet keeps a positive snapshot. Each
+  case first brings up a Fleet with one Idle Generation. Then it injects the
+  fault:
+  - GraphQL demand query rejected (503);
+  - both anchors deleted, with anchor re-creation rejected;
+  - both anchors unpaused, with anchor re-creation rejected;
+  - the token's bot member demoted to Maintainer.
+
+  The check waits for `Degraded`, then lowers capacity to 0 (a new revision).
+  For 50 s the Idle Generation, its container and registration must remain,
+  and both `fleet_demand` rows must keep their value and proof time. Ticks
+  must keep running (inventory requests counted). An unpaused anchor must be
+  deleted, never re-paused. After restore, demand is proven again, the
+  Generation is retired, and each Fleet has exactly one paused anchor for its
+  current revision. Every replaced anchor returns 404.
+- **`busy` (G4).** An Idle Generation is selected for Retirement by a capacity
+  change. The proxy holds that Retirement `PUT paused=true` while the
+  still-unpaused runner claims a new job, then lets it through. The check
+  expects:
+  - the Generation becomes Busy, with `cleanup.job_busy`;
+  - container and paused registration are kept, and the job keeps running,
+    through the revision change and a Fleet DELETE;
+  - after the job succeeds: registration 404, Destroy, tombstone.
+- **`token` (G5).**
+  - A copy of the Docker template with `restart = "always"` is published. Its
+    Fleet must never create a container; the Generation settles in cleanup and
+    the Fleet retires cleanly.
+  - After claim and pause, a second `gitlab-runner run-single` is `docker
+    exec`ed on the Generation's own `config.toml`, with stdio discarded. The
+    second pending job must stay pending for the full wait timeout. Then a new
+    Generation's registration serves it.
+- **`uncertain` (G6).** Registration responses are lost:
+  - anchor response dropped after commit: adopted, one POST;
+  - anchor response held while an identical anchor is registered out of band:
+    both deleted, one rebuilt;
+  - Generation request reset before GitLab: nothing registered, Generation
+    Destroyed without a resource, a new Generation serves the job;
+  - Generation response dropped after commit: `CleanupRequired`, registration
+    404, retry serves the job;
+  - Generation response held while an identical duplicate is registered:
+    `Quarantined`, both kept, no replay, no Create.
+
+  Every case also asserts that the uncertain POST was never replayed. The
+  quarantined Fleet is deliberately not retired; GitLab teardown owns its two
+  registrations.
