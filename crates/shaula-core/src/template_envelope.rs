@@ -37,6 +37,8 @@ pub struct ShaulaInputEnvelope {
     pub forgejo_vm: Option<super::ForgejoVmBootstrap>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gitlab: Option<crate::gitlab::GitlabBootstrapIdentity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gitlab_vm: Option<super::GitlabVmBootstrap>,
     pub bindings_digest: BindingsDigest,
     #[serde(default)]
     pub bindings: serde_json::Map<String, serde_json::Value>,
@@ -58,6 +60,8 @@ struct InputWire {
     forgejo_vm: Option<super::ForgejoVmBootstrap>,
     #[serde(default)]
     gitlab: Option<crate::gitlab::GitlabBootstrapIdentity>,
+    #[serde(default)]
+    gitlab_vm: Option<super::GitlabVmBootstrap>,
     bindings_digest: BindingsDigest,
     #[serde(default)]
     bindings: serde_json::Map<String, serde_json::Value>,
@@ -83,6 +87,7 @@ impl TryFrom<InputWire> for ShaulaInputEnvelope {
             forgejo: wire.forgejo,
             forgejo_vm: wire.forgejo_vm,
             gitlab: wire.gitlab,
+            gitlab_vm: wire.gitlab_vm,
             bindings_digest: wire.bindings_digest,
             bindings: wire.bindings,
             parameters: wire.parameters,
@@ -125,6 +130,7 @@ impl ShaulaInputEnvelope {
             forgejo: None,
             forgejo_vm: None,
             gitlab: None,
+            gitlab_vm: None,
             bindings_digest,
             bindings: serde_json::Map::new(),
             parameters: serde_json::Map::new(),
@@ -158,6 +164,7 @@ impl ShaulaInputEnvelope {
                 "VM bootstrap credentials require an exclusive Forgejo identity",
             ));
         }
+        self.validate_gitlab_vm()?;
         match (self.contract_version, &self.setup_info) {
             (1, None) => Ok(()),
             (2, Some(descriptor)) => descriptor.validate_for_generation(&self.generation.id),
@@ -179,20 +186,25 @@ impl ShaulaInputEnvelope {
         }
         match manifest.runner_backend_for_bindings(&self.bindings)? {
             "github"
-                if self.forgejo.is_none() && self.forgejo_vm.is_none() && self.gitlab.is_none() => {
-            }
+                if self.forgejo.is_none()
+                    && self.forgejo_vm.is_none()
+                    && self.gitlab.is_none()
+                    && self.gitlab_vm.is_none() => {}
             "gitlab"
                 if self.gitlab.is_some()
                     && self.forgejo.is_none()
                     && self.forgejo_vm.is_none()
                     && self.jit_config.is_empty()
-                    && self.generation.scale_set_id.is_none() =>
+                    && self.generation.scale_set_id.is_none()
+                    && self.gitlab_vm.is_some()
+                        == manifest.gitlab_vm_bootstrap_contract.is_some() =>
             {
-                manifest.validate_gitlab_target()?;
+                manifest.validate_gitlab_generation_target()?;
             }
             "forgejo"
                 if self.forgejo.is_some()
                     && self.gitlab.is_none()
+                    && self.gitlab_vm.is_none()
                     && self.jit_config.is_empty()
                     && self.generation.scale_set_id.is_none()
                     && self.forgejo_vm.is_some()

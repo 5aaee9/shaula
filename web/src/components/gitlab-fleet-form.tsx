@@ -96,8 +96,8 @@ export function GitlabFleetForm({
         </label>
         <p className="text-sm text-muted-foreground">
           Use a unique prefix per fleet. Jobs run with the shell executor inside the runner
-          container, so a job's image: is ignored; choose a template that provides the tools your
-          jobs need. Do not share tags with persistent runners: they may pick up the same jobs.
+          container or VM, so a job's image: is ignored; choose a template that provides the tools
+          your jobs need. Do not share tags with persistent runners: they may pick up the same jobs.
         </p>
       </section>
     </TokenFleetFrame>

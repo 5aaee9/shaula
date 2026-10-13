@@ -3,6 +3,7 @@
 //! redacted safely (invalid encoding, oversized, control characters, workflow
 //! commands, key material) are withheld instead of ever falling back to raw.
 use base64::{engine::general_purpose::STANDARD, Engine};
+use serde::Deserialize;
 use serde_json::Value;
 use zeroize::Zeroizing;
 
@@ -37,10 +38,19 @@ impl SensitiveValues {
                 "parameters",
                 "setup_info",
                 "forgejo_vm",
+                "gitlab_vm",
             ] {
                 if let Some(value) = input.get(key) {
                     values.collect(value, 0);
                 }
+            }
+            // config.toml is collected per line above; the bare Runner token
+            // can also be echoed on its own.
+            if let Some(Ok(vm)) = input
+                .get("gitlab_vm")
+                .map(shaula_core::template::GitlabVmBootstrap::deserialize)
+            {
+                values.add(vm.token());
             }
         }
         for (_, value) in env {
@@ -217,22 +227,34 @@ mod tests {
     use super::*;
     #[test]
     fn vm_cloud_init_token_is_redacted_on_create_and_retained_destroy_input(
-    ) -> Result<(), serde_json::Error> {
-        let token = "vm-secret-\"quoted\"-canary";
-        let input = serde_json::json!({"forgejo_vm":{"token":token}});
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let forgejo = "vm-secret-\"quoted\"-canary";
+        let gitlab = "glrt-vm-secret-canary";
+        let material = shaula_core::ports::gitlab::GitlabBootstrapMaterial::new(
+            "https://gitlab.test",
+            7,
+            "runner",
+            shaula_core::secret::SecretString::new(gitlab),
+        )?;
+        let vm = shaula_core::template::GitlabVmBootstrap::from_registration(&material);
         // Create passes the envelope; Destroy reloads the protected tfvars document.
-        for input in [input.clone(), serde_json::json!({"shaula":input})] {
-            let values = SensitiveValues::from_input(&input, &[]);
-            let mut sanitizer = Sanitizer::new(std::sync::Arc::new(values));
-            for secret in [
-                token.into(),
-                STANDARD.encode(token),
-                hex::encode(token),
-                serde_json::to_string(token)?.trim_matches('"').to_string(),
-            ] {
-                let record = format!("Error: provider echoed {secret}\n");
-                let output = sanitizer.feed(record.as_bytes());
-                assert_eq!(output[0].0, "Error: provider echoed [REDACTED]\n");
+        for (token, input) in [
+            (forgejo, serde_json::json!({"forgejo_vm":{"token":forgejo}})),
+            (gitlab, serde_json::json!({ "gitlab_vm": vm })),
+        ] {
+            for input in [input.clone(), serde_json::json!({ "shaula": input })] {
+                let values = SensitiveValues::from_input(&input, &[]);
+                let mut sanitizer = Sanitizer::new(std::sync::Arc::new(values));
+                for secret in [
+                    token.into(),
+                    STANDARD.encode(token),
+                    hex::encode(token),
+                    serde_json::to_string(token)?.trim_matches('"').to_string(),
+                ] {
+                    let record = format!("Error: provider echoed {secret}\n");
+                    let output = sanitizer.feed(record.as_bytes());
+                    assert_eq!(output[0].0, "Error: provider echoed [REDACTED]\n");
+                }
             }
         }
         Ok(())

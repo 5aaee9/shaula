@@ -1,0 +1,52 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+# Claim this seed once, including failed/partial boots. Never restart a Runner:
+# a second process would claim another job with the same registration token.
+chmod 0700 /var/lib/shaula
+mkdir /var/lib/shaula/started
+/bin/bash -euo pipefail /var/lib/shaula/pre-start
+rm -- /var/lib/shaula/pre-start
+
+export DEBIAN_FRONTEND=noninteractive
+# The shell executor fetches job sources with the guest git.
+apt-get update
+apt-get install -y --no-install-recommends ca-certificates curl git
+case "$(uname -m)" in
+  x86_64)
+    RUNNER_ARCH=amd64
+    RUNNER_SHA256=5a159b36c5ff54fda9248e00bb0cdfb62c1112ab3741f5282c04a41e94da1306
+    ;;
+  aarch64)
+    RUNNER_ARCH=arm64
+    RUNNER_SHA256=9763a63f7bc2319119f80de41d1d414465b5268d072bcd55266020b989e93ee9
+    ;;
+  *) exit 1 ;;
+esac
+id runner >/dev/null 2>&1 || useradd --create-home --user-group --shell /bin/bash runner
+test "$(id -u runner)" -ne 0
+install -d -m 0755 /opt/gitlab-runner
+RUNNER_VERSION=19.4.1
+curl --fail --location --retry 3 --connect-timeout 10 --max-time 300 \
+  "https://gitlab-runner-downloads.s3.amazonaws.com/v$RUNNER_VERSION/binaries/gitlab-runner-linux-$RUNNER_ARCH" \
+  --output /opt/gitlab-runner/download
+printf '%s  %s\n' "$RUNNER_SHA256" /opt/gitlab-runner/download | sha256sum --check --status
+install -m 0755 /opt/gitlab-runner/download /opt/gitlab-runner/gitlab-runner
+rm -- /opt/gitlab-runner/download
+
+# Restrict guest caches; remote user-data and Terraform state remain secrets.
+chmod 0700 /var/lib/cloud /run/cloud-init
+install -d -o runner -g runner -m 0700 /run/shaula-gitlab /home/runner/gitlab-work
+install -o runner -g runner -m 0600 /var/lib/shaula/gitlab-config.toml /run/shaula-gitlab/config.toml
+runner_name=$(cat /var/lib/shaula/gitlab-runner-name)
+test -n "$runner_name"
+rm -- /var/lib/shaula/gitlab-config.toml /var/lib/shaula/gitlab-runner-name
+cd /home/runner/gitlab-work
+
+# Shaula already registered this Runner; never register again. The token is
+# only inside config.toml, neither argv nor environment. The wait timeout is
+# shaula_core::gitlab::RUNNER_WAIT_TIMEOUT_SECS.
+exec runuser -u runner -- /opt/gitlab-runner/gitlab-runner run-single \
+  --config /run/shaula-gitlab/config.toml --runner "$runner_name" \
+  --max-builds 1 --wait-timeout 600

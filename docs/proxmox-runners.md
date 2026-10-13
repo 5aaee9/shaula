@@ -13,7 +13,10 @@
 DHCP 网络，以及拥有 `/opt/actions-runner` 的 `runner` 用户和已安装依赖的 GitHub Actions runner。
 不要预先注册 runner，也不要启用旧 runner 服务。
 选择 Forgejo 时，基础 VM 可预装 `/opt/forgejo-runner/forgejo-runner`：仅当其 SHA-256 与模板固定版本一致时直接使用，
-否则仍下载并校验；已有 curl、python3、git 时跳过 apt。cloud-init 状态须按镜像制作流程清理，
+否则仍下载并校验；已有 curl、python3、git 时跳过 apt。
+选择 GitLab 时同理：可预装官方 `/opt/gitlab-runner/gitlab-runner` 19.4.1 裸二进制（不要装 `.deb`，
+它会启用常驻 `gitlab-runner run` 服务）；SHA-256 不符时下载 `gitlab-runner-linux-amd64` / `-arm64`
+并校验，已有 curl、git 时跳过 apt。见下文 GitLab 小节。cloud-init 状态须按镜像制作流程清理，
 让每次 clone 的新 instance-id 触发初始化。
 
 模板继承原 VM 的磁盘和 NIC；Fleet 可在批准的选项中选择 CPU 核心数和内存大小。使用单张名称以 `en` 或 `eth` 开头的 Ethernet NIC；
@@ -53,6 +56,29 @@ Fleet 参数由模板发布者批准后，在 Fleet 创建页选择：
 固定 bootstrap 将 JIT 交给 `Runner.Listener run`，systemd 服务不 enable、失败不自动重启。
 任务结束后 Shaula 按原安全移除流程停机并删除 VM，再删除 ISO。
 此版本不提供容器路径的 `.setup_info` 文件，Apply/Destroy 日志仍可在 Shaula 查看。
+
+## GitLab（Proxmox / AWS / TencentCloud / AliCloud 通用）
+
+在 provider bindings 中加入 `"runner_backend": "gitlab"`，Fleet 选择 `gitlab` kind 即可；
+四个 VM 模板都声明 `gitlab_vm_bootstrap_contract: shaula.gitlab-vm-cloud-init/v1`。
+
+- 只支持 `shell` executor：job 直接以非 root `runner` 用户在这台一次性 VM 内执行，
+  忽略 `image:` / `services:`。VM 内 `docker` executor 不在本切片。
+- Shaula 服务端先注册一个 GitLab Runner，再把 URL、Runner id/name、**单注册 token** 与
+  `executor = "shell"` 渲染成唯一的 `config.toml`（与 Docker 模板同一实现）。Auth Profile
+  的访问令牌、云 provider 凭据不会进入 VM；非规范的 `config.toml`（其他 executor、额外键、
+  非 `glrt-` token）在 Shaula 侧即被拒绝。
+- 引导以 root 领取一次性 marker、校验官方 gitlab-runner 19.4.1（amd64
+  `5a159b36c5ff54fda9248e00bb0cdfb62c1112ab3741f5282c04a41e94da1306`、arm64
+  `9763a63f7bc2319119f80de41d1d414465b5268d072bcd55266020b989e93ee9`，来自上游
+  `release.sha256`），保护 cloud-init 缓存（Proxmox 另保护 CIDATA），把配置移到
+  `/run/shaula-gitlab/config.toml`（目录 `0700`、文件 `0600`，属 `runner`），然后执行
+  `gitlab-runner run-single --config … --runner <name> --max-builds 1 --wait-timeout 600`。
+  token 不进入 argv/env；不会在 guest 内 `register`。
+- systemd unit `Restart=no`、不 enable、`NoNewPrivileges=true`：重启会以同一 token
+  领取第二个 job。runner 的 journal 输出包含 short token，属于凭据邻接材料。
+- **token 会进入受保护的 Terraform 输入、plan/state、云 user-data 或 Proxmox ISO**，
+  边界与 Forgejo VM 例外相同；不适合要求 token 完全不落 Terraform 的部署。
 
 ## 验证与恢复
 

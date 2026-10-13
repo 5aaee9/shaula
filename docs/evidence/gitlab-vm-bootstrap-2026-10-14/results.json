@@ -1,0 +1,160 @@
+{
+  "date": "2026-10-14",
+  "harness": "scripts/template-backends/vm.mjs",
+  "environment": {
+    "terraform": "1.9.8",
+    "node": "v24.19.0",
+    "host": "linux/x64",
+    "gitlab_runner_source": "https://gitlab-runner-downloads.s3.amazonaws.com/v19.4.1/binaries/gitlab-runner-linux-amd64 (downloaded by the harness)"
+  },
+  "result": "pass",
+  "checks": [
+    {
+      "platform": "proxmox",
+      "backend": "github",
+      "encoded_bytes": 5320
+    },
+    {
+      "platform": "proxmox",
+      "backend": "forgejo",
+      "encoded_bytes": 7752,
+      "guest_cases": [
+        "success",
+        "pre-start-failure",
+        "checksum-failure",
+        "missing-token",
+        "seed-protect-failure",
+        "seed-lookup-failure",
+        "unmount-failure"
+      ],
+      "bootstrap_sha256": "00b8d0a3eb54f6ac4df18e157de23bf26b8f90eb644f93a84685a40803833623"
+    },
+    {
+      "platform": "proxmox",
+      "backend": "gitlab",
+      "encoded_bytes": 7924,
+      "guest_cases": [
+        "success",
+        "pre-start-failure",
+        "checksum-failure",
+        "missing-config",
+        "missing-name",
+        "preinstalled",
+        "seed-protect-failure",
+        "seed-lookup-failure",
+        "unmount-failure"
+      ],
+      "runner_sha256": "5a159b36c5ff54fda9248e00bb0cdfb62c1112ab3741f5282c04a41e94da1306",
+      "polls": {
+        "requests": 1,
+        "short_token_logged": true
+      },
+      "bootstrap_sha256": "7802f869cca6ca9b5594516e9c8a62aa0b6b57e906336e2484f84850dc765d88"
+    },
+    {
+      "platform": "aws",
+      "backend": "github",
+      "encoded_bytes": 6244
+    },
+    {
+      "platform": "aws",
+      "backend": "forgejo",
+      "encoded_bytes": 5908,
+      "guest_cases": [
+        "success",
+        "pre-start-failure",
+        "checksum-failure",
+        "missing-token"
+      ],
+      "bootstrap_sha256": "5520edd07d5fbdae881fe9a7aba8aa1bf195fefa0b6c020201a60a30ae8f27c8"
+    },
+    {
+      "platform": "aws",
+      "backend": "gitlab",
+      "encoded_bytes": 6160,
+      "guest_cases": [
+        "success",
+        "pre-start-failure",
+        "checksum-failure",
+        "missing-config",
+        "missing-name"
+      ],
+      "runner_sha256": "5a159b36c5ff54fda9248e00bb0cdfb62c1112ab3741f5282c04a41e94da1306",
+      "polls": {
+        "requests": 1,
+        "short_token_logged": true
+      },
+      "bootstrap_sha256": "2ae60d85be80e960637410e41c86cf1b1db51cb970b8b0bf386da26deff274de"
+    },
+    {
+      "platform": "tencentcloud",
+      "backend": "github",
+      "encoded_bytes": 5312
+    },
+    {
+      "platform": "tencentcloud",
+      "backend": "forgejo",
+      "encoded_bytes": 5908,
+      "guest_cases": [
+        "success",
+        "pre-start-failure",
+        "checksum-failure",
+        "missing-token"
+      ],
+      "bootstrap_sha256": "5520edd07d5fbdae881fe9a7aba8aa1bf195fefa0b6c020201a60a30ae8f27c8"
+    },
+    {
+      "platform": "tencentcloud",
+      "backend": "gitlab",
+      "encoded_bytes": 6160,
+      "guest_cases": [
+        "success",
+        "pre-start-failure",
+        "checksum-failure",
+        "missing-config",
+        "missing-name"
+      ],
+      "runner_sha256": "5a159b36c5ff54fda9248e00bb0cdfb62c1112ab3741f5282c04a41e94da1306",
+      "polls": {
+        "requests": 1,
+        "short_token_logged": true
+      },
+      "bootstrap_sha256": "2ae60d85be80e960637410e41c86cf1b1db51cb970b8b0bf386da26deff274de"
+    },
+    {
+      "platform": "alicloud",
+      "backend": "github",
+      "encoded_bytes": 5312
+    },
+    {
+      "platform": "alicloud",
+      "backend": "forgejo",
+      "encoded_bytes": 5908,
+      "guest_cases": [
+        "success",
+        "pre-start-failure",
+        "checksum-failure",
+        "missing-token"
+      ],
+      "bootstrap_sha256": "5520edd07d5fbdae881fe9a7aba8aa1bf195fefa0b6c020201a60a30ae8f27c8"
+    },
+    {
+      "platform": "alicloud",
+      "backend": "gitlab",
+      "encoded_bytes": 6160,
+      "guest_cases": [
+        "success",
+        "pre-start-failure",
+        "checksum-failure",
+        "missing-config",
+        "missing-name"
+      ],
+      "runner_sha256": "5a159b36c5ff54fda9248e00bb0cdfb62c1112ab3741f5282c04a41e94da1306",
+      "polls": {
+        "requests": 1,
+        "short_token_logged": true
+      },
+      "bootstrap_sha256": "2ae60d85be80e960637410e41c86cf1b1db51cb970b8b0bf386da26deff274de"
+    }
+  ]
+}

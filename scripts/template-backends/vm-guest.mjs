@@ -6,11 +6,15 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-export function exerciseGuest({ directory, files, script, platform, scenario, pythonPath, identity, token }) {
+const GUEST_PATHS = ['/var/lib/shaula', '/var/lib/cloud', '/run/cloud-init', '/opt/forgejo-runner', '/run/shaula-forgejo',
+  '/home/runner/forgejo-work', '/opt/gitlab-runner', '/run/shaula-gitlab', '/home/runner/gitlab-work'];
+
+// Writes the rendered guest files under a private root and returns the relocated
+// bootstrap plus its environment. `download` is what the curl shim "downloads".
+export function stageGuest({ directory, files, script, platform, scenario, pythonPath, download, removed = [] }) {
   const root = join(directory, scenario);
   const helpers = join(root, 'bin');
   mkdirSync(helpers, { recursive: true, mode: 0o700 });
-  const record = join(root, 'record.json');
   for (const [path, file] of files) {
     const destination = root + path;
     mkdirSync(dirname(destination), { recursive: true });
@@ -18,19 +22,8 @@ export function exerciseGuest({ directory, files, script, platform, scenario, py
   }
   for (const path of ['/var/lib/cloud', '/run/cloud-init', '/dev']) mkdirSync(root + path, { recursive: true });
   writeFileSync(join(root, 'dev/seed'), 'fixture ISO');
-  if (scenario === 'missing-token') rmSync(root + '/var/lib/shaula/forgejo-token');
+  for (const path of removed) rmSync(root + path);
   if (scenario === 'pre-start-failure') writeFileSync(root + '/var/lib/shaula/pre-start', 'exit 27\n');
-  const binary = `#!${pythonPath}
-import json, os, pathlib, stat, sys, urllib.parse
-path = urllib.parse.urlparse(sys.argv[sys.argv.index('--token-url') + 1]).path
-token = pathlib.Path(path).read_text()
-record = dict(argv=sys.argv[1:], cwd=os.getcwd(), token_in_argv=any(token in arg for arg in sys.argv),
-              token_in_env=any(token in value for value in os.environ.values()),
-              token_mode=stat.S_IMODE(os.stat(path).st_mode), dir_mode=stat.S_IMODE(os.stat(os.path.dirname(path)).st_mode))
-pathlib.Path(os.environ['FIXTURE_RECORD']).write_text(json.dumps(record))
-`;
-  const fixtureBinary = join(root, 'fixture-binary');
-  writeFileSync(fixtureBinary, binary);
   const helper = (name, body, interpreter = '/bin/sh') => {
     const path = join(helpers, name);
     writeFileSync(path, `#!${interpreter}\n${body}\n`, { mode: 0o700 });
@@ -39,7 +32,8 @@ pathlib.Path(os.environ['FIXTURE_RECORD']).write_text(json.dumps(record))
   helper('apt-get', 'exit 0');
   helper('id', '[ "$1" != "-u" ] || printf "1001\\n"');
   helper('useradd', 'exit 1'); // id fixture already exists; never create a real user.
-  helper('curl', `while [ "$#" -gt 0 ]; do
+  helper('curl', `[ "$FIXTURE_SCENARIO" != preinstalled ] || exit 1 # the pinned binary must be reused
+while [ "$#" -gt 0 ]; do
   if [ "$1" = "--output" ]; then cp "$FIXTURE_BINARY" "$2"; target="$2"; break; fi
   shift
 done
@@ -68,19 +62,42 @@ os.execv(${JSON.stringify(install)}, [${JSON.stringify(install)}] + args)`, pyth
   *) exit 1;;
 esac`);
   helper('umount', '[ "$FIXTURE_SCENARIO" != unmount-failure ]');
-  for (const prefix of ['/var/lib/shaula', '/var/lib/cloud', '/run/cloud-init', '/opt/forgejo-runner', '/run/shaula-forgejo', '/home/runner/forgejo-work']) {
-    script = script.replaceAll(prefix, root + prefix);
-  }
+  for (const prefix of GUEST_PATHS) script = script.replaceAll(prefix, root + prefix);
   // Fixture block device is a regular file, without mknod/root privileges.
   if (platform === 'proxmox') script = script.replace('test -b "$seed"', 'test -f "$seed"');
-  // Verify the fake downloaded binary through the actual sha256sum check.
-  script = script.replace('29dae21e93f0eab5cdf3564008d44603c74770b41a4f4f1aceed172c774bc376', createHash('sha256').update(binary).digest('hex'));
   const bash = spawnSync('which', ['bash'], { encoding: 'utf8' }).stdout.trim();
   assert(bash.startsWith('/'));
   script = script.replaceAll('/bin/bash', bash); // Ubuntu guest path on Nix hosts.
   const path = join(root, 'bootstrap.sh');
   writeFileSync(path, script);
-  const env = { ...process.env, PATH: `${helpers}:${process.env.PATH}`, FIXTURE_ROOT: root, FIXTURE_RECORD: record, FIXTURE_BINARY: fixtureBinary, FIXTURE_SCENARIO: scenario };
+  const env = { ...process.env, PATH: `${helpers}:${process.env.PATH}`, FIXTURE_ROOT: root, FIXTURE_BINARY: download, FIXTURE_SCENARIO: scenario };
+  return { root, path, env };
+}
+
+export function assertGuestCaches(root, platform) {
+  assert.equal(statSync(root + '/var/lib/cloud').mode & 0o777, 0o700);
+  assert.equal(statSync(root + '/run/cloud-init').mode & 0o777, 0o700);
+  if (platform === 'proxmox') assert.equal(statSync(root + '/dev/seed').mode & 0o777, 0o600);
+}
+
+export function exerciseGuest({ directory, files, script, platform, scenario, pythonPath, identity, token }) {
+  const binary = `#!${pythonPath}
+import json, os, pathlib, stat, sys, urllib.parse
+path = urllib.parse.urlparse(sys.argv[sys.argv.index('--token-url') + 1]).path
+token = pathlib.Path(path).read_text()
+record = dict(argv=sys.argv[1:], cwd=os.getcwd(), token_in_argv=any(token in arg for arg in sys.argv),
+              token_in_env=any(token in value for value in os.environ.values()),
+              token_mode=stat.S_IMODE(os.stat(path).st_mode), dir_mode=stat.S_IMODE(os.stat(os.path.dirname(path)).st_mode))
+pathlib.Path(os.environ['FIXTURE_RECORD']).write_text(json.dumps(record))
+`;
+  const fixtureBinary = join(directory, `fixture-binary-${scenario}`);
+  writeFileSync(fixtureBinary, binary);
+  // Verify the fake downloaded binary through the actual sha256sum check.
+  script = script.replace('29dae21e93f0eab5cdf3564008d44603c74770b41a4f4f1aceed172c774bc376', createHash('sha256').update(binary).digest('hex'));
+  const removed = scenario === 'missing-token' ? ['/var/lib/shaula/forgejo-token'] : [];
+  const { root, path, env: staged } = stageGuest({ directory, files, script, platform, scenario, pythonPath, download: fixtureBinary, removed });
+  const record = join(root, 'record.json');
+  const env = { ...staged, FIXTURE_RECORD: record };
   const result = spawnSync('bash', [path], { env, encoding: 'utf8', timeout: 20000 });
   if (result.error) throw result.error;
   assert(!`${result.stdout}${result.stderr}`.includes(token), `${platform}/${scenario}: log leak`);
@@ -98,9 +115,7 @@ esac`);
   assert.equal(observed.token_in_env, false);
   assert.equal(observed.token_mode, 0o600);
   assert.equal(observed.dir_mode, 0o700);
-  assert.equal(statSync(root + '/var/lib/cloud').mode & 0o777, 0o700);
-  assert.equal(statSync(root + '/run/cloud-init').mode & 0o777, 0o700);
-  if (platform === 'proxmox') assert.equal(statSync(root + '/dev/seed').mode & 0o777, 0o600);
+  assertGuestCaches(root, platform);
   assert(!existsSync(root + '/var/lib/shaula/forgejo-token'));
   const timestamp = statSync(record).mtimeMs;
   const replay = spawnSync('bash', [path], { env, encoding: 'utf8', timeout: 20000 });

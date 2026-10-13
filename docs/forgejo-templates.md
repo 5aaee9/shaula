@@ -114,12 +114,16 @@ Fleet UI 与 Jobs 已按 backend 分支呈现；精确 Task 结果不等于已�
 `scripts/template-backends/plan.mjs` 使用真实 Terraform 及锁定 provider、仅读取的
 本地 API fixture 生成两平台 × 两 backend 的 saved plan，并可交给 Rust plan
 admission 验证。`scripts/template-backends/vm.mjs` 用真实 Terraform 计算四种 VM
-的原始 user-data 表达式（移除 provider/resource 块，不访问云），覆盖两个 backend、
+的原始 user-data 表达式（移除 provider/resource 块，不访问云），覆盖三个 backend、
 默认值、凭据隔离和编码大小；在私有 fixture 中执行 Bash / Python 引导、checksum、
-权限及失败路径，用户切换、包安装、下载和块设备操作使用测试替身。
+权限及失败路径，用户切换、包安装和块设备操作使用测试替身。GitHub / Forgejo
+Runner 为替身；GitLab 使用按模板固定 SHA-256 校验的真实官方二进制，对本地回环
+GitLab API fixture 执行 `run-single`（不派发 job）。
 
 ```sh
 TERRAFORM=/path/to/terraform PYTHON=/path/to/python3 node scripts/template-backends/vm.mjs
+# 离线时可提供已下载的官方二进制（仍按固定摘要校验）：
+GITLAB_RUNNER_BINARY=/path/to/gitlab-runner-linux-amd64 TERRAFORM=… PYTHON=… node scripts/template-backends/vm.mjs
 ```
 
 这些测试不创建资源，不证明真实 cloud-init / systemd / 云平台 / 集群或完整 Forgejo

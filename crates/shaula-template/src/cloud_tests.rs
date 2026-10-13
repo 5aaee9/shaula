@@ -150,6 +150,20 @@ fn bundled_public_cloud_bootstrap_keeps_provider_credentials_out_of_guest_materi
         assert!(guest_material.contains("ACTIONS_RUNNER_INPUT_JITCONFIG"));
         assert!(guest_material.contains("RUNNER_SHA256"));
         assert!(guest_material.contains("ConditionPathExists=!/var/lib/shaula/started"));
+        let gitlab_material = [
+            read(&root, "user-data-gitlab.tftpl")?,
+            read(&root, "bootstrap-gitlab.tftpl")?,
+            read(&root, "runner-service-gitlab.tftpl")?,
+        ]
+        .join("\n");
+        for &credential in case.required_credentials {
+            assert!(!gitlab_material.contains(credential), "{}", case.name);
+        }
+        assert!(gitlab_material.contains(&format!(
+            "--max-builds 1 --wait-timeout {}",
+            shaula_core::gitlab::RUNNER_WAIT_TIMEOUT_SECS
+        )));
+        assert!(gitlab_material.contains("Restart=no") && !gitlab_material.contains("[Install]"));
 
         let main = read(&root, "main.tf")?;
         assert!(
