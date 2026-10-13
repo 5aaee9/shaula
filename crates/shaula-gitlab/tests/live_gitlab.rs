@@ -192,6 +192,22 @@ async fn adapter_drives_a_full_generation_against_real_gitlab() -> TestResult {
         .ok_or("generation missing")?;
     assert!(busy.paused && busy.is_active());
 
+    // Jobs projection read (spec 0043 §6.1): the exact job names its runner.
+    let read = port
+        .job(project, job_id)
+        .await
+        .map_err(|e| e.summary())?
+        .ok_or("job missing")?;
+    assert_eq!(read.runner_id, Some(generation));
+    assert_eq!(read.pipeline_id, jobs[0].pipeline_id);
+    assert_eq!(read.project_path, jobs[0].project_path);
+    assert_eq!(
+        port.job(project, job_id + 1_000_000)
+            .await
+            .map_err(|e| e.summary())?,
+        None
+    );
+
     let exit = until("runner exit", 3 * MINUTE, || async {
         engine.exit_code(&container)
     })
@@ -278,6 +294,18 @@ async fn adapter_drives_a_full_generation_against_real_gitlab() -> TestResult {
     assert_eq!(
         port.get_runner(generation).await.map_err(|e| e.summary())?,
         None
+    );
+    // G7: the projection keeps its own association; record what GitLab reports.
+    let deleted = port
+        .job(project, job_id)
+        .await
+        .map_err(|e| e.summary())?
+        .ok_or("job missing after registration deletion")?;
+    assert_eq!(deleted.status, "success");
+    report.insert(
+        "jobRead".into(),
+        json!({ "runnerWhileRunning": read.runner_id, "statusAfterDelete": deleted.status,
+            "runnerAfterDelete": deleted.runner_id, "unknownJob": "None" }),
     );
     assert_eq!(
         port.running_jobs(generation)

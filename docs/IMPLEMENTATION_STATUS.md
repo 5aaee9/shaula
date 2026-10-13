@@ -33,15 +33,24 @@ first slice: group/project scope, Docker template, `shell` executor.
   - Docker template `runner_backend: gitlab` (official `gitlab/gitlab-runner:v19.4.1`
     pinned by digest, run as `gitlab-runner`, `config.toml` copied before start).
   - Web UI forms and details; CLI documents.
+  - Jobs read-only projection (§6.1, migration 0031): claim-time ingest from
+    the registration's running jobs, append-only `Verified` Generation links,
+    and a separate rate-limited exact-job reader for `pending`/`running` and
+    terminal results. `/api/v1/jobs` returns `backend: gitlab` records with a
+    `gitlab` section; Web Jobs list/detail render them. A local adapter E2E run
+    (`live_gitlab.rs`, GitLab CE 19.4.2 under Podman) read `job.runner` as the
+    Generation registration while running and `null` with `success` after its
+    deletion. G7 lifecycle evidence (`report.checks.jobs`) is pending the GitHub
+    Actions run.
 - **Not implemented:**
   - Kubernetes and VM templates (`validate_gitlab_target` admits Docker only).
-  - GitLab Jobs projection (§6.1), instance scope, fault injection for lost
-    registration responses.
+  - Instance scope, fault injection for lost registration responses.
 - **Real-instance evidence (GitHub Actions, disposable GitLab CE 19.4.2, Docker 28.0.4):**
   - [Lifecycle E2E](evidence/gitlab-lifecycle-e2e-2026-10-13/README.md):
     - G1 closed loop through actual `shaula serve` + Terraform;
     - G2 partial: an incompatible job stays pending;
-    - G7 partial: `job.runner` is the owned registration (no Jobs view yet);
+    - G7 partial: `job.runner` is the owned registration (the Jobs view check
+      in `jobs.mjs` awaits its first Actions run);
     - G8: leak scan.
   - [Adapter E2E](evidence/gitlab-adapter-e2e-2026-10-13/README.md).
   - G9: Forgejo E2E (all 8 jobs) and Nix/Playwright passed on the same commits.

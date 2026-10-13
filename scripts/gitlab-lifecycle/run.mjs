@@ -7,6 +7,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { GitlabFixture, serverImage } from "./fixture.mjs";
 import { leakScan } from "./leaks.mjs";
+import { jobsAfterClaim, jobsAfterReclaim } from "./jobs.mjs";
 import { until } from "../forgejo-lifecycle/support.mjs";
 
 process.umask(0o077);
@@ -66,6 +67,7 @@ try {
   const runnerToken = /token = "(glrt-[^"]+)"/.exec(config)?.[1];
   assert(runnerToken, "delivered config.toml carries the registration token");
   await until(`${key}: claimed registration paused`, async () => (await fixture.gitlab(`/runners/${claimed.runner.id}`)).paused, 120_000);
+  report.checks.jobs = { claim: await jobsAfterClaim(fixture, key, observed.generation, pipeline, match) };
   const secrets = [fixture.token, runnerToken];
   const short = /with token (\S+)/.exec(await fixture.logs(observed.id))?.[1];
   assert(short && short.length >= 6 && runnerToken.includes(short), "runner logs its short token");
@@ -100,6 +102,7 @@ try {
   fixture.containers.delete(observed.id);
   report.leakScanAfterDestroy = await leakScan(fixture, key, observed, secrets, false, [short]);
   report.checks.reclaim = "registration deleted after pause → recheck; container and volumes destroyed";
+  report.checks.jobs.reclaim = await jobsAfterReclaim(fixture, key, observed.generation, pipeline, match);
 
   phase = "retire";
   await fixture.retireFleet(key);

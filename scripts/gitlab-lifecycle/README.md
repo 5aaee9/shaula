@@ -2,8 +2,8 @@
 
 Real `shaula serve`, a disposable GitLab CE, the bundled Docker template and
 real Terraform. Nothing is simulated. It covers spec 0043 §10 G1 (closed
-loop), part of G2 (a job with an extra tag stays pending), G7 (job ↔ owned
-registration while running) and G8 (leak scan).
+loop), part of G2 (a job with an extra tag stays pending), G7 (the Jobs API shows the
+Verified association, which survives registration deletion) and G8 (leak scan).
 
 ```sh
 # Inside a delegated cgroup (see .github/workflows/gitlab-e2e.yml):
@@ -30,19 +30,24 @@ memory and 3–5 minutes to boot.
    - exactly one Generation container, running the official image as `gitlab-runner`;
    - the job claimed by the owned registration (ID, description and `maintenance_note`);
    - the registration paused while the job runs;
+   - the Jobs API (`jobs.mjs`) shows a `backend: gitlab` record, running or
+     queued, whose `generations` holds the Verified Generation;
    - job success, with the output in the job trace;
    - `mismatch` still pending.
 6. Check reclaim:
    - occupancy returns to 0 and the Generation is `Destroyed`;
    - the registration is gone (404);
-   - the container and both anonymous volumes are removed.
+   - the container and both anonymous volumes are removed;
+   - the Jobs record still holds that association, now `Destroyed`, and the
+     job's own `success` (`report.checks.jobs`); GitLab's `job.runner` after
+     deletion is recorded as `upstreamRunnerAfterDelete`.
 7. Retire the Fleet: tombstone (410), and no anchor or Generation registration
    remains in the group.
 
 The leak scan runs while the job is running and again after Destroy. Neither
 the group token nor the registration token may appear in:
 
-- APIs, the daemon log or Operation Logs;
+- APIs (including Jobs), the daemon log or Operation Logs;
 - retained Terraform inputs or state;
 - container metadata;
 - the job trace.
