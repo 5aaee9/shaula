@@ -197,6 +197,10 @@ impl GitlabPoolSupervisor {
             }
             Decision::Wait(note) => {
                 record_note(&mut diagnostic, note);
+                // A paused Busy registration still listing its job refreshes the projection.
+                if let Some(job) = jobs.as_deref().and_then(<[GitlabRunningJob]>::first) {
+                    self.project_running_job(generation, id, job, now).await;
+                }
                 Ok(())
             }
             Decision::Claimed => {
@@ -234,6 +238,9 @@ impl GitlabPoolSupervisor {
                 .advance(generation, GenerationState::Quarantined, now)
                 .await;
         }
+        // Best effort and after the association: never delays the pause.
+        self.project_running_job(generation, runner_id, job, now)
+            .await;
         if self.gitlab.pause_runner(runner_id).await.is_err() {
             tracing::warn!(fleet = %self.fleet_key, generation = %generation.id,
                 "GitLab pause after claim failed; retrying on the next tick");

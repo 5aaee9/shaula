@@ -186,6 +186,7 @@ async fn ensure_job(
         fleet_incarnation: scope.incarnation.clone(),
         backend: shaula_core::fleet::FleetProviderKind::Github,
         forgejo: None,
+        gitlab: None,
         scale_set_id: Some(scope.scale_set_id),
         protocol_job_id: protocol_id.into(),
         metadata: JobMetadata::default(),

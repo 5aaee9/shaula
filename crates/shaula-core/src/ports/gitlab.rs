@@ -187,6 +187,19 @@ pub struct GitlabRunningJob {
     pub web_url: Option<String>,
 }
 
+/// An exact job read for the Jobs projection. It is never lifecycle evidence:
+/// `runner_id` is `None` once the registration has been deleted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitlabJobDetail {
+    pub id: u64,
+    pub project_id: u64,
+    pub project_path: String,
+    pub pipeline_id: u64,
+    pub name: String,
+    pub status: String,
+    pub runner_id: Option<u64>,
+}
+
 /// One `compatibleRunnerId` read with the anchor's same-request evidence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitlabAnchorDemand {
@@ -246,6 +259,14 @@ pub trait GitlabPoolPort: Send + Sync {
         &self,
         runner_id: u64,
     ) -> Result<Option<Vec<GitlabRunningJob>>, AccessFailure>;
+
+    /// Exact `project_id/job_id` read inside the proven scope; `None` is
+    /// absence (or loss of visibility) after the scope itself was proven.
+    async fn job(
+        &self,
+        project_id: u64,
+        job_id: u64,
+    ) -> Result<Option<GitlabJobDetail>, AccessFailure>;
 
     async fn pause_runner(&self, id: u64) -> Result<GitlabRemovalOutcome, AccessFailure>;
 

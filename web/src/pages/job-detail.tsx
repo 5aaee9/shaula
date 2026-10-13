@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ErrorNotice, Loading } from "@/components/status";
 import { jobRepository, useHistory, type JobDetail as Detail } from "@/lib/jobs";
 import { ForgejoJobFacts } from "@/components/forgejo-job-details";
+import { GitlabJobFacts } from "@/components/gitlab-job-details";
 import { GitHubJobFacts, JobObservations, RunnerHistory } from "@/components/job-detail-sections";
 
 export function JobDetail({ scopes }: { scopes: string[] }) {
@@ -40,7 +41,13 @@ export function JobDetail({ scopes }: { scopes: string[] }) {
             incarnation={job.fleet_incarnation}
             scopes={scopes}
           />
-          {job.forgejo ? <ForgejoJobFacts job={job} /> : <GitHubJobFacts job={job} />}
+          {job.forgejo ? (
+            <ForgejoJobFacts job={job} />
+          ) : job.gitlab ? (
+            <GitlabJobFacts job={job} />
+          ) : (
+            <GitHubJobFacts job={job} />
+          )}
           <RunnerHistory job={job} scopes={scopes} />
           <JobObservations job={job} />
         </>

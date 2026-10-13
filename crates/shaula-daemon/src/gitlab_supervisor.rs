@@ -262,6 +262,8 @@ mod anchor;
 mod destroy;
 #[path = "gitlab_supervisor_generation.rs"]
 mod generation;
+#[path = "gitlab_supervisor_jobs.rs"]
+mod jobs;
 #[path = "gitlab_supervisor_observation.rs"]
 mod observation;
 #[path = "gitlab_supervisor_readiness.rs"]

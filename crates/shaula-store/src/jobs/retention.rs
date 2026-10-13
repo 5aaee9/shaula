@@ -54,6 +54,26 @@ impl Store {
         execute(&tx, "DELETE FROM forgejo_job_polls WHERE scope_key IN (
             SELECT p.scope_key FROM forgejo_job_polls p WHERE p.attempted_at<?
             AND NOT EXISTS(SELECT 1 FROM forgejo_workflow_jobs j WHERE j.scope_key=p.scope_key) LIMIT 1000)", vec![cutoff_ms.into()]).await?;
+        // A Verified link leaves only with its job, and never while the linked
+        // Generation or its retained Operation Logs are still current.
+        let gitlab = rows(&tx, "SELECT j.id FROM gitlab_workflow_jobs j WHERE j.updated_at<?
+            AND NOT EXISTS(SELECT 1 FROM gitlab_job_generations l JOIN runner_generations g ON g.id=l.generation_id
+                WHERE l.job_record_id=j.id AND (g.state<>'Destroyed' OR g.updated_at>=?
+                    OR EXISTS(SELECT 1 FROM operation_log_invocations o WHERE o.generation_id=g.id)))
+            ORDER BY j.updated_at,j.id LIMIT 1000", vec![cutoff_ms.into(), cutoff_ms.into()]).await?;
+        for row in gitlab {
+            let id: String = row.try_get("", "id")?;
+            for sql in [
+                "DELETE FROM gitlab_job_observations WHERE job_record_id=?",
+                "DELETE FROM gitlab_workflow_jobs WHERE id=?",
+                "DELETE FROM gitlab_job_generations WHERE job_record_id=?",
+            ] {
+                execute(&tx, sql, vec![id.clone().into()]).await?;
+            }
+        }
+        execute(&tx, "DELETE FROM gitlab_job_polls WHERE scope_key IN (
+            SELECT p.scope_key FROM gitlab_job_polls p WHERE p.enrichment_attempted_at<?
+            AND NOT EXISTS(SELECT 1 FROM gitlab_workflow_jobs j WHERE j.scope_key=p.scope_key) LIMIT 1000)", vec![cutoff_ms.into()]).await?;
         tx.commit().await?;
         Ok(())
     }

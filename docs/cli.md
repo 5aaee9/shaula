@@ -119,6 +119,17 @@ entries, capture status, content version, gaps and lost bytes. A content-version
 change stops follow rather than joining incompatible histories. Finalize requires
 out-of-band absence evidence and does not delete infrastructure.
 
+GitLab jobs appear with `"backend":"gitlab"` and a `gitlab` section (decimal-string
+`project_id`, `job_id`, `pipeline_id`, `project_path`, `job_name`, `web_url`,
+`last_reported_status`, `listed`, optional `result`); `jobs get` adds
+`gitlab_observations` and the `Verified` Generation in `generations`. A job enters
+only when a Shaula registration claimed it, and that association is kept after the
+registration is deleted. `pending` reads as `queued`, `running` as `running`;
+`completed` with `reported_result` success/failed/canceled/skipped needs a read of
+the job's own terminal status. The `repository` filter matches the project path.
+`freshness` is `fresh` for 30 s after the last observation, then `stale`;
+`not_listed` once an exact read no longer finds the job; `confirmed` with a result.
+
 ## Issuance and rotation
 
 ```console

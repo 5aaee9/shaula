@@ -2,8 +2,23 @@ import { useRef, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/api";
 
+/** Spec 0043 §6.1: decimal-string IDs; `web_url` is built beneath the instance. */
+export interface GitlabJobState {
+  target: import("./runner-backend").GitlabTarget;
+  project_id: string;
+  project_path: string;
+  job_id: string;
+  pipeline_id: string;
+  job_name: string;
+  web_url: string;
+  last_reported_status: string;
+  last_observed_at: number;
+  listed: boolean;
+  result?: { status: "success" | "failed" | "canceled" | "skipped"; observed_at: number };
+  enrichment_attempted_at?: number;
+}
 export interface Job {
-  backend?: "github" | "forgejo";
+  backend?: "github" | "forgejo" | "gitlab";
   forgejo?: {
     target: import("./runner-backend").ForgejoTarget;
     repository_id: string;
@@ -25,6 +40,7 @@ export interface Job {
     };
     enrichment_attempted_at?: number;
   };
+  gitlab?: GitlabJobState;
   id: string;
   fleet_key: string;
   fleet_incarnation?: string | null;
@@ -52,6 +68,7 @@ export interface Generation {
   generation_name: string;
   github_runner_id: number | null;
   forgejo_runner_id?: string | null;
+  gitlab_runner_id?: string | null;
   state: string;
   subphase: string | null;
   association_status: string;
@@ -77,6 +94,13 @@ export interface JobDetail extends Job {
     task_id: string;
     observed_at: number;
     source?: "runner_snapshot" | "task_history";
+  }[];
+  gitlab_observations?: {
+    id: string;
+    reported_status: string | null;
+    source: "runner_jobs" | "job_read";
+    runner_id?: string;
+    observed_at: number;
   }[];
   observations_truncated: boolean;
   generations: Generation[];
@@ -170,9 +194,29 @@ export function operationName(value: string) {
 
 export function jobRepository(job: Job) {
   return (
+    job.gitlab?.project_path ||
     [job.owner_name, job.repository_name].filter(Boolean).join("/") ||
     (job.forgejo ? `Repository #${job.forgejo.repository_id}` : "Repository unknown")
   );
+}
+
+/** Only an http(s) link on the configured instance's origin is rendered. */
+export function gitlabJobUrl(job: Job): string | undefined {
+  try {
+    if (!job.gitlab) return undefined;
+    const url = new URL(job.gitlab.web_url);
+    const base = new URL(job.gitlab.target.instance_url);
+    return ["http:", "https:"].includes(url.protocol) &&
+      url.origin === base.origin &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash
+      ? url.href
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function forgejoRunUrl(job: Job): string | undefined {
@@ -196,6 +240,14 @@ export function forgejoRunUrl(job: Job): string | undefined {
 
 export function snapshotFreshness(job: Job) {
   if (job.forgejo?.result) return "Task result confirmed";
+  if (job.gitlab)
+    return job.gitlab.result
+      ? "Job result confirmed"
+      : job.freshness === "fresh"
+        ? "Job read fresh"
+        : job.freshness === "not_listed"
+          ? "Job no longer found"
+          : "Job read stale";
   return job.freshness === "fresh"
     ? "Snapshot fresh"
     : job.freshness === "not_listed"

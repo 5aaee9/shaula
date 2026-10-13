@@ -24,6 +24,8 @@ export async function leakScan(fixture, key, observed, secrets, alive, adjacent 
   const id = observed.generation;
   inspect(JSON.stringify(await fixture.api(`/generations/${id}`)), "Generation detail API");
   inspect(JSON.stringify(await fixture.api(`/fleets/${key}/status`)), "Fleet status API");
+  const jobs = await fixture.api(`/jobs?fleet_key=${key}`);
+  for (const body of [jobs, ...await Promise.all(jobs.items.map(j => fixture.api(`/jobs/${j.id}`)))]) inspect(JSON.stringify(body), "Jobs API");
   inspect(await readFile(join(fixture.directory, "daemon.log"), "utf8"), "daemon log");
   if (alive) {
     // Container/Pod metadata, plus the runner log, which prints a 9-character

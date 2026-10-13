@@ -74,6 +74,7 @@ pub(super) async fn upsert(
         fleet_key: fleet.into(),
         fleet_incarnation: incarnation.into(),
         backend: FleetProviderKind::Forgejo,
+        gitlab: None,
         scale_set_id: None,
         protocol_job_id: protocol_id.clone(),
         metadata: JobMetadata {
