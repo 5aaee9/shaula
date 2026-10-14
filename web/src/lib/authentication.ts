@@ -10,7 +10,7 @@ export function subscribeAuthentication(listener: () => void) {
 }
 export const authenticationExpired = () => expired;
 export const loginUrl = () =>
-  `/auth/oidc/login?${new URLSearchParams({ return_to: location.pathname + location.search })}`;
+  `/api/auth/oidc/login?${new URLSearchParams({ return_to: location.pathname + location.search })}`;
 
 export function clearAuthentication() {
   csrf = null;
@@ -40,7 +40,7 @@ export async function authenticatedFetch(path: string, options: RequestInit = {}
 }
 
 export async function logout() {
-  const response = await authenticatedFetch("/auth/oidc/logout", { method: "POST" });
+  const response = await authenticatedFetch("/api/auth/oidc/logout", { method: "POST" });
   if (!response.ok && response.status !== 401)
     throw new Error("Sign out failed. Please try again.");
   clearAuthentication();

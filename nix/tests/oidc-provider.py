@@ -15,7 +15,7 @@ import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 ISSUER = "https://idp.test:8443"
-CALLBACK = "https://shaula.test/auth/oidc/callback"
+CALLBACK = "https://shaula.test/api/auth/oidc/callback"
 CLIENT_SECRET = "nixos-test-only-oidc-secret"
 SCOPES = "fleet.read template.read auth.read auth.write"
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)

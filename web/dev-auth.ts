@@ -7,12 +7,7 @@ export function oidcDevelopmentGuard(target: string): Plugin {
     // Keep dot segments intact, matching the embedded document router.
     const path = request.url?.split("?")[0] || "/";
     response.setHeader("Cache-Control", "private, no-store");
-    if (
-      path === "/api" ||
-      path.startsWith("/api/") ||
-      path.startsWith("/auth/oidc/") ||
-      ["/livez", "/readyz"].includes(path)
-    )
+    if (path === "/api" || path.startsWith("/api/") || ["/livez", "/readyz"].includes(path))
       return next();
     let status = 401;
     if (!request.headers.authorization) {
@@ -45,7 +40,7 @@ export function oidcDevelopmentGuard(target: string): Plugin {
         !["/templates/./revisions/new", "/templates/../revisions/new"].includes(path));
     if (status === 401 && request.method === "GET" && document && !request.headers.authorization) {
       response.writeHead(302, {
-        location: `/auth/oidc/login?${new URLSearchParams({ return_to: request.url || "/fleets" })}`,
+        location: `/api/auth/oidc/login?${new URLSearchParams({ return_to: request.url || "/fleets" })}`,
       });
     } else {
       response.writeHead(status === 401 ? 401 : 503, {

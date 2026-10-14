@@ -11,7 +11,7 @@ for (const [path, title] of [
     expect(anonymous.status()).toBe(302);
     expect(await anonymous.text()).not.toContain("<html");
     const destination = new URL(anonymous.headers().location, "https://localhost:5181");
-    expect(destination.pathname).toBe("/auth/oidc/login");
+    expect(destination.pathname).toBe("/api/auth/oidc/login");
     expect(destination.searchParams.get("return_to")).toBe(path);
     await page.goto(path);
     await expect(page).toHaveURL(`https://localhost:5181${path}`);

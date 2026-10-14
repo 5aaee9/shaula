@@ -103,7 +103,7 @@ rotated token: a bounded owned renewal task completes independently and commits
 only if that same local session is still registered. Logout and replacement fence
 late completion; renewal cannot recreate a removed session.
 
-Exact `POST /auth/oidc/logout` may revoke a retained stale session after valid
+Exact `POST /api/auth/oidc/logout` may revoke a retained stale session after valid
 Origin/CSRF, without contacting the Provider. This narrow local-revocation path
 does not authorize other stale-session requests. Logout never starts renewal.
 

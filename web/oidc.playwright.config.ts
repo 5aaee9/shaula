@@ -11,7 +11,7 @@ export default defineConfig({
   webServer: {
     command: "cargo test -p shaula --test oidc_browser -- --ignored --nocapture",
     cwd: "..",
-    url: "https://localhost:5181/auth/oidc/callback",
+    url: "https://localhost:5181/api/auth/oidc/callback",
     ignoreHTTPSErrors: true,
     timeout: 120_000,
     reuseExistingServer: false,

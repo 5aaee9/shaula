@@ -271,7 +271,7 @@ async fn real_http_issue_replay_guard_mutation_audit_and_self_revoke() -> TestRe
     let http = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
-    for path in ["/", "/assets/no.js", "/auth/oidc/logout"] {
+    for path in ["/", "/assets/no.js", "/api/auth/oidc/logout"] {
         let result = http
             .get(format!("{}{path}", fixture.origin))
             .bearer_auth(secret.expose())

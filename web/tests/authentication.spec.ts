@@ -24,7 +24,7 @@ test("session expiry unmounts credential forms and clears browser state", async 
 
 test("logout sends the session CSRF token and clears the resource view", async ({ page }) => {
   await mockApi(page);
-  await page.route("**/auth/oidc/logout", (route) => {
+  await page.route("**/api/auth/oidc/logout", (route) => {
     expect(route.request().method()).toBe("POST");
     expect(route.request().headers()["x-csrf-token"]).toBe("test-session-csrf");
     return route.fulfill({ status: 204 });

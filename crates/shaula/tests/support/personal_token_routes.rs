@@ -34,7 +34,7 @@ fn management_router_and_inventory_are_bidirectional() -> TestResult {
             .ok_or("route path")?;
         if matches!(
             path,
-            "/auth/oidc/login" | "/auth/oidc/callback" | "/auth/oidc/logout"
+            "/api/auth/oidc/login" | "/api/auth/oidc/callback" | "/api/auth/oidc/logout"
         ) {
             continue;
         }

@@ -164,7 +164,7 @@ async fn logout_during_refresh_wins_without_waiting_for_provider() {
         Duration::from_millis(500),
         h.app
             .clone()
-            .oneshot(h.request("POST", "/auth/oidc/logout", true)),
+            .oneshot(h.request("POST", "/api/auth/oidc/logout", true)),
     )
     .await
     .unwrap()

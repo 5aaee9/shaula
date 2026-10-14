@@ -113,7 +113,6 @@ fn oidc_tests_cookie_ambiguity_and_return_targets() {
         "/fleets\\evil",
         "/%2f%2fevil",
         "/fleets?key=%252f%252fevil",
-        "/unknown",
         "/auth?return_to=evil",
     ] {
         assert_eq!(crate::oidc::login::return_target(Some(target)), "/fleets");
@@ -122,6 +121,15 @@ fn oidc_tests_cookie_ambiguity_and_return_targets() {
         crate::oidc::login::return_target(Some("/changes?type=fleet&id=job-1")),
         "/changes?type=fleet&id=job-1"
     );
+    // Unknown but same-origin app paths are harmless: the app renders its 404.
+    for target in [
+        "/unknown",
+        "/jobs/job-1/extra",
+        "/templates/a/b/update",
+        "/auth/new/extra",
+    ] {
+        assert_eq!(crate::oidc::login::return_target(Some(target)), target);
+    }
 }
 
 #[test]
@@ -133,24 +141,21 @@ fn oidc_tests_template_publish_return_targets_require_valid_routes() {
         "/templates/linux-build/update",
         "/templates/linux-x64.1_a/update",
         "/templates?key=linux-build",
+        "/templates/linux-build",
+        "/pools",
     ] {
         assert_eq!(crate::oidc::login::return_target(Some(target)), target);
     }
     for target in [
-        "/templates/linux-build",
-        "/templates/new/extra",
         "/templates//revisions/new",
         "/templates/./revisions/new",
         "/templates/../revisions/new",
         "/templates/%2e%2e/revisions/new",
         "/templates/with%20space/revisions/new",
-        "/templates/a/b/revisions/new",
-        "/templates/linux-build/revisions/latest",
         "/templates/linux-build/revisions/new/",
         "/templates//update",
         "/templates/../update",
         "/templates/%2e%2e/update",
-        "/templates/a/b/update",
         "/templates/linux-build/update/",
         "/templates/linux-build/update?return_to=https://evil.example",
         "/templates/new?return_to=https://evil.example",
@@ -158,7 +163,7 @@ fn oidc_tests_template_publish_return_targets_require_valid_routes() {
     ] {
         assert_eq!(crate::oidc::login::return_target(Some(target)), "/fleets");
     }
-    let oversized_key = format!("/templates/{}/revisions/new", "a".repeat(129));
+    let oversized_key = format!("/templates/{}/revisions/new", "a".repeat(513));
     assert_eq!(
         crate::oidc::login::return_target(Some(&oversized_key)),
         "/fleets"
@@ -179,7 +184,6 @@ fn oidc_tests_jobs_return_targets_preserve_filters_only_on_valid_documents() {
     for target in [
         "/jobs//evil",
         "/jobs/%2e%2e",
-        "/jobs/job-1/extra",
         "/jobs?return_to=https://evil.example",
         "/jobs?job_name=%0D%0ALocation:evil",
         "/jobs?status=running&status=completed",
@@ -200,19 +204,17 @@ fn oidc_tests_auth_edit_return_targets_require_exact_valid_routes() {
         assert_eq!(crate::oidc::login::return_target(Some(target)), target);
     }
     for target in [
-        "/auth/new/extra",
         "/auth//targets/edit",
         "/auth/./targets/edit",
         "/auth/../rotate",
         "/auth/%2e%2e/rotate",
         "/auth/with%20space/rotate",
-        "/auth/a/b/targets/edit",
         "/auth/shared-github/rotate/",
         "/auth/shared-github/targets/edit?return_to=https://evil.example",
     ] {
         assert_eq!(crate::oidc::login::return_target(Some(target)), "/fleets");
     }
-    let oversized_key = format!("/auth/{}/rotate", "a".repeat(129));
+    let oversized_key = format!("/auth/{}/rotate", "a".repeat(513));
     assert_eq!(
         crate::oidc::login::return_target(Some(&oversized_key)),
         "/fleets"

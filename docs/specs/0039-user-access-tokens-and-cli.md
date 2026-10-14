@@ -58,9 +58,9 @@
 | `oidc_access_token` | 当前配置 issuer 签发、现有规则验证的 API JWT | API/health | 不使用 cookie，免 CSRF |
 | `personal_access_token` | Shaula Token registry 中的个人凭据 | API/health | 不使用 cookie，免 CSRF |
 
-三者均经过同一业务授权。Access Token 不得用于 `/auth/oidc/*`、UI HTML/静态文件、worker/control/state listener 或 Runner Setup Info capability 路由；反之，内部 capability 也不得登录管理 API。
+三者均经过同一业务授权。Access Token 不得用于 `/api/auth/oidc/*`、UI HTML/静态文件、worker/control/state listener 或 Runner Setup Info capability 路由；反之，内部 capability 也不得登录管理 API。
 
-只有原来的 exact `GET /auth/oidc/login` 与 `GET /auth/oidc/callback` 匿名例外保留。不得新增无认证的 token-signup、token-exchange 或 bootstrap-admin 路由。
+只有原来的 exact `GET /api/auth/oidc/login` 与 `GET /api/auth/oidc/callback` 匿名例外保留。不得新增无认证的 token-signup、token-exchange 或 bootstrap-admin 路由。
 
 ### 3.2 唯一 principal 和权限交集
 

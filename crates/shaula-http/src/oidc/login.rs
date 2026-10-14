@@ -182,50 +182,36 @@ pub(crate) async fn logout(
     Ok(response)
 }
 
+/// Every GET path outside the API (OIDC endpoints included), probes and the bundle
+/// directory is the single-page app: an embedded file when one exists
+/// (`/robots.txt`), otherwise `index.html`, and React Router owns unknown
+/// routes (its own 404). A missing `/assets/...` script or stylesheet is a
+/// 404, never HTML.
 pub(crate) fn document(path: &str) -> bool {
-    matches!(
-        path,
-        "/" | "/fleets"
-            | "/templates"
-            | "/templates/new"
-            | "/auth"
-            | "/auth/new"
-            | "/changes"
-            | "/settings/access-tokens"
-            | "/jobs"
-            | "/jobs/runners"
-    ) || path
-        .strip_prefix("/jobs/runners/")
-        .or_else(|| path.strip_prefix("/jobs/"))
-        .is_some_and(|id| {
-            !id.is_empty()
-                && id.len() <= 128
-                && id
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-        })
-        || path.strip_prefix("/fleets/").is_some_and(|key| {
-            !matches!(key, "." | "..") && shaula_core::fleet::FleetKey::new(key).is_ok()
-        })
-        || path
-            .strip_prefix("/templates/")
-            .and_then(|path| {
-                path.strip_suffix("/revisions/new")
-                    .or_else(|| path.strip_suffix("/update"))
-            })
-            .is_some_and(|key| {
-                !matches!(key, "." | "..")
-                    && shaula_core::template::TemplateProfileKey::new(key).is_ok()
-            })
-        || path
-            .strip_prefix("/auth/")
-            .and_then(|path| {
-                path.strip_suffix("/targets/edit")
-                    .or_else(|| path.strip_suffix("/rotate"))
-            })
-            .is_some_and(|key| {
-                !matches!(key, "." | "..") && shaula_core::auth::AuthProfileKey::new(key).is_ok()
-            })
+    let Some(rest) = path.strip_prefix('/') else {
+        return false;
+    };
+    !(rest == "api"
+        || rest.starts_with("api/")
+        || matches!(rest, "livez" | "readyz")
+        || rest == "assets"
+        || rest.starts_with("assets/"))
+}
+
+/// A post-login target is a same-origin app path: non-empty segments of
+/// unreserved characters only, so `//host`, `/./`, `/../` and encoded
+/// separators can never leave the origin or escape the app.
+fn app_path(path: &str) -> bool {
+    path == "/"
+        || (document(path)
+            && path.len() <= 512
+            && path[1..].split('/').all(|segment| {
+                !segment.is_empty()
+                    && !matches!(segment, "." | "..")
+                    && segment.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.')
+                    })
+            }))
 }
 
 pub(super) fn return_target(raw: Option<&str>) -> String {
@@ -235,7 +221,7 @@ pub(super) fn return_target(raw: Option<&str>) -> String {
         return "/fleets".into();
     };
     let (path, query) = raw.split_once('?').map_or((raw, ""), |(p, q)| (p, q));
-    if !document(path) {
+    if !app_path(path) {
         return "/fleets".into();
     }
     let params: Vec<_> = url::form_urlencoded::parse(query.as_bytes()).collect();

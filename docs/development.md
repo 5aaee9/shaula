@@ -34,7 +34,7 @@ dependencies, not Node.js or `web/dist`. Build output and `node_modules` are ign
 npm run dev --prefix web
 ```
 
-Vite listens on loopback and proxies `/api`, `/auth/oidc/`, `/livez`, and `/readyz`
+Vite listens on loopback and proxies `/api` (including `/api/auth/oidc/`), `/livez`, and `/readyz`
 to `http://127.0.0.1:8080`. Set `SHAULA_API_TARGET` in `web/.env.local` to change
 the backend:
 

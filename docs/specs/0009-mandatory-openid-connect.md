@@ -28,7 +28,7 @@ Shaula 的**管理 HTTP listener** MUST 自行验证来自启动时配置的单�
 
 Provider 与上述 client/public-origin 配置只能通过 CLI/env 提供，bootstrap YAML 不提供另一套同名来源。Secret 不得以 `VITE_` 环境变量、前端 bundle 或子进程完整环境传递。`version`、`--help` 和 completion 不启动 server，不要求 OIDC 配置。内部 `job` 只消费 spec 0010 的 authenticated exec handoff，不加载/继承 OIDC client secret，也不自行启动管理 server；`serve` 的 mandatory OIDC startup barrier 不变。
 
-Provider registration MUST 支持 Authorization Code flow、PKCE S256、`openid` scope、asymmetric signed ID Tokens 和 `client_secret_basic` token-endpoint authentication。固定 redirect URI 为 `<public-origin>/auth/oidc/callback`，必须预先在 Provider 注册并 exact match；daemon 不进行 dynamic client registration。API 客户端从同一 Provider 获取符合 §5 的 access token；注册 web client 本身不自动获得机器客户端权限。
+Provider registration MUST 支持 Authorization Code flow、PKCE S256、`openid` scope、asymmetric signed ID Tokens 和 `client_secret_basic` token-endpoint authentication。固定 redirect URI 为 `<public-origin>/api/auth/oidc/callback`，必须预先在 Provider 注册并 exact match；daemon 不进行 dynamic client registration。API 客户端从同一 Provider 获取符合 §5 的 access token；注册 web client 本身不自动获得机器客户端权限。
 
 当前实现的签名 allowlist 为 `RS256`，ID Token 和 API access token 均需使用带 `kid` 的 RSA signing key。Authorization grants 位于 bootstrap `http.authorization`，每项为 `{issuer, subject, scopes}`；空列表默认不授予资源权限。部署示例见 [OIDC deployment](../oidc-deployment.md)。
 
@@ -43,7 +43,7 @@ OIDC startup validation 不证明用户能成功登录；发布验收仍需通�
 
 ## 3. HTTP authentication boundary
 
-唯一匿名 allowlist 为 **`GET /auth/oidc/login` 与 `GET /auth/oidc/callback`**，用于建立认证。它们不提供应用 shell、静态文件或管理数据；只返回受限重定向或最小、no-store 的错误响应。其他 methods、相似前缀和未知 `/auth/oidc/*` 路由不继承例外。
+唯一匿名 allowlist 为 **`GET /api/auth/oidc/login` 与 `GET /api/auth/oidc/callback`**，用于建立认证。它们不提供应用 shell、静态文件或管理数据；只返回受限重定向或最小、no-store 的错误响应。其他 methods、相似前缀和未知 `/api/auth/oidc/*` 路由不继承例外。
 
 | Surface | Authentication and unauthenticated behavior |
 | --- | --- |
@@ -51,7 +51,7 @@ OIDC startup validation 不证明用户能成功登录；发布验收仍需通�
 | 静态 JS/CSS/font/image、favicon、robots、source map（若发布）、UI HEAD | 有效 browser session；否则 `401`，不提供资源字节或 `304` |
 | `/api/**`，包括 `/api/v1/session`、artifact upload/download、revision/status/change reads 和 mutation | 有效 session 或已验证的 API bearer access token；否则 `401` problem response，不能返回 login HTML 或重定向 |
 | `/livez`、`/readyz` 和未来 metrics/diagnostic HTTP endpoints | 同样要求 session 或 API bearer token；无凭据 `401`。Probe 必须使用有效机器凭据，无 anonymous health exception |
-| `POST /auth/oidc/logout` | 必须有 browser session 与 CSRF 校验，撤销本地 session 并清 cookie；不允许 GET logout |
+| `POST /api/auth/oidc/logout` | 必须有 browser session 与 CSRF 校验，撤销本地 session 并清 cookie；不允许 GET logout |
 | 未知路径、unsupported method、SPA fallback | 先认证再返回 `404` / `405`；不能把 fallback、HEAD、OPTIONS 或条件请求变成匿名入口 |
 
 UI redirect 仅适用于明确的 document GET routes；静态资源、API 和未知路径不能根据 `Accept: text/html` 改变认证规则。Bearer token 仅用于 API/health，不作为 UI document 或静态资源访问凭据。Authorization header 一旦出现就必须严格验证；invalid bearer 或 session 与 bearer 同时提交的 API 请求拒绝，不静默 fallback 到另一身份。API/health 的 `401` 包含 Bearer `WWW-Authenticate` challenge，不泄露 token validation 内部细节；不启用 cross-origin credentialed CORS。

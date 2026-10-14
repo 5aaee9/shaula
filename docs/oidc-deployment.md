@@ -11,7 +11,7 @@ For the credential-aware NixOS service module and VM acceptance, see
 Shaula requires one OIDC Provider at startup. Register a confidential web client
 supporting Authorization Code, PKCE S256, `openid`, RS256 and
 `client_secret_basic`. Register the exact callback
-`https://shaula.example.com/auth/oidc/callback`. Configure a separate API audience
+`https://shaula.example.com/api/auth/oidc/callback`. Configure a separate API audience
 and API clients that receive RFC 9068 JWT access tokens (`typ=at+jwt`, RS256).
 ID tokens and opaque Provider access tokens cannot authenticate API calls.
 Shaula-issued personal access tokens are a separate API credential described below.

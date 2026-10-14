@@ -35,7 +35,7 @@ async fn start(app: &Router, target: &str) -> (String, String) {
     let response = send(
         app,
         "GET",
-        &format!("/auth/oidc/login?{query}"),
+        &format!("/api/auth/oidc/login?{query}"),
         &[("host", "attacker.example")],
     )
     .await;
@@ -55,7 +55,7 @@ async fn start(app: &Router, target: &str) -> (String, String) {
         .collect();
     assert_eq!(
         params["redirect_uri"],
-        "https://shaula.example/auth/oidc/callback"
+        "https://shaula.example/api/auth/oidc/callback"
     );
     assert_eq!(params["response_type"], "code");
     assert_eq!(params["code_challenge_method"], "S256");
@@ -120,18 +120,15 @@ async fn oidc_tests_default_deny_including_assets_methods_and_fallback() {
     let (app, _, _) = common::build_app_with_scan().await;
     for (method, path) in [
         ("GET", "/assets/missing.js"),
-        ("GET", "/favicon.ico"),
-        ("GET", "/robots.txt"),
         ("GET", "/livez"),
         ("GET", "/readyz"),
-        ("GET", "/unknown"),
         ("GET", "/api/v1/unknown"),
         ("HEAD", "/fleets"),
         ("OPTIONS", "/api/v1/fleets"),
-        ("POST", "/auth/oidc/login"),
-        ("HEAD", "/auth/oidc/login"),
-        ("POST", "/auth/oidc/callback"),
-        ("POST", "/auth/oidc/logout"),
+        ("POST", "/api/auth/oidc/login"),
+        ("HEAD", "/api/auth/oidc/login"),
+        ("POST", "/api/auth/oidc/callback"),
+        ("POST", "/api/auth/oidc/logout"),
     ] {
         let response = send(&app, method, path, &[]).await;
         assert_eq!(
@@ -140,6 +137,16 @@ async fn oidc_tests_default_deny_including_assets_methods_and_fallback() {
             "{method} {path}"
         );
         assert_eq!(response.headers()["www-authenticate"], "Bearer");
+    }
+    // Every other path is the app (embedded files included): anonymous
+    // browsers go to login.
+    for path in ["/unknown", "/favicon.ico", "/robots.txt"] {
+        let response = send(&app, "GET", path, &[]).await;
+        assert_eq!(response.status(), StatusCode::FOUND, "{path}");
+        assert!(response.headers()["location"]
+            .to_str()
+            .unwrap()
+            .starts_with("/api/auth/oidc/login?return_to="));
     }
     let bearer = oidc::bearer(oidc::SCOPES);
     assert_eq!(
@@ -196,7 +203,7 @@ async fn oidc_tests_browser_session_csrf_logout_and_no_credential_fallback() {
         ],
     ] {
         assert_eq!(
-            send(&app, "POST", "/auth/oidc/logout", &headers)
+            send(&app, "POST", "/api/auth/oidc/logout", &headers)
                 .await
                 .status(),
             StatusCode::FORBIDDEN
@@ -218,7 +225,7 @@ async fn oidc_tests_browser_session_csrf_logout_and_no_credential_fallback() {
     let response = send(
         &app,
         "POST",
-        "/auth/oidc/logout",
+        "/api/auth/oidc/logout",
         &[
             ("cookie", &cookie),
             ("origin", "https://shaula.example"),

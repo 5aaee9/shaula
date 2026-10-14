@@ -23,8 +23,12 @@ async fn web_tests_embedded_document_and_deep_link() -> TestResult {
         "/fleets",
         "/fleets/linux-build",
         "/fleets/linux-x64.1_a",
+        "/fleets/linux-build/edit",
         "/templates",
         "/templates/new",
+        "/templates/linux-build",
+        "/templates/linux-x64.1_a",
+        "/pools",
         "/templates/linux-build/revisions/new",
         "/templates/linux-x64.1_a/revisions/new",
         "/templates/linux-build/update",
@@ -61,38 +65,37 @@ async fn web_tests_missing_assets_api_and_methods_are_not_html() -> TestResult {
         "/api",
         "/api/v1/missing",
         "/assets/missing.js",
-        "/missing.css",
-        "/unknown",
-        "/jobs//runner",
-        "/jobs/job-1/extra",
-        "/jobs/runners/../fleet",
-        "/jobs/%2fexternal",
-        "/templates/linux-build",
-        "/templates/new/extra",
-        "/templates//revisions/new",
-        "/templates/../revisions/new",
-        "/templates/%2e%2e/revisions/new",
-        "/templates/with%20space/revisions/new",
-        "/templates/a/b/revisions/new",
-        "/templates/linux-build/revisions/latest",
-        "/templates/linux-build/revisions/new/",
-        "/templates//update",
-        "/templates/../update",
-        "/templates/%2e%2e/update",
-        "/templates/a/b/update",
-        "/templates/linux-build/update/",
-        "/auth/shared-github",
-        "/auth/new/extra",
-        "/auth//targets/edit",
-        "/auth/../targets/edit",
-        "/auth/%2e%2e/targets/edit",
-        "/auth/a/b/rotate",
-        "/auth/shared-github/rotate/",
+        "/assets",
+        "/livez",
+        "/readyz",
+        "/api/auth/oidc/missing",
     ] {
         assert_eq!(
             request(path, Method::GET).await?.status(),
             StatusCode::NOT_FOUND
         );
+    }
+    // Any other path is the app; React Router renders unknown routes as 404.
+    for path in [
+        "/unknown",
+        "/missing.css",
+        "/favicon.ico",
+        "/pools/extra",
+        "/jobs/job-1/extra",
+        "/fleets/linux-x64.1_a/edit",
+    ] {
+        let response = request(path, Method::GET).await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "text/html");
+    }
+    // Embedded top-level files are served as themselves.
+    for (path, mime) in [
+        ("/robots.txt", "text/plain"),
+        ("/shaula-mark.png", "image/png"),
+    ] {
+        let response = request(path, Method::GET).await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CONTENT_TYPE], mime);
     }
     let response = request("/fleets", Method::POST).await?;
     assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);

@@ -61,7 +61,7 @@ impl Harness {
         let start = self
             .send(
                 "GET",
-                "/auth/oidc/login?return_to=%2Fauth%3Fkey%3Ddraft",
+                "/api/auth/oidc/login?return_to=%2Fauth%3Fkey%3Ddraft",
                 &[],
             )
             .await;

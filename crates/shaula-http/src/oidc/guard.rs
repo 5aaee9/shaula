@@ -14,7 +14,7 @@ pub(crate) async fn guard(
 ) -> Response {
     let path = request.uri().path();
     let anonymous = request.method() == Method::GET
-        && matches!(path, "/auth/oidc/login" | "/auth/oidc/callback");
+        && matches!(path, "/api/auth/oidc/login" | "/api/auth/oidc/callback");
     let result = if anonymous {
         Ok(None)
     } else {
@@ -38,7 +38,7 @@ pub(crate) async fn guard(
             let query = url::form_urlencoded::Serializer::new(String::new())
                 .append_pair("return_to", &target)
                 .finish();
-            login::redirect(&format!("/auth/oidc/login?{query}"))
+            login::redirect(&format!("/api/auth/oidc/login?{query}"))
                 .unwrap_or_else(IntoResponse::into_response)
         }
         Err(error) => error.into_response(),
@@ -70,7 +70,10 @@ async fn authenticate(
             return Err(AuthError::Unauthorized);
         }
         let path = uri.path();
-        if !(path == "/api" || path.starts_with("/api/") || matches!(path, "/livez" | "/readyz")) {
+        // Bearer credentials are API-only; the browser OIDC endpoints never take one.
+        let api = path == "/api" || path.starts_with("/api/");
+        if !((api && !path.starts_with("/api/auth/oidc/")) || matches!(path, "/livez" | "/readyz"))
+        {
             return Err(AuthError::Unauthorized);
         }
         let raw = headers
@@ -116,7 +119,7 @@ async fn authenticate(
             return Err(AuthError::Csrf);
         }
     }
-    if *method == Method::POST && uri.path() == "/auth/oidc/logout" {
+    if *method == Method::POST && uri.path() == "/api/auth/oidc/logout" {
         return Ok(identity);
     }
     state.oidc.session_identity(&session).await

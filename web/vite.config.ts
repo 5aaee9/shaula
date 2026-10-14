@@ -7,9 +7,7 @@ import { oidcDevelopmentGuard } from "./dev-auth.ts";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "SHAULA_");
   const target = env.SHAULA_API_TARGET || "http://127.0.0.1:8080";
-  const proxy = Object.fromEntries(
-    ["/api", "/auth/oidc/", "/livez", "/readyz"].map((path) => [path, { target }]),
-  );
+  const proxy = Object.fromEntries(["/api", "/livez", "/readyz"].map((path) => [path, { target }]));
   return {
     plugins: [oidcDevelopmentGuard(target), react(), tailwindcss()],
     resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },

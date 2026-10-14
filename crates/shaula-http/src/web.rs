@@ -24,8 +24,12 @@ pub(crate) async fn serve(method: Method, uri: Uri) -> Response {
         )
             .into_response();
     }
-    let document = crate::oidc::document(uri.path());
-    let asset_path = if document { "index.html" } else { path };
+    // An embedded file is served as itself; any other app path is the shell.
+    let asset_path = match WebAssets::get(path) {
+        Some(_) if !path.is_empty() => path,
+        _ if crate::oidc::document(uri.path()) => "index.html",
+        _ => return StatusCode::NOT_FOUND.into_response(),
+    };
     let Some(asset) = WebAssets::get(asset_path) else {
         return StatusCode::NOT_FOUND.into_response();
     };

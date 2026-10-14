@@ -55,10 +55,11 @@ def initial():
         "/livez",
         "/readyz",
         "/assets/missing.js",
-        "/unknown",
     ]:
         expect(anonymous, "GET", path, 401)
-    expect(anonymous, "GET", "/", 302)
+    # Every non-API page is the app: an anonymous browser is sent to login.
+    for path in ["/", "/unknown", "/pools"]:
+        expect(anonymous, "GET", path, 302)
     expect(
         anonymous,
         "GET",
@@ -96,7 +97,9 @@ def initial():
     logged_in = browser.get(BASE + "/", timeout=15)
     assert logged_in.status_code == 200
     assert any("/authorize?" in response.url for response in logged_in.history)
-    assert any("/auth/oidc/callback?" in response.url for response in logged_in.history)
+    assert any(
+        "/api/auth/oidc/callback?" in response.url for response in logged_in.history
+    )
     assets = re.findall(r'(?:src|href)="(/assets/[^" ]+)"', logged_in.text)
     assert assets, "release binary did not embed Vite assets"
     for asset in assets:
@@ -119,7 +122,7 @@ def initial():
     expect(
         browser,
         "POST",
-        "/auth/oidc/logout",
+        "/api/auth/oidc/logout",
         204,
         headers={"Origin": BASE, "X-CSRF-Token": csrf},
     )

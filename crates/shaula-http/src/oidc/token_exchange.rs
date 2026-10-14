@@ -63,7 +63,7 @@ impl Oidc {
                         .map_err(|_| AuthError::Provider)?,
                 )
                 .set_redirect_uri(
-                    RedirectUrl::new(format!("{}/auth/oidc/callback", self.config.origin))
+                    RedirectUrl::new(format!("{}/api/auth/oidc/callback", self.config.origin))
                         .map_err(|_| AuthError::Configuration("redirect URL"))?,
                 ),
         )

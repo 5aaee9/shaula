@@ -55,7 +55,7 @@ test("normal Vite dev and preview authenticate source assets and disable shared 
         const response = await fetch(`${origin}${path}`, { redirect: "manual" });
         expect(response.status).toBe(302);
         expect(response.headers.get("location")).toBe(
-          `/auth/oidc/login?${new URLSearchParams({ return_to: path })}`,
+          `/api/auth/oidc/login?${new URLSearchParams({ return_to: path })}`,
         );
         expect(await response.text()).toBe("");
         expect((await fetch(`${origin}${path}`, { method: "HEAD" })).status).toBe(401);
