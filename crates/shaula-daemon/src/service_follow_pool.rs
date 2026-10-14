@@ -8,7 +8,7 @@ impl ControlPlane {
     /// Active revisions and mints ONE new pool revision when any pin
     /// moved — regardless of how many fleets reference the pool. A pool
     /// owns no runners, so there is no occupancy gate here; referencing
-    /// fleets catch up in stage 2 on their own drain boundary.
+    /// fleets catch up in stage 2 on the next pass.
     pub(super) async fn cascade_pool_follow_upgrades(&self, now: i64) -> CoreResult<u32> {
         let mut upgraded = 0u32;
         for (key, _revision, _incarnation) in self.store.template_pool_list().await? {

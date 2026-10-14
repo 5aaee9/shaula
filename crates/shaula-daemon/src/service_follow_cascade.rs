@@ -1,7 +1,9 @@
 //! Follow-latest template cascade (spec 0023): every live fleet follows
 //! its profile's Active revision (follow-only since ARD-0029). The
 //! level-triggered scan mints a replacement revision — unchanged spec,
-//! new resolved pin — once the fleet drains to zero occupancy. Failures
+//! new resolved pin — on the next pass, occupied or not: live Generations
+//! keep their own pins, so only new Creates use the new revision (a shared
+//! pool reference likewise, spec 0037 §5). Failures
 //! degrade to per-fleet WARNs and retry next tick; the scan loop itself
 //! never fails from one fleet's state.
 
@@ -37,7 +39,7 @@ impl ControlPlane {
         let mut upgraded = 0u32;
         // Shared pools re-resolve FIRST (spec 0037 §5): a member template's
         // new Active mints one new pool revision; referencing fleets catch
-        // up on their own occupancy boundary in the fleet pass below.
+        // up in the fleet pass below.
         upgraded += self.cascade_pool_follow_upgrades(now).await?;
         for (key, _revision, _phase) in self
             .store
@@ -85,9 +87,8 @@ impl ControlPlane {
         }
         // Shared-pool fleets (spec 0037 §5 stage 2): the spec carries only
         // the bare pool key; member pins live on pool revisions. Catch up
-        // to the pool's current revision on this fleet's zero-occupancy
-        // boundary — the same deferred upgrade a single-template fleet
-        // gets. Member input validation already happened at pool
+        // to the pool's current revision on the next pass, like a
+        // single-template fleet. Member input validation already happened at pool
         // admission (re-resolved by the pool cascade), so there is no
         // input gate to re-run here.
         if let Some(pool_key) = spec
@@ -171,15 +172,9 @@ impl ControlPlane {
             tracing::warn!(fleet = %key, summary = %error.summary, "follow upgrade skipped: incompatible runner backend");
             return Ok(false);
         }
-        // Cheap pre-check; the commit transaction re-checks occupancy under
-        // the write lock (R9-04/R10-08), so a racing Create cannot slip in.
         diagnostic.pass(StageId::InputCompatibility);
-        if self.store.generations_occupancy(key).await? > 0 {
-            diagnostic.reason(Code::RolloutWaitingZeroOccupancy, StageId::Occupancy, true);
-            tracing::debug!(fleet = %key, "follow upgrade deferred: fleet occupied");
-            return Ok(false);
-        }
-
+        // No occupancy gate (spec 0023 §3): live Generations keep their admitted
+        // template pins and finish on them; the new revision is for new Creates.
         diagnostic.pass(StageId::Occupancy);
         let draft = super::FleetMutationDraft {
             authentication: Default::default(),
@@ -225,8 +220,8 @@ impl ControlPlane {
         }
     }
     /// Shared-pool fleet catch-up (spec 0037 §5 stage 2): re-mint the
-    /// fleet revision onto the pool's CURRENT revision once this fleet
-    /// drains to zero occupancy. The spec is verbatim; only the frozen
+    /// fleet revision onto the pool's CURRENT revision as soon as it lags,
+    /// occupied or not. The spec is verbatim; only the frozen
     /// `(pool_key, pool_revision)` routing context moves.
     async fn maybe_upgrade_pool_follower(
         &self,
@@ -293,14 +288,10 @@ impl ControlPlane {
             tracing::warn!(fleet = %key, summary = %error.summary, "pool follow upgrade skipped: incompatible runner backend");
             return Ok(false);
         }
-        // Cheap pre-check; the commit transaction re-checks occupancy
-        // under the write lock (R9-04/R10-08).
+        // No occupancy gate (spec 0037 §5): live Generations keep the member
+        // pins they were admitted under and retire on their own; only new
+        // Generations draw from the current pool revision.
         diagnostic.pass(StageId::InputCompatibility);
-        if self.store.generations_occupancy(key).await? > 0 {
-            diagnostic.reason(Code::RolloutWaitingZeroOccupancy, StageId::Occupancy, true);
-            tracing::debug!(fleet = %key, "pool follow upgrade deferred: fleet occupied");
-            return Ok(false);
-        }
         diagnostic.pass(StageId::Occupancy);
         let draft = super::FleetMutationDraft {
             authentication: Default::default(),

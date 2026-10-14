@@ -76,6 +76,7 @@ impl FleetSupervisor {
             ..ReconcileReport::default()
         };
         let head = self.handoff.fleet_get(&self.config.fleet_key).await?;
+        let current_revision = head.as_ref().map(|head| head.desired_revision);
         if !runtime_guard_admits(self.runtime_guard.as_ref(), head.as_ref()) {
             tracing::debug!(fleet = %self.config.fleet_key, "reconcile skipped: runtime guard mismatch or tombstoned");
             return Ok(report);
@@ -134,7 +135,9 @@ impl FleetSupervisor {
 
         // 3. Capacity convergence.
         let plan = self.capacity_plan(diagnostic).await?;
-        let retired = self.retire_excess(plan.excess, now).await?;
+        let retired = self
+            .retire_excess(plan.excess, current_revision, now)
+            .await?;
         report.destroyed += retired.destroyed;
         report.quarantined += retired.quarantined;
         self.run_creates(plan.creates, now, &mut report).await?;
@@ -203,7 +206,7 @@ impl FleetSupervisor {
         if let Some(listener) = &self.listener {
             listener.stop().await?;
         }
-        let retired = self.retire_excess(i64::MAX, now).await?;
+        let retired = self.retire_excess(i64::MAX, None, now).await?;
         report.destroyed += retired.destroyed;
         report.quarantined += retired.quarantined;
         // Completion predicate (spec 0002 §4.4): every owned

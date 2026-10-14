@@ -14,58 +14,63 @@ use shaula_daemon::supervisor::*;
 use std::sync::{atomic::Ordering, Arc};
 use tower::ServiceExt;
 
+/// Spec 0023 §3: following the same profile to a newer revision commits while
+/// occupied; the same move with changed inputs is a replacement and does not.
 #[tokio::test]
-async fn transaction_rejects_same_profile_revision_switch_with_occupancy() {
+async fn occupancy_gates_a_replacement_but_not_a_same_profile_follow() {
     use shaula_core::registry::{ChangeView, MutationError, MutationFacts};
     let (store, _, _, digest) = setup().await;
     seed_idle(store.as_ref(), &digest).await;
     let head = store.fleet_get("f1").await.unwrap().unwrap();
     let previous = store.fleet_revision_latest("f1").await.unwrap().unwrap();
-    let result = store
-        .commit_fleet_mutation(MutationFacts {
-            idempotency_operation: "v1:PUT",
-            authentication: Default::default(),
-            resource_kind: "fleet",
+    let mut changed: serde_json::Value = serde_json::from_str(&previous.spec_json).unwrap();
+    changed["template_inputs"] = serde_json::json!({"changed": true});
+    let facts = |id: &str, spec_json: String| MutationFacts {
+        idempotency_operation: "v1:PUT",
+        authentication: Default::default(),
+        resource_kind: "fleet",
+        resource_key: "f1".into(),
+        incarnation: head.incarnation.clone(),
+        revision: 2,
+        spec_json,
+        template_pool: Vec::new(),
+        template_pool_ref: None,
+        template: Some(("k8s-linux".into(), 2, digest.clone(), "att-2".into())),
+        auth_desired: Some(previous.auth_desired.clone()),
+        inputs_digest: previous.inputs_digest.clone(),
+        actor: "ops".into(),
+        now: 10,
+        change: ChangeView {
+            id: id.into(),
+            resource_kind: "fleet".into(),
             resource_key: "f1".into(),
-            incarnation: head.incarnation,
             revision: 2,
-            spec_json: previous.spec_json,
-            template_pool: Vec::new(),
-            template_pool_ref: None,
-            template: Some(("k8s-linux".into(), 2, digest, "att-2".into())),
-            auth_desired: Some(previous.auth_desired),
-            inputs_digest: previous.inputs_digest,
-            actor: "ops".into(),
-            now: 10,
-            change: ChangeView {
-                id: "replace".into(),
-                resource_kind: "fleet".into(),
-                resource_key: "f1".into(),
-                revision: 2,
-                kind: "Put".into(),
-                state: "Pending".into(),
-                reason: None,
-            },
-            outbox_topic: "fleet.reconcile".into(),
-            outbox_payload: "{}".into(),
-            idempotency: None,
-        })
+            kind: "Put".into(),
+            state: "Pending".into(),
+            reason: None,
+        },
+        outbox_topic: "fleet.reconcile".into(),
+        outbox_payload: "{}".into(),
+        idempotency: None,
+    };
+    let replaced = store
+        .commit_fleet_mutation(facts("replace", changed.to_string()))
         .await
         .unwrap();
     assert!(matches!(
-        result,
+        replaced,
         Err(MutationError::RetirementBlocked { .. })
     ));
-    assert_eq!(
-        store
-            .fleet_get("f1")
-            .await
-            .unwrap()
-            .unwrap()
-            .desired_revision,
-        1
-    );
     assert!(store.fleet_change_get("replace").await.unwrap().is_none());
+    let followed = store
+        .commit_fleet_mutation(facts("follow", previous.spec_json.clone()))
+        .await
+        .unwrap();
+    assert!(followed.is_ok(), "{followed:?}");
+    let head = store.fleet_get("f1").await.unwrap().unwrap();
+    assert_eq!(head.desired_revision, 2);
+    let idle = store.generation_get("gen1").await.unwrap().unwrap();
+    assert_eq!((idle.fleet_revision, idle.template_revision), (1, 1));
 }
 
 #[tokio::test]

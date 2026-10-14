@@ -109,8 +109,10 @@ pub(crate) async fn fleet_counts(
     })
 }
 
-/// Occupied generations per pool member: fleet-local for inline pools,
-/// or across every fleet revision that froze `pool_scope` (spec 0037 §6).
+/// Occupied generations per pool member: fleet-local for inline pools, or
+/// across every fleet revision that froze ANY revision of the shared pool
+/// (spec 0037 §6): a Fleet catches up to a new pool revision while older
+/// Generations of the same member still run, and they still count.
 /// Generations without a member key are not attributed to any member.
 pub(crate) async fn member_occupancy(
     db: &impl ConnectionTrait,
@@ -118,19 +120,15 @@ pub(crate) async fn member_occupancy(
     pool_scope: Option<&FleetPoolRef>,
 ) -> StoreResult<HashMap<String, i64>> {
     let statement = match pool_scope {
-        Some((pool_key, pool_revision)) => Statement::from_sql_and_values(
+        Some((pool_key, _)) => Statement::from_sql_and_values(
             DbBackend::Sqlite,
             "SELECT g.pool_member_key AS member, COUNT(*) AS used
              FROM fleet_revisions r JOIN runner_generations g
                ON g.fleet_key=r.fleet_key AND g.fleet_revision=r.revision
-             WHERE r.template_pool_ref=? AND r.template_pool_revision=?
+             WHERE r.template_pool_ref=?
                AND g.state!=? AND g.pool_member_key IS NOT NULL
              GROUP BY g.pool_member_key",
-            [
-                pool_key.as_str().into(),
-                (*pool_revision).into(),
-                released(),
-            ],
+            [pool_key.as_str().into(), released()],
         ),
         None => Statement::from_sql_and_values(
             DbBackend::Sqlite,

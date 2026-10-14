@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 //! spec 0023: bare-key follower fleets cascade to the latest Active
-//! template revision on the scan cadence; exact pins never move; the
-//! zero-occupancy replacement gate still applies to the cascade.
+//! template revision on the scan cadence, occupied or not; live Generations
+//! keep their own pins; inputs that the new revision rejects block the follow.
 
 mod common;
 #[path = "follow_cascade/input_materials.rs"]
@@ -181,7 +181,7 @@ async fn legacy_pinned_spec_normalizes_and_cascades() {
 }
 
 #[tokio::test]
-async fn occupied_follower_defers_then_upgrades_after_drain() {
+async fn occupied_follower_upgrades_at_once_and_keeps_live_pins() {
     let (app, control_plane, _engine, service) = build_app_with_service().await;
     let digest1 = seed_profile(&app, &control_plane, "k8s-linux", true).await;
     let create = put_with_idempotency("/api/v1/fleets/linux-x64", "occ-1", FLEET_BODY.into());
@@ -205,7 +205,7 @@ async fn occupied_follower_defers_then_upgrades_after_drain() {
             pool_member_key: None,
             template_profile_key: "k8s-linux".into(),
             template_revision: 1,
-            template_artifact_digest: digest1,
+            template_artifact_digest: digest1.clone(),
             attestation_id: "static-validation-v1:test".into(),
             inputs_digest: revision.inputs_digest.clone(),
             state: GenerationState::Idle,
@@ -218,36 +218,26 @@ async fn occupied_follower_defers_then_upgrades_after_drain() {
         .unwrap();
 
     publish_revision_2(&app, &control_plane, None).await;
-    // Occupancy blocks the replacement gate — the cascade defers.
+    // Following is not a replacement: the occupied Fleet upgrades on this
+    // pass, and the live Generation stays on the pins it was admitted under.
     let upgraded = service
         .cascade_template_follow_upgrades(1_800_000_003_000)
         .await
         .unwrap();
-    assert_eq!(upgraded, 0);
-    assert_eq!(fleet_revision_pin(&app, "linux-x64").await, (1, 1));
-
-    // Drain along the legal lifecycle path (insert always lands as
-    // CreatePending at the persistence boundary).
-    for state in [
-        GenerationState::Creating,
-        GenerationState::WaitingOnline,
-        GenerationState::Idle,
-        GenerationState::Retiring,
-        GenerationState::DestroyPending,
-        GenerationState::Destroying,
-        GenerationState::Destroyed,
-    ] {
-        control_plane
-            .generation_advance("gen-occupied", state, now)
-            .await
-            .unwrap();
-    }
-    let upgraded = service
-        .cascade_template_follow_upgrades(1_800_000_005_000)
-        .await
-        .unwrap();
     assert_eq!(upgraded, 1);
     assert_eq!(fleet_revision_pin(&app, "linux-x64").await, (2, 2));
+    let live = control_plane
+        .generation_get("gen-occupied")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!((live.fleet_revision, live.template_revision), (1, 1));
+    assert_eq!(live.template_artifact_digest, digest1);
+    let again = service
+        .cascade_template_follow_upgrades(1_800_000_004_000)
+        .await
+        .unwrap();
+    assert_eq!(again, 0, "no lag left to follow");
 }
 
 #[tokio::test]

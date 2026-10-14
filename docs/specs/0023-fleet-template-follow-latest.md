@@ -7,13 +7,14 @@
   [spec 0021](0021-default-template-updates.md) §4 的 Fleet pin 不变条款。
 - Extends: [spec 0017](0017-automatic-template-activation.md) 自动激活后的传播范围。
 - Revision 2 (2026-09-10, ARD-0029): 移除 pinned 模式，follow latest 成为唯一语义。
+- Revision 3 (2026-10-15): 跟随不再等待零占用；新 Revision 立即用于新 job，既有 Generation 保持原 pin（§3）。
 
 ## 1. Outcome
 
 Fleet 的模板引用只有 **follow latest** 一种模式：`template_profile_ref` 是 bare key
 （模板 Profile key 字符串）。Fleet 在其 Template Profile 激活新 Revision 后由 daemon
 自动铸造携带新 pin 的 Fleet Revision，无需用户重新编辑 Fleet。有资源占用的 Fleet
-延后升级，在占用归零后的下一个 scan tick 自动补齐。Revision、attestation、handoff
+同样在下一个 scan tick 升级：新 job 立即使用新 Revision，运行中的 Generation 保持原 pin。Revision、attestation、handoff
 CAS 等不可变与防护机制全部保留为内部实现，用户侧不存在 revision 选择。
 
 ## 2. Reference semantics
@@ -44,13 +45,17 @@ CAS 等不可变与防护机制全部保留为内部实现，用户侧不存在 
 1. 每个 scan tick 枚举非 tombstone、无 deletion marker 的 Fleet；其最新 spec 的
    resolved pin 与 Profile 当前 Active 不一致即为 lag。Profile 无 Active、Fleet
    正在删除/退役时跳过。
-2. lag 的 Fleet 在 **资源占用为零** 时升级：升级前按新 pin 的 parameter schema 与
+2. lag 的 Fleet 在下一个 scan tick 升级，**不等待资源占用归零**：升级前按新 pin 的 parameter schema 与
    fleet input policy 重新校验 Fleet 的现有 inputs（与手工 replacement 同一层门禁）；
    不兼容时本 tick 跳过并记 WARN，不修正或扩大授权。升级复用与 Fleet PUT 相同的
    `commit_fleet_mutation` 提交路径（mutation fence CAS、独占 effect gate、audit、
    outbox `fleet.change`），actor 记为 `shaula-daemon`，Change kind 为 `Replace`。
-   占用非零时本 tick 跳过，下一 tick 重试——繁忙 Fleet 在 runner 排空后自动升级，
-   不需要操作者回来重试。
+   同一 Profile 升到更新 Revision 不是 replacement，不走零占用门禁：每个 Generation
+   已在准入时冻结自己的模板 revision、artifact、bindings 与 inputs，Destroy 也只用
+   这些 pin，所以移动 Fleet head 不改变任何运行中的 runner。升级后新 Create 使用新
+   Revision；旧 Revision 的 Idle Generation 即使仍有需求也被退役并按新 Revision 补齐，
+   Busy Generation 先跑完当前 job（ephemeral runner 不会被复用）。更换模板 key、
+   inputs、auth 或 pool 仍是 replacement，零占用门禁不变。
 3. 解析或提交失败（fence 竞争、Profile 被撤、artifact 不可用）记 WARN 并在下一
    tick 重试；单个 Fleet 的失败不影响其他 Fleet 或 scan 循环本身。
 4. cascade 铸造的 Revision 与手工 PUT 的 Revision 在 reconcile、supervisor 重建
@@ -67,13 +72,14 @@ GitHub Auth Profile 的 Revision 提升（promotion）早已在同一事务内 r
 
 Fleet 表单与 API 均不存在 revision 输入：选择模板即提交 bare key 引用，inputs 始终
 从当前 Active revision 的 input contract 加载。Fleet 详情与列表展示当前 resolved
-pin（resolved revision、artifact digest），滞后中的 Fleet 显示"等待资源排空后升级"。
+pin（resolved revision、artifact digest），滞后只持续到下一个 scan tick。
 
 ## 6. Acceptance
 
 - Fleet 在新模板 Revision 激活后一个 scan 周期内自动铸造新 Fleet Revision；审计与
   Changes 可见 actor=`shaula-daemon` 的 Replace。
-- 占用非零的 Fleet 不升级；最后一个 Generation Destroyed 后自动补升级。
+- 占用非零的 Fleet 同样在下一个 scan tick 升级；既有 Generation 的 pin 不变，旧
+  Revision 的 Idle Generation 被退役替换，Busy Generation 跑完当前 job。
 - 新 pin 的 inputs policy/schema 与 Fleet 现有 inputs 不兼容时跳过并 WARN，不升级。
 - 模板 key/inputs 未变时，原样 PUT 和仅容量变更保留旧 pin，即使 Profile 已有新 Active。
 - 同 key 修改 inputs 时解析新 Active 并重新校验；非法输入拒绝，资源仍占用时不得

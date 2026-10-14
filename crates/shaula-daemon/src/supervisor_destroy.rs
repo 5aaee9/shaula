@@ -35,12 +35,15 @@ impl FleetSupervisor {
         }
     }
 
-    /// Retires up to `excess` Idle Generations and resumes every in-flight
-    /// Retirement. Resumable Generations are re-selected on every tick, so a
+    /// Retires up to `excess` Idle Generations, every Idle Generation of a
+    /// revision older than `current_revision` (a pool or template rollout,
+    /// spec 0037 §5; Busy ones finish their job first), and resumes every
+    /// in-flight Retirement. Resumable Generations are re-selected on every tick, so a
     /// failed or crashed Destroy continues from its durable state.
     pub(crate) async fn retire_excess(
         &self,
         mut excess: i64,
+        current_revision: Option<i64>,
         now: i64,
     ) -> CoreResult<DestroyTally> {
         let operation = self.runner_operation();
@@ -53,7 +56,9 @@ impl FleetSupervisor {
             let selected = match generation.state {
                 G::Retiring | G::DestroyPending | G::Destroying => true,
                 G::CleanupRequired => now.saturating_sub(generation.updated_at) >= CLEANUP_GRACE_MS,
-                G::Idle => excess > 0,
+                G::Idle => {
+                    excess > 0 || current_revision.is_some_and(|r| generation.fleet_revision < r)
+                }
                 _ => false,
             };
             if !selected {

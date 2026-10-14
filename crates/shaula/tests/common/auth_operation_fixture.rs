@@ -133,6 +133,7 @@ pub struct Harness {
     pub github: Arc<fakes::GitHub>,
     pub runtime: Arc<Runtime>,
     root: std::path::PathBuf,
+    pub service: Arc<shaula_daemon::service::ControlPlane>,
 }
 
 impl Harness {
@@ -189,7 +190,7 @@ impl Harness {
     }
 
     async fn build(fleet_body: Option<&str>) -> Self {
-        let (app, store, engine, root) = build_app_with_artifact_root().await;
+        let (app, store, engine, service, root) = build_app_full().await;
         let digest = attestation_harness::seed_profile(&app, &store, "k8s-linux", true).await;
         let body = attest_body(
             &store,
@@ -224,6 +225,7 @@ impl Harness {
             github: Arc::default(),
             runtime: Arc::default(),
             root,
+            service,
         }
     }
 

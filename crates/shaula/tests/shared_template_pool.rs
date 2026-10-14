@@ -4,7 +4,7 @@
 //! member bare keys to the profiles' current Active revisions; deletion
 //! is blocked while a live fleet references the pool; the two-stage
 //! cascade re-resolves pool members on template activation and catches
-//! referencing fleets up on their own zero-occupancy boundary.
+//! referencing fleets up at once, occupied or not.
 
 mod common;
 
@@ -296,7 +296,7 @@ async fn pool_delete_is_blocked_while_a_live_fleet_references_it() {
 }
 
 #[tokio::test]
-async fn cascade_re_resolves_the_pool_and_catches_fleets_up_when_drained() {
+async fn cascade_re_resolves_the_pool_and_catches_occupied_fleets_up_at_once() {
     let (app, control_plane, _engine, service) = build_app_with_service().await;
     seed_profile(&app, &control_plane, "k8s-linux", true).await;
     let response = app
@@ -370,10 +370,9 @@ async fn cascade_re_resolves_the_pool_and_catches_fleets_up_when_drained() {
         .unwrap();
     assert_eq!(again, 0);
 
-    // An occupied fleet defers its catch-up: occupy, mint pool revision
-    // 3 by re-resolving (simulate via a pool PUT — an explicit admission
-    // resolving the same Active), and verify the fleet stays behind
-    // until the drain.
+    // An occupied fleet catches up at once (spec 0037 §5): occupy, mint pool
+    // revision 3 with a pool PUT, and the next pass moves the fleet while the
+    // live Generation keeps the revision and pins it was admitted under.
     let now = 1_800_000_004_500i64;
     let revision = control_plane
         .fleet_revision_latest("pool-fleet")
@@ -414,32 +413,11 @@ async fn cascade_re_resolves_the_pool_and_catches_fleets_up_when_drained() {
         app.clone().oneshot(replace).await.unwrap().status(),
         StatusCode::ACCEPTED
     );
-    let deferred = service
-        .cascade_template_follow_upgrades(1_800_000_005_000)
-        .await
-        .unwrap();
-    assert_eq!(deferred, 0);
-    let fleet_revision = control_plane
-        .fleet_revision_latest("pool-fleet")
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        fleet_revision.template_pool_ref,
-        Some(("builders".to_string(), 2)),
-        "occupied fleet must keep its frozen pool revision"
-    );
-
-    // Drain along the legal lifecycle path (insert always lands as
-    // CreatePending at the persistence boundary).
+    // A Quarantined Generation is occupancy too, and must not hold the
+    // rollout back either.
     for state in [
         shaula_core::lifecycle::GenerationState::Creating,
-        shaula_core::lifecycle::GenerationState::WaitingOnline,
-        shaula_core::lifecycle::GenerationState::Idle,
-        shaula_core::lifecycle::GenerationState::Retiring,
-        shaula_core::lifecycle::GenerationState::DestroyPending,
-        shaula_core::lifecycle::GenerationState::Destroying,
-        shaula_core::lifecycle::GenerationState::Destroyed,
+        shaula_core::lifecycle::GenerationState::Quarantined,
     ] {
         control_plane
             .generation_advance("gen-pool-occupied", state, now)
@@ -447,7 +425,7 @@ async fn cascade_re_resolves_the_pool_and_catches_fleets_up_when_drained() {
             .unwrap();
     }
     let caught_up = service
-        .cascade_template_follow_upgrades(1_800_000_006_000)
+        .cascade_template_follow_upgrades(1_800_000_005_000)
         .await
         .unwrap();
     assert_eq!(caught_up, 1);
@@ -456,9 +434,27 @@ async fn cascade_re_resolves_the_pool_and_catches_fleets_up_when_drained() {
         .await
         .unwrap()
         .unwrap();
+    assert_eq!(fleet_revision.revision, 3);
     assert_eq!(
         fleet_revision.template_pool_ref,
-        Some(("builders".to_string(), 3))
+        Some(("builders".to_string(), 3)),
+        "an occupied fleet adopts the current pool revision at once"
+    );
+    let occupied = control_plane
+        .generations_for_fleet("pool-fleet")
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|g| g.id == "gen-pool-occupied")
+        .unwrap();
+    assert_eq!(occupied.fleet_revision, 2);
+    assert_eq!(occupied.template_artifact_digest, digest2);
+    assert_eq!(
+        service
+            .cascade_template_follow_upgrades(1_800_000_006_000)
+            .await
+            .unwrap(),
+        0
     );
 }
 

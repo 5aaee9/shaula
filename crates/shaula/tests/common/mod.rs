@@ -87,6 +87,17 @@ pub async fn build_app_with_artifact_root() -> (
     (app, control_plane, engine, artifact_root)
 }
 
+/// Router, store handle, engine, service and artifact root together.
+pub async fn build_app_full() -> (
+    axum::Router,
+    Arc<SqliteControlPlane>,
+    std::path::PathBuf,
+    Arc<ControlPlane>,
+    std::path::PathBuf,
+) {
+    build_app_inner().await
+}
+
 /// Assembles the router, the store handle and the service.
 pub async fn build_app_with_service() -> (
     axum::Router,

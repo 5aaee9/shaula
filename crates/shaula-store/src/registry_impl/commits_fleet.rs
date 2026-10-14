@@ -95,9 +95,17 @@ impl SqliteControlPlane {
                 }));
             }
             let new_template_revision = facts.template.as_ref().map(|t| t.1);
+            // Following the same profile to a newer revision (spec 0023 §3) is
+            // not a replacement: every live Generation keeps its own admitted
+            // template pins, so the new revision applies only to new Creates.
             let template_changed = previous.as_ref().is_some_and(|p| {
-                p.template_profile_key != new_template_key
-                    || p.template_revision != new_template_revision
+                let follow = p.template_profile_key == new_template_key
+                    && p.template_revision
+                        .zip(new_template_revision)
+                        .is_some_and(|(from, to)| to > from);
+                (p.template_profile_key != new_template_key
+                    || p.template_revision != new_template_revision)
+                    && !follow
             });
             // Whether the PREVIOUS revision declared a pool is a property
             // of its admitted spec, not of how many member rows exist: a
@@ -171,14 +179,19 @@ impl SqliteControlPlane {
                     }));
                 }
             }
-            // A shared-pool routing change (spec 0037 §4/§5) — switching
-            // pools, or catching up to a newer revision of the same pool
-            // — re-routes every future draw, so it needs the same zero
-            // occupancy gate INSIDE the transaction: the admission-side
-            // (or cascade-side) check can race a Create that slips in
-            // before this commit takes the write lock (R9-04/R10-08).
+            // Switching shared pools (spec 0037 §4) re-routes every future draw,
+            // so it needs the same zero occupancy gate INSIDE the transaction:
+            // the admission-side check can race a Create that slips in before
+            // this commit takes the write lock (R9-04/R10-08). Catching up to
+            // a newer revision of the SAME pool is not gated (spec 0037 §5):
+            // live Generations keep their admitted member pins.
             let pool_ref_changed = previous.as_ref().is_some_and(|p| {
-                p.template_pool_ref.clone().zip(p.template_pool_revision) != facts.template_pool_ref
+                let before = p.template_pool_ref.clone().zip(p.template_pool_revision);
+                let catch_up = matches!(
+                    (&before, &facts.template_pool_ref),
+                    (Some((old, from)), Some((new, to))) if old == new && to > from
+                );
+                before != facts.template_pool_ref && !catch_up
             });
             if pool_ref_changed {
                 let occupancy = fleet_replacement_occupancy_in_tx(&tx, &facts.resource_key)

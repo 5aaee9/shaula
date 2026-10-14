@@ -200,8 +200,9 @@ export function UpdateActionBar({
       )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-lg text-xs text-muted-foreground">
-          The new revision activates after validation. Fleets follow the new Active revision
-          automatically once their runners drain (spec 0023); no per-fleet update is needed.
+          The new revision activates after validation. Fleets use the new Active revision for new
+          jobs on the next pass (spec 0023); running jobs finish on their current revision. No
+          per-fleet update is needed.
         </p>
         <div className="flex gap-2">
           <Button type="button" variant="outline" disabled={busy} onClick={onClose}>

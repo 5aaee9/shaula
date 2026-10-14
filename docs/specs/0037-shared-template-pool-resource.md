@@ -108,8 +108,7 @@ how Fleet revisions carry resolved template pins under spec 0029.
   - **First reference or a different pool key** resolves the pool's **current**
     revision — a new or switched route picks up the latest eligible members.
   - **An unchanged pool key retains the fleet's already-frozen revision.**
-    Catch-up to a newer pool revision is the cascade's deferred job (§5), not
-    PUT's: a PUT that changes only capacity (or any non-routing field) must
+    Catch-up to a newer pool revision is the cascade's job (§5), not PUT's: a PUT that changes only capacity (or any non-routing field) must
     not re-freeze and must not require zero occupancy. This mirrors how a
     single-template reference **and inputs** retain their pin when unchanged
     (spec 0023 §2); this does not include an explicit inputs replacement.
@@ -123,8 +122,7 @@ how Fleet revisions carry resolved template pins under spec 0029.
 ## 5. Level-triggered cascade for shared pools
 
 Two cascades keep resolved pins fresh, both driven by the daemon scan tick.
-Only the second stage waits for the referencing Fleet's zero-occupancy
-boundary (spec 0023 §3); the pool revision itself has no occupancy gate:
+Neither waits for occupancy:
 
 1. **Template Active change → pool revision.** When a member's profile
    activates a new revision, the pool re-resolves that member and mints a new
@@ -132,14 +130,26 @@ boundary (spec 0023 §3); the pool revision itself has no occupancy gate:
    exactly one new pool revision regardless of how many Fleets reference it.
 2. **Pool revision change → fleet revision.** A referencing Fleet whose
    recorded `pool_revision` lags the pool's current revision is re-minted to
-   the current revision once its occupancy is zero — the same deferred upgrade
-   a single-template Fleet gets on a template Active change.
+   the current revision on the next pass, occupied or not. Only the pool
+   revision changes; template, inputs and auth stay as committed.
 
-A pool revision is **eligible for admission** even while referencing Fleets are
-occupied: the new revision exists and is selectable for *new* Fleets or *idle*
-referencing Fleets; occupied Fleets catch up when they drain. There is no
-pool-global occupancy gate, because the pool itself owns no runners — the
-referencing Fleets do.
+A pool change therefore takes effect at once, exactly like a single-template
+Fleet following its template's Active revision (spec 0023 §3). This is safe
+because a pool Generation never reads its routing from the Fleet head: each one froze its member, template revision and inputs
+at admission (spec 0029), so re-minting the head leaves every live Generation
+on exactly the pins it was created with. The rollout then follows from
+lifecycle, not from a drain:
+
+- new Creates draw from the current pool revision;
+- an **Idle** Generation of an older Fleet revision is retired even when
+  demand would keep it (GitHub supervisor, Forgejo and GitLab pool drivers
+  alike) and its slot is refilled from the current revision;
+- a **Busy** Generation finishes its job; ephemeral runners are never
+  reused, so it is never reassigned under its old pins;
+- Quarantined and cleanup states keep their own lifecycle (spec 0028).
+
+There is no pool-global occupancy gate, because the pool itself owns no
+runners — the referencing Fleets do.
 
 ## 6. Capacity ceilings and the eligible draw set
 
@@ -148,7 +158,9 @@ Capacity is bounded at two levels:
 - **Fleet `max_runners`** bounds the whole Fleet — the total Generations that
   Fleet may run regardless of which member drew them.
 - **`member.max_runners`** bounds one member's Generations **across all Fleets
-  referencing the same pool revision**. The cap is a property of the member's
+  referencing the pool, at any pool revision**: while a rollout is in flight,
+  Generations admitted under an older pool revision still occupy their
+  member. The cap is a property of the member's
   backend, not of one Fleet's queue, so it is enforced pool-wide inside the
   same atomic admission transaction that draws the member and inserts the
   Generation.
@@ -195,12 +207,15 @@ exclusion applies under both policies.
 - Two Fleets referencing the same pool revision draw members independently per
   their own occupancy, while `member.max_runners` is enforced across both Fleets'
   combined Generations in one transaction.
-- A member template's Active activation mints one new pool revision; each
-  referencing Fleet catches up on its own zero-occupancy boundary, not
-  simultaneously.
+- A member template's Active activation, or a pool PUT, mints one new pool
+  revision; every referencing Fleet catches up on the next cascade pass even
+  while occupied, and its live Generations keep their original pins.
+- After that catch-up an Idle Generation of the older Fleet revision is
+  retired and replaced from the current pool revision; a Busy one finishes its
+  job first; `member.max_runners` still counts it until it is released.
 - A capacity-only (non-routing) Fleet PUT on an occupied shared-pool Fleet is
   accepted without draining and retains the fleet's frozen `pool_revision`;
-  catch-up still happens only on the cascade's zero-occupancy boundary.
+  catch-up remains the cascade's job, never the PUT's.
 - Pool deletion is blocked while referenced; committed member rows stay
   resolvable for historical Generations.
 - New Fleet PUTs reject an inline `template_pool` and accept

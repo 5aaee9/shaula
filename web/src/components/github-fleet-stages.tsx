@@ -196,7 +196,8 @@ export function GitHubPlacementStage({
             )}
             <p className="text-muted-foreground text-sm">
               The pool defines members, weights and caps. Each member follows its template's latest
-              Active revision; this fleet catches up automatically when it drains.
+              Active revision. A pool change applies on the next pass: idle runners are replaced and
+              busy ones finish their job first.
             </p>
           </Field>
         }
