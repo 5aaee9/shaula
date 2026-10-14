@@ -185,3 +185,24 @@ pub(crate) fn generation_resource_name(generation_id: &str) -> String {
 }
 
 mod diagnostics;
+
+/// After a failed Create apply, before the Generation is handed to cleanup:
+/// anchor its bound state when it provably records the whole managed shape
+/// (spec 0010 §7). An unanchored Generation is quarantined at Destroy, so a
+/// storage hiccup here only keeps the old, safe outcome.
+pub(crate) async fn anchor_failed_create(lifecycle: &dyn LifecycleStore, generation_id: &str) {
+    match lifecycle
+        .generation_anchor_failed_create(generation_id)
+        .await
+    {
+        Ok(true) => {
+            tracing::info!(generation = %generation_id, "failed create state records the whole managed shape; cleanup can destroy it")
+        }
+        Ok(false) => {
+            tracing::info!(generation = %generation_id, "failed create left unanchored: no started apply, or its state lacks part of the managed shape")
+        }
+        Err(error) => {
+            tracing::warn!(generation = %generation_id, code = error.code.as_str(), "failed create anchor unavailable")
+        }
+    }
+}

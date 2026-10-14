@@ -78,11 +78,20 @@ impl SqliteStateBackend {
                 && lock.is_none()
         });
         tx.execute(sql("INSERT INTO lifecycle_fences(worker_attempt, generation_id, worker_epoch, process_identity, orphan_lock, outcome) VALUES (?, ?, ?, ?, ?, ?)", vec![record.worker_attempt.clone().into(), record.generation_id.clone().into(), record.worker_epoch.into(), record.process_identity.clone().into(), lock.into(), (if fenced { "fenced" } else { "unknown" }).into()])).await.map_err(unavailable)?;
+        // Only a cleanup this recovery would otherwise admit may anchor a
+        // failed Create: the fence proves no writer of the state remains.
+        let anchorable =
+            fenced && !preserve_evidence && !(record.create_started && !record.has_input);
         let complete_state = match state.snapshot(&tx).await {
             Ok(Some(snapshot)) => {
                 !state.create_started
-                    || super::create_proof::verified(&tx, &record.generation_id, &snapshot.document)
-                        .await?
+                    || super::create_proof::verified(
+                        &tx,
+                        &record.generation_id,
+                        &snapshot.document,
+                        anchorable,
+                    )
+                    .await?
             }
             _ => false,
         };

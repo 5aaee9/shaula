@@ -317,6 +317,10 @@ impl PoolCreate<'_> {
                     known,
                 );
                 TelemetryHandle::new().record(MetricOperation::IaC, MetricResult::Failed, 1);
+                if !known {
+                    crate::runner_operation::anchor_failed_create(self.lifecycle, generation_id)
+                        .await;
+                }
                 self.lifecycle
                     .generation_advance(
                         generation_id,

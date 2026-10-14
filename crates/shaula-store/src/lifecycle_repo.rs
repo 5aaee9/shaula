@@ -216,8 +216,8 @@ impl Store {
 
     /// The generation's ORIGINAL post-Create state identity
     /// `(lineage, serial)`, stored beside the result envelope (spec 0004
-    /// §5). Absent/corrupt identity returns `None` — the caller must
-    /// quarantine instead of reconstructing it.
+    /// §5), or the failed-Create anchor (§5.7). Absent/corrupt identity
+    /// returns `None` — the caller must quarantine instead of reconstructing it.
     pub(crate) async fn generation_state_identity(
         &self,
         id: &str,
@@ -225,8 +225,12 @@ impl Store {
         let Some(row) = self.generation_get(id).await? else {
             return Ok(None);
         };
-        let Some(json) = row.shaula_result_json else {
-            return Ok(None);
+        let json = match row.shaula_result_json {
+            Some(json) => json,
+            None => match self.failed_create_identity(id).await? {
+                Some(json) => json,
+                None => return Ok(None),
+            },
         };
         let value: serde_json::Value = serde_json::from_str(&json)
             .map_err(|e| StoreError::Corrupt(format!("generation result unreadable: {e}")))?;
@@ -239,6 +243,23 @@ impl Store {
             (Some(lineage), Some(serial)) if !lineage.is_empty() => Some((lineage, serial)),
             _ => None,
         })
+    }
+
+    async fn failed_create_identity(&self, id: &str) -> StoreResult<Option<String>> {
+        use sea_orm::{ConnectionTrait, Statement};
+        let row = self
+            .connection()
+            .query_one(Statement::from_sql_and_values(
+                sea_orm::DbBackend::Sqlite,
+                "SELECT failed_create_identity_json FROM runner_generations WHERE id = ?",
+                [id.into()],
+            ))
+            .await?;
+        Ok(row.and_then(|row| {
+            row.try_get("", "failed_create_identity_json")
+                .ok()
+                .flatten()
+        }))
     }
 
     /// Whether any Destroy operation row exists for this generation —

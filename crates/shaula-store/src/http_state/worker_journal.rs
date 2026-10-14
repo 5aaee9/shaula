@@ -115,7 +115,7 @@ impl WorkerJournal for SqliteWorkerJournal {
             return Err(StateError::Conflict);
         }
         if state.create_started {
-            if !super::create_proof::verified(&tx, &id, &snapshot.document).await? {
+            if !super::create_proof::verified(&tx, &id, &snapshot.document, false).await? {
                 return Err(StateError::Conflict);
             }
             let seen = tx

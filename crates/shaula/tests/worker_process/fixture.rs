@@ -31,8 +31,10 @@ pub struct Fixture {
     pub control_faults: Arc<super::faults::ControlFaults>,
     pub reaper_failures: Arc<std::sync::atomic::AtomicUsize>,
     pub control: Arc<SqliteControlPlane>,
+    pub admissions: Arc<WorkerAdmissions>,
     artifact: PathBuf,
     digest: String,
+    template: super::artifact::Template,
     db: sea_orm::DatabaseConnection,
     input: ShaulaInputEnvelope,
     pub sink: Arc<LedgerApplyIntentSink>,
@@ -42,9 +44,9 @@ pub struct Fixture {
 
 impl Fixture {
     pub async fn new() -> TestResult<Self> {
-        Self::with_orphan(false).await
+        Self::with_template(super::artifact::Template::Plain).await
     }
-    pub async fn with_orphan(orphan: bool) -> TestResult<Self> {
+    pub async fn with_template(template: super::artifact::Template) -> TestResult<Self> {
         let root = tempfile::tempdir()?;
         let work_root = root.path().join("runners");
         let artifact_root = root.path().join("artifacts");
@@ -52,7 +54,7 @@ impl Fixture {
         std::fs::create_dir_all(&artifact_root)?;
         let artifact = artifact_root.join("fixture");
         std::fs::create_dir(&artifact)?;
-        let digest = artifact_fixture(&artifact, orphan)?;
+        let (digest, manifest) = template.write(&artifact)?;
         let id = Uuid::new_v4();
         let workspace = work_root.join(id.to_string());
         std::fs::create_dir(&workspace)?;
@@ -64,6 +66,7 @@ impl Fixture {
         ))
         .await?;
         db.execute_unprepared("INSERT INTO fleets(key,incarnation,desired_revision,observed_revision,mutation_fence,deletion_marker,phase,tombstone,created_at,updated_at) VALUES ('fleet','incarnation',1,0,1,0,'Pending',0,1,1)").await?;
+        db.execute(Statement::from_sql_and_values(DbBackend::Sqlite, "INSERT INTO template_profile_revisions (profile_key,revision,artifact_digest,engine_ref,bindings_json,bindings_digest,state,manifest_json,created_at) VALUES ('template',1,?,'terraform','{}','bindings','Active',?,1)", vec![digest.clone().into(), manifest.into()])).await?;
         let backend = SqliteStateBackend::new(store.clone());
         backend.activate().await?;
         let admissions = Arc::new(WorkerAdmissions::new(4, 1)?);
@@ -103,7 +106,10 @@ impl Fixture {
         control
             .generation_advance(&id.to_string(), G::Creating, 2)
             .await?;
-        let journal = Arc::new(SqliteWorkerJournal::new(backend.clone(), admissions));
+        let journal = Arc::new(SqliteWorkerJournal::new(
+            backend.clone(),
+            admissions.clone(),
+        ));
         let faults = Arc::new(super::faults::StateFaults {
             backend: backend.clone(),
             reject_empty_writes: Default::default(),
@@ -175,8 +181,10 @@ impl Fixture {
             control_faults,
             reaper_failures,
             control,
+            admissions,
             artifact,
             digest,
+            template,
             db,
             input,
             sink,
@@ -191,7 +199,7 @@ impl Fixture {
             pinned_artifact_digest: self.digest.clone(),
             input: self.input.clone(),
             expected_bindings_digest: self.input.bindings_digest.clone(),
-            managed_shape: shape(),
+            managed_shape: self.template.shape(),
             environment: vec![],
             timeout: Duration::from_secs(30),
             apply_intent_sink: Some(self.sink.clone()),
@@ -200,20 +208,10 @@ impl Fixture {
         }
     }
     pub async fn create(&self) -> TestResult<TemplateCreateResult> {
-        self.workers
-            .prepare_create(
-                &self.workspace,
-                &self.artifact,
-                &self.digest,
-                Duration::from_secs(30),
-            )
-            .await
-            .map_err(|e| format!("prepare failed: {e:?}"))?;
         let result = self
-            .workers
-            .create(self.request())
-            .await
-            .map_err(|e| format!("create failed: {e:?}"))?;
+            .apply_create()
+            .await?
+            .map_err(|e| format!("create failed: {e}"))?;
         // Production supervisors persist this identity only after Create and
         // fixed bootstrap succeed. Recovery must not infer it from state.
         self.control
@@ -229,7 +227,36 @@ impl Fixture {
             .await?;
         Ok(result)
     }
+    /// Prepares and applies a Create; the inner error is the apply's own.
+    pub async fn apply_create(&self) -> TestResult<Result<TemplateCreateResult, String>> {
+        self.workers
+            .prepare_create(
+                &self.workspace,
+                &self.artifact,
+                &self.digest,
+                Duration::from_secs(30),
+            )
+            .await
+            .map_err(|e| format!("prepare failed: {e:?}"))?;
+        Ok(self
+            .workers
+            .create(self.request())
+            .await
+            .map_err(|e| format!("{e:?}")))
+    }
     pub async fn destroy(&self, result: &TemplateCreateResult) -> TestResult {
+        self.destroy_from(
+            result.provenance.clone(),
+            (result.state_lineage.clone(), result.state_serial),
+        )
+        .await
+    }
+    /// Destroys against an exact original provenance and state identity.
+    pub async fn destroy_from(
+        &self,
+        original_provenance: PlanProvenance,
+        (lineage, serial): (String, u64),
+    ) -> TestResult {
         self.db
             .execute(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
@@ -244,14 +271,14 @@ impl Fixture {
                 pinned_artifact_digest: self.digest.clone(),
                 generation_id: self.id.to_string(),
                 expected_bindings_digest: self.input.bindings_digest.clone(),
-                managed_shape: shape(),
+                managed_shape: self.template.shape(),
                 environment: vec![],
                 timeout: Duration::from_secs(30),
                 apply_intent_sink: Some(self.sink.clone()),
-                original_provenance: result.provenance.clone(),
+                original_provenance,
                 original_state: OriginalStateIdentity {
-                    lineage: result.state_lineage.clone(),
-                    serial: result.state_serial,
+                    lineage,
+                    serial,
                     allow_serial_advance: true,
                 },
             })
@@ -295,82 +322,13 @@ impl Fixture {
     }
     pub async fn close(self) -> TestResult {
         self.workers.shutdown(Duration::from_secs(1)).await?;
+        self.stop_server().await
+    }
+    /// After a simulated daemon restart the old `Workers` is gone: only the
+    /// state server remains to stop.
+    pub async fn stop_server(self) -> TestResult {
         let _ = self.stop.send(());
         self.server.await??;
         Ok(())
     }
-}
-
-fn shape() -> Vec<ManagedResourceRole> {
-    vec![ManagedResourceRole {
-        role: "runner".into(),
-        terraform_type: "terraform_data".into(),
-        exact_count: 1,
-    }]
-}
-
-fn artifact_fixture(path: &std::path::Path, orphan: bool) -> TestResult<String> {
-    std::fs::write(
-        path.join("profile.yaml"),
-        r#"api_version: shaula.io/template-profile/v1
-kind: RunnerTemplateProfile
-platform: aws
-runtime:
-  protocol: terraform-cli/v1
-  engine: terraform
-  root_module: .
-  required_version: ">= 1.9, < 2.0"
-bindings_contract: shaula.bindings.aws/v1
-vm_image_contract: shaula.aws-ami/v1
-schemas:
-  bindings: schemas/bindings.schema.json
-  parameters: schemas/parameters.schema.json
-managed_resource_shape:
-  - role: runner
-    terraform_type: terraform_data
-    exact_count: 1
-runner_image_digests: []
-runtime_policy_digest: sha256:fixture
-"#,
-    )?;
-    std::fs::write(path.join(".terraform.lock.hcl"), "")?;
-    std::fs::write(
-        path.join("main.tf"),
-        r#"terraform { required_version = "= 1.9.8" }
-variable "shaula" { type = any }
-resource "terraform_data" "runner" { input = var.shaula.generation.id }
-output "shaula_result" {
-  value = {
-    contract_version = 1
-    generation_id = var.shaula.generation.id
-    bindings_digest = var.shaula.bindings_digest
-    resources = [{ role = "runner", id = terraform_data.runner.id }]
-  }
-}
-"#,
-    )?;
-    if orphan {
-        let main = std::fs::read_to_string(path.join("main.tf"))?;
-        std::fs::write(
-            path.join("main.tf"),
-            main.replace(
-                "resource \"terraform_data\" \"runner\" { input = var.shaula.generation.id }",
-                r#"resource "terraform_data" "runner" {
-  input = var.shaula.generation.id
-  provisioner "local-exec" {
-    command = "setsid sh -c 'echo $$ > orphan.pid; exec sleep 300' </dev/null >/dev/null 2>&1 &"
-  }
-}"#,
-            ),
-        )?;
-    }
-    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    let mut archive = tar::Builder::new(encoder);
-    for name in ["profile.yaml", ".terraform.lock.hcl", "main.tf"] {
-        archive.append_path_with_name(path.join(name), name)?;
-    }
-    let bytes = archive.into_inner()?.finish()?;
-    std::fs::write(path.with_extension("tar.gz"), &bytes)?;
-    use sha2::{Digest, Sha256};
-    Ok(format!("sha256:{}", hex::encode(Sha256::digest(bytes))))
 }

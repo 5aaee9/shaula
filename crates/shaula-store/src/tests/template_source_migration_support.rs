@@ -244,6 +244,7 @@ pub(super) async fn retained_snapshot(store: &Store) -> TestResult<BTreeMap<Stri
                     | "provisioned_at"
                     | "expiry_requested_at"
                     | "resources_destroyed_at"
+                    | "failed_create_identity_json"
             ) {
                 columns.push(format!("quote(\"{}\")", name.replace('"', "\"\"")));
             }

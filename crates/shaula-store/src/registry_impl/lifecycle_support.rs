@@ -147,3 +147,34 @@ impl Store {
             .map_err(crate::store::StoreError::from)
     }
 }
+
+impl super::SqliteControlPlane {
+    /// A cleanup-only Worker's recovered state identity first, then the
+    /// retained Create identity (spec 0004 §5, §5.7).
+    pub(super) async fn state_identity_impl(
+        &self,
+        id: &str,
+    ) -> shaula_core::error::CoreResult<Option<(String, u64)>> {
+        if let Some(identity) = crate::http_state::SqliteStateBackend::new(self.store.clone())
+            .recovered_state_identity(id)
+            .await
+            .map_err(super::worker_error)?
+        {
+            return Ok(Some(identity));
+        }
+        self.store
+            .generation_state_identity(id)
+            .await
+            .map_err(super::core_err)
+    }
+
+    pub(super) async fn anchor_failed_create_impl(
+        &self,
+        id: &str,
+    ) -> shaula_core::error::CoreResult<bool> {
+        crate::http_state::SqliteStateBackend::new(self.store.clone())
+            .anchor_failed_create(id)
+            .await
+            .map_err(super::worker_error)
+    }
+}

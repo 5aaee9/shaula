@@ -271,17 +271,11 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
     }
 
     async fn generation_state_identity(&self, id: &str) -> CoreResult<Option<(String, u64)>> {
-        if let Some(identity) = crate::http_state::SqliteStateBackend::new(self.store.clone())
-            .recovered_state_identity(id)
-            .await
-            .map_err(super::worker_error)?
-        {
-            return Ok(Some(identity));
-        }
-        self.store
-            .generation_state_identity(id)
-            .await
-            .map_err(core_err)
+        self.state_identity_impl(id).await
+    }
+
+    async fn generation_anchor_failed_create(&self, id: &str) -> CoreResult<bool> {
+        self.anchor_failed_create_impl(id).await
     }
 
     async fn generation_destroy_attempted(&self, id: &str) -> CoreResult<bool> {

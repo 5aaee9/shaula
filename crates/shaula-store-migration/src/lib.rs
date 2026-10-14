@@ -34,6 +34,7 @@ pub mod m0028_query_indexes;
 pub mod m0029_generation_count_indexes;
 pub mod m0030_gitlab_pool;
 pub mod m0031_gitlab_jobs;
+pub mod m0032_failed_create_identity;
 
 use sea_orm_migration::prelude::*;
 
@@ -76,6 +77,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0029_generation_count_indexes::Migration),
             Box::new(m0030_gitlab_pool::Migration),
             Box::new(m0031_gitlab_jobs::Migration),
+            Box::new(m0032_failed_create_identity::Migration),
         ]
     }
 }

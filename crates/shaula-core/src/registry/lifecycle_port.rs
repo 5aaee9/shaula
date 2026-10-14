@@ -135,6 +135,13 @@ pub trait LifecycleStore:
     /// re-verifies at the effect boundary (spec 0004 §5). `None` means
     /// the Create never recorded one (corrupt; quarantine).
     async fn generation_state_identity(&self, id: &str) -> CoreResult<Option<(String, u64)>>;
+    /// After a failed Create apply: anchors the bound state's identity when
+    /// it records the template's whole managed shape (spec 0010 §7), so
+    /// Destroy can settle the Generation. `false` leaves it unanchored and a
+    /// later Destroy quarantines it, as before.
+    async fn generation_anchor_failed_create(&self, _id: &str) -> CoreResult<bool> {
+        Ok(false)
+    }
     /// Whether any Destroy operation was ever recorded for this
     /// generation: a retry attempt may see a serial advanced by our own
     /// prior partial apply, the first attempt must match exactly.

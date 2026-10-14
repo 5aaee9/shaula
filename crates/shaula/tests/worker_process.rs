@@ -1,8 +1,12 @@
 //! Requires an explicitly delegated cgroup and pinned real Terraform. These
 //! tests exercise the packaged binary's job role, not a fake Runtime adapter.
 #![cfg(target_os = "linux")]
+#[path = "worker_process/artifact.rs"]
+mod artifact;
 #[path = "worker_process/competition.rs"]
 mod competition;
+#[path = "worker_process/failed_create.rs"]
+mod failed_create;
 #[path = "worker_process/faults.rs"]
 mod faults;
 #[path = "worker_process/fixture.rs"]
@@ -126,7 +130,7 @@ async fn fenced_worker_replacement_restores_missing_workspace_without_create() -
 #[tokio::test]
 #[ignore = "requires SHAULA_TEST_CGROUP and SHAULA_TEST_TERRAFORM"]
 async fn killed_worker_with_detached_provider_descendant_is_not_a_fence() -> TestResult {
-    let fixture = Fixture::with_orphan(true).await?;
+    let fixture = Fixture::with_template(artifact::Template::Orphan).await?;
     let _ = fixture.create().await?;
     let identity = fixture
         .backend

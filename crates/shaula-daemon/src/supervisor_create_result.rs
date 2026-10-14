@@ -71,6 +71,8 @@ impl FleetSupervisor {
                 );
                 record_iac(MetricResult::Failed);
                 // Apply may have started: never re-apply; cleanup path.
+                crate::runner_operation::anchor_failed_create(self.store.as_ref(), generation_id)
+                    .await;
                 self.store
                     .generation_advance(
                         generation_id,

@@ -62,7 +62,8 @@ impl SqliteStateBackend {
         let snapshot = row.snapshot(tx).await?.ok_or(StateError::Unavailable)?;
         if proof.intent == PlanIntent::Destroy
             && row.create_started
-            && !super::create_proof::verified(tx, &proof.generation_id, &snapshot.document).await?
+            && !super::create_proof::verified(tx, &proof.generation_id, &snapshot.document, false)
+                .await?
         {
             return Err(StateError::Conflict);
         }
