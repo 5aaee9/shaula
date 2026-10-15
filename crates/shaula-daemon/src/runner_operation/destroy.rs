@@ -278,7 +278,20 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
             }
             Err(error) => {
                 record_iac(MetricResult::Failed);
-                tracing::warn!(generation = %id, "runner resource destroy failed; will retry");
+                // Phases are fixed codes (e.g. `destroy.plan`); without them a
+                // repeated refusal is indistinguishable from a provider error.
+                let (kind, phase) = match &error {
+                    shaula_core::ports::TemplateOutcomeError::PlanFailed { phase } => {
+                        ("plan_failed", phase.as_str())
+                    }
+                    shaula_core::ports::TemplateOutcomeError::ExecutionFailed { phase } => {
+                        ("execution_failed", phase.as_str())
+                    }
+                    shaula_core::ports::TemplateOutcomeError::StateUnavailable { phase } => {
+                        ("state_unavailable", phase.as_str())
+                    }
+                };
+                tracing::warn!(generation = %id, kind, phase, "runner resource destroy failed; will retry");
                 Ok(ResourceDestroy::Failed {
                     at,
                     known_failure: matches!(
