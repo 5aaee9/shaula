@@ -53,8 +53,10 @@ impl SensitiveValues {
                 values.add(vm.token());
             }
         }
-        for (_, value) in env {
-            values.add(value);
+        for (name, value) in env {
+            if !crate::http_backend::PUBLIC_SETTINGS.contains(&name.as_str()) {
+                values.add(value);
+            }
         }
         values.values.sort_by_key(|v| std::cmp::Reverse(v.len()));
         values.values.dedup_by(|a, b| a.as_str() == b.as_str());
@@ -262,33 +264,55 @@ mod tests {
         Ok(())
     }
 
-    // molecule's Proxmox profile: numeric sizing made every `1`/`2` in plan
-    // output, resource IDs and ISO digests read `[REDACTED]`.
+    // molecule's Proxmox profile: numeric sizing and the HTTP backend's fixed
+    // retry/method settings made every `1`/`2`/`5` in plan output, provider
+    // versions, resource IDs and ISO digests read `[REDACTED]`.
     #[test]
-    fn numeric_inputs_are_not_redacted_but_string_inputs_still_are() {
+    fn numeric_inputs_and_public_backend_settings_are_not_redacted() {
         let token = "root@pam!shaula=0b9c2a1e-canary";
         let input = serde_json::json!({"shaula": {
             "bindings": {"proxmox_token": token, "proxmox_vmid_begin": 9000},
             "parameters": {"cpu_cores": 2, "memory_mb": 4096, "threads": "8"},
             "jit_config": STANDARD.encode(r#"{"runner_id":1,"secret":"jit-canary"}"#),
         }});
+        let address = "http://127.0.0.1:9/state/address-canary";
+        let mut env: Vec<(String, String)> = [
+            ("TF_HTTP_ADDRESS", address),
+            ("TF_HTTP_LOCK_ADDRESS", address),
+            ("TF_HTTP_UNLOCK_ADDRESS", address),
+            ("TF_HTTP_UPDATE_METHOD", "POST"),
+            ("TF_HTTP_LOCK_METHOD", "LOCK"),
+            ("TF_HTTP_UNLOCK_METHOD", "UNLOCK"),
+            ("TF_HTTP_USERNAME", "shaula-state"),
+            ("TF_HTTP_PASSWORD", "password-canary"),
+            ("TF_HTTP_RETRY_MAX", "2"),
+            ("TF_HTTP_RETRY_WAIT_MIN", "1"),
+            ("TF_HTTP_RETRY_WAIT_MAX", "5"),
+        ]
+        .map(|(name, value)| (name.to_string(), value.to_string()))
+        .into();
+        // A provider-supplied variable is not a public setting even when tiny.
+        env.push(("PROVIDER_PIN".into(), "pin-canary".into()));
         let mut sanitizer = Sanitizer::new(std::sync::Arc::new(SensitiveValues::from_input(
-            &input,
-            &[],
+            &input, &env,
         )));
-        let line =
-            b"proxmox_qemu_vm.runner: Creation complete after 2s [id=tyo-01-generic/qemu/9001]\n";
-        assert_eq!(sanitizer.feed(line)[0].0.as_bytes(), line);
-        assert_eq!(
-            sanitizer.feed(b"Plan: 0 to add, 0 to change, 2 to destroy.\n")[0].0,
-            "Plan: 0 to add, 0 to change, 2 to destroy.\n"
-        );
+        for line in [
+            "proxmox_qemu_vm.runner: Creation complete after 2s [id=tyo-01-generic/qemu/9001]\n",
+            "Plan: 0 to add, 0 to change, 2 to destroy.\n",
+            "- Installed indexyz/proxmox v0.5.1 (self-signed, key ID BC71377E49D4FF7E)\n",
+            "Releasing state lock (POST/LOCK/UNLOCK as shaula-state). This may take a few moments...\n",
+        ] {
+            assert_eq!(sanitizer.feed(line.as_bytes())[0].0, line);
+        }
         for secret in [
             token.to_string(),
             STANDARD.encode(token),
             hex::encode(token),
             "jit-canary".into(),
             "threads 8".into(),
+            "password-canary".into(),
+            address.into(),
+            "pin-canary".into(),
         ] {
             let output = sanitizer.feed(format!("Error: echoed {secret}\n").as_bytes());
             assert!(output[0].0.contains("[REDACTED]"), "{secret}");

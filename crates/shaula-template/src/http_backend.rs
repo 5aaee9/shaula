@@ -11,6 +11,17 @@ use uuid::Uuid;
 
 pub(crate) const BACKEND_FILE: &str = "shaula.backend.tf";
 const BACKEND_HCL: &[u8] = b"terraform {\n  backend \"http\" {}\n}\n";
+/// Fixed, non-secret backend settings. Redacting their tiny values (`1`, `2`,
+/// `5`, `POST`) in place erased digits and words across every operation log.
+pub(crate) const PUBLIC_SETTINGS: [&str; 7] = [
+    "TF_HTTP_UPDATE_METHOD",
+    "TF_HTTP_LOCK_METHOD",
+    "TF_HTTP_UNLOCK_METHOD",
+    "TF_HTTP_USERNAME",
+    "TF_HTTP_RETRY_MAX",
+    "TF_HTTP_RETRY_WAIT_MIN",
+    "TF_HTTP_RETRY_WAIT_MAX",
+];
 
 #[derive(Debug, Clone)]
 pub struct HttpBackendConfig {
@@ -58,6 +69,7 @@ impl HttpBackendConfig {
 
     /// The resulting vector is a secret handoff to env_clear() Terraform
     /// children only. The control capability is never an input to this method.
+    /// Every value set here except [`PUBLIC_SETTINGS`] is redacted from logs.
     pub fn environment(
         &self,
         provider_env: &[(String, String)],
