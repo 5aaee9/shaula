@@ -149,10 +149,12 @@ fn reap(work: &Path, artifacts: &Path, request: &WorkspaceCleanup) -> StateResul
                         })
             }
             _ if name.contains("tfstate") || name.ends_with(".tfstate.backup") => false,
-            _ if name.starts_with(".terraform/providers/") => path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .is_some_and(|s| s.starts_with("terraform-provider-") || s == "LICENSE.txt"),
+            _ if name.starts_with(".terraform/providers/") => {
+                path.file_name()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|s| s.starts_with("terraform-provider-") || s == "LICENSE.txt")
+                    || path.parent().is_some_and(provider_package_directory)
+            }
             _ => {
                 std::fs::metadata(request.artifact.join(path))
                     .is_ok_and(|m| m.is_file() && m.len() == *size)
@@ -187,9 +189,19 @@ fn reap(work: &Path, artifacts: &Path, request: &WorkspaceCleanup) -> StateResul
 }
 
 fn provider_cache_directory(path: &Path) -> bool {
+    provider_directory(path, 2..=6)
+}
+
+// `.terraform/providers/registry.terraform.io/<ns>/<type>/<version>/<os_arch>`:
+// installed provider packages ship README/CHANGELOG/LICENSE beside the binary.
+fn provider_package_directory(path: &Path) -> bool {
+    provider_directory(path, 7..=7)
+}
+
+fn provider_directory(path: &Path, depth: std::ops::RangeInclusive<usize>) -> bool {
     let components: Vec<_> = path.iter().filter_map(|p| p.to_str()).collect();
-    components.len() >= 2
-        && components.len() <= 6
+    components.len() == path.iter().count()
+        && depth.contains(&components.len())
         && components[..2] == [".terraform", "providers"]
         && (components.len() < 3 || components[2] == "registry.terraform.io")
         && components[2..].iter().all(|p| {

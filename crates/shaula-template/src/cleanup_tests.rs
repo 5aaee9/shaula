@@ -161,3 +161,53 @@ fn cleanup_does_not_follow_redirected_paths() -> TestResult {
     assert_eq!(std::fs::read(outside.join("keep"))?, b"evidence");
     Ok(())
 }
+
+// Real provider packages (e.g. indexyz/proxmox 0.5.1) ship docs beside the
+// binary; a package file must reap, a misplaced copy must not.
+#[test]
+fn cleanup_reaps_provider_package_docs_only_at_package_depth() -> TestResult {
+    let package = ".terraform/providers/registry.terraform.io/indexyz/proxmox/0.5.1/linux_amd64";
+    for (relative, expected) in [
+        (format!("{package}/README.md"), CleanupOutcome::Reaped),
+        (format!("{package}/CHANGELOG.md"), CleanupOutcome::Reaped),
+        (format!("{package}/LICENSE"), CleanupOutcome::Reaped),
+        (
+            format!("{package}/terraform.tfstate"),
+            CleanupOutcome::Retained,
+        ),
+        (
+            format!("{package}/nested/README.md"),
+            CleanupOutcome::Retained,
+        ),
+        (
+            ".terraform/providers/README.md".into(),
+            CleanupOutcome::Retained,
+        ),
+        (
+            ".terraform/providers/registry.terraform.io/indexyz/proxmox/0.5.1/README.md".into(),
+            CleanupOutcome::Retained,
+        ),
+        (
+            ".terraform/providers/example.com/indexyz/proxmox/0.5.1/linux_amd64/README.md".into(),
+            CleanupOutcome::Retained,
+        ),
+    ] {
+        let f = Fixture::new()?;
+        let binary = f
+            .request
+            .workspace
+            .join(package)
+            .join("terraform-provider-proxmox_v0.5.1");
+        std::fs::create_dir_all(binary.parent().ok_or("package")?)?;
+        std::fs::write(&binary, b"provider")?;
+        let path = f.request.workspace.join(&relative);
+        std::fs::create_dir_all(path.parent().ok_or("parent")?)?;
+        std::fs::write(&path, b"doc")?;
+        assert_eq!(f.reap()?, expected, "{relative}");
+        assert_eq!(
+            f.request.workspace.exists(),
+            expected == CleanupOutcome::Retained
+        );
+    }
+    Ok(())
+}

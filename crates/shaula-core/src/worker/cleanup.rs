@@ -10,7 +10,7 @@ pub struct WorkspaceCleanup {
     pub retained_input_digest: Option<String>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CleanupOutcome {
     Reaped,
     Retained,

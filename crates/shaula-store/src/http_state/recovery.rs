@@ -81,7 +81,7 @@ impl SqliteStateBackend {
         // Only a cleanup this recovery would otherwise admit may anchor a
         // failed Create: the fence proves no writer of the state remains.
         let anchorable =
-            fenced && !preserve_evidence && !(record.create_started && !record.has_input);
+            fenced && !preserve_evidence && (!record.create_started || record.has_input);
         let complete_state = match state.snapshot(&tx).await {
             Ok(Some(snapshot)) => {
                 !state.create_started
