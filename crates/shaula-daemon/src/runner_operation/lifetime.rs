@@ -57,6 +57,12 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
         }
         diagnostic.reason(Code::CleanupHardLifetime, StageId::Intent, false);
         let lifetime = self.lifecycle.generation_lifetime(id).await?;
+        if lifetime.resources_destroyed_at.is_none()
+            && generation.state == G::DestroyPending
+            && !self.destroy_backoff.due(id, now)
+        {
+            return Ok(DestroyOutcome::Pending);
+        }
         if lifetime.resources_destroyed_at.is_none() {
             tracing::warn!(fleet = %generation.fleet_key, generation = %id,
                 "runner maximum lifetime reached; terminating resources even if a job is running");

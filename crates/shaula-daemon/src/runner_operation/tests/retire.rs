@@ -230,7 +230,10 @@ async fn failed_resource_destroy_resumes_without_repeating_registration_removal(
 
         fixture.runtime.destroy_ok.store(true, Ordering::SeqCst);
         let generation = fixture.generation().await?;
-        let outcome = fixture.operation().retire(&generation, NOW).await?;
+        let outcome = fixture
+            .operation()
+            .retire(&generation, NOW + 15_000)
+            .await?;
         assert_eq!(outcome, DestroyOutcome::Destroyed, "{backend:?}");
         assert_eq!(
             (fixture.removals(), fixture.destroys()),

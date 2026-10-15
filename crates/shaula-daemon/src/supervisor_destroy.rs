@@ -24,6 +24,7 @@ impl FleetSupervisor {
             operation_timeout: self.config.operation_timeout,
             apply_intent: &self.config.apply_intent_sink,
             provider: shaula_core::fleet::FleetProviderKind::Github,
+            destroy_backoff: &self.destroy_backoff,
             registrations: GithubRegistrations {
                 fleet_key: &self.config.fleet_key,
                 lifecycle: self.store.as_ref(),

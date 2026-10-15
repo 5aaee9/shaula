@@ -21,6 +21,7 @@ impl ForgejoPoolSupervisor {
                 operation_timeout: self.operation_timeout,
                 apply_intent: &self.apply_intent_sink,
                 provider: shaula_core::fleet::FleetProviderKind::Forgejo,
+                destroy_backoff: &self.destroy_backoff,
                 registrations: ForgejoRegistrations {
                     fleet_key: &self.fleet_key,
                     guard: &self.guard,

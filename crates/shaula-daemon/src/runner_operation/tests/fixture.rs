@@ -90,6 +90,7 @@ pub(super) struct Fixture {
     apply_intent: Arc<dyn ApplyIntentSink>,
     revision_clients: HashMap<(String, i64), Arc<dyn GitHubAccessPort>>,
     labels: Vec<String>,
+    destroy_backoff: crate::runner_operation::DestroyBackoff,
 }
 
 pub(super) fn digest() -> String {
@@ -165,6 +166,7 @@ impl Fixture {
         Ok(Self {
             backend,
             _directory: directory,
+            destroy_backoff: Default::default(),
             artifact_root,
             store,
             github_port: github.clone(),
@@ -213,6 +215,7 @@ impl Fixture {
                 Backend::Github => shaula_core::fleet::FleetProviderKind::Github,
                 Backend::Forgejo => shaula_core::fleet::FleetProviderKind::Forgejo,
             },
+            destroy_backoff: &self.destroy_backoff,
             registrations,
         }
     }

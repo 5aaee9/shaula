@@ -172,7 +172,8 @@ async fn successful_destroy_does_not_complete_an_earlier_uncertain_attempt() {
         .unwrap();
     assert_eq!(before.len(), 1);
     assert_eq!(before[0].kind, "Destroy");
-    assert_eq!(supervisor.tick(50).await.unwrap().destroyed, 1);
+    // The uncertain destroy backs off 15s before its retry.
+    assert_eq!(supervisor.tick(15_040).await.unwrap().destroyed, 1);
     let after = harness
         .store
         .operations_open_for_generation(&generation.id)

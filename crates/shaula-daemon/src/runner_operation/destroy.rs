@@ -47,6 +47,9 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
             // The resource-first Runner Maximum Lifetime path owns both checkpoints.
             return Ok(DestroyOutcome::Pending);
         }
+        if generation.state == G::DestroyPending && !self.destroy_backoff.due(id, now) {
+            return Ok(DestroyOutcome::Pending);
+        }
         let create_started = self.create_started(id).await?;
         let mut state = generation.state;
         let rank = chain_rank(state).ok_or_else(|| cannot_destroy(state))?;
@@ -273,6 +276,7 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
         match result {
             Ok(_) => {
                 record_iac(MetricResult::Ok);
+                self.destroy_backoff.clear(id);
                 apply_intent.complete(self.lifecycle, at).await?;
                 Ok(ResourceDestroy::Destroyed { at })
             }
@@ -291,7 +295,8 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
                         ("state_unavailable", phase.as_str())
                     }
                 };
-                tracing::warn!(generation = %id, kind, phase, "runner resource destroy failed; will retry");
+                let retry_in_ms = self.destroy_backoff.failed(id, at);
+                tracing::warn!(generation = %id, kind, phase, retry_in_ms, "runner resource destroy failed; will retry");
                 Ok(ResourceDestroy::Failed {
                     at,
                     known_failure: matches!(

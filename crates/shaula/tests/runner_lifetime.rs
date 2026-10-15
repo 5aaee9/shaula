@@ -68,7 +68,9 @@ async fn hard_timeout_retries_failed_resource_destruction_without_removing_runne
     assert_eq!(f.state().await?, G::DestroyPending);
     assert_eq!(f.github.removals.load(Ordering::SeqCst), 0);
     f.runtime.fail.store(false, Ordering::SeqCst);
-    assert_eq!(supervisor.tick(11_001).await?.destroyed, 1);
+    // The failed destroy backs off 15s before its first retry.
+    assert_eq!(supervisor.tick(11_001).await?.destroyed, 0);
+    assert_eq!(supervisor.tick(26_000).await?.destroyed, 1);
     assert_eq!(f.state().await?, G::Destroyed);
     assert_eq!(f.runtime.destroys.load(Ordering::SeqCst), 2);
     Ok(())

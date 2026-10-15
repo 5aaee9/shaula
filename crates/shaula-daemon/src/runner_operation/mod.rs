@@ -7,6 +7,7 @@
 //! returns `Err`/[`DestroyOutcome::Pending`] and retries on a later tick; missing
 //! proof quarantines; one Generation's failure never aborts a whole pass.
 
+mod backoff;
 mod destroy;
 pub(crate) mod forgejo;
 pub(crate) mod github;
@@ -24,6 +25,8 @@ use shaula_core::fleet::FleetProviderKind;
 use shaula_core::lifecycle::GenerationState;
 use shaula_core::ports::{ApplyIntentSink, Clock, TemplateRuntimePort};
 use shaula_core::registry::{ControlPlaneStore, GenerationRecord, LifecycleStore};
+
+pub(crate) use backoff::DestroyBackoff;
 
 /// Verdict of one Runner Registration question asked across the Runner
 /// Backend seam.
@@ -135,6 +138,7 @@ pub(crate) struct RunnerOperation<'a, R> {
     pub operation_timeout: Duration,
     pub apply_intent: &'a Arc<dyn ApplyIntentSink>,
     pub provider: FleetProviderKind,
+    pub destroy_backoff: &'a DestroyBackoff,
     pub registrations: R,
 }
 
@@ -160,6 +164,7 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
 
     async fn quarantine(&self, id: &str, now: i64, reason: &str) -> CoreResult<DestroyOutcome> {
         tracing::error!(generation = %id, reason, "safe destroy cannot be proven; quarantining");
+        self.destroy_backoff.clear(id);
         self.lifecycle
             .generation_advance(id, GenerationState::Quarantined, now)
             .await?;

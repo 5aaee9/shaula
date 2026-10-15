@@ -28,6 +28,7 @@ pub struct FleetSupervisor {
     runtime_guard: Option<shaula_core::registry::FleetRuntimeGuard>,
     listener: Option<Arc<crate::listener::FleetListener>>,
     setup_info_issuer: Option<Arc<dyn shaula_core::setup_info::SetupInfoIssuer>>,
+    destroy_backoff: crate::runner_operation::DestroyBackoff,
 }
 
 impl FleetSupervisor {

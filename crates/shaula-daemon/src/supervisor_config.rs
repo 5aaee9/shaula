@@ -54,6 +54,7 @@ impl FleetSupervisor {
             runtime_guard: None,
             listener: None,
             setup_info_issuer: None,
+            destroy_backoff: Default::default(),
         }
     }
 
