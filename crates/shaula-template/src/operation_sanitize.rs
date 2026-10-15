@@ -113,7 +113,15 @@ impl SensitiveValues {
             self.exhausted = true;
             return;
         }
-        for line in text.lines().filter(|line| !line.is_empty()) {
+        // A 1–3 character value or a boolean word cannot be a credential, and
+        // redacting it in place erased every `1`/`true` in the log (GitHub JIT
+        // `.runner` carries `"PoolId":"1"` and `"Ephemeral":"True"`).
+        let trivial = |line: &str| {
+            line.chars().count() < 4
+                || line.eq_ignore_ascii_case("true")
+                || line.eq_ignore_ascii_case("false")
+        };
+        for line in text.lines().filter(|line| !trivial(line)) {
             if line.len() <= RECORD_LIMIT {
                 self.insert(line.to_string());
                 self.insert(STANDARD.encode(line));
@@ -264,16 +272,22 @@ mod tests {
         Ok(())
     }
 
-    // molecule's Proxmox profile: numeric sizing and the HTTP backend's fixed
-    // retry/method settings made every `1`/`2`/`5` in plan output, provider
-    // versions, resource IDs and ISO digests read `[REDACTED]`.
+    // molecule's Proxmox profile: numeric sizing, the HTTP backend's fixed
+    // retry/method settings and GitHub JIT `.runner` fields (`"PoolId":"1"`,
+    // `"Ephemeral":"True"`) made every `1`/`2`/`5`/`true` in plan output,
+    // provider versions, resource IDs and ISO digests read `[REDACTED]`.
     #[test]
     fn numeric_inputs_and_public_backend_settings_are_not_redacted() {
         let token = "root@pam!shaula=0b9c2a1e-canary";
+        let runner = r#"{"PoolId":"1","RunnerScaleSetId":"1","Ephemeral":"True","UseV2Flow":"true","AgentName":"runner-canary"}"#;
+        let jit = serde_json::json!({
+            ".runner": STANDARD.encode(runner),
+            ".credentials_rsaparams": STANDARD.encode(r#"{"d":"jit-canary"}"#),
+        });
         let input = serde_json::json!({"shaula": {
             "bindings": {"proxmox_token": token, "proxmox_vmid_begin": 9000},
-            "parameters": {"cpu_cores": 2, "memory_mb": 4096, "threads": "8"},
-            "jit_config": STANDARD.encode(r#"{"runner_id":1,"secret":"jit-canary"}"#),
+            "parameters": {"cpu_cores": 2, "memory_mb": 4096, "threads": "8", "zone": "zone"},
+            "jit_config": STANDARD.encode(jit.to_string()),
         }});
         let address = "http://127.0.0.1:9/state/address-canary";
         let mut env: Vec<(String, String)> = [
@@ -301,6 +315,8 @@ mod tests {
             "Plan: 0 to add, 0 to change, 2 to destroy.\n",
             "- Installed indexyz/proxmox v0.5.1 (self-signed, key ID BC71377E49D4FF7E)\n",
             "Releasing state lock (POST/LOCK/UNLOCK as shaula-state). This may take a few moments...\n",
+            "      + enabled = true\n",
+            "      ~ ephemeral = False -> True (threads 8)\n",
         ] {
             assert_eq!(sanitizer.feed(line.as_bytes())[0].0, line);
         }
@@ -309,7 +325,8 @@ mod tests {
             STANDARD.encode(token),
             hex::encode(token),
             "jit-canary".into(),
-            "threads 8".into(),
+            "runner-canary".into(),
+            "zone".into(),
             "password-canary".into(),
             address.into(),
             "pin-canary".into(),
