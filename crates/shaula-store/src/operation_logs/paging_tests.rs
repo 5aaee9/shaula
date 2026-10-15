@@ -124,15 +124,26 @@ async fn metadata_retention_protects_exact_runner_candidates_but_not_a_whole_bus
         ))
         .await?;
     store.connection().execute(Statement::from_sql_and_values(DbBackend::Sqlite,
-        "INSERT INTO workflow_generation_identity(generation_id,scope_key,fleet_incarnation,github_runner_id) VALUES(?,'scope','original',7)",[generation.into()])).await?;
+        "INSERT INTO workflow_generation_identity(generation_id,scope_key,fleet_incarnation,github_runner_id) VALUES(?,'scope','original',7)",[generation.clone().into()])).await?;
     store.connection().execute(Statement::from_sql_and_values(DbBackend::Sqlite,
         "INSERT INTO workflow_jobs(id,scope_key,fleet_key,fleet_incarnation,scale_set_id,protocol_job_id,summary_json,status,created_at,updated_at) VALUES('job','scope','fleet','original',1,'job','{}','completed',1,?)",[super::now().into()])).await?;
     store.connection().execute_unprepared("INSERT INTO workflow_job_observations(id,scope_key,job_record_id,protocol_job_id,runner_request_id,runner_id,data_json,observed_at) VALUES('observation','scope','job','job',1,7,'{}',1)").await?;
     archive.maintenance().await?;
     assert!(archive.load(&id).await.is_ok());
+    // A recent observation naming the generation protects it without the runner match.
     store
         .connection()
-        .execute_unprepared("UPDATE workflow_job_observations SET runner_id=8")
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE workflow_job_observations SET runner_id=8, data_json=json_object('generation_id',?)",
+            [generation.into()],
+        ))
+        .await?;
+    archive.maintenance().await?;
+    assert!(archive.load(&id).await.is_ok());
+    store
+        .connection()
+        .execute_unprepared("UPDATE workflow_job_observations SET data_json='{}'")
         .await?;
     archive.maintenance().await?;
     assert!(archive.load(&id).await.is_err());

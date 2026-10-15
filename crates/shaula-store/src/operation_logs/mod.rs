@@ -149,7 +149,10 @@ impl OperationLogArchive {
         let cutoff =
             now().saturating_sub(i64::from(self.config.metadata_retention_days) * 86_400_000);
         self.store.connection().execute(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "DELETE FROM operation_log_invocations WHERE sealed_at<? AND retained_bytes=0 AND NOT EXISTS (SELECT 1 FROM runner_generations g WHERE g.id=operation_log_invocations.generation_id AND (g.state!='Destroyed' OR g.updated_at>=?)) AND NOT EXISTS (SELECT 1 FROM workflow_job_observations o JOIN workflow_jobs j ON j.id=o.job_record_id LEFT JOIN workflow_generation_identity i ON i.generation_id=operation_log_invocations.generation_id WHERE j.updated_at>=? AND (json_extract(o.data_json,'$.generation_id')=operation_log_invocations.generation_id OR (i.scope_key=o.scope_key AND i.github_runner_id=o.runner_id)))",
+            // Materialize the protected set once: a per-invocation scan of every
+            // recent observation took 30s+ on production volumes, holding the
+            // write lock long after the caller's timeout dropped the future.
+            "WITH recent AS MATERIALIZED (SELECT json_extract(o.data_json,'$.generation_id') AS gid, o.scope_key, o.runner_id FROM workflow_job_observations o JOIN workflow_jobs j ON j.id=o.job_record_id WHERE j.updated_at>=?), protected AS MATERIALIZED (SELECT gid FROM recent WHERE gid IS NOT NULL UNION SELECT i.generation_id FROM workflow_generation_identity i JOIN recent r ON i.scope_key=r.scope_key AND i.github_runner_id=r.runner_id) DELETE FROM operation_log_invocations WHERE sealed_at<? AND retained_bytes=0 AND NOT EXISTS (SELECT 1 FROM runner_generations g WHERE g.id=operation_log_invocations.generation_id AND (g.state!='Destroyed' OR g.updated_at>=?)) AND NOT EXISTS (SELECT 1 FROM protected p WHERE p.gid=operation_log_invocations.generation_id)",
             [cutoff.into(),cutoff.into(),cutoff.into()]
         )).await.map_err(|_| unavailable())?;
         Ok(())
