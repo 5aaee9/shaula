@@ -30,7 +30,7 @@ impl SensitiveValues {
 
     pub(crate) fn from_input(value: &Value, env: &[(String, String)]) -> Self {
         let mut values = Self::default();
-        // All input bindings/parameters are treated conservatively as sensitive.
+        // All string input bindings/parameters are treated conservatively as sensitive.
         if let Some(input) = value.get("shaula").or(Some(value)) {
             for key in [
                 "jit_config",
@@ -96,7 +96,9 @@ impl SensitiveValues {
                     self.collect(value, depth + 1);
                 }
             }
-            Value::Number(value) => self.add(&value.to_string()),
+            // Numbers are sizing/IDs, never credentials; redacting `2` in place
+            // erased every digit of plan output, IDs and digests. Credentials
+            // are strings and stay conservatively redacted above.
             _ => {}
         }
     }
@@ -258,6 +260,40 @@ mod tests {
             }
         }
         Ok(())
+    }
+
+    // molecule's Proxmox profile: numeric sizing made every `1`/`2` in plan
+    // output, resource IDs and ISO digests read `[REDACTED]`.
+    #[test]
+    fn numeric_inputs_are_not_redacted_but_string_inputs_still_are() {
+        let token = "root@pam!shaula=0b9c2a1e-canary";
+        let input = serde_json::json!({"shaula": {
+            "bindings": {"proxmox_token": token, "proxmox_vmid_begin": 9000},
+            "parameters": {"cpu_cores": 2, "memory_mb": 4096, "threads": "8"},
+            "jit_config": STANDARD.encode(r#"{"runner_id":1,"secret":"jit-canary"}"#),
+        }});
+        let mut sanitizer = Sanitizer::new(std::sync::Arc::new(SensitiveValues::from_input(
+            &input,
+            &[],
+        )));
+        let line =
+            b"proxmox_qemu_vm.runner: Creation complete after 2s [id=tyo-01-generic/qemu/9001]\n";
+        assert_eq!(sanitizer.feed(line)[0].0.as_bytes(), line);
+        assert_eq!(
+            sanitizer.feed(b"Plan: 0 to add, 0 to change, 2 to destroy.\n")[0].0,
+            "Plan: 0 to add, 0 to change, 2 to destroy.\n"
+        );
+        for secret in [
+            token.to_string(),
+            STANDARD.encode(token),
+            hex::encode(token),
+            "jit-canary".into(),
+            "threads 8".into(),
+        ] {
+            let output = sanitizer.feed(format!("Error: echoed {secret}\n").as_bytes());
+            assert!(output[0].0.contains("[REDACTED]"), "{secret}");
+            assert!(!output[0].0.contains("canary"), "{secret}");
+        }
     }
 
     #[test]
