@@ -2,6 +2,7 @@ use super::{invalid, unavailable, OperationLogArchive};
 use sea_orm::{ConnectionTrait, DbBackend, QueryResult, Statement};
 use sha2::{Digest, Sha256};
 use shaula_core::error::CoreResult;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use tokio::io::AsyncWriteExt;
@@ -130,80 +131,106 @@ impl OperationLogArchive {
         Ok(())
     }
 
+    // One blocking walk: per-entry tokio::fs hops cost seconds at ~30k files
+    // and pushed maintenance past its 5s budget on every tick.
     pub(super) async fn disk_bytes(&self) -> CoreResult<u64> {
-        let mut used = 0u64;
-        let mut directories = tokio::fs::read_dir(&self.root)
+        let root = self.root.clone();
+        tokio::task::spawn_blocking(move || scan_bytes(&root))
             .await
-            .map_err(|_| unavailable())?;
-        while let Some(dir) = directories.next_entry().await.map_err(|_| unavailable())? {
-            let meta = dir.metadata().await.map_err(|_| unavailable())?;
-            if !dir.file_type().await.map_err(|_| unavailable())?.is_dir() {
-                return Err(unavailable());
-            }
-            if !meta.is_dir() {
-                return Err(unavailable());
-            }
-            let mut files = tokio::fs::read_dir(dir.path())
-                .await
-                .map_err(|_| unavailable())?;
-            while let Some(file) = files.next_entry().await.map_err(|_| unavailable())? {
-                if !file.file_type().await.map_err(|_| unavailable())?.is_file() {
-                    return Err(unavailable());
-                }
-                used = used.saturating_add(file.metadata().await.map_err(|_| unavailable())?.len());
-            }
-        }
-        Ok(used)
+            .map_err(|_| unavailable())?
     }
 
     pub(super) async fn reap_orphans(&self) -> CoreResult<()> {
-        let mut directories = tokio::fs::read_dir(&self.root)
+        // Callers hold the writer lock, so this snapshot cannot miss a publish.
+        let rows = self
+            .store
+            .connection()
+            .query_all(Statement::from_string(
+                DbBackend::Sqlite,
+                "SELECT invocation_id,file_name FROM operation_log_chunks",
+            ))
             .await
             .map_err(|_| unavailable())?;
-        while let Some(dir) = directories.next_entry().await.map_err(|_| unavailable())? {
-            if !dir.file_type().await.map_err(|_| unavailable())?.is_dir() {
+        let mut registered: HashMap<String, HashSet<String>> = HashMap::new();
+        for row in rows {
+            let id: String = row
+                .try_get("", "invocation_id")
+                .map_err(|_| unavailable())?;
+            let name: String = row.try_get("", "file_name").map_err(|_| unavailable())?;
+            registered.entry(id).or_default().insert(name);
+        }
+        let root = self.root.clone();
+        let (removed, outcome) = tokio::task::spawn_blocking(move || {
+            let mut removed = 0u64;
+            let outcome = reap_orphan_files(&root, &registered, &mut removed);
+            (removed, outcome)
+        })
+        .await
+        .map_err(|_| unavailable())?;
+        self.disk_usage
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |used| {
+                Some(used.saturating_sub(removed))
+            })
+            .map_err(|_| unavailable())?;
+        outcome
+    }
+}
+
+fn scan_bytes(root: &Path) -> CoreResult<u64> {
+    let mut used = 0u64;
+    for dir in std::fs::read_dir(root).map_err(|_| unavailable())? {
+        let dir = dir.map_err(|_| unavailable())?;
+        if !dir.file_type().map_err(|_| unavailable())?.is_dir()
+            || !dir.metadata().map_err(|_| unavailable())?.is_dir()
+        {
+            return Err(unavailable());
+        }
+        for file in std::fs::read_dir(dir.path()).map_err(|_| unavailable())? {
+            let file = file.map_err(|_| unavailable())?;
+            if !file.file_type().map_err(|_| unavailable())?.is_file() {
                 return Err(unavailable());
             }
-            let id = dir.file_name().to_string_lossy().into_owned();
-            uuid::Uuid::parse_str(&id).map_err(|_| unavailable())?;
-            let registered = self
-                .chunk_rows(&id)
-                .await?
-                .iter()
-                .map(|row| row.try_get::<String>("", "file_name"))
-                .collect::<Result<std::collections::HashSet<_>, _>>()
-                .map_err(|_| unavailable())?;
-            let mut files = tokio::fs::read_dir(dir.path())
-                .await
-                .map_err(|_| unavailable())?;
-            while let Some(file) = files.next_entry().await.map_err(|_| unavailable())? {
-                if !file.file_type().await.map_err(|_| unavailable())?.is_file() {
-                    return Err(unavailable());
-                }
-                if registered.contains(&file.file_name().to_string_lossy().into_owned()) {
-                    continue;
-                }
-                let age = file
-                    .metadata()
-                    .await
-                    .map_err(|_| unavailable())?
-                    .modified()
-                    .map_err(|_| unavailable())?
-                    .elapsed()
-                    .unwrap_or_default();
-                if age.as_secs() >= 300 {
-                    let bytes = file.metadata().await.map_err(|_| unavailable())?.len();
-                    tokio::fs::remove_file(file.path())
-                        .await
-                        .map_err(|_| unavailable())?;
-                    self.disk_usage
-                        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |used| {
-                            Some(used.saturating_sub(bytes))
-                        })
-                        .map_err(|_| unavailable())?;
-                }
+            used = used.saturating_add(file.metadata().map_err(|_| unavailable())?.len());
+        }
+    }
+    Ok(used)
+}
+
+// `removed` accumulates even on a later error so the caller can still
+// release reservations for files that are already gone.
+fn reap_orphan_files(
+    root: &Path,
+    registered: &HashMap<String, HashSet<String>>,
+    removed: &mut u64,
+) -> CoreResult<()> {
+    let empty = HashSet::new();
+    for dir in std::fs::read_dir(root).map_err(|_| unavailable())? {
+        let dir = dir.map_err(|_| unavailable())?;
+        if !dir.file_type().map_err(|_| unavailable())?.is_dir() {
+            return Err(unavailable());
+        }
+        let id = dir.file_name().to_string_lossy().into_owned();
+        uuid::Uuid::parse_str(&id).map_err(|_| unavailable())?;
+        let names = registered.get(&id).unwrap_or(&empty);
+        for file in std::fs::read_dir(dir.path()).map_err(|_| unavailable())? {
+            let file = file.map_err(|_| unavailable())?;
+            if !file.file_type().map_err(|_| unavailable())?.is_file() {
+                return Err(unavailable());
+            }
+            if names.contains(file.file_name().to_string_lossy().as_ref()) {
+                continue;
+            }
+            let meta = file.metadata().map_err(|_| unavailable())?;
+            let age = meta
+                .modified()
+                .map_err(|_| unavailable())?
+                .elapsed()
+                .unwrap_or_default();
+            if age.as_secs() >= 300 {
+                std::fs::remove_file(file.path()).map_err(|_| unavailable())?;
+                *removed = removed.saturating_add(meta.len());
             }
         }
-        Ok(())
     }
+    Ok(())
 }
