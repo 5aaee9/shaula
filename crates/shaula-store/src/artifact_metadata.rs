@@ -1,8 +1,14 @@
 //! Non-secret metadata of one stored archive for the management API.
 
-use sea_orm::{ConnectionTrait, DbBackend, Statement};
+use sea_orm::{
+    sea_query::{Alias, Func},
+    ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+};
 use shaula_core::registry::{TemplateArtifactMetadata, TemplateArtifactReference};
 
+use crate::artifact_library::{archives, sources};
+use crate::entities::template::template_profile_revisions as revisions;
+use crate::query_ext::col;
 use crate::{Store, StoreResult};
 
 /// Upper bound on Template Revision references returned for one archive.
@@ -14,51 +20,53 @@ impl Store {
         digest: &str,
     ) -> StoreResult<Option<TemplateArtifactMetadata>> {
         let db = self.connection();
-        let Some(row) = db
-            .query_one(Statement::from_sql_and_values(
-                DbBackend::Sqlite,
-                "SELECT length(archive) AS size_bytes,created_at FROM artifact_archives WHERE digest=?",
-                [digest.into()],
-            ))
+        let Some((size_bytes, created_at)) = archives::Entity::find_by_id(digest)
+            .select_only()
+            .expr(Func::cust(Alias::new("length")).arg(col(archives::Column::Archive)))
+            .column(archives::Column::CreatedAt)
+            .into_tuple::<(i64, i64)>()
+            .one(db)
             .await?
         else {
             return Ok(None);
         };
-        let sources = db
-            .query_all(Statement::from_sql_and_values(
-                DbBackend::Sqlite,
-                "SELECT key FROM template_sources WHERE artifact_digest=? ORDER BY key",
-                [digest.into()],
-            ))
+        let source_keys = sources::Entity::find()
+            .select_only()
+            .column(sources::Column::Key)
+            .filter(sources::Column::ArtifactDigest.eq(digest))
+            .order_by_asc(sources::Column::Key)
+            .into_tuple::<String>()
+            .all(db)
+            .await?;
+        let mut references = revisions::Entity::find()
+            .select_only()
+            .columns([
+                revisions::Column::ProfileKey,
+                revisions::Column::Revision,
+                revisions::Column::State,
+            ])
+            .filter(revisions::Column::ArtifactDigest.eq(digest))
+            .order_by_asc(revisions::Column::ProfileKey)
+            .order_by_asc(revisions::Column::Revision)
+            .limit(MAX_REFERENCES as u64 + 1)
+            .into_tuple::<(String, i64, String)>()
+            .all(db)
             .await?
-            .iter()
-            .map(|row| row.try_get::<String>("", "key"))
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut revisions = db
-            .query_all(Statement::from_sql_and_values(
-                DbBackend::Sqlite,
-                "SELECT profile_key,revision,state FROM template_profile_revisions
-                WHERE artifact_digest=? ORDER BY profile_key,revision LIMIT ?",
-                [digest.into(), (MAX_REFERENCES as i64 + 1).into()],
-            ))
-            .await?
-            .iter()
-            .map(|row| {
-                Ok(TemplateArtifactReference {
-                    profile_key: row.try_get("", "profile_key")?,
-                    revision: row.try_get("", "revision")?,
-                    state: row.try_get("", "state")?,
-                })
+            .into_iter()
+            .map(|(profile_key, revision, state)| TemplateArtifactReference {
+                profile_key,
+                revision,
+                state,
             })
-            .collect::<Result<Vec<_>, sea_orm::DbErr>>()?;
-        let revisions_truncated = revisions.len() > MAX_REFERENCES;
-        revisions.truncate(MAX_REFERENCES);
+            .collect::<Vec<_>>();
+        let revisions_truncated = references.len() > MAX_REFERENCES;
+        references.truncate(MAX_REFERENCES);
         Ok(Some(TemplateArtifactMetadata {
             digest: digest.to_owned(),
-            size_bytes: row.try_get("", "size_bytes")?,
-            created_at: row.try_get("", "created_at")?,
-            source_keys: sources,
-            revisions,
+            size_bytes,
+            created_at,
+            source_keys,
+            revisions: references,
             revisions_truncated,
         }))
     }

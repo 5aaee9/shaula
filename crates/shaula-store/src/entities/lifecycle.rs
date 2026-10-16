@@ -29,6 +29,7 @@ pub mod runner_generations {
         pub provisioned_at: Option<i64>,
         pub expiry_requested_at: Option<i64>,
         pub resources_destroyed_at: Option<i64>,
+        pub failed_create_identity_json: Option<String>,
         pub created_at: i64,
         pub updated_at: i64,
     }
@@ -168,6 +169,26 @@ pub mod scale_set_state {
         pub attempt_id: Option<String>,
         pub created_at: i64,
         pub updated_at: i64,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub mod setup_info_capabilities {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "setup_info_capabilities")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub generation_id: String,
+        pub verifier: Vec<u8>,
+        pub expires_at: i64,
+        pub created_at: i64,
+        pub revoked: i64,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -1,38 +1,38 @@
 //! Indexed token registry. Writer reservation encloses quota/replay and audit.
+use crate::entities::access_tokens::{
+    personal_access_tokens as tokens, personal_token_issues as issues,
+};
 use crate::Store;
 use async_trait::async_trait;
-use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement, Value};
+use sea_orm::{
+    sea_query::{Condition, Expr},
+    ActiveValue::Set,
+    ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    QuerySelect,
+};
 use shaula_core::access_tokens::*;
 
-fn sql(text: &str, values: Vec<Value>) -> Statement {
-    Statement::from_sql_and_values(DatabaseBackend::Sqlite, text, values)
-}
 fn unavailable<T>(_: T) -> TokenError {
     TokenError::Unavailable
 }
-fn record(row: QueryResult) -> TokenResult<TokenRecord> {
-    let json: String = row.try_get("", "record_json").map_err(unavailable)?;
-    let mut record: TokenRecord = serde_json::from_str(&json).map_err(unavailable)?;
-    record.last_used_at_ms = row.try_get("", "last_used_at").map_err(unavailable)?;
+fn record(row: tokens::Model) -> TokenResult<TokenRecord> {
+    let mut record: TokenRecord = serde_json::from_str(&row.record_json).map_err(unavailable)?;
+    record.last_used_at_ms = row.last_used_at;
     Ok(record)
 }
 async fn find(db: &impl ConnectionTrait, id: &str) -> TokenResult<Option<TokenRecord>> {
-    db.query_one(sql(
-        "SELECT record_json,last_used_at FROM personal_access_tokens WHERE id=?",
-        vec![id.into()],
-    ))
-    .await
-    .map_err(unavailable)?
-    .map(record)
-    .transpose()
-}
-async fn count(db: &impl ConnectionTrait, text: &str, values: Vec<Value>) -> TokenResult<i64> {
-    db.query_one(sql(text, values))
+    tokens::Entity::find_by_id(id)
+        .one(db)
         .await
         .map_err(unavailable)?
-        .ok_or(TokenError::Unavailable)?
-        .try_get("", "n")
-        .map_err(unavailable)
+        .map(record)
+        .transpose()
+}
+/// Tokens neither revoked nor expired at `now`.
+fn active(now: i64) -> Condition {
+    Condition::all()
+        .add(tokens::Column::RevokedAt.is_null())
+        .add(tokens::Column::ExpiresAt.gt(now))
 }
 
 #[async_trait]
@@ -50,46 +50,67 @@ impl TokenStore for Store {
         authentication: &shaula_core::registry::AuthenticationContext,
     ) -> TokenResult<(TokenRecord, bool)> {
         let tx = self.begin().await.map_err(unavailable)?;
-        if let Some(row)=tx.query_one(sql("SELECT request_hash,token_id FROM personal_token_issues WHERE owner=? AND idempotency_key=?",vec![r.owner_principal.clone().into(),key.into()])).await.map_err(unavailable)? {
-            let stored:String=row.try_get("","request_hash").map_err(unavailable)?;
-            if stored!=hash { return Err(TokenError::Conflict); }
-            let id:String=row.try_get("","token_id").map_err(unavailable)?;
-            let existing=find(&tx,&id).await?.ok_or(TokenError::Unavailable)?;
+        let replay = issues::Entity::find_by_id((r.owner_principal.clone(), key.to_owned()))
+            .one(&tx)
+            .await
+            .map_err(unavailable)?;
+        if let Some(issued) = replay {
+            if issued.request_hash != hash {
+                return Err(TokenError::Conflict);
+            }
+            let existing = find(&tx, &issued.token_id)
+                .await?
+                .ok_or(TokenError::Unavailable)?;
             tx.commit().await.map_err(unavailable)?;
-            return Ok((existing,false));
+            return Ok((existing, false));
         }
         let now = r.created_at_ms;
         if r.expires_at_ms.saturating_sub(now) > (policy.max_ttl_secs * 1000) as i64 {
             return Err(TokenError::Invalid);
         }
         let since = now.saturating_sub(60_000);
-        let global = count(
-            &tx,
-            "SELECT COUNT(*) AS n FROM personal_token_issues WHERE created_at>?",
-            vec![since.into()],
-        )
-        .await?;
-        let personal = count(
-            &tx,
-            "SELECT COUNT(*) AS n FROM personal_token_issues WHERE created_at>? AND owner=?",
-            vec![since.into(), r.owner_principal.clone().into()],
-        )
-        .await?;
+        let recent = issues::Entity::find().filter(issues::Column::CreatedAt.gt(since));
+        let global = recent.clone().count(&tx).await.map_err(unavailable)?;
+        let personal = recent
+            .filter(issues::Column::Owner.eq(r.owner_principal.as_str()))
+            .count(&tx)
+            .await
+            .map_err(unavailable)?;
         if global >= 100 || personal >= 5 {
             return Err(TokenError::RateLimited);
         }
-        let total=count(&tx,"SELECT COUNT(*) AS n FROM personal_access_tokens WHERE revoked_at IS NULL AND expires_at>?",vec![now.into()]).await?;
-        let owned=count(&tx,"SELECT COUNT(*) AS n FROM personal_access_tokens WHERE revoked_at IS NULL AND expires_at>? AND owner=?",vec![now.into(),r.owner_principal.clone().into()]).await?;
-        if total as u64 >= policy.max_active_total
-            || owned as u64 >= policy.max_active_per_principal
-        {
+        let live = tokens::Entity::find().filter(active(now));
+        let total = live.clone().count(&tx).await.map_err(unavailable)?;
+        let owned = live
+            .filter(tokens::Column::Owner.eq(r.owner_principal.as_str()))
+            .count(&tx)
+            .await
+            .map_err(unavailable)?;
+        if total >= policy.max_active_total || owned >= policy.max_active_per_principal {
             return Err(TokenError::Quota);
         }
         let json = serde_json::to_string(&r).map_err(unavailable)?;
-        tx.execute(sql("INSERT INTO personal_access_tokens(id,owner,created_at,expires_at,record_json) VALUES(?,?,?,?,?)",
-            vec![r.id.clone().into(),r.owner_principal.clone().into(),now.into(),r.expires_at_ms.into(),json.into()])).await.map_err(unavailable)?;
-        tx.execute(sql("INSERT INTO personal_token_issues(owner,idempotency_key,request_hash,token_id,created_at) VALUES(?,?,?,?,?)",
-            vec![r.owner_principal.clone().into(),key.into(),hash.into(),r.id.clone().into(),now.into()])).await.map_err(unavailable)?;
+        tokens::Entity::insert(tokens::ActiveModel {
+            id: Set(r.id.clone()),
+            owner: Set(r.owner_principal.clone()),
+            created_at: Set(now),
+            expires_at: Set(r.expires_at_ms),
+            record_json: Set(json),
+            ..Default::default()
+        })
+        .exec_without_returning(&tx)
+        .await
+        .map_err(unavailable)?;
+        issues::Entity::insert(issues::ActiveModel {
+            owner: Set(r.owner_principal.clone()),
+            idempotency_key: Set(key.to_owned()),
+            request_hash: Set(hash.to_owned()),
+            token_id: Set(r.id.clone()),
+            created_at: Set(now),
+        })
+        .exec_without_returning(&tx)
+        .await
+        .map_err(unavailable)?;
         audit(self, &tx, &r, "issue", now, authentication).await?;
         tx.commit().await.map_err(unavailable)?;
         Ok((r, true))
@@ -101,17 +122,21 @@ impl TokenStore for Store {
         before: Option<(i64, String)>,
         limit: usize,
     ) -> TokenResult<Vec<TokenRecord>> {
-        let mut values = vec![owner.into()];
-        let mut query =
-            "SELECT record_json,last_used_at FROM personal_access_tokens WHERE owner=?".to_owned();
+        let mut query = tokens::Entity::find().filter(tokens::Column::Owner.eq(owner));
         if let Some((at, id)) = before {
-            query.push_str(" AND (created_at < ? OR (created_at = ? AND id < ?))");
-            values.extend([at.into(), at.into(), id.into()]);
+            query = query.filter(
+                Condition::any().add(tokens::Column::CreatedAt.lt(at)).add(
+                    Condition::all()
+                        .add(tokens::Column::CreatedAt.eq(at))
+                        .add(tokens::Column::Id.lt(id)),
+                ),
+            );
         }
-        query.push_str(" ORDER BY created_at DESC,id DESC LIMIT ?");
-        values.push((limit.min(100) as i64).into());
-        self.connection()
-            .query_all(sql(&query, values))
+        query
+            .order_by_desc(tokens::Column::CreatedAt)
+            .order_by_desc(tokens::Column::Id)
+            .limit(limit.min(100) as u64)
+            .all(self.connection())
             .await
             .map_err(unavailable)?
             .into_iter()
@@ -140,12 +165,13 @@ impl TokenStore for Store {
             r.revoked_by_principal = Some(owner.to_owned());
             r.revision += 1;
             let json = serde_json::to_string(&r).map_err(unavailable)?;
-            tx.execute(sql(
-                "UPDATE personal_access_tokens SET revoked_at=?,record_json=? WHERE id=?",
-                vec![now.into(), json.into(), id.into()],
-            ))
-            .await
-            .map_err(unavailable)?;
+            tokens::Entity::update_many()
+                .col_expr(tokens::Column::RevokedAt, Expr::value(now))
+                .col_expr(tokens::Column::RecordJson, Expr::value(json))
+                .filter(tokens::Column::Id.eq(id))
+                .exec(&tx)
+                .await
+                .map_err(unavailable)?;
             audit(self, &tx, &r, "revoke", now, &actor.authentication).await?;
         }
         tx.commit().await.map_err(unavailable)?;
@@ -153,7 +179,17 @@ impl TokenStore for Store {
     }
 
     async fn touch(&self, id: &str, now: i64) -> TokenResult<()> {
-        self.connection().execute(sql("UPDATE personal_access_tokens SET last_used_at=? WHERE id=? AND (last_used_at IS NULL OR last_used_at<=?)",vec![now.into(),id.into(),now.saturating_sub(60_000).into()])).await.map_err(unavailable)?;
+        tokens::Entity::update_many()
+            .col_expr(tokens::Column::LastUsedAt, Expr::value(now))
+            .filter(tokens::Column::Id.eq(id))
+            .filter(
+                Condition::any()
+                    .add(tokens::Column::LastUsedAt.is_null())
+                    .add(tokens::Column::LastUsedAt.lte(now.saturating_sub(60_000))),
+            )
+            .exec(self.connection())
+            .await
+            .map_err(unavailable)?;
         Ok(())
     }
 }

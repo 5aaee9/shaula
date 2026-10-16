@@ -6,7 +6,7 @@ use shaula_core::registry::TemplateSource;
 
 use crate::{Store, StoreError, StoreResult};
 
-mod archives {
+pub(crate) mod archives {
     use sea_orm::entity::prelude::*;
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "artifact_archives")]
@@ -21,7 +21,7 @@ mod archives {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-mod sources {
+pub(crate) mod sources {
     use sea_orm::entity::prelude::*;
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "template_sources")]

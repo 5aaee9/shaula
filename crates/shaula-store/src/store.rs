@@ -137,13 +137,15 @@ impl Store {
     }
 
     async fn check_durable_format(&self) -> StoreResult<()> {
-        use sea_orm::{ConnectionTrait, Statement};
+        use sea_orm::sea_query::{Alias, Query};
+        use sea_orm::ConnectionTrait;
+        let select = Query::select()
+            .column(Alias::new("version"))
+            .from(Alias::new("durable_format"))
+            .to_owned();
         let row = self
             .db
-            .query_one(Statement::from_string(
-                sea_orm::DatabaseBackend::Sqlite,
-                "SELECT version FROM durable_format",
-            ))
+            .query_one(self.db.get_database_backend().build(&select))
             .await
             .map_err(StoreError::from)?;
         let version: Option<i64> = row

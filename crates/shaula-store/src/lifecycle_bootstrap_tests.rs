@@ -1,4 +1,5 @@
 use super::*;
+use sea_orm::ConnectionTrait;
 use shaula_core::{lifecycle::GenerationState, ports::StateLineage, registry::GenerationRecord};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

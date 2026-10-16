@@ -1,7 +1,11 @@
 //! Coverage includes desired admission and every still-live execution target.
 use crate::entities::fleet::{fleet_revisions, fleets};
+use crate::query_ext::{col, same, scalar, JoinOn};
 use crate::store::{Store, StoreResult};
-use sea_orm::{DatabaseTransaction, DbBackend, EntityTrait, Statement};
+use sea_orm::{
+    sea_query::{Alias, Expr, Query},
+    DatabaseTransaction, EntityTrait, QueryFilter,
+};
 use shaula_core::registry::AuthDependentTarget;
 
 impl Store {
@@ -14,12 +18,11 @@ impl Store {
         // One read for every fleet's latest revision at or below its head;
         // (fleet_key, revision) is unique, so each fleet maps to one row.
         let mut latest_revisions: std::collections::HashMap<_, _> = fleet_revisions::Entity::find()
-            .from_raw_sql(Statement::from_string(
-                DbBackend::Sqlite,
-                "SELECT r.* FROM fleet_revisions r JOIN fleets f ON f.key=r.fleet_key
-                 WHERE r.revision=(SELECT MAX(h.revision) FROM fleet_revisions h
-                     WHERE h.fleet_key=f.key AND h.revision<=f.desired_revision)",
-            ))
+            .inner_join_on(
+                fleets::Entity,
+                same(fleets::Column::Key, fleet_revisions::Column::FleetKey),
+            )
+            .filter(col(fleet_revisions::Column::Revision).eq(scalar(latest_at_or_below_head())))
             .all(tx)
             .await?
             .into_iter()
@@ -85,4 +88,21 @@ impl Store {
         tx.commit().await?;
         Ok(result)
     }
+}
+
+/// `MAX(h.revision)` over the outer fleet's revisions at or below its head.
+fn latest_at_or_below_head() -> sea_orm::sea_query::SelectStatement {
+    let history = Alias::new("h");
+    Query::select()
+        .expr(Expr::col((history.clone(), fleet_revisions::Column::Revision)).max())
+        .from_as(fleet_revisions::Entity, history.clone())
+        .and_where(
+            Expr::col((history.clone(), fleet_revisions::Column::FleetKey))
+                .equals((fleets::Entity, fleets::Column::Key)),
+        )
+        .and_where(
+            Expr::col((history, fleet_revisions::Column::Revision))
+                .lte(Expr::col((fleets::Entity, fleets::Column::DesiredRevision))),
+        )
+        .to_owned()
 }

@@ -43,3 +43,8 @@ impl<E: EntityTrait> JoinOn for Select<E> {
         self
     }
 }
+
+/// `(SELECT ...)` as a scalar operand.
+pub(crate) fn scalar(select: SelectStatement) -> SimpleExpr {
+    SimpleExpr::SubQuery(None, Box::new(select.into_sub_query_statement()))
+}

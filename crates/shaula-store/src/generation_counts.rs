@@ -11,10 +11,17 @@
 
 use std::collections::HashMap;
 
-use sea_orm::{ConnectionTrait, DbBackend, Statement, Value};
+use sea_orm::{
+    sea_query::{Expr, Func, SimpleExpr},
+    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect,
+};
 use shaula_core::lifecycle::GenerationState;
 use shaula_core::template_pool::FleetPoolRef;
 
+use crate::entities::{
+    fleet::fleet_revisions as revisions, lifecycle::runner_generations as generations,
+};
+use crate::query_ext::{col, same, JoinOn};
 use crate::store::{StoreError, StoreResult};
 
 /// Every [`GenerationState`] variant, in declaration order. Core has no
@@ -60,8 +67,13 @@ const _: () = {
 };
 
 /// The only state that releases occupancy.
-fn released() -> Value {
-    GenerationState::Destroyed.as_str_repr().into()
+fn released() -> &'static str {
+    GenerationState::Destroyed.as_str_repr()
+}
+
+/// `COALESCE(SUM(condition),0)`: how many rows satisfy `condition`.
+fn tally(condition: SimpleExpr) -> SimpleExpr {
+    Func::coalesce([Func::sum(condition).into(), Expr::val(0).into()]).into()
 }
 
 /// Fleet-scoped Generation counters.
@@ -83,29 +95,23 @@ pub(crate) async fn fleet_counts(
         .filter(|s| s.counts_effective())
         .map(GenerationState::as_str_repr)
         .collect();
-    let placeholders = vec!["?"; effective.len()].join(",");
-    let sql = format!(
-        "SELECT COALESCE(SUM(state!=?),0) AS occupancy,
-                COALESCE(SUM(state IN ({placeholders})),0) AS effective,
-                COALESCE(SUM(state=?),0) AS quarantined
-         FROM runner_generations WHERE fleet_key=?"
-    );
-    let mut values = vec![released()];
-    values.extend(effective.into_iter().map(Value::from));
-    values.push(GenerationState::Quarantined.as_str_repr().into());
-    values.push(fleet_key.into());
-    let row = db
-        .query_one(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            sql,
-            values,
+    let state = || col(generations::Column::State);
+    let (occupancy, effective, quarantined) = generations::Entity::find()
+        .select_only()
+        .expr(tally(state().ne(released())))
+        .expr(tally(state().is_in(effective)))
+        .expr(tally(
+            state().eq(GenerationState::Quarantined.as_str_repr()),
         ))
+        .filter(generations::Column::FleetKey.eq(fleet_key))
+        .into_tuple::<(i64, i64, i64)>()
+        .one(db)
         .await?
         .ok_or_else(|| StoreError::Corrupt("generation count aggregate returned no row".into()))?;
     Ok(GenerationCounts {
-        effective: row.try_get("", "effective")?,
-        occupancy: row.try_get("", "occupancy")?,
-        quarantined: row.try_get("", "quarantined")?,
+        effective,
+        occupancy,
+        quarantined,
     })
 }
 
@@ -119,28 +125,29 @@ pub(crate) async fn member_occupancy(
     fleet_key: &str,
     pool_scope: Option<&FleetPoolRef>,
 ) -> StoreResult<HashMap<String, i64>> {
-    let statement = match pool_scope {
-        Some((pool_key, _)) => Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "SELECT g.pool_member_key AS member, COUNT(*) AS used
-             FROM fleet_revisions r JOIN runner_generations g
-               ON g.fleet_key=r.fleet_key AND g.fleet_revision=r.revision
-             WHERE r.template_pool_ref=?
-               AND g.state!=? AND g.pool_member_key IS NOT NULL
-             GROUP BY g.pool_member_key",
-            [pool_key.as_str().into(), released()],
-        ),
-        None => Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "SELECT pool_member_key AS member, COUNT(*) AS used FROM runner_generations
-             WHERE fleet_key=? AND state!=? AND pool_member_key IS NOT NULL
-             GROUP BY pool_member_key",
-            [fleet_key.into(), released()],
-        ),
+    let occupied = generations::Entity::find()
+        .select_only()
+        .column(generations::Column::PoolMemberKey)
+        .expr(col(generations::Column::Id).count())
+        .filter(generations::Column::State.ne(released()))
+        .filter(generations::Column::PoolMemberKey.is_not_null())
+        .group_by(generations::Column::PoolMemberKey);
+    let scoped = match pool_scope {
+        Some((pool_key, _)) => occupied
+            .inner_join_on(
+                revisions::Entity,
+                same(generations::Column::FleetKey, revisions::Column::FleetKey).and(same(
+                    generations::Column::FleetRevision,
+                    revisions::Column::Revision,
+                )),
+            )
+            .filter(revisions::Column::TemplatePoolRef.eq(pool_key.as_str())),
+        None => occupied.filter(generations::Column::FleetKey.eq(fleet_key)),
     };
-    db.query_all(statement)
+    Ok(scoped
+        .into_tuple::<(String, i64)>()
+        .all(db)
         .await?
-        .iter()
-        .map(|row| Ok((row.try_get("", "member")?, row.try_get("", "used")?)))
-        .collect()
+        .into_iter()
+        .collect())
 }

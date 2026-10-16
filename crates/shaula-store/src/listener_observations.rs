@@ -1,7 +1,10 @@
 //! Message-scoped observations and acquisition intents in the ingest transaction.
-use sea_orm::{ConnectionTrait, DatabaseTransaction, DbBackend, Statement};
+use sea_orm::{sea_query::OnConflict, ActiveValue::Set, DatabaseTransaction, EntityTrait};
 use shaula_core::ports::PollMessage;
 
+use crate::entities::listener::{
+    listener_acquisitions as acquisitions, listener_job_observations as observations,
+};
 use crate::{Store, StoreError, StoreResult};
 
 impl Store {
@@ -17,12 +20,27 @@ impl Store {
             if job.runner_request_id <= 0 {
                 return Err(StoreError::Corrupt("invalid runner request ID".into()));
             }
-            tx.execute(Statement::from_sql_and_values(DbBackend::Sqlite,
-                "INSERT OR IGNORE INTO listener_acquisitions(fleet_key,epoch,message_id,runner_request_id,state,updated_at)
-                 VALUES(?,?,?,?,'Pending',?)",
-                [fleet.into(),epoch.into(),message.message_id.into(),job.runner_request_id.into(),now.into()])).await?;
+            acquisitions::Entity::insert(acquisitions::ActiveModel {
+                fleet_key: Set(fleet.to_owned()),
+                epoch: Set(epoch),
+                message_id: Set(message.message_id),
+                runner_request_id: Set(job.runner_request_id),
+                state: Set("Pending".to_owned()),
+                updated_at: Set(now),
+            })
+            .on_conflict(
+                OnConflict::columns([
+                    acquisitions::Column::FleetKey,
+                    acquisitions::Column::Epoch,
+                    acquisitions::Column::RunnerRequestId,
+                ])
+                .do_nothing()
+                .to_owned(),
+            )
+            .exec_without_returning(tx)
+            .await?;
         }
-        let observations = message
+        let observed = message
             .job_assigned
             .iter()
             .map(|j| ("Assigned", j.runner_request_id, j.job_id.as_str(), None))
@@ -42,7 +60,7 @@ impl Store {
                     Some(j.runner_name.as_str()),
                 )
             }));
-        for (kind, request_id, job_id, runner_name) in observations {
+        for (kind, request_id, job_id, runner_name) in observed {
             if request_id < 0 {
                 return Err(StoreError::Corrupt(
                     "invalid observed runner request ID".into(),
@@ -54,10 +72,29 @@ impl Store {
                 // transaction; this legacy request-keyed index cannot hold it.
                 continue;
             }
-            tx.execute(Statement::from_sql_and_values(DbBackend::Sqlite,
-                "INSERT OR IGNORE INTO listener_job_observations(fleet_key,epoch,message_id,observation_kind,
-                 runner_request_id,job_id,runner_name,observed_at) VALUES(?,?,?,?,?,?,?,?)",
-                [fleet.into(),epoch.into(),message.message_id.into(),kind.into(),request_id.into(),job_id.into(),runner_name.into(),now.into()])).await?;
+            observations::Entity::insert(observations::ActiveModel {
+                fleet_key: Set(fleet.to_owned()),
+                epoch: Set(epoch),
+                message_id: Set(message.message_id),
+                observation_kind: Set(kind.to_owned()),
+                runner_request_id: Set(request_id),
+                job_id: Set(job_id.to_owned()),
+                runner_name: Set(runner_name.map(str::to_owned)),
+                observed_at: Set(now),
+            })
+            .on_conflict(
+                OnConflict::columns([
+                    observations::Column::FleetKey,
+                    observations::Column::Epoch,
+                    observations::Column::MessageId,
+                    observations::Column::ObservationKind,
+                    observations::Column::RunnerRequestId,
+                ])
+                .do_nothing()
+                .to_owned(),
+            )
+            .exec_without_returning(tx)
+            .await?;
         }
         Ok(())
     }

@@ -1,9 +1,10 @@
 //! GitHub runner activity from listener job messages (spec 0001 lifecycle):
 //! an observed start makes the exact Generation Busy and an observed
 //! completion retires it, in the same transaction as the message facts.
-use sea_orm::{ConnectionTrait, DatabaseTransaction, DbBackend, Statement};
+use sea_orm::{sea_query::Expr, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter};
 use shaula_core::ports::PollMessage;
 
+use crate::entities::lifecycle::runner_generations as generations;
 use crate::{Store, StoreResult};
 
 impl Store {
@@ -22,7 +23,7 @@ impl Store {
                 j.runner_id,
                 j.runner_name.as_str(),
                 "Busy",
-                "'WaitingOnline','Idle'",
+                ["WaitingOnline", "Idle"],
             )
         });
         let completed = message.job_completed.iter().map(|j| {
@@ -30,28 +31,26 @@ impl Store {
                 j.runner_id,
                 j.runner_name.as_str(),
                 "Retiring",
-                "'Idle','Busy'",
+                ["Idle", "Busy"],
             )
         });
         for (runner_id, runner_name, next, from) in started.chain(completed) {
             if runner_id <= 0 {
                 continue;
             }
-            tx.execute(Statement::from_sql_and_values(
-                DbBackend::Sqlite,
-                format!(
-                    "UPDATE runner_generations SET state=?, subphase=NULL, updated_at=?
-                     WHERE fleet_key=? AND github_runner_id=? AND runner_name=? AND state IN ({from})"
-                ),
-                [
-                    next.into(),
-                    now.into(),
-                    fleet.into(),
-                    runner_id.into(),
-                    runner_name.into(),
-                ],
-            ))
-            .await?;
+            generations::Entity::update_many()
+                .col_expr(generations::Column::State, Expr::value(next))
+                .col_expr(
+                    generations::Column::Subphase,
+                    Expr::value(Option::<String>::None),
+                )
+                .col_expr(generations::Column::UpdatedAt, Expr::value(now))
+                .filter(generations::Column::FleetKey.eq(fleet))
+                .filter(generations::Column::GithubRunnerId.eq(runner_id))
+                .filter(generations::Column::RunnerName.eq(runner_name))
+                .filter(generations::Column::State.is_in(from))
+                .exec(tx)
+                .await?;
         }
         Ok(())
     }

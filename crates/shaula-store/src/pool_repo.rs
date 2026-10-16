@@ -4,13 +4,15 @@
 
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait, QueryFilter,
-    QueryOrder, Statement,
+    sea_query::{Alias, Expr, Query},
+    ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
 };
 
+use crate::entities::fleet::{fleet_revisions, fleets};
 use crate::entities::template_pool::{
     template_pool_members, template_pool_revisions, template_pools,
 };
+use crate::query_ext::{col, same, scalar, JoinOn};
 use crate::store::{Store, StoreResult};
 
 /// Insert shape for one pool revision commit; members are the pool's own
@@ -154,20 +156,31 @@ impl Store {
     ) -> StoreResult<bool> {
         // (fleet_key, revision) is unique, so MAX(revision) names exactly
         // one latest row per fleet.
-        let row = tx
-            .query_one(Statement::from_sql_and_values(
-                DbBackend::Sqlite,
-                "SELECT EXISTS(SELECT 1 FROM fleets f JOIN fleet_revisions r ON r.fleet_key=f.key
-                    WHERE f.tombstone=0 AND f.deletion_marker=0 AND r.template_pool_ref=?
-                      AND r.revision=(SELECT MAX(h.revision) FROM fleet_revisions h
-                          WHERE h.fleet_key=f.key)) AS referenced",
-                [key.into()],
-            ))
-            .await?;
-        Ok(match row {
-            Some(row) => row.try_get::<bool>("", "referenced")?,
-            None => false,
-        })
+        let history = Alias::new("h");
+        let latest = Query::select()
+            .expr(Expr::col((history.clone(), fleet_revisions::Column::Revision)).max())
+            .from_as(fleet_revisions::Entity, history.clone())
+            .and_where(
+                Expr::col((history, fleet_revisions::Column::FleetKey))
+                    .equals(fleets::Column::Key.as_column_ref()),
+            )
+            .to_owned();
+        Ok(fleets::Entity::find()
+            .select_only()
+            .expr(Expr::val(1))
+            .inner_join_on(
+                fleet_revisions::Entity,
+                same(fleet_revisions::Column::FleetKey, fleets::Column::Key),
+            )
+            .filter(fleets::Column::Tombstone.eq(false))
+            .filter(fleets::Column::DeletionMarker.eq(false))
+            .filter(fleet_revisions::Column::TemplatePoolRef.eq(key))
+            .filter(col(fleet_revisions::Column::Revision).eq(scalar(latest)))
+            .limit(1)
+            .into_tuple::<i32>()
+            .one(tx)
+            .await?
+            .is_some())
     }
 
     /// Tombstones a pool. A pool owns no runners, so deletion is a

@@ -1,6 +1,11 @@
 //! One-way authorization for a Create's host-owned container bootstrap.
+use crate::entities::{
+    fleet::fleets,
+    lifecycle::{runner_generations as generations, runner_operations as operations},
+};
+use crate::query_ext::{col, probe, same};
 use crate::{Store, StoreResult};
-use sea_orm::{ConnectionTrait, DbBackend, Statement};
+use sea_orm::{sea_query::Expr, ColumnTrait, EntityTrait, QueryFilter};
 use shaula_core::{plan::PlanIntent, ports::PlanProvenance};
 
 impl Store {
@@ -15,17 +20,35 @@ impl Store {
         let json = serde_json::to_string(provenance)
             .map_err(|_| crate::StoreError::Corrupt("bootstrap provenance invalid".into()))?;
         let tx = self.begin().await?;
-        let changed = tx.execute(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "UPDATE runner_operations SET state='BootstrapStarting',updated_at=?
-             WHERE id=? AND generation_id=? AND kind='Create' AND state='ApplyStarting'
-             AND provenance_json=?
-             AND EXISTS (SELECT 1 FROM runner_generations g JOIN fleets f ON f.key=g.fleet_key
-                 WHERE g.id=runner_operations.generation_id AND g.state='Creating'
-                 AND f.desired_revision=g.fleet_revision AND f.deletion_marker=0 AND f.tombstone=0)",
-            [now.into(), provenance.attempt_id.clone().into(), provenance.generation_id.clone().into(), json.into()],
-        )).await?;
-        if changed.rows_affected() == 1 {
+        let current = probe(generations::Entity)
+            .inner_join(
+                fleets::Entity,
+                same(fleets::Column::Key, generations::Column::FleetKey),
+            )
+            .and_where(same(
+                generations::Column::Id,
+                operations::Column::GenerationId,
+            ))
+            .and_where(col(generations::Column::State).eq("Creating"))
+            .and_where(same(
+                fleets::Column::DesiredRevision,
+                generations::Column::FleetRevision,
+            ))
+            .and_where(col(fleets::Column::DeletionMarker).eq(false))
+            .and_where(col(fleets::Column::Tombstone).eq(false))
+            .to_owned();
+        let changed = operations::Entity::update_many()
+            .col_expr(operations::Column::State, Expr::value("BootstrapStarting"))
+            .col_expr(operations::Column::UpdatedAt, Expr::value(now))
+            .filter(operations::Column::Id.eq(provenance.attempt_id.as_str()))
+            .filter(operations::Column::GenerationId.eq(provenance.generation_id.as_str()))
+            .filter(operations::Column::Kind.eq("Create"))
+            .filter(operations::Column::State.eq("ApplyStarting"))
+            .filter(operations::Column::ProvenanceJson.eq(json))
+            .filter(Expr::exists(current))
+            .exec(&tx)
+            .await?;
+        if changed.rows_affected == 1 {
             crate::http_state::SqliteStateBackend::worker_bootstrap_on(&tx, provenance)
                 .await
                 .map_err(|_| {

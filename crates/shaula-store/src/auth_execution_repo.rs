@@ -1,12 +1,43 @@
 //! Exact execution references and immutable context retention.
+use crate::entities::auth::{fleet_auth_context_history as history, fleet_session_auth};
+use crate::entities::fleet::{fleet_auth_handoffs as handoffs, fleet_revisions, fleets};
+use crate::entities::lifecycle::{
+    fleet_sessions, runner_generations as generations, runner_operations as operations,
+};
+use crate::entities::listener::{
+    listener_acquisitions as acquisitions, listener_messages as messages,
+};
+use crate::query_ext::{col, probe, same, JoinOn};
 use crate::store::{Store, StoreError, StoreResult};
-use sea_orm::{ConnectionTrait, DatabaseTransaction, DbBackend, Statement};
+use sea_orm::{
+    sea_query::{Expr, OnConflict, SimpleExpr},
+    ActiveValue::Set,
+    ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+};
 use shaula_core::auth_context::ResolvedAuthContext;
 
 pub(crate) struct ExecutionDependency {
     pub target_json: String,
     pub reference: (String, i64),
     pub context: Option<ResolvedAuthContext>,
+}
+
+/// Operation states that still hold a Destroyed Generation's auth reference.
+const ACTIVE_OPERATIONS: [&str; 6] = [
+    "Pending",
+    "Starting",
+    "ApplyStarting",
+    "BootstrapStarting",
+    "Running",
+    "Blocked",
+];
+
+/// `fleet_revisions` row a Fleet's desired head points at.
+fn desired_head() -> SimpleExpr {
+    same(fleet_revisions::Column::FleetKey, fleets::Column::Key).and(same(
+        fleet_revisions::Column::Revision,
+        fleets::Column::DesiredRevision,
+    ))
 }
 
 impl Store {
@@ -26,9 +57,23 @@ impl Store {
                 "attempt to replace retained execution context".into(),
             ));
         }
-        tx.execute(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "INSERT OR IGNORE INTO fleet_auth_context_history(fleet_key,profile_key,revision,context_json) VALUES(?,?,?,?)",
-            [fleet.into(), context.profile_key.clone().into(), context.revision.into(), json.into()])).await?;
+        history::Entity::insert(history::ActiveModel {
+            fleet_key: Set(fleet.to_owned()),
+            profile_key: Set(context.profile_key.clone()),
+            revision: Set(context.revision),
+            context_json: Set(json),
+        })
+        .on_conflict(
+            OnConflict::columns([
+                history::Column::FleetKey,
+                history::Column::ProfileKey,
+                history::Column::Revision,
+            ])
+            .do_nothing()
+            .to_owned(),
+        )
+        .exec_without_returning(tx)
+        .await?;
         Ok(())
     }
 
@@ -39,12 +84,11 @@ impl Store {
         key: &str,
         revision: i64,
     ) -> StoreResult<Option<ResolvedAuthContext>> {
-        let row = tx.query_one(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "SELECT context_json FROM fleet_auth_context_history WHERE fleet_key=? AND profile_key=? AND revision=?",
-            [fleet.into(),key.into(),revision.into()])).await?;
+        let row = history::Entity::find_by_id((fleet.to_owned(), key.to_owned(), revision))
+            .one(tx)
+            .await?;
         row.map(|row| {
-            let json: String = row.try_get("", "context_json")?;
-            let context: ResolvedAuthContext = serde_json::from_str(&json)
+            let context: ResolvedAuthContext = serde_json::from_str(&row.context_json)
                 .map_err(|e| StoreError::Corrupt(format!("retained auth context corrupt: {e}")))?;
             if context.profile_key != key
                 || context.revision != revision
@@ -87,33 +131,51 @@ impl Store {
         tx: &DatabaseTransaction,
         generation: &str,
     ) -> StoreResult<Option<(String, i64)>> {
-        let row = tx.query_one(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "SELECT o.provenance_json FROM runner_operations o WHERE o.generation_id=? AND o.kind='JitStarting' ORDER BY o.created_at LIMIT 1",
-            [generation.into()])).await?;
-        if let Some(row) = row {
-            let json: Option<String> = row.try_get("", "provenance_json")?;
-            if let Some(json) = json {
-                let value: serde_json::Value = serde_json::from_str(&json).map_err(|e| {
-                    StoreError::Corrupt(format!("JIT auth provenance corrupt: {e}"))
-                })?;
-                if let Some(key) = value.pointer("/context/auth_profile_key") {
-                    let key = key
-                        .as_str()
-                        .ok_or_else(|| StoreError::Corrupt("JIT auth key invalid".into()))?;
-                    let revision = value
-                        .pointer("/context/auth_revision")
-                        .and_then(|v| v.as_i64())
-                        .ok_or_else(|| StoreError::Corrupt("JIT auth revision missing".into()))?;
-                    return Ok(Some((key.to_string(), revision)));
-                }
+        let provenance = operations::Entity::find()
+            .select_only()
+            .column(operations::Column::ProvenanceJson)
+            .filter(operations::Column::GenerationId.eq(generation))
+            .filter(operations::Column::Kind.eq("JitStarting"))
+            .order_by_asc(operations::Column::CreatedAt)
+            .limit(1)
+            .into_tuple::<Option<String>>()
+            .one(tx)
+            .await?
+            .flatten();
+        if let Some(json) = provenance {
+            let value: serde_json::Value = serde_json::from_str(&json)
+                .map_err(|e| StoreError::Corrupt(format!("JIT auth provenance corrupt: {e}")))?;
+            if let Some(key) = value.pointer("/context/auth_profile_key") {
+                let key = key
+                    .as_str()
+                    .ok_or_else(|| StoreError::Corrupt("JIT auth key invalid".into()))?;
+                let revision = value
+                    .pointer("/context/auth_revision")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| StoreError::Corrupt("JIT auth revision missing".into()))?;
+                return Ok(Some((key.to_string(), revision)));
             }
         }
-        let row = tx.query_one(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "SELECT r.auth_desired_profile_key AS profile_key, r.auth_desired_revision AS revision
-             FROM runner_generations g JOIN fleet_revisions r ON r.fleet_key=g.fleet_key AND r.revision=g.fleet_revision WHERE g.id=?",
-            [generation.into()])).await?;
-        row.map(|r| Ok((r.try_get("", "profile_key")?, r.try_get("", "revision")?)))
-            .transpose()
+        Ok(generations::Entity::find_by_id(generation)
+            .select_only()
+            .columns([
+                fleet_revisions::Column::AuthDesiredProfileKey,
+                fleet_revisions::Column::AuthDesiredRevision,
+            ])
+            .inner_join_on(
+                fleet_revisions::Entity,
+                same(
+                    fleet_revisions::Column::FleetKey,
+                    generations::Column::FleetKey,
+                )
+                .and(same(
+                    fleet_revisions::Column::Revision,
+                    generations::Column::FleetRevision,
+                )),
+            )
+            .into_tuple::<(String, i64)>()
+            .one(tx)
+            .await?)
     }
 
     pub(crate) async fn auth_generation_ref(
@@ -126,48 +188,141 @@ impl Store {
         Ok(result)
     }
 
+    /// Auth references a Fleet still holds outside its Generations: the
+    /// observed handoff, the live session, and messages with open acquisitions.
+    async fn auth_fleet_refs_tx(
+        &self,
+        tx: &DatabaseTransaction,
+        fleet: &str,
+    ) -> StoreResult<Vec<((String, i64), String)>> {
+        let observed = handoffs::Entity::find()
+            .select_only()
+            .columns([
+                handoffs::Column::ObservedProfileKey,
+                handoffs::Column::ObservedRevision,
+            ])
+            .column(fleet_revisions::Column::SpecJson)
+            .inner_join_on(
+                fleets::Entity,
+                same(fleets::Column::Key, handoffs::Column::FleetKey),
+            )
+            .inner_join_on(fleet_revisions::Entity, desired_head())
+            .filter(handoffs::Column::FleetKey.eq(fleet))
+            .filter(handoffs::Column::ObservedProfileKey.is_not_null())
+            .into_tuple::<(String, i64, String)>()
+            .all(tx)
+            .await?;
+        let session = fleet_session_auth::Entity::find()
+            .select_only()
+            .columns([
+                fleet_session_auth::Column::ProfileKey,
+                fleet_session_auth::Column::Revision,
+            ])
+            .column(fleet_revisions::Column::SpecJson)
+            .inner_join_on(
+                fleet_sessions::Entity,
+                same(
+                    fleet_sessions::Column::FleetKey,
+                    fleet_session_auth::Column::FleetKey,
+                ),
+            )
+            .inner_join_on(
+                fleets::Entity,
+                same(fleets::Column::Key, fleet_session_auth::Column::FleetKey),
+            )
+            .inner_join_on(fleet_revisions::Entity, desired_head())
+            .filter(fleet_session_auth::Column::FleetKey.eq(fleet))
+            .into_tuple::<(String, i64, String)>()
+            .all(tx)
+            .await?;
+        let open = probe(acquisitions::Entity)
+            .and_where(same(
+                acquisitions::Column::FleetKey,
+                messages::Column::FleetKey,
+            ))
+            .and_where(same(acquisitions::Column::Epoch, messages::Column::Epoch))
+            .and_where(same(
+                acquisitions::Column::MessageId,
+                messages::Column::MessageId,
+            ))
+            .and_where(col(acquisitions::Column::State).is_in([
+                "Pending",
+                "AcquireStarting",
+                "Uncertain",
+            ]))
+            .to_owned();
+        let pending = messages::Entity::find()
+            .select_only()
+            .columns([messages::Column::ProfileKey, messages::Column::AuthRevision])
+            .column(fleet_revisions::Column::SpecJson)
+            .inner_join_on(
+                fleet_revisions::Entity,
+                same(
+                    fleet_revisions::Column::FleetKey,
+                    messages::Column::FleetKey,
+                )
+                .and(same(
+                    fleet_revisions::Column::Revision,
+                    messages::Column::FleetRevision,
+                )),
+            )
+            .filter(messages::Column::FleetKey.eq(fleet))
+            .filter(Expr::exists(open))
+            .into_tuple::<(String, i64, String)>()
+            .all(tx)
+            .await?;
+        Ok(observed
+            .into_iter()
+            .chain(session)
+            .chain(pending)
+            .map(|(key, revision, spec)| ((key, revision), spec))
+            .collect())
+    }
+
     pub(crate) async fn auth_execution_dependencies_tx(
         &self,
         tx: &DatabaseTransaction,
         fleet: &str,
         profile: Option<&str>,
     ) -> StoreResult<Vec<ExecutionDependency>> {
-        let mut references = Vec::new();
-        let rows = tx.query_all(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "SELECT h.observed_profile_key AS profile_key, h.observed_revision AS revision, r.spec_json
-             FROM fleet_auth_handoffs h JOIN fleets f ON f.key=h.fleet_key
-             JOIN fleet_revisions r ON r.fleet_key=f.key AND r.revision=f.desired_revision
-             WHERE h.fleet_key=? AND h.observed_profile_key IS NOT NULL
-             UNION ALL SELECT a.profile_key,a.revision,r.spec_json FROM fleet_session_auth a
-             JOIN fleet_sessions s ON s.fleet_key=a.fleet_key JOIN fleets f ON f.key=a.fleet_key
-             JOIN fleet_revisions r ON r.fleet_key=f.key AND r.revision=f.desired_revision WHERE a.fleet_key=?
-             UNION ALL SELECT m.profile_key,m.auth_revision,r.spec_json FROM listener_messages m
-             JOIN fleet_revisions r ON r.fleet_key=m.fleet_key AND r.revision=m.fleet_revision
-             WHERE m.fleet_key=? AND EXISTS(SELECT 1 FROM listener_acquisitions a
-                WHERE a.fleet_key=m.fleet_key AND a.epoch=m.epoch AND a.message_id=m.message_id
-                AND a.state IN ('Pending','AcquireStarting','Uncertain'))",
-            [fleet.into(),fleet.into(),fleet.into()])).await?;
-        for row in rows {
-            references.push((
-                (
-                    row.try_get("", "profile_key")?,
-                    row.try_get("", "revision")?,
-                ),
-                row.try_get::<String>("", "spec_json")?,
-            ));
-        }
-        let generations = tx.query_all(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "SELECT g.id,r.spec_json FROM runner_generations g JOIN fleet_revisions r ON r.fleet_key=g.fleet_key AND r.revision=g.fleet_revision
-             WHERE g.fleet_key=? AND (g.state!='Destroyed' OR EXISTS (
-                SELECT 1 FROM runner_operations o WHERE o.generation_id=g.id
-                AND o.state IN ('Pending','Starting','ApplyStarting','BootstrapStarting','Running','Blocked')))", [fleet.into()])).await?;
-        for row in generations {
-            let id: String = row.try_get("", "id")?;
+        let mut references = self.auth_fleet_refs_tx(tx, fleet).await?;
+        let running = probe(operations::Entity)
+            .and_where(same(
+                operations::Column::GenerationId,
+                generations::Column::Id,
+            ))
+            .and_where(col(operations::Column::State).is_in(ACTIVE_OPERATIONS))
+            .to_owned();
+        let live = generations::Entity::find()
+            .select_only()
+            .column(generations::Column::Id)
+            .column(fleet_revisions::Column::SpecJson)
+            .inner_join_on(
+                fleet_revisions::Entity,
+                same(
+                    fleet_revisions::Column::FleetKey,
+                    generations::Column::FleetKey,
+                )
+                .and(same(
+                    fleet_revisions::Column::Revision,
+                    generations::Column::FleetRevision,
+                )),
+            )
+            .filter(generations::Column::FleetKey.eq(fleet))
+            .filter(
+                col(generations::Column::State)
+                    .ne("Destroyed")
+                    .or(Expr::exists(running)),
+            )
+            .into_tuple::<(String, String)>()
+            .all(tx)
+            .await?;
+        for (id, spec) in live {
             let reference = self
                 .auth_generation_ref_tx(tx, &id)
                 .await?
                 .ok_or_else(|| StoreError::Corrupt("generation auth reference missing".into()))?;
-            references.push((reference, row.try_get("", "spec_json")?));
+            references.push((reference, spec));
         }
         let mut result = Vec::new();
         for (reference, spec) in references {

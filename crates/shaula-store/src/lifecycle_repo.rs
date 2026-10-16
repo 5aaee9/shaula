@@ -2,7 +2,7 @@
 //! operation records (the fenced apply-start boundary).
 
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 
 use crate::entities::fleet::fleets;
 use crate::entities::lifecycle::{
@@ -87,6 +87,7 @@ impl Store {
             provisioned_at: Set(None),
             expiry_requested_at: Set(None),
             resources_destroyed_at: Set(None),
+            failed_create_identity_json: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -246,20 +247,13 @@ impl Store {
     }
 
     async fn failed_create_identity(&self, id: &str) -> StoreResult<Option<String>> {
-        use sea_orm::{ConnectionTrait, Statement};
-        let row = self
-            .connection()
-            .query_one(Statement::from_sql_and_values(
-                sea_orm::DbBackend::Sqlite,
-                "SELECT failed_create_identity_json FROM runner_generations WHERE id = ?",
-                [id.into()],
-            ))
-            .await?;
-        Ok(row.and_then(|row| {
-            row.try_get("", "failed_create_identity_json")
-                .ok()
-                .flatten()
-        }))
+        Ok(runner_generations::Entity::find_by_id(id)
+            .select_only()
+            .column(runner_generations::Column::FailedCreateIdentityJson)
+            .into_tuple::<Option<String>>()
+            .one(self.connection())
+            .await?
+            .flatten())
     }
 
     /// Whether any Destroy operation row exists for this generation —

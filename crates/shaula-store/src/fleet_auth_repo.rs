@@ -126,19 +126,42 @@ impl Store {
         reason: &str,
         next_retry_at: i64,
     ) -> StoreResult<bool> {
-        use sea_orm::{ConnectionTrait, DbBackend, Statement};
+        use crate::entities::{auth::fleet_auth_contexts as contexts, fleet::fleets};
+        use crate::query_ext::{col, probe, scalar};
+        use sea_orm::sea_query::{Expr, Query};
+        use sea_orm::{ColumnTrait, QueryFilter};
         // One conditional write checks the same captured authority as the
         // success CAS. No current-row read can accidentally reattribute an
         // earlier failure to a replacement revision or refreshed intent.
-        let result = self.connection().execute(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "UPDATE fleet_auth_handoffs SET state='Blocked', reason=?, next_retry_at=?, attempts=attempts+1
-             WHERE fleet_key=? AND desired_profile_key=? AND desired_revision=?
-             AND EXISTS(SELECT 1 FROM fleets WHERE key=? AND mutation_fence=?)
-             AND (SELECT desired_context_json FROM fleet_auth_contexts WHERE fleet_key=?) IS ?",
-            [reason.into(), next_retry_at.into(), key.into(), authority.0.clone().into(), authority.1.into(),
-                key.into(), expectation.mutation_fence.into(), key.into(), expectation.desired_context_json.clone().into()]
-        )).await?;
-        Ok(result.rows_affected() == 1)
+        let fenced = probe(fleets::Entity)
+            .and_where(col(fleets::Column::Key).eq(key))
+            .and_where(col(fleets::Column::MutationFence).eq(expectation.mutation_fence))
+            .to_owned();
+        let desired_context = Query::select()
+            .column(contexts::Column::DesiredContextJson)
+            .from(contexts::Entity)
+            .and_where(col(contexts::Column::FleetKey).eq(key))
+            .to_owned();
+        let result = fleet_auth_handoffs::Entity::update_many()
+            .col_expr(fleet_auth_handoffs::Column::State, Expr::value("Blocked"))
+            .col_expr(fleet_auth_handoffs::Column::Reason, Expr::value(reason))
+            .col_expr(
+                fleet_auth_handoffs::Column::NextRetryAt,
+                Expr::value(next_retry_at),
+            )
+            .col_expr(
+                fleet_auth_handoffs::Column::Attempts,
+                col(fleet_auth_handoffs::Column::Attempts).add(1),
+            )
+            .filter(fleet_auth_handoffs::Column::FleetKey.eq(key))
+            .filter(fleet_auth_handoffs::Column::DesiredProfileKey.eq(authority.0.as_str()))
+            .filter(fleet_auth_handoffs::Column::DesiredRevision.eq(authority.1))
+            .filter(Expr::exists(fenced))
+            .filter(
+                Expr::expr(scalar(desired_context)).is(expectation.desired_context_json.clone()),
+            )
+            .exec(self.connection())
+            .await?;
+        Ok(result.rows_affected == 1)
     }
 }

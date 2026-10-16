@@ -1,9 +1,10 @@
 //! Session installation, invalidation and demand snapshots.
 
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, QueryFilter, Statement};
+use sea_orm::{sea_query::OnConflict, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
 use shaula_core::registry::{PersistedSession, SessionInstall};
 
+use crate::entities::auth::fleet_session_auth;
 use crate::entities::lifecycle::{fleet_demand, fleet_sessions, job_observations, scale_set_state};
 use crate::runtime_guards::session_active;
 use crate::store::{Store, StoreError, StoreResult};
@@ -80,11 +81,21 @@ impl Store {
             )
             .exec(&tx)
             .await?;
-        tx.execute(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "INSERT INTO fleet_session_auth(fleet_key,profile_key,revision) VALUES(?,?,?)
-             ON CONFLICT(fleet_key) DO UPDATE SET profile_key=excluded.profile_key, revision=excluded.revision",
-            [fleet_key.into(), install.auth_context.profile_key.clone().into(), install.auth_context.revision.into()],
-        )).await?;
+        fleet_session_auth::Entity::insert(fleet_session_auth::ActiveModel {
+            fleet_key: Set(fleet_key.to_owned()),
+            profile_key: Set(install.auth_context.profile_key.clone()),
+            revision: Set(install.auth_context.revision),
+        })
+        .on_conflict(
+            OnConflict::column(fleet_session_auth::Column::FleetKey)
+                .update_columns([
+                    fleet_session_auth::Column::ProfileKey,
+                    fleet_session_auth::Column::Revision,
+                ])
+                .to_owned(),
+        )
+        .exec_without_returning(&tx)
+        .await?;
         Self::demand_snapshot_tx(
             &tx,
             fleet_key,
@@ -181,12 +192,9 @@ impl Store {
         updated.last_message_id = Set(0);
         updated.created_at = Set(now);
         fleet_sessions::Entity::update(updated).exec(&tx).await?;
-        tx.execute(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "DELETE FROM fleet_session_auth WHERE fleet_key=?",
-            [fleet_key.into()],
-        ))
-        .await?;
+        fleet_session_auth::Entity::delete_by_id(fleet_key)
+            .exec(&tx)
+            .await?;
         tx.commit().await?;
         Ok(true)
     }

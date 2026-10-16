@@ -1,10 +1,11 @@
 //! Durable authority checks shared by listeners and runtime observations.
 
-use sea_orm::{ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait, Statement};
+use sea_orm::{DatabaseTransaction, EntityTrait};
 use shaula_core::auth_context::ResolvedAuthContext;
 use shaula_core::registry::FleetRuntimeGuard;
 
-use crate::entities::{auth::fleet_auth_contexts, fleet::fleet_auth_handoffs};
+use crate::entities::auth::{fleet_auth_contexts, fleet_session_auth};
+use crate::entities::fleet::fleet_auth_handoffs;
 use crate::entities::{fleet::fleets, lifecycle::fleet_sessions};
 use crate::store::{Store, StoreError, StoreResult};
 
@@ -135,23 +136,11 @@ impl Store {
         tx: &DatabaseTransaction,
         key: &str,
     ) -> StoreResult<Option<ResolvedAuthContext>> {
-        let Some(row) = tx
-            .query_one(Statement::from_sql_and_values(
-                DbBackend::Sqlite,
-                "SELECT profile_key, revision FROM fleet_session_auth WHERE fleet_key=?",
-                [key.into()],
-            ))
-            .await?
-        else {
+        let Some(row) = fleet_session_auth::Entity::find_by_id(key).one(tx).await? else {
             return Ok(None);
         };
-        self.auth_execution_context_tx(
-            tx,
-            key,
-            &row.try_get::<String>("", "profile_key")?,
-            row.try_get("", "revision")?,
-        )
-        .await
+        self.auth_execution_context_tx(tx, key, &row.profile_key, row.revision)
+            .await
     }
 }
 

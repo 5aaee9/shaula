@@ -1,7 +1,12 @@
 //! Durable at-most-once acquisition attempts and old-session classification.
-use sea_orm::{ConnectionTrait, DatabaseTransaction, DbBackend, Statement};
+use sea_orm::{
+    sea_query::{Expr, SimpleExpr},
+    ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect,
+};
 use shaula_core::registry::SessionEffectContext;
 
+use crate::entities::listener::listener_acquisitions as acquisitions;
+use crate::query_ext::col;
 use crate::{Store, StoreError, StoreResult};
 
 impl Store {
@@ -27,25 +32,22 @@ impl Store {
                 "acquisition message not persisted".into(),
             ));
         };
-        if row.try_get::<i64>("", "acked")? == 0 {
+        if row.acked == 0 {
             return Err(StoreError::Corrupt("acquisition before message ACK".into()));
         }
         let ids = self
             .listener_message_view_tx(&tx, fleet, context.epoch, &row)
             .await?
             .pending_request_ids;
-        tx.execute(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "UPDATE listener_acquisitions SET state='AcquireStarting',updated_at=?
-             WHERE fleet_key=? AND epoch=? AND message_id=? AND state='Pending'",
-            [
-                now.into(),
-                fleet.into(),
-                context.epoch.into(),
-                message_id.into(),
-            ],
-        ))
-        .await?;
+        acquisitions::Entity::update_many()
+            .col_expr(acquisitions::Column::State, Expr::value("AcquireStarting"))
+            .col_expr(acquisitions::Column::UpdatedAt, Expr::value(now))
+            .filter(acquisitions::Column::FleetKey.eq(fleet))
+            .filter(acquisitions::Column::Epoch.eq(context.epoch))
+            .filter(acquisitions::Column::MessageId.eq(message_id))
+            .filter(acquisitions::Column::State.eq("Pending"))
+            .exec(&tx)
+            .await?;
         tx.commit().await?;
         Ok(Some(ids))
     }
@@ -68,24 +70,25 @@ impl Store {
                 "acquisition completion message missing".into(),
             ));
         }
-        let rows = tx.query_all(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "SELECT runner_request_id,state FROM listener_acquisitions WHERE fleet_key=? AND epoch=? AND message_id=?",
-            [fleet.into(),context.epoch.into(),message_id.into()])).await?;
-        let ids = rows
-            .iter()
-            .map(|r| {
-                r.try_get::<i64>("", "runner_request_id")
-                    .map_err(StoreError::from)
-            })
-            .collect::<StoreResult<Vec<_>>>()?;
+        let rows = acquisitions::Entity::find()
+            .select_only()
+            .columns([
+                acquisitions::Column::RunnerRequestId,
+                acquisitions::Column::State,
+            ])
+            .filter(acquisitions::Column::FleetKey.eq(fleet))
+            .filter(acquisitions::Column::Epoch.eq(context.epoch))
+            .filter(acquisitions::Column::MessageId.eq(message_id))
+            .into_tuple::<(i64, String)>()
+            .all(&tx)
+            .await?;
+        let ids = rows.iter().map(|(id, _)| *id).collect::<Vec<_>>();
         if accepted.is_some_and(|values| values.iter().any(|id| !ids.contains(id))) {
             return Err(StoreError::Corrupt(
                 "acquisition result includes an unrequested job".into(),
             ));
         }
-        for row in rows {
-            let id: i64 = row.try_get("", "runner_request_id")?;
-            let previous: String = row.try_get("", "state")?;
+        for (id, previous) in rows {
             if !matches!(previous.as_str(), "AcquireStarting" | "Uncertain") {
                 continue;
             }
@@ -94,9 +97,14 @@ impl Store {
                 Some(ids) if ids.contains(&id) => "Acquired",
                 Some(_) => "Rejected",
             };
-            tx.execute(Statement::from_sql_and_values(DbBackend::Sqlite,
-                "UPDATE listener_acquisitions SET state=?,updated_at=? WHERE fleet_key=? AND epoch=? AND runner_request_id=?",
-                [state.into(),now.into(),fleet.into(),context.epoch.into(),id.into()])).await?;
+            acquisitions::Entity::update_many()
+                .col_expr(acquisitions::Column::State, Expr::value(state))
+                .col_expr(acquisitions::Column::UpdatedAt, Expr::value(now))
+                .filter(acquisitions::Column::FleetKey.eq(fleet))
+                .filter(acquisitions::Column::Epoch.eq(context.epoch))
+                .filter(acquisitions::Column::RunnerRequestId.eq(id))
+                .exec(&tx)
+                .await?;
         }
         // A corrupt or replaced current authority cannot erase the outcome
         // of an effect that already reached GitHub. Commit it before returning
@@ -114,14 +122,17 @@ impl Store {
         fleet: &str,
         epoch: i64,
     ) -> StoreResult<()> {
-        tx.execute(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "UPDATE listener_acquisitions SET state=CASE state
-             WHEN 'Pending' THEN 'Cancelled' ELSE 'Uncertain' END
-             WHERE fleet_key=? AND epoch=? AND state IN ('Pending','AcquireStarting')",
-            [fleet.into(), epoch.into()],
-        ))
-        .await?;
+        let ended: SimpleExpr =
+            Expr::case(col(acquisitions::Column::State).eq("Pending"), "Cancelled")
+                .finally("Uncertain")
+                .into();
+        acquisitions::Entity::update_many()
+            .col_expr(acquisitions::Column::State, ended)
+            .filter(acquisitions::Column::FleetKey.eq(fleet))
+            .filter(acquisitions::Column::Epoch.eq(epoch))
+            .filter(acquisitions::Column::State.is_in(["Pending", "AcquireStarting"]))
+            .exec(tx)
+            .await?;
         Ok(())
     }
 
@@ -134,13 +145,17 @@ impl Store {
         epoch: i64,
         now: i64,
     ) -> StoreResult<()> {
-        tx.execute(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "UPDATE listener_acquisitions SET state='ReconciledUncertain',updated_at=?
-             WHERE fleet_key=? AND epoch<? AND state='Uncertain'",
-            [now.into(), fleet.into(), epoch.into()],
-        ))
-        .await?;
+        acquisitions::Entity::update_many()
+            .col_expr(
+                acquisitions::Column::State,
+                Expr::value("ReconciledUncertain"),
+            )
+            .col_expr(acquisitions::Column::UpdatedAt, Expr::value(now))
+            .filter(acquisitions::Column::FleetKey.eq(fleet))
+            .filter(acquisitions::Column::Epoch.lt(epoch))
+            .filter(acquisitions::Column::State.eq("Uncertain"))
+            .exec(tx)
+            .await?;
         Ok(())
     }
 }
