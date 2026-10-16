@@ -3,8 +3,13 @@ use crate::entities::{
     auth::github_auth_profiles as auth,
     fleet::fleet_revision_pool_members,
     template::{profile_changes, template_profiles as template},
+    template_pool::{
+        template_pool_members as pool_members, template_pool_revisions as pool_revisions,
+        template_pools as pools,
+    },
 };
-use sea_orm::{sea_query::Expr, ColumnTrait, EntityTrait, QueryFilter};
+use crate::query_ext::{col, same, JoinOn};
+use sea_orm::{sea_query::Expr, ColumnTrait, EntityTrait, QueryFilter, QuerySelect};
 use shaula_core::error::CoreResult;
 use shaula_core::registry::{AuthProfileStore, MutationError, MutationFacts, TemplateStore};
 
@@ -66,17 +71,22 @@ pub(super) async fn allows_references(
         }
     }
     if let Some((key, revision)) = &facts.template_pool_ref {
-        use sea_orm::{ConnectionTrait, DbBackend, Statement};
         // Pool DELETE and Fleet routing admission share the writer. A stale
         // admission snapshot cannot resurrect a tombstoned pool's authority.
-        let live = tx
-            .query_one(Statement::from_sql_and_values(
-                DbBackend::Sqlite,
-                "SELECT 1 FROM template_pools p JOIN template_pool_revisions r ON r.pool_key=p.key
-             WHERE p.key=? AND r.revision=? AND p.desired_revision>=r.revision
-             AND p.deletion_marker=0 AND p.tombstone=0",
-                [key.clone().into(), (*revision).into()],
-            ))
+        let live = pool_revisions::Entity::find()
+            .select_only()
+            .column(pool_revisions::Column::Revision)
+            .inner_join_on(
+                pools::Entity,
+                same(pools::Column::Key, pool_revisions::Column::PoolKey),
+            )
+            .filter(pools::Column::Key.eq(key))
+            .filter(pool_revisions::Column::Revision.eq(*revision))
+            .filter(pools::Column::DesiredRevision.gte(*revision))
+            .filter(pools::Column::DeletionMarker.eq(false))
+            .filter(pools::Column::Tombstone.eq(false))
+            .into_tuple::<i64>()
+            .one(tx)
             .await?;
         if live.is_none() {
             return Ok(false);
@@ -84,11 +94,33 @@ pub(super) async fn allows_references(
         let unchanged = previous.is_some_and(|p| {
             p.template_pool_ref.as_ref() == Some(key) && p.template_pool_revision == Some(*revision)
         });
-        if !unchanged && tx.query_one(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "SELECT 1 FROM template_pool_members m LEFT JOIN template_profiles t ON t.key=m.template_profile_key
-             WHERE m.pool_key=? AND m.pool_revision=? AND (t.key IS NULL OR t.deletion_requested=1) LIMIT 1",
-            [key.clone().into(),(*revision).into()],
-        )).await?.is_some() { return Ok(false); }
+        if !unchanged {
+            // A member whose profile vanished or is retiring blocks the reference.
+            let retiring = pool_members::Entity::find()
+                .select_only()
+                .column(pool_members::Column::MemberKey)
+                .left_join_on(
+                    template::Entity,
+                    same(
+                        template::Column::Key,
+                        pool_members::Column::TemplateProfileKey,
+                    ),
+                )
+                .filter(pool_members::Column::PoolKey.eq(key))
+                .filter(pool_members::Column::PoolRevision.eq(*revision))
+                .filter(
+                    col(template::Column::Key)
+                        .is_null()
+                        .or(template::Column::DeletionRequested.eq(true)),
+                )
+                .limit(1)
+                .into_tuple::<String>()
+                .one(tx)
+                .await?;
+            if retiring.is_some() {
+                return Ok(false);
+            }
+        }
     }
     Ok(true)
 }

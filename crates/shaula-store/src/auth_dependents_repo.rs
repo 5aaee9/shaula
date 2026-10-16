@@ -91,7 +91,7 @@ impl Store {
 }
 
 /// `MAX(h.revision)` over the outer fleet's revisions at or below its head.
-fn latest_at_or_below_head() -> sea_orm::sea_query::SelectStatement {
+pub(crate) fn latest_at_or_below_head() -> sea_orm::sea_query::SelectStatement {
     let history = Alias::new("h");
     Query::select()
         .expr(Expr::col((history.clone(), fleet_revisions::Column::Revision)).max())
