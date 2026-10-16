@@ -1,6 +1,14 @@
 //! Restart classification under the daemon ownership lock, before acquisition.
-use super::{row::Row, sql, unavailable, worker::WorkerRow, SqliteStateBackend, WorkerAdmissions};
-use sea_orm::ConnectionTrait;
+use super::{
+    fences, null, row::Row, set_worker, states, unavailable, worker::WorkerRow, workers,
+    SqliteStateBackend, WorkerAdmissions,
+};
+use crate::entities::lifecycle::runner_generations as generations;
+use crate::query_ext::{col, same, JoinOn};
+use sea_orm::{
+    sea_query::Expr, ActiveValue::Set, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect,
+};
 use shaula_core::{
     state_backend::{StateError, StateResult},
     worker::{FenceOutcome, WorkerAdmission},
@@ -10,21 +18,63 @@ pub use shaula_core::worker::recovery::RecoveryRecord;
 
 impl SqliteStateBackend {
     pub async fn recovery_records(&self) -> StateResult<Vec<RecoveryRecord>> {
-        let rows = self.store.connection().query_all(sql("SELECT w.generation_id, s.worker_epoch, s.worker_attempt, w.phase, w.process_identity, g.workspace_path, s.create_started, w.protected_input IS NOT NULL AS has_input FROM lifecycle_workers w JOIN generation_http_state s ON s.generation_id = w.generation_id JOIN runner_generations g ON g.id = w.generation_id WHERE w.phase != 'completed' AND g.state != 'Destroyed' ORDER BY g.created_at, g.id", vec![])).await.map_err(unavailable)?;
-        rows.iter()
-            .map(|row| {
-                Ok(RecoveryRecord {
-                    generation_id: row.try_get("", "generation_id").map_err(unavailable)?,
-                    worker_epoch: row.try_get("", "worker_epoch").map_err(unavailable)?,
-                    worker_attempt: row.try_get("", "worker_attempt").map_err(unavailable)?,
-                    phase: row.try_get("", "phase").map_err(unavailable)?,
-                    process_identity: row.try_get("", "process_identity").map_err(unavailable)?,
-                    workspace_path: row.try_get("", "workspace_path").map_err(unavailable)?,
-                    create_started: row.try_get("", "create_started").map_err(unavailable)?,
-                    has_input: row.try_get("", "has_input").map_err(unavailable)?,
-                })
-            })
-            .collect()
+        let rows = workers::Entity::find()
+            .select_only()
+            .column(workers::Column::GenerationId)
+            .columns([states::Column::WorkerEpoch, states::Column::WorkerAttempt])
+            .columns([workers::Column::Phase, workers::Column::ProcessIdentity])
+            .column(generations::Column::WorkspacePath)
+            .column(states::Column::CreateStarted)
+            .expr(col(workers::Column::ProtectedInput).is_not_null())
+            .inner_join_on(
+                states::Entity,
+                same(states::Column::GenerationId, workers::Column::GenerationId),
+            )
+            .inner_join_on(
+                generations::Entity,
+                same(generations::Column::Id, workers::Column::GenerationId),
+            )
+            .filter(workers::Column::Phase.ne("completed"))
+            .filter(generations::Column::State.ne("Destroyed"))
+            .order_by_asc(generations::Column::CreatedAt)
+            .order_by_asc(generations::Column::Id)
+            .into_tuple::<(
+                String,
+                i64,
+                String,
+                String,
+                Option<String>,
+                String,
+                bool,
+                bool,
+            )>()
+            .all(self.store.connection())
+            .await
+            .map_err(unavailable)?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(
+                    generation_id,
+                    worker_epoch,
+                    worker_attempt,
+                    phase,
+                    process_identity,
+                    workspace_path,
+                    create_started,
+                    has_input,
+                )| RecoveryRecord {
+                    generation_id,
+                    worker_epoch,
+                    worker_attempt,
+                    phase,
+                    process_identity,
+                    workspace_path,
+                    create_started,
+                    has_input,
+                },
+            )
+            .collect())
     }
 
     /// `outcome` comes exclusively from the trusted local Executor (or an
@@ -53,21 +103,19 @@ impl SqliteStateBackend {
             // A later reboot/verified fence may make explicit operator finalize
             // safe, but never silently resumes a quarantined Generation.
             if fenced {
-                tx.execute(sql("UPDATE lifecycle_fences SET confirmed_fenced = 1 WHERE worker_attempt = ? AND generation_id = ? AND worker_epoch = ?", vec![record.worker_attempt.clone().into(), record.generation_id.clone().into(), record.worker_epoch.into()])).await.map_err(unavailable)?;
-                tx.execute(sql("UPDATE lifecycle_workers SET handover = NULL, active_command = NULL WHERE generation_id = ?", vec![record.generation_id.clone().into()])).await.map_err(unavailable)?;
+                fences::Entity::update_many()
+                    .col_expr(fences::Column::ConfirmedFenced, Expr::value(true))
+                    .filter(fences::Column::WorkerAttempt.eq(&record.worker_attempt))
+                    .filter(fences::Column::GenerationId.eq(&record.generation_id))
+                    .filter(fences::Column::WorkerEpoch.eq(record.worker_epoch))
+                    .exec(&tx)
+                    .await
+                    .map_err(unavailable)?;
+                release_command(&tx, &record.generation_id).await?;
             }
             return tx.commit().await.map_err(unavailable);
         }
-        let lock = tx
-            .query_one(sql(
-                "SELECT lock_info FROM generation_http_state WHERE generation_id = ?",
-                vec![record.generation_id.clone().into()],
-            ))
-            .await
-            .map_err(unavailable)?
-            .ok_or(StateError::Unavailable)?
-            .try_get::<Option<Vec<u8>>>("", "lock_info")
-            .map_err(unavailable)?;
+        let lock = state.lock_bytes(&tx).await?;
         // Resource cleanup may finish before CI registration removal. Its
         // exact empty-state proof survives a fenced restart while that removal
         // is retried, provided no later command, lock or revision superseded it.
@@ -77,7 +125,18 @@ impl SqliteStateBackend {
                 && worker.active_command.is_none()
                 && lock.is_none()
         });
-        tx.execute(sql("INSERT INTO lifecycle_fences(worker_attempt, generation_id, worker_epoch, process_identity, orphan_lock, outcome) VALUES (?, ?, ?, ?, ?, ?)", vec![record.worker_attempt.clone().into(), record.generation_id.clone().into(), record.worker_epoch.into(), record.process_identity.clone().into(), lock.into(), (if fenced { "fenced" } else { "unknown" }).into()])).await.map_err(unavailable)?;
+        fences::Entity::insert(fences::ActiveModel {
+            worker_attempt: Set(record.worker_attempt.clone()),
+            generation_id: Set(record.generation_id.clone()),
+            worker_epoch: Set(record.worker_epoch),
+            process_identity: Set(record.process_identity.clone()),
+            orphan_lock: Set(lock),
+            outcome: Set(if fenced { "fenced" } else { "unknown" }.into()),
+            ..Default::default()
+        })
+        .exec_without_returning(&tx)
+        .await
+        .map_err(unavailable)?;
         // Only a cleanup this recovery would otherwise admit may anchor a
         // failed Create: the fence proves no writer of the state remains.
         let anchorable =
@@ -100,26 +159,26 @@ impl SqliteStateBackend {
             || (record.create_started && !record.has_input)
             || !complete_state
         {
-            tx.execute(sql(
-                "UPDATE generation_http_state SET revoked = 1 WHERE generation_id = ?",
-                vec![record.generation_id.clone().into()],
-            ))
-            .await
-            .map_err(unavailable)?;
-            tx.execute(sql(
-                "UPDATE lifecycle_workers SET phase = 'quarantined' WHERE generation_id = ?",
-                vec![record.generation_id.clone().into()],
-            ))
-            .await
-            .map_err(unavailable)?;
-            tx.execute(sql(
-                "UPDATE runner_generations SET state = 'Quarantined' WHERE id = ?",
-                vec![record.generation_id.clone().into()],
-            ))
-            .await
-            .map_err(unavailable)?;
+            states::Entity::update_many()
+                .col_expr(states::Column::Revoked, Expr::value(true))
+                .filter(states::Column::GenerationId.eq(&record.generation_id))
+                .exec(&tx)
+                .await
+                .map_err(unavailable)?;
+            set_worker(
+                &tx,
+                &record.generation_id,
+                [(workers::Column::Phase, Expr::value("quarantined"))],
+            )
+            .await?;
+            generations::Entity::update_many()
+                .col_expr(generations::Column::State, Expr::value("Quarantined"))
+                .filter(generations::Column::Id.eq(&record.generation_id))
+                .exec(&tx)
+                .await
+                .map_err(unavailable)?;
             if fenced {
-                tx.execute(sql("UPDATE lifecycle_workers SET handover = NULL, active_command = NULL WHERE generation_id = ?", vec![record.generation_id.clone().into()])).await.map_err(unavailable)?;
+                release_command(&tx, &record.generation_id).await?;
             }
             return tx.commit().await.map_err(unavailable);
         }
@@ -131,11 +190,62 @@ impl SqliteStateBackend {
         admission.cleanup_only = true;
         // Orphan lock removal and credential rotation are a single commit,
         // after the exact old containment was proved empty and audited above.
-        tx.execute(sql("UPDATE generation_http_state SET worker_epoch = ?, worker_attempt = ?, capability_hash = ?, revoked = 0, lock_id = NULL, lock_info = NULL WHERE generation_id = ?", vec![admission.claim.worker_epoch.into(), admission.claim.worker_attempt.to_string().into(), admission.state.verifier().into(), record.generation_id.clone().into()])).await.map_err(unavailable)?;
-        tx.execute(sql("UPDATE lifecycle_workers SET control_hash = ?, phase = 'admitted', process_identity = NULL, cleanup_only = 1, handover = NULL, active_command = NULL, cleanup_revision = ? WHERE generation_id = ?", vec![admission.control.verifier().into(), cleanup_revision.into(), record.generation_id.clone().into()])).await.map_err(unavailable)?;
+        states::Entity::update_many()
+            .col_expr(
+                states::Column::WorkerEpoch,
+                Expr::value(admission.claim.worker_epoch),
+            )
+            .col_expr(
+                states::Column::WorkerAttempt,
+                Expr::value(admission.claim.worker_attempt.to_string()),
+            )
+            .col_expr(
+                states::Column::CapabilityHash,
+                Expr::value(admission.state.verifier()),
+            )
+            .col_expr(states::Column::Revoked, Expr::value(false))
+            .col_expr(states::Column::LockId, null())
+            .col_expr(
+                states::Column::LockInfo,
+                Expr::value(Option::<Vec<u8>>::None),
+            )
+            .filter(states::Column::GenerationId.eq(&record.generation_id))
+            .exec(&tx)
+            .await
+            .map_err(unavailable)?;
+        set_worker(
+            &tx,
+            &record.generation_id,
+            [
+                (
+                    workers::Column::ControlHash,
+                    Expr::value(admission.control.verifier()),
+                ),
+                (workers::Column::Phase, Expr::value("admitted")),
+                (workers::Column::ProcessIdentity, null()),
+                (workers::Column::CleanupOnly, Expr::value(true)),
+                (workers::Column::Handover, null()),
+                (workers::Column::ActiveCommand, null()),
+                (
+                    workers::Column::CleanupRevision,
+                    Expr::value(cleanup_revision),
+                ),
+            ],
+        )
+        .await?;
         // Recovery never re-enters Create/JIT. Existing CI removal gates still
         // decide when the cleanup-only replacement may actually destroy.
-        tx.execute(sql("UPDATE runner_generations SET state = 'CleanupRequired' WHERE id = ? AND state IN ('CreatePending','Creating','WaitingOnline')", vec![record.generation_id.clone().into()])).await.map_err(unavailable)?;
+        generations::Entity::update_many()
+            .col_expr(generations::Column::State, Expr::value("CleanupRequired"))
+            .filter(generations::Column::Id.eq(&record.generation_id))
+            .filter(generations::Column::State.is_in([
+                "CreatePending",
+                "Creating",
+                "WaitingOnline",
+            ]))
+            .exec(&tx)
+            .await
+            .map_err(unavailable)?;
         tx.commit().await.map_err(unavailable)?;
         admissions.publish(admission)
     }
@@ -163,4 +273,17 @@ impl SqliteStateBackend {
             u64::try_from(snapshot.document.serial()).map_err(|_| StateError::Invalid)?,
         )))
     }
+}
+
+/// A fenced executor can hold no command or spawn handover any longer.
+async fn release_command(tx: &DatabaseTransaction, id: &str) -> StateResult<()> {
+    set_worker(
+        tx,
+        id,
+        [
+            (workers::Column::Handover, null()),
+            (workers::Column::ActiveCommand, null()),
+        ],
+    )
+    .await
 }

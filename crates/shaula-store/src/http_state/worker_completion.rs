@@ -1,12 +1,17 @@
 //! Terminal receipt, backend seal and occupancy release share one commit.
-use sea_orm::{ConnectionTrait, DatabaseTransaction};
+use sea_orm::{
+    sea_query::Expr, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect,
+};
 use shaula_core::{
     state_backend::{StateClaim, StateError, StateResult},
     worker::{CompletionKind, CompletionReceipt, ControlAccess},
 };
 use uuid::Uuid;
 
-use super::{row::Row, sql, unavailable, worker::WorkerRow, SqliteStateBackend};
+use super::{row::Row, states, unavailable, worker::WorkerRow, workers, SqliteStateBackend};
+use crate::entities::lifecycle::{
+    runner_generations as generations, runner_operations as operations,
+};
 
 impl SqliteStateBackend {
     /// Daemon-only completion after its backend-specific removal gate. Worker
@@ -110,33 +115,29 @@ async fn complete_on(
     if !snapshot.document.managed_empty() {
         return Err(StateError::Conflict);
     }
-    let generation = tx
-        .query_one(sql(
-            "SELECT state, jit_phase FROM runner_generations WHERE id = ?",
-            vec![id.clone().into()],
-        ))
+    let generation_state = generations::Entity::find_by_id(&id)
+        .select_only()
+        .column(generations::Column::State)
+        .into_tuple::<String>()
+        .one(tx)
         .await
         .map_err(unavailable)?
         .ok_or(StateError::Conflict)?;
     // Destroying is entered by the daemon only after its existing ordinary
     // removal or resource-first hard-lifetime registration gates resolve.
-    if generation
-        .try_get::<String>("", "state")
-        .map_err(unavailable)?
-        != "Destroying"
-    {
+    if generation_state != "Destroying" {
         return Err(StateError::Conflict);
     }
-    let operations = tx
-        .query_all(sql(
-            "SELECT kind, state FROM runner_operations WHERE generation_id = ?",
-            vec![id.clone().into()],
-        ))
+    let operation_kinds = operations::Entity::find()
+        .select_only()
+        .column(operations::Column::Kind)
+        .filter(operations::Column::GenerationId.eq(&id))
+        .into_tuple::<String>()
+        .all(tx)
         .await
         .map_err(unavailable)?;
     let mut create = false;
-    for operation in operations {
-        let operation_kind: String = operation.try_get("", "kind").map_err(unavailable)?;
+    for operation_kind in operation_kinds {
         // Historical failed operations retain their starting facts. Current
         // command/handover authority above, not an old operation label, proves
         // quiescence; cleanup must attest the exact current state revision.
@@ -158,22 +159,30 @@ async fn complete_on(
         completed_at: now,
     };
     let encoded = serde_json::to_string(&receipt).map_err(unavailable_receipt)?;
-    tx.execute(sql(
-        "UPDATE generation_http_state SET sealed = 1 WHERE generation_id = ?",
-        vec![id.clone().into()],
-    ))
-    .await
-    .map_err(unavailable)?;
-    tx.execute(sql(
-            "UPDATE lifecycle_workers SET phase = 'completed', completion_request = ?, completion_receipt = ? WHERE generation_id = ?",
-            vec![request_id.to_string().into(), encoded.into(), id.clone().into()],
-        )).await.map_err(unavailable)?;
-    tx.execute(sql(
-        "UPDATE runner_generations SET state = 'Destroyed', updated_at = ? WHERE id = ?",
-        vec![now.into(), id.into()],
-    ))
-    .await
-    .map_err(unavailable)?;
+    states::Entity::update_many()
+        .col_expr(states::Column::Sealed, Expr::value(true))
+        .filter(states::Column::GenerationId.eq(&id))
+        .exec(tx)
+        .await
+        .map_err(unavailable)?;
+    workers::Entity::update_many()
+        .col_expr(workers::Column::Phase, Expr::value("completed"))
+        .col_expr(
+            workers::Column::CompletionRequest,
+            Expr::value(request_id.to_string()),
+        )
+        .col_expr(workers::Column::CompletionReceipt, Expr::value(encoded))
+        .filter(workers::Column::GenerationId.eq(&id))
+        .exec(tx)
+        .await
+        .map_err(unavailable)?;
+    generations::Entity::update_many()
+        .col_expr(generations::Column::State, Expr::value("Destroyed"))
+        .col_expr(generations::Column::UpdatedAt, Expr::value(now))
+        .filter(generations::Column::Id.eq(id))
+        .exec(tx)
+        .await
+        .map_err(unavailable)?;
     Ok(receipt)
 }
 

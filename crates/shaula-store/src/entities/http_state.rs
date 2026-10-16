@@ -98,3 +98,22 @@ pub mod lifecycle_deployment {
 
     impl ActiveModelBehavior for ActiveModel {}
 }
+
+pub mod lifecycle_imports {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "lifecycle_imports")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub generation_id: String,
+        pub commitment: String,
+        pub classification: String,
+        pub receipt: String,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}

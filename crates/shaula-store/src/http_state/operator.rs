@@ -1,5 +1,9 @@
-use super::{row::Row, sql, unavailable, worker::WorkerRow, SqliteStateBackend};
-use sea_orm::{ConnectionTrait, DatabaseTransaction};
+use super::{
+    fences, row::Row, states, unavailable, worker::WorkerRow, workers, SqliteStateBackend,
+};
+use sea_orm::{
+    sea_query::Expr, ColumnTrait, DatabaseTransaction, EntityTrait, PaginatorTrait, QueryFilter,
+};
 use shaula_core::{
     state_backend::{StateClaim, StateError, StateResult},
     worker::{CompletionKind, CompletionReceipt},
@@ -16,19 +20,24 @@ impl SqliteStateBackend {
         now: i64,
     ) -> StateResult<()> {
         let Some(worker) = WorkerRow::read(tx, id).await? else {
-            tx.execute(sql(
-                "UPDATE generation_http_state SET sealed = 1, revoked = 1 WHERE generation_id = ?",
-                vec![id.into()],
-            ))
-            .await
-            .map_err(unavailable)?;
+            seal(tx, id).await?;
             return Ok(());
         };
         let state = Row::load(tx, id).await?;
-        let quarantined_fenced = worker.phase == "quarantined" && tx.query_one(sql(
-            "SELECT 1 FROM lifecycle_fences WHERE generation_id = ? AND worker_attempt = ? AND worker_epoch = ? AND (outcome = 'fenced' OR confirmed_fenced = 1)",
-            vec![id.into(), state.worker_attempt.clone().into(), state.worker_epoch.into()],
-        )).await.map_err(unavailable)?.is_some();
+        let quarantined_fenced = worker.phase == "quarantined"
+            && fences::Entity::find()
+                .filter(fences::Column::GenerationId.eq(id))
+                .filter(fences::Column::WorkerAttempt.eq(&state.worker_attempt))
+                .filter(fences::Column::WorkerEpoch.eq(state.worker_epoch))
+                .filter(
+                    fences::Column::Outcome
+                        .eq("fenced")
+                        .or(fences::Column::ConfirmedFenced.eq(true)),
+                )
+                .count(tx)
+                .await
+                .map_err(unavailable)?
+                > 0;
         if (!matches!(worker.phase.as_str(), "admitted" | "fenced") && !quarantined_fenced)
             || worker.handover.is_some()
             || worker.active_command.is_some()
@@ -47,13 +56,27 @@ impl SqliteStateBackend {
             kind: CompletionKind::OperatorAttested,
             completed_at: now,
         };
-        tx.execute(sql(
-            "UPDATE generation_http_state SET sealed = 1, revoked = 1 WHERE generation_id = ?",
-            vec![id.into()],
-        ))
-        .await
-        .map_err(unavailable)?;
-        tx.execute(sql("UPDATE lifecycle_workers SET phase = 'completed', completion_request = ?, completion_receipt = ? WHERE generation_id = ?", vec![request.into(), serde_json::to_string(&receipt).map_err(|_| StateError::Invalid)?.into(), id.into()])).await.map_err(unavailable)?;
+        seal(tx, id).await?;
+        let receipt = serde_json::to_string(&receipt).map_err(|_| StateError::Invalid)?;
+        workers::Entity::update_many()
+            .col_expr(workers::Column::Phase, Expr::value("completed"))
+            .col_expr(workers::Column::CompletionRequest, Expr::value(request))
+            .col_expr(workers::Column::CompletionReceipt, Expr::value(receipt))
+            .filter(workers::Column::GenerationId.eq(id))
+            .exec(tx)
+            .await
+            .map_err(unavailable)?;
         Ok(())
     }
+}
+
+async fn seal(tx: &DatabaseTransaction, id: &str) -> StateResult<()> {
+    states::Entity::update_many()
+        .col_expr(states::Column::Sealed, Expr::value(true))
+        .col_expr(states::Column::Revoked, Expr::value(true))
+        .filter(states::Column::GenerationId.eq(id))
+        .exec(tx)
+        .await
+        .map_err(unavailable)?;
+    Ok(())
 }

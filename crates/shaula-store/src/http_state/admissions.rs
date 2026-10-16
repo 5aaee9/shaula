@@ -1,14 +1,16 @@
 //! One-time credential handoff for committed admissions in this daemon epoch.
 use std::{collections::HashMap, sync::Mutex};
 
-use sea_orm::{ConnectionTrait, DatabaseTransaction};
+use sea_orm::{
+    ColumnTrait, DatabaseTransaction, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
+};
 use shaula_core::{
     state_backend::{StateError, StateResult},
     worker::WorkerAdmission,
 };
 use uuid::Uuid;
 
-use super::{sql, unavailable, SqliteStateBackend};
+use super::{deployment, unavailable, workers, SqliteStateBackend};
 
 pub struct WorkerAdmissions {
     pending: Mutex<HashMap<Uuid, WorkerAdmission>>,
@@ -54,26 +56,26 @@ impl WorkerAdmissions {
         tx: &DatabaseTransaction,
         id: &str,
     ) -> StateResult<WorkerAdmission> {
-        let mode = tx.query_one(sql(
-            "SELECT activated FROM lifecycle_deployment WHERE singleton = 1 AND format_version = 1",
-            vec![],
-        )).await.map_err(unavailable)?.ok_or(StateError::Unavailable)?;
-        if !mode.try_get::<bool>("", "activated").map_err(unavailable)? {
+        let activated = deployment::Entity::find_by_id(1)
+            .select_only()
+            .column(deployment::Column::Activated)
+            .filter(deployment::Column::FormatVersion.eq(1))
+            .into_tuple::<bool>()
+            .one(tx)
+            .await
+            .map_err(unavailable)?
+            .ok_or(StateError::Unavailable)?;
+        if !activated {
             return Err(StateError::Conflict);
         }
         // An unknown quarantined executor may still be alive. Its occupancy
         // cannot be recycled into another worker merely by renaming its phase.
-        let count = tx
-            .query_one(sql(
-                "SELECT COUNT(*) AS count FROM lifecycle_workers WHERE phase != 'completed'",
-                vec![],
-            ))
+        let count = workers::Entity::find()
+            .filter(workers::Column::Phase.ne("completed"))
+            .count(tx)
             .await
-            .map_err(unavailable)?
-            .ok_or(StateError::Unavailable)?
-            .try_get::<i64>("", "count")
             .map_err(unavailable)?;
-        if count >= self.create_limit as i64 {
+        if count >= self.create_limit as u64 {
             return Err(StateError::Unavailable);
         }
         let admission = WorkerAdmission::new(Uuid::parse_str(id).map_err(|_| StateError::Invalid)?);

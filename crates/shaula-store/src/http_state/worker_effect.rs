@@ -1,5 +1,5 @@
-use super::{row::Row, sql, unavailable, SqliteStateBackend};
-use sea_orm::{ConnectionTrait, DatabaseTransaction};
+use super::{row::Row, states, unavailable, worker::WorkerRow, workers, SqliteStateBackend};
+use sea_orm::{sea_query::Expr, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter};
 use shaula_core::{
     plan::PlanIntent,
     ports::PlanProvenance,
@@ -11,7 +11,7 @@ impl SqliteStateBackend {
         tx: &DatabaseTransaction,
         proof: &PlanProvenance,
     ) -> StateResult<()> {
-        let Some(worker) = super::worker::WorkerRow::read(tx, &proof.generation_id).await? else {
+        let Some(worker) = WorkerRow::read(tx, &proof.generation_id).await? else {
             return Ok(());
         };
         if worker.phase != "running"
@@ -21,15 +21,15 @@ impl SqliteStateBackend {
         {
             return Err(StateError::Conflict);
         }
-        tx.execute(sql(
-            "UPDATE lifecycle_workers SET active_command = ? WHERE generation_id = ?",
-            vec![
-                format!("bootstrap:{}", proof.attempt_id).into(),
-                proof.generation_id.clone().into(),
-            ],
-        ))
-        .await
-        .map_err(unavailable)?;
+        workers::Entity::update_many()
+            .col_expr(
+                workers::Column::ActiveCommand,
+                Expr::value(format!("bootstrap:{}", proof.attempt_id)),
+            )
+            .filter(workers::Column::GenerationId.eq(&proof.generation_id))
+            .exec(tx)
+            .await
+            .map_err(unavailable)?;
         Ok(())
     }
     /// Called inside the existing Fleet-fenced ApplyStarting transaction.
@@ -38,19 +38,10 @@ impl SqliteStateBackend {
         tx: &DatabaseTransaction,
         proof: &PlanProvenance,
     ) -> StateResult<()> {
-        let Some(worker) = tx.query_one(sql(
-            "SELECT phase, cleanup_only, handover, active_command FROM lifecycle_workers WHERE generation_id = ?",
-            vec![proof.generation_id.clone().into()],
-        )).await.map_err(unavailable)? else { return Ok(()); };
-        if worker.try_get::<String>("", "phase").map_err(unavailable)? != "running"
-            || worker
-                .try_get::<Option<String>>("", "handover")
-                .map_err(unavailable)?
-                .is_some()
-            || worker
-                .try_get::<Option<String>>("", "active_command")
-                .map_err(unavailable)?
-                .is_some()
+        let Some(worker) = WorkerRow::read(tx, &proof.generation_id).await? else {
+            return Ok(());
+        };
+        if worker.phase != "running" || worker.handover.is_some() || worker.active_command.is_some()
         {
             return Err(StateError::Conflict);
         }
@@ -71,17 +62,8 @@ impl SqliteStateBackend {
             if !snapshot.document.managed_empty() {
                 return Err(StateError::Conflict);
             }
-            let protected = tx
-                .query_one(sql(
-                    "SELECT protected_input FROM lifecycle_workers WHERE generation_id = ?",
-                    vec![proof.generation_id.clone().into()],
-                ))
-                .await
-                .map_err(unavailable)?
-                .ok_or(StateError::Unavailable)?;
-            let input = protected
-                .try_get::<Option<Vec<u8>>>("", "protected_input")
-                .map_err(unavailable)?
+            let input = WorkerRow::protected_input(tx, &proof.generation_id)
+                .await?
                 .ok_or(StateError::Conflict)?;
             use sha2::{Digest, Sha256};
             if format!("sha256:{}", hex::encode(Sha256::digest(input)))
@@ -89,30 +71,30 @@ impl SqliteStateBackend {
             {
                 return Err(StateError::Conflict);
             }
-            if row.create_started
-                || worker
-                    .try_get::<bool>("", "cleanup_only")
-                    .map_err(unavailable)?
-            {
+            if row.create_started || worker.cleanup_only {
                 return Err(StateError::Conflict);
             }
-            tx.execute(sql(
-                "UPDATE generation_http_state SET create_started = 1 WHERE generation_id = ?",
-                vec![proof.generation_id.clone().into()],
-            ))
+            states::Entity::update_many()
+                .col_expr(states::Column::CreateStarted, Expr::value(true))
+                .filter(states::Column::GenerationId.eq(&proof.generation_id))
+                .exec(tx)
+                .await
+                .map_err(unavailable)?;
+        }
+        workers::Entity::update_many()
+            .col_expr(workers::Column::Handover, Expr::value(&proof.attempt_id))
+            .col_expr(
+                workers::Column::ActiveCommand,
+                Expr::value(&proof.attempt_id),
+            )
+            .col_expr(
+                workers::Column::CleanupRevision,
+                Expr::value(Option::<i64>::None),
+            )
+            .filter(workers::Column::GenerationId.eq(&proof.generation_id))
+            .exec(tx)
             .await
             .map_err(unavailable)?;
-        }
-        tx.execute(sql(
-            "UPDATE lifecycle_workers SET handover = ?, active_command = ?, cleanup_revision = NULL WHERE generation_id = ?",
-            vec![
-                proof.attempt_id.clone().into(),
-                proof.attempt_id.clone().into(),
-                proof.generation_id.clone().into(),
-            ],
-        ))
-        .await
-        .map_err(unavailable)?;
         Ok(())
     }
 }

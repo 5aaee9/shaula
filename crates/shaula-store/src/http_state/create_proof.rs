@@ -2,8 +2,13 @@
 //! Only a retained Create identity anchors that claim: the successful Create
 //! result, or a failed Create whose bound state records the template's whole
 //! managed resource shape (spec 0010 §7).
-use super::{row::Row, sql, unavailable, worker::WorkerRow, SqliteStateBackend};
-use sea_orm::{ConnectionTrait, DatabaseTransaction};
+use super::{row::Row, unavailable, worker::WorkerRow, SqliteStateBackend};
+use crate::entities::lifecycle::runner_generations as generations;
+use crate::entities::template::template_profile_revisions as revisions;
+use crate::query_ext::{same, JoinOn};
+use sea_orm::{
+    sea_query::Expr, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect,
+};
 use shaula_core::state_backend::{StateDocument, StateError, StateResult};
 use shaula_core::template::ProfileManifest;
 
@@ -30,20 +35,17 @@ pub(super) async fn verified(
     state: &StateDocument,
     anchorable: bool,
 ) -> StateResult<bool> {
-    let row = tx
-        .query_one(sql(
-            "SELECT shaula_result_json, failed_create_identity_json FROM runner_generations WHERE id = ?",
-            vec![id.into()],
-        ))
+    let (result, failed) = generations::Entity::find_by_id(id)
+        .select_only()
+        .columns([
+            generations::Column::ShaulaResultJson,
+            generations::Column::FailedCreateIdentityJson,
+        ])
+        .into_tuple::<(Option<String>, Option<String>)>()
+        .one(tx)
         .await
         .map_err(unavailable)?
         .ok_or(StateError::Unavailable)?;
-    let result = row
-        .try_get::<Option<String>>("", "shaula_result_json")
-        .map_err(unavailable)?;
-    let failed = row
-        .try_get::<Option<String>>("", "failed_create_identity_json")
-        .map_err(unavailable)?;
     if matches(result.as_deref(), state) || matches(failed.as_deref(), state) {
         return Ok(true);
     }
@@ -53,14 +55,29 @@ pub(super) async fn verified(
 /// Records the failed-Create anchor when the state records the whole shape
 /// of the Generation's admitted manifest; `false` leaves it unanchored.
 async fn anchor(tx: &DatabaseTransaction, id: &str, state: &StateDocument) -> StateResult<bool> {
-    let manifest = tx
-        .query_one(sql(
-            "SELECT t.manifest_json FROM runner_generations g JOIN template_profile_revisions t ON t.profile_key = g.template_profile_key AND t.revision = g.template_revision AND t.artifact_digest = g.template_artifact_digest WHERE g.id = ?",
-            vec![id.into()],
-        ))
+    let manifest = generations::Entity::find_by_id(id)
+        .select_only()
+        .column(revisions::Column::ManifestJson)
+        .inner_join_on(
+            revisions::Entity,
+            same(
+                revisions::Column::ProfileKey,
+                generations::Column::TemplateProfileKey,
+            )
+            .and(same(
+                revisions::Column::Revision,
+                generations::Column::TemplateRevision,
+            ))
+            .and(same(
+                revisions::Column::ArtifactDigest,
+                generations::Column::TemplateArtifactDigest,
+            )),
+        )
+        .into_tuple::<Option<String>>()
+        .one(tx)
         .await
         .map_err(unavailable)?
-        .and_then(|row| row.try_get::<Option<String>>("", "manifest_json").ok().flatten())
+        .flatten()
         .and_then(|text| serde_yaml::from_str::<ProfileManifest>(&text).ok());
     let Some(manifest) = manifest else {
         return Ok(false);
@@ -73,12 +90,17 @@ async fn anchor(tx: &DatabaseTransaction, id: &str, state: &StateDocument) -> St
         "state_serial": state.serial(),
     })
     .to_string();
-    tx.execute(sql(
-        "UPDATE runner_generations SET failed_create_identity_json = ? WHERE id = ? AND shaula_result_json IS NULL AND failed_create_identity_json IS NULL",
-        vec![identity.into(), id.into()],
-    ))
-    .await
-    .map_err(unavailable)?;
+    generations::Entity::update_many()
+        .col_expr(
+            generations::Column::FailedCreateIdentityJson,
+            Expr::value(identity),
+        )
+        .filter(generations::Column::Id.eq(id))
+        .filter(generations::Column::ShaulaResultJson.is_null())
+        .filter(generations::Column::FailedCreateIdentityJson.is_null())
+        .exec(tx)
+        .await
+        .map_err(unavailable)?;
     Ok(true)
 }
 

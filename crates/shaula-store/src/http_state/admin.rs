@@ -1,4 +1,6 @@
-use sea_orm::ConnectionTrait;
+use sea_orm::{
+    sea_query::Expr, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, QuerySelect,
+};
 use shaula_core::{
     lifecycle::GenerationState,
     registry::GenerationRecord,
@@ -6,7 +8,8 @@ use shaula_core::{
 };
 use uuid::Uuid;
 
-use super::{exactly_one, row::Row, sql, unavailable, SqliteStateBackend};
+use super::{exactly_one, row::Row, states, unavailable, SqliteStateBackend};
+use crate::entities::{fleet::fleets, lifecycle::runner_generations as generations};
 use crate::Store;
 
 impl SqliteStateBackend {
@@ -29,27 +32,28 @@ impl SqliteStateBackend {
             return Err(StateError::Invalid);
         }
         let tx = self.writer(&record.id).await?;
-        let exists = tx
-            .query_one(sql(
-                "SELECT id FROM runner_generations WHERE id = ?",
-                vec![record.id.clone().into()],
-            ))
+        let exists = generations::Entity::find_by_id(&record.id)
+            .select_only()
+            .column(generations::Column::Id)
+            .into_tuple::<String>()
+            .one(&tx)
             .await
             .map_err(unavailable)?;
         if exists.is_some() {
             return Err(StateError::Conflict);
         }
-        let fleet = tx
-            .query_one(sql(
-                "SELECT desired_revision, deletion_marker, tombstone FROM fleets WHERE key = ?",
-                vec![record.fleet_key.clone().into()],
-            ))
+        let (revision, deleting, tombstone) = fleets::Entity::find_by_id(&record.fleet_key)
+            .select_only()
+            .columns([
+                fleets::Column::DesiredRevision,
+                fleets::Column::DeletionMarker,
+                fleets::Column::Tombstone,
+            ])
+            .into_tuple::<(i64, bool, bool)>()
+            .one(&tx)
             .await
             .map_err(unavailable)?
             .ok_or(StateError::Conflict)?;
-        let revision: i64 = fleet.try_get("", "desired_revision").map_err(unavailable)?;
-        let deleting: bool = fleet.try_get("", "deletion_marker").map_err(unavailable)?;
-        let tombstone: bool = fleet.try_get("", "tombstone").map_err(unavailable)?;
         if deleting || tombstone || revision != record.fleet_revision {
             return Err(StateError::Conflict);
         }
@@ -62,16 +66,14 @@ impl SqliteStateBackend {
         Store::generation_insert_on(&tx, record)
             .await
             .map_err(|_| StateError::Unavailable)?;
-        tx.execute(sql(
-            "INSERT INTO generation_http_state
-                (generation_id, worker_epoch, worker_attempt, capability_hash) VALUES (?, ?, ?, ?)",
-            vec![
-                id.to_string().into(),
-                claim.worker_epoch.into(),
-                worker_attempt.to_string().into(),
-                capability.verifier().into(),
-            ],
-        ))
+        states::Entity::insert(states::ActiveModel {
+            generation_id: Set(id.to_string()),
+            worker_epoch: Set(claim.worker_epoch),
+            worker_attempt: Set(worker_attempt.to_string()),
+            capability_hash: Set(capability.verifier()),
+            ..Default::default()
+        })
+        .exec_without_returning(&tx)
         .await
         .map_err(unavailable)?;
         tx.commit().await.map_err(unavailable)?;
@@ -84,15 +86,13 @@ impl SqliteStateBackend {
         let tx = self.writer(&claim.generation_id.to_string()).await?;
         let row = Row::load(&tx, &claim.generation_id.to_string()).await?;
         row.check_claim(claim)?;
-        let result = tx
-            .execute(sql(
-                "UPDATE generation_http_state SET revoked = 1
-             WHERE generation_id = ? AND worker_epoch = ? AND worker_attempt = ?",
-                row.identity_values(),
-            ))
+        let result = states::Entity::update_many()
+            .col_expr(states::Column::Revoked, Expr::value(true))
+            .filter(row.owned())
+            .exec(&tx)
             .await
             .map_err(unavailable)?;
-        exactly_one(result.rows_affected())?;
+        exactly_one(result.rows_affected)?;
         tx.commit().await.map_err(unavailable)
     }
 
@@ -109,16 +109,16 @@ impl SqliteStateBackend {
             return Err(StateError::Conflict);
         }
         row.snapshot(&tx).await?.ok_or(StateError::Unavailable)?;
-        let result = tx
-            .execute(sql(
-                "UPDATE generation_http_state SET create_started = 1
-             WHERE generation_id = ? AND worker_epoch = ? AND worker_attempt = ?
-                AND create_started = 0 AND sealed = 0 AND revoked = 0",
-                row.identity_values(),
-            ))
+        let result = states::Entity::update_many()
+            .col_expr(states::Column::CreateStarted, Expr::value(true))
+            .filter(row.owned())
+            .filter(states::Column::CreateStarted.eq(false))
+            .filter(states::Column::Sealed.eq(false))
+            .filter(states::Column::Revoked.eq(false))
+            .exec(&tx)
             .await
             .map_err(unavailable)?;
-        exactly_one(result.rows_affected())?;
+        exactly_one(result.rows_affected)?;
         tx.commit().await.map_err(unavailable)
     }
 
@@ -137,18 +137,16 @@ impl SqliteStateBackend {
         if !snapshot.document.managed_empty() || row.lock(&tx).await?.is_some() {
             return Err(StateError::Conflict);
         }
-        let mut values = row.identity_values();
-        values.push(expected_revision.into());
-        let result = tx
-            .execute(sql(
-                "UPDATE generation_http_state SET sealed = 1
-             WHERE generation_id = ? AND worker_epoch = ? AND worker_attempt = ?
-                AND revision = ? AND lock_id IS NULL AND revoked = 0",
-                values,
-            ))
+        let result = states::Entity::update_many()
+            .col_expr(states::Column::Sealed, Expr::value(true))
+            .filter(row.owned())
+            .filter(states::Column::Revision.eq(expected_revision))
+            .filter(states::Column::LockId.is_null())
+            .filter(states::Column::Revoked.eq(false))
+            .exec(&tx)
             .await
             .map_err(unavailable)?;
-        exactly_one(result.rows_affected())?;
+        exactly_one(result.rows_affected)?;
         tx.commit().await.map_err(unavailable)
     }
 }

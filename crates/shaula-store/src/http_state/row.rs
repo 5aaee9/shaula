@@ -1,9 +1,13 @@
-use sea_orm::{ConnectionTrait, FromQueryResult, Value};
+use sea_orm::{
+    sea_query::SimpleExpr, ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, QuerySelect,
+};
 use shaula_core::state_backend::{
     LockInfo, StateAccess, StateClaim, StateDocument, StateError, StateResult, StateSnapshot,
 };
 
-use super::{sql, unavailable};
+use super::{states, unavailable};
+use crate::entities::lifecycle::runner_generations as generations;
+use crate::query_ext::{same, JoinOn};
 
 // Deliberately no Debug. Authentication reads metadata, NOT raw state/lock info.
 #[derive(FromQueryResult)]
@@ -23,18 +27,30 @@ pub(super) struct Row {
 
 impl Row {
     pub async fn load(conn: &impl ConnectionTrait, id: &str) -> StateResult<Self> {
-        let row = conn
-            .query_one(sql(
-                "SELECT s.generation_id, s.worker_epoch, s.worker_attempt, s.capability_hash,
-                    s.revoked, s.sealed, s.create_started, s.revision, s.lineage, s.serial, s.lock_id
-                 FROM generation_http_state s JOIN runner_generations g ON g.id = s.generation_id
-                 WHERE s.generation_id = ?",
-                vec![id.into()],
-            ))
+        states::Entity::find_by_id(id)
+            .select_only()
+            .columns([
+                states::Column::GenerationId,
+                states::Column::WorkerEpoch,
+                states::Column::WorkerAttempt,
+                states::Column::CapabilityHash,
+                states::Column::Revoked,
+                states::Column::Sealed,
+                states::Column::CreateStarted,
+                states::Column::Revision,
+                states::Column::Lineage,
+                states::Column::Serial,
+                states::Column::LockId,
+            ])
+            .inner_join_on(
+                generations::Entity,
+                same(generations::Column::Id, states::Column::GenerationId),
+            )
+            .into_model::<Self>()
+            .one(conn)
             .await
             .map_err(unavailable)?
-            .ok_or(StateError::Unauthorized)?;
-        Self::from_query_result(&row, "").map_err(unavailable)
+            .ok_or(StateError::Unauthorized)
     }
 
     pub fn authorize(&self, access: &StateAccess) -> StateResult<()> {
@@ -61,28 +77,34 @@ impl Row {
         Ok(())
     }
 
-    pub fn identity_values(&self) -> Vec<Value> {
-        vec![
-            self.generation_id.clone().into(),
-            self.worker_epoch.into(),
-            self.worker_attempt.clone().into(),
-        ]
+    /// The exact owner this row was loaded with: Generation, epoch and attempt.
+    pub fn owned(&self) -> SimpleExpr {
+        states::Column::GenerationId
+            .eq(&self.generation_id)
+            .and(states::Column::WorkerEpoch.eq(self.worker_epoch))
+            .and(states::Column::WorkerAttempt.eq(&self.worker_attempt))
+    }
+
+    async fn blob(
+        &self,
+        conn: &impl ConnectionTrait,
+        column: states::Column,
+    ) -> StateResult<Option<Vec<u8>>> {
+        states::Entity::find_by_id(&self.generation_id)
+            .select_only()
+            .column(column)
+            .into_tuple::<Option<Vec<u8>>>()
+            .one(conn)
+            .await
+            .map_err(unavailable)?
+            .ok_or(StateError::Unavailable)
     }
 
     pub async fn snapshot(
         &self,
         conn: &impl ConnectionTrait,
     ) -> StateResult<Option<StateSnapshot>> {
-        let raw = conn
-            .query_one(sql(
-                "SELECT state_bytes FROM generation_http_state WHERE generation_id = ?",
-                vec![self.generation_id.clone().into()],
-            ))
-            .await
-            .map_err(unavailable)?
-            .ok_or(StateError::Unavailable)?;
-        let bytes: Option<Vec<u8>> = raw.try_get("", "state_bytes").map_err(unavailable)?;
-        match bytes {
+        match self.blob(conn, states::Column::StateBytes).await? {
             None if self.revision == 0
                 && self.lineage.is_none()
                 && self.serial.is_none()
@@ -107,16 +129,13 @@ impl Row {
         }
     }
 
+    /// The raw lock record, kept verbatim as fencing evidence.
+    pub async fn lock_bytes(&self, conn: &impl ConnectionTrait) -> StateResult<Option<Vec<u8>>> {
+        self.blob(conn, states::Column::LockInfo).await
+    }
+
     pub async fn lock(&self, conn: &impl ConnectionTrait) -> StateResult<Option<LockInfo>> {
-        let raw = conn
-            .query_one(sql(
-                "SELECT lock_info FROM generation_http_state WHERE generation_id = ?",
-                vec![self.generation_id.clone().into()],
-            ))
-            .await
-            .map_err(unavailable)?
-            .ok_or(StateError::Unavailable)?;
-        let bytes: Option<Vec<u8>> = raw.try_get("", "lock_info").map_err(unavailable)?;
+        let bytes = self.lock_bytes(conn).await?;
         match (self.lock_id.as_deref(), bytes) {
             (None, None) => Ok(None),
             (Some(id), Some(bytes)) => {

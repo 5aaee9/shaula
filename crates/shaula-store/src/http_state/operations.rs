@@ -1,11 +1,11 @@
 use async_trait::async_trait;
-use sea_orm::ConnectionTrait;
+use sea_orm::{sea_query::Expr, ColumnTrait, EntityTrait, QueryFilter};
 use shaula_core::state_backend::{
     LockId, LockInfo, StateAccess, StateBackend, StateDocument, StateError, StateResult,
     StateSnapshot,
 };
 
-use super::{exactly_one, row::Row, sql, unavailable, SqliteStateBackend};
+use super::{exactly_one, row::Row, states, unavailable, workers, SqliteStateBackend};
 
 #[async_trait]
 impl StateBackend for SqliteStateBackend {
@@ -41,18 +41,17 @@ impl StateBackend for SqliteStateBackend {
                 return Err(StateError::Locked(Box::new(current)));
             }
         } else {
-            let mut values = vec![info.id().expose().into(), info.to_bytes()?.into()];
-            values.extend(row.identity_values());
-            let result = tx
-                .execute(sql(
-                    "UPDATE generation_http_state SET lock_id = ?, lock_info = ?
-                 WHERE generation_id = ? AND worker_epoch = ? AND worker_attempt = ?
-                    AND lock_id IS NULL AND revoked = 0 AND sealed = 0",
-                    values,
-                ))
+            let result = states::Entity::update_many()
+                .col_expr(states::Column::LockId, Expr::value(info.id().expose()))
+                .col_expr(states::Column::LockInfo, Expr::value(info.to_bytes()?))
+                .filter(row.owned())
+                .filter(states::Column::LockId.is_null())
+                .filter(states::Column::Revoked.eq(false))
+                .filter(states::Column::Sealed.eq(false))
+                .exec(&tx)
                 .await
                 .map_err(unavailable)?;
-            exactly_one(result.rows_affected())?;
+            exactly_one(result.rows_affected)?;
         }
         tx.commit().await.map_err(unavailable)
     }
@@ -66,18 +65,20 @@ impl StateBackend for SqliteStateBackend {
             if current.id() != id {
                 return Err(StateError::Locked(Box::new(current)));
             }
-            let mut values = row.identity_values();
-            values.push(id.expose().into());
-            let result = tx
-                .execute(sql(
-                    "UPDATE generation_http_state SET lock_id = NULL, lock_info = NULL
-                 WHERE generation_id = ? AND worker_epoch = ? AND worker_attempt = ?
-                    AND lock_id = ? AND revoked = 0 AND sealed = 0",
-                    values,
-                ))
+            let result = states::Entity::update_many()
+                .col_expr(states::Column::LockId, Expr::value(Option::<String>::None))
+                .col_expr(
+                    states::Column::LockInfo,
+                    Expr::value(Option::<Vec<u8>>::None),
+                )
+                .filter(row.owned())
+                .filter(states::Column::LockId.eq(id.expose()))
+                .filter(states::Column::Revoked.eq(false))
+                .filter(states::Column::Sealed.eq(false))
+                .exec(&tx)
                 .await
                 .map_err(unavailable)?;
-            exactly_one(result.rows_affected())?;
+            exactly_one(result.rows_affected)?;
         }
         // A lost UNLOCK response is harmless, but an intervening new lock must
         // have passed the exact-ID branch above. Never unlock by Who or Path.
@@ -113,30 +114,32 @@ impl StateBackend for SqliteStateBackend {
             }
         }
         let revision = row.revision.checked_add(1).ok_or(StateError::Conflict)?;
-        let mut values = vec![
-            document.bytes().to_vec().into(),
-            document.lineage().into(),
-            document.serial().into(),
-            revision.into(),
-        ];
-        values.extend(row.identity_values());
-        values.extend([row.revision.into(), id.expose().into()]);
         // Lock, owner, serial/lineage and revision all belong to this SAME
         // writer transaction. Conditional UPDATE is a second, explicit fence.
-        let result = tx.execute(sql(
-            "UPDATE generation_http_state SET state_bytes = ?, lineage = ?, serial = ?, revision = ?
-             WHERE generation_id = ? AND worker_epoch = ? AND worker_attempt = ?
-                AND revision = ? AND lock_id = ? AND revoked = 0 AND sealed = 0",
-            values,
-        )).await.map_err(unavailable)?;
-        exactly_one(result.rows_affected())?;
-        if !document.managed_empty() {
-            tx.execute(sql(
-                "UPDATE lifecycle_workers SET resource_state_seen = 1 WHERE generation_id = ?",
-                vec![access.generation_id.to_string().into()],
-            ))
+        let result = states::Entity::update_many()
+            .col_expr(
+                states::Column::StateBytes,
+                Expr::value(document.bytes().to_vec()),
+            )
+            .col_expr(states::Column::Lineage, Expr::value(document.lineage()))
+            .col_expr(states::Column::Serial, Expr::value(document.serial()))
+            .col_expr(states::Column::Revision, Expr::value(revision))
+            .filter(row.owned())
+            .filter(states::Column::Revision.eq(row.revision))
+            .filter(states::Column::LockId.eq(id.expose()))
+            .filter(states::Column::Revoked.eq(false))
+            .filter(states::Column::Sealed.eq(false))
+            .exec(&tx)
             .await
             .map_err(unavailable)?;
+        exactly_one(result.rows_affected)?;
+        if !document.managed_empty() {
+            workers::Entity::update_many()
+                .col_expr(workers::Column::ResourceStateSeen, Expr::value(true))
+                .filter(workers::Column::GenerationId.eq(access.generation_id.to_string()))
+                .exec(&tx)
+                .await
+                .map_err(unavailable)?;
         }
         tx.commit().await.map_err(unavailable)?;
         Ok(revision)

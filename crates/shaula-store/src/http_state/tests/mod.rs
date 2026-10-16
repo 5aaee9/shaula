@@ -9,8 +9,13 @@ use shaula_core::{
 use tempfile::TempDir;
 use uuid::Uuid;
 
-use super::{sql, SqliteStateBackend};
+use super::SqliteStateBackend;
 use crate::Store;
+
+/// Literal-SQL fixture setup and inspection for these tests only.
+fn sql(query: &str, values: Vec<sea_orm::Value>) -> sea_orm::Statement {
+    sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Sqlite, query, values)
+}
 
 mod cas;
 mod cutover;

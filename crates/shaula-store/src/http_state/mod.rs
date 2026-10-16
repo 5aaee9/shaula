@@ -7,6 +7,7 @@ mod cleanup;
 mod create_proof;
 pub use cleanup::CompletedWorkspace;
 mod cutover;
+mod legacy;
 mod operations;
 mod operator;
 mod recovery;
@@ -16,12 +17,21 @@ mod worker_completion;
 mod worker_effect;
 pub use recovery::RecoveryRecord;
 
-pub use cutover::{LegacyGeneration, MigrationClassification};
+pub use cutover::MigrationClassification;
+pub use legacy::LegacyGeneration;
 mod worker_journal;
 
-use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseTransaction, Statement, Value};
+use sea_orm::{
+    sea_query::{Expr, SimpleExpr},
+    ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter,
+};
 use shaula_core::state_backend::{StateError, StateResult};
 
+use crate::entities::http_state::{
+    generation_http_state as states, lifecycle_deployment as deployment,
+    lifecycle_fences as fences, lifecycle_workers as workers,
+};
+use crate::query_ext::col;
 use crate::Store;
 
 pub use admissions::WorkerAdmissions;
@@ -50,18 +60,17 @@ impl SqliteStateBackend {
             .begin()
             .await
             .map_err(|_| StateError::Unavailable)?;
-        tx.execute(sql(
-            "UPDATE generation_http_state SET revision = revision WHERE generation_id = ?",
-            vec![generation_id.into()],
-        ))
-        .await
-        .map_err(unavailable)?;
+        states::Entity::update_many()
+            .col_expr(
+                states::Column::Revision,
+                col(states::Column::Revision).into(),
+            )
+            .filter(states::Column::GenerationId.eq(generation_id))
+            .exec(&tx)
+            .await
+            .map_err(unavailable)?;
         Ok(tx)
     }
-}
-
-fn sql(query: &str, values: Vec<Value>) -> Statement {
-    Statement::from_sql_and_values(DatabaseBackend::Sqlite, query, values)
 }
 
 fn unavailable(_: sea_orm::DbErr) -> StateError {
@@ -74,6 +83,28 @@ fn exactly_one(count: u64) -> StateResult<()> {
     } else {
         Err(StateError::Conflict)
     }
+}
+
+pub(super) fn null() -> SimpleExpr {
+    Expr::value(Option::<String>::None)
+}
+
+/// Unconditional column writes to one worker row; callers hold the writer.
+pub(super) async fn set_worker<const N: usize>(
+    tx: &DatabaseTransaction,
+    id: &str,
+    changes: [(workers::Column, SimpleExpr); N],
+) -> StateResult<()> {
+    changes
+        .into_iter()
+        .fold(workers::Entity::update_many(), |update, (column, value)| {
+            update.col_expr(column, value)
+        })
+        .filter(workers::Column::GenerationId.eq(id))
+        .exec(tx)
+        .await
+        .map_err(unavailable)?;
+    Ok(())
 }
 
 #[cfg(test)]

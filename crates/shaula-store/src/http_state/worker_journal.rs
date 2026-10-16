@@ -1,5 +1,7 @@
-use super::{sql, unavailable, worker::WorkerRow, SqliteStateBackend, WorkerAdmissions};
-use sea_orm::ConnectionTrait;
+use super::{
+    null, set_worker, unavailable, worker::WorkerRow, workers, SqliteStateBackend, WorkerAdmissions,
+};
+use sea_orm::{sea_query::Expr, EntityTrait, QuerySelect};
 use shaula_core::{
     state_backend::{StateError, StateResult},
     worker::{
@@ -60,46 +62,28 @@ impl WorkerJournal for SqliteWorkerJournal {
         if worker.phase != "running" || worker.cleanup_only || state.create_started {
             return Err(StateError::Conflict);
         }
-        let row = tx
-            .query_one(sql(
-                "SELECT protected_input FROM lifecycle_workers WHERE generation_id = ?",
-                vec![id.clone().into()],
-            ))
-            .await
-            .map_err(unavailable)?
-            .ok_or(StateError::Unavailable)?;
-        if let Some(saved) = row
-            .try_get::<Option<Vec<u8>>>("", "protected_input")
-            .map_err(unavailable)?
-        {
+        if let Some(saved) = WorkerRow::protected_input(&tx, &id).await? {
             return if saved == input {
                 Ok(())
             } else {
                 Err(StateError::Conflict)
             };
         }
-        tx.execute(sql(
-            "UPDATE lifecycle_workers SET protected_input = ? WHERE generation_id = ?",
-            vec![input.into(), id.into()],
-        ))
-        .await
-        .map_err(unavailable)?;
+        set_worker(
+            &tx,
+            &id,
+            [(workers::Column::ProtectedInput, Expr::value(input))],
+        )
+        .await?;
         tx.commit().await.map_err(unavailable)
     }
     async fn protected_input(&self, access: &ControlAccess) -> StateResult<Option<Vec<u8>>> {
         WorkerRow::load(self.backend.store.connection(), access).await?;
-        self.backend
-            .store
-            .connection()
-            .query_one(sql(
-                "SELECT protected_input FROM lifecycle_workers WHERE generation_id = ?",
-                vec![access.claim.generation_id.to_string().into()],
-            ))
-            .await
-            .map_err(unavailable)?
-            .ok_or(StateError::Unavailable)?
-            .try_get::<Option<Vec<u8>>>("", "protected_input")
-            .map_err(unavailable)
+        WorkerRow::protected_input(
+            self.backend.store.connection(),
+            &access.claim.generation_id.to_string(),
+        )
+        .await
     }
     async fn verify_cleanup(&self, access: &ControlAccess) -> StateResult<()> {
         let id = access.claim.generation_id.to_string();
@@ -118,26 +102,27 @@ impl WorkerJournal for SqliteWorkerJournal {
             if !super::create_proof::verified(&tx, &id, &snapshot.document, false).await? {
                 return Err(StateError::Conflict);
             }
-            let seen = tx
-                .query_one(sql(
-                    "SELECT resource_state_seen FROM lifecycle_workers WHERE generation_id = ?",
-                    vec![id.clone().into()],
-                ))
+            let seen = workers::Entity::find_by_id(&id)
+                .select_only()
+                .column(workers::Column::ResourceStateSeen)
+                .into_tuple::<bool>()
+                .one(&tx)
                 .await
                 .map_err(unavailable)?
-                .ok_or(StateError::Unavailable)?
-                .try_get::<bool>("", "resource_state_seen")
-                .map_err(unavailable)?;
+                .ok_or(StateError::Unavailable)?;
             if !seen {
                 return Err(StateError::Conflict);
             }
         }
-        tx.execute(sql(
-            "UPDATE lifecycle_workers SET cleanup_revision = ? WHERE generation_id = ?",
-            vec![state.revision.into(), id.into()],
-        ))
-        .await
-        .map_err(unavailable)?;
+        set_worker(
+            &tx,
+            &id,
+            [(
+                workers::Column::CleanupRevision,
+                Expr::value(state.revision),
+            )],
+        )
+        .await?;
         tx.commit().await.map_err(unavailable)
     }
 
@@ -167,12 +152,7 @@ impl WorkerJournal for SqliteWorkerJournal {
         {
             return Err(StateError::Conflict);
         }
-        tx.execute(sql(
-            "UPDATE lifecycle_workers SET handover = NULL WHERE generation_id = ?",
-            vec![id.into()],
-        ))
-        .await
-        .map_err(unavailable)?;
+        set_worker(&tx, &id, [(workers::Column::Handover, null())]).await?;
         tx.commit().await.map_err(unavailable)
     }
     async fn command_ended(&self, access: &ControlAccess, attempt: &str) -> StateResult<()> {
@@ -185,12 +165,7 @@ impl WorkerJournal for SqliteWorkerJournal {
         {
             return Err(StateError::Conflict);
         }
-        tx.execute(sql(
-            "UPDATE lifecycle_workers SET active_command = NULL WHERE generation_id = ?",
-            vec![id.into()],
-        ))
-        .await
-        .map_err(unavailable)?;
+        set_worker(&tx, &id, [(workers::Column::ActiveCommand, null())]).await?;
         tx.commit().await.map_err(unavailable)
     }
     async fn fenced(&self, access: &ControlAccess, identity: &ProcessIdentity) -> StateResult<()> {
@@ -207,7 +182,16 @@ impl WorkerJournal for SqliteWorkerJournal {
         if saved != *identity || worker.phase == "completed" {
             return Err(StateError::Conflict);
         }
-        tx.execute(sql("UPDATE lifecycle_workers SET phase = 'fenced', handover = NULL, active_command = NULL WHERE generation_id = ?", vec![id.into()])).await.map_err(unavailable)?;
+        set_worker(
+            &tx,
+            &id,
+            [
+                (workers::Column::Phase, Expr::value("fenced")),
+                (workers::Column::Handover, null()),
+                (workers::Column::ActiveCommand, null()),
+            ],
+        )
+        .await?;
         tx.commit().await.map_err(unavailable)
     }
     async fn receipt(&self, access: &ControlAccess) -> StateResult<Option<CompletionReceipt>> {

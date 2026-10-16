@@ -1,12 +1,20 @@
 //! Worker journal primitives. All checks run after reserving SQLite's writer.
-use sea_orm::{ConnectionTrait, DatabaseTransaction, FromQueryResult};
+use sea_orm::{
+    sea_query::Expr, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseTransaction,
+    EntityTrait, FromQueryResult, QueryFilter, QuerySelect,
+};
 use shaula_core::{
     state_backend::{StateDocument, StateError, StateResult},
     worker::{ControlAccess, ProcessIdentity, WorkerAdmission},
 };
 use uuid::Uuid;
 
-use super::{exactly_one, row::Row, sql, unavailable, SqliteStateBackend};
+use super::{exactly_one, row::Row, states, unavailable, workers, SqliteStateBackend};
+use crate::entities::lifecycle::{
+    forgejo_runner_identities as forgejo_identities, runner_generations as generations,
+    runner_operations as operations,
+};
+use crate::query_ext::{probe, same};
 
 #[derive(FromQueryResult)]
 pub(super) struct WorkerRow {
@@ -23,11 +31,38 @@ pub(super) struct WorkerRow {
 
 impl WorkerRow {
     pub async fn read(conn: &impl ConnectionTrait, id: &str) -> StateResult<Option<Self>> {
-        conn.query_one(sql(
-            "SELECT control_hash, phase, process_identity, cleanup_only, handover, active_command,
-                cleanup_revision, completion_request, completion_receipt FROM lifecycle_workers WHERE generation_id = ?",
-            vec![id.into()],
-        )).await.map_err(unavailable)?.map(|row| Self::from_query_result(&row, "").map_err(unavailable)).transpose()
+        workers::Entity::find_by_id(id)
+            .select_only()
+            .columns([
+                workers::Column::ControlHash,
+                workers::Column::Phase,
+                workers::Column::ProcessIdentity,
+                workers::Column::CleanupOnly,
+                workers::Column::Handover,
+                workers::Column::ActiveCommand,
+                workers::Column::CleanupRevision,
+                workers::Column::CompletionRequest,
+                workers::Column::CompletionReceipt,
+            ])
+            .into_model::<Self>()
+            .one(conn)
+            .await
+            .map_err(unavailable)
+    }
+
+    /// Retained protected input, read apart from the row: it may be large.
+    pub async fn protected_input(
+        conn: &impl ConnectionTrait,
+        id: &str,
+    ) -> StateResult<Option<Vec<u8>>> {
+        workers::Entity::find_by_id(id)
+            .select_only()
+            .column(workers::Column::ProtectedInput)
+            .into_tuple::<Option<Vec<u8>>>()
+            .one(conn)
+            .await
+            .map_err(unavailable)?
+            .ok_or(StateError::Unavailable)
     }
 
     pub async fn load(tx: &impl ConnectionTrait, access: &ControlAccess) -> StateResult<Self> {
@@ -56,29 +91,33 @@ impl SqliteStateBackend {
             return Err(StateError::Invalid);
         }
         let id = admission.claim.generation_id.to_string();
-        let generation = tx
-            .query_one(sql(
-                "SELECT state, jit_phase, github_runner_id FROM runner_generations
-             WHERE id = ? AND NOT EXISTS (SELECT 1 FROM runner_operations WHERE generation_id = ?)
-               AND NOT EXISTS (SELECT 1 FROM forgejo_runner_identities WHERE generation_id = ?)",
-                vec![id.clone().into(), id.clone().into(), id.clone().into()],
+        let operation = probe(operations::Entity)
+            .and_where(same(
+                operations::Column::GenerationId,
+                generations::Column::Id,
             ))
+            .to_owned();
+        let forgejo = probe(forgejo_identities::Entity)
+            .and_where(same(
+                forgejo_identities::Column::GenerationId,
+                generations::Column::Id,
+            ))
+            .to_owned();
+        let (state, jit_phase, github_runner_id) = generations::Entity::find_by_id(&id)
+            .select_only()
+            .columns([
+                generations::Column::State,
+                generations::Column::JitPhase,
+                generations::Column::GithubRunnerId,
+            ])
+            .filter(Expr::exists(operation).not())
+            .filter(Expr::exists(forgejo).not())
+            .into_tuple::<(String, Option<String>, Option<i64>)>()
+            .one(tx)
             .await
             .map_err(unavailable)?
             .ok_or(StateError::Conflict)?;
-        if generation
-            .try_get::<String>("", "state")
-            .map_err(unavailable)?
-            != "CreatePending"
-            || generation
-                .try_get::<Option<String>>("", "jit_phase")
-                .map_err(unavailable)?
-                .is_some()
-            || generation
-                .try_get::<Option<i64>>("", "github_runner_id")
-                .map_err(unavailable)?
-                .is_some()
-        {
+        if state != "CreatePending" || jit_phase.is_some() || github_runner_id.is_some() {
             return Err(StateError::Conflict);
         }
         // Only a proven fresh admission can manufacture serial zero. init is
@@ -90,18 +129,29 @@ impl SqliteStateBackend {
             }))
             .map_err(|_| StateError::Invalid)?,
         )?;
-        tx.execute(sql(
-            "INSERT INTO generation_http_state
-             (generation_id, worker_epoch, worker_attempt, capability_hash, revision, state_bytes, lineage, serial)
-             VALUES (?, ?, ?, ?, 1, ?, ?, 0)",
-            vec![id.clone().into(), admission.claim.worker_epoch.into(),
-                admission.claim.worker_attempt.to_string().into(), admission.state.verifier().into(),
-                document.bytes().to_vec().into(), document.lineage().into()],
-        )).await.map_err(unavailable)?;
-        tx.execute(sql(
-            "INSERT INTO lifecycle_workers(generation_id, control_hash, phase) VALUES (?, ?, 'admitted')",
-            vec![id.into(), admission.control.verifier().into()],
-        )).await.map_err(unavailable)?;
+        states::Entity::insert(states::ActiveModel {
+            generation_id: Set(id.clone()),
+            worker_epoch: Set(admission.claim.worker_epoch),
+            worker_attempt: Set(admission.claim.worker_attempt.to_string()),
+            capability_hash: Set(admission.state.verifier()),
+            revision: Set(1),
+            state_bytes: Set(Some(document.bytes().to_vec())),
+            lineage: Set(Some(document.lineage().to_owned())),
+            serial: Set(Some(0)),
+            ..Default::default()
+        })
+        .exec_without_returning(tx)
+        .await
+        .map_err(unavailable)?;
+        workers::Entity::insert(workers::ActiveModel {
+            generation_id: Set(id),
+            control_hash: Set(admission.control.verifier()),
+            phase: Set("admitted".into()),
+            ..Default::default()
+        })
+        .exec_without_returning(tx)
+        .await
+        .map_err(unavailable)?;
         Ok(())
     }
 
@@ -119,10 +169,14 @@ impl SqliteStateBackend {
         if worker.phase != "admitted" {
             return Err(StateError::Conflict);
         }
-        exactly_one(tx.execute(sql(
-            "UPDATE lifecycle_workers SET phase = 'launch_pending' WHERE generation_id = ? AND phase = 'admitted'",
-            vec![id.into()],
-        )).await.map_err(unavailable)?.rows_affected())?;
+        let pending = workers::Entity::update_many()
+            .col_expr(workers::Column::Phase, Expr::value("launch_pending"))
+            .filter(workers::Column::GenerationId.eq(id))
+            .filter(workers::Column::Phase.eq("admitted"))
+            .exec(&tx)
+            .await
+            .map_err(unavailable)?;
+        exactly_one(pending.rows_affected)?;
         tx.commit().await.map_err(unavailable)
     }
 
@@ -144,10 +198,13 @@ impl SqliteStateBackend {
         if worker.phase != "launch_pending" || worker.process_identity.is_some() {
             return Err(StateError::Conflict);
         }
-        tx.execute(sql(
-            "UPDATE lifecycle_workers SET phase = 'running', process_identity = ? WHERE generation_id = ?",
-            vec![identity.into(), id.into()],
-        )).await.map_err(unavailable)?;
+        workers::Entity::update_many()
+            .col_expr(workers::Column::Phase, Expr::value("running"))
+            .col_expr(workers::Column::ProcessIdentity, Expr::value(identity))
+            .filter(workers::Column::GenerationId.eq(id))
+            .exec(&tx)
+            .await
+            .map_err(unavailable)?;
         tx.commit().await.map_err(unavailable)
     }
 }
