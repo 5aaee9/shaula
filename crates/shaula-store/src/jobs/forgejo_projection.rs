@@ -1,7 +1,13 @@
 //! Forgejo job IDs are scoped by instance/target/Fleet, repository and attempt.
-use super::{decode, encode, execute, rows};
+use super::{decode, encode};
+use crate::entities::jobs::{
+    forgejo_job_observations as observations, forgejo_workflow_jobs as jobs_table,
+};
 use crate::StoreResult;
-use sea_orm::DatabaseTransaction;
+use sea_orm::{
+    sea_query::OnConflict, ActiveValue::Set, ColumnTrait, DatabaseTransaction, EntityTrait,
+    QueryFilter, QuerySelect,
+};
 use shaula_core::{
     fleet::FleetProviderKind,
     forgejo::{ForgejoScope, ForgejoTarget},
@@ -22,15 +28,15 @@ pub(super) async fn upsert(
     now: i64,
 ) -> StoreResult<String> {
     let protocol_id = format!("{}:{}:{}", job.repo_id, job.id, job.attempt);
-    let found = rows(
-        tx,
-        "SELECT summary_json FROM forgejo_workflow_jobs WHERE scope_key=? AND protocol_job_id=?",
-        vec![scope.into(), protocol_id.clone().into()],
-    )
-    .await?;
-    let previous: Option<JobSummary> = found
-        .first()
-        .map(|r| decode(&r.try_get::<String>("", "summary_json")?))
+    let previous: Option<JobSummary> = jobs_table::Entity::find()
+        .select_only()
+        .column(jobs_table::Column::SummaryJson)
+        .filter(jobs_table::Column::ScopeKey.eq(scope))
+        .filter(jobs_table::Column::ProtocolJobId.eq(protocol_id.as_str()))
+        .into_tuple::<String>()
+        .one(tx)
+        .await?
+        .map(|json| decode(&json))
         .transpose()?;
     let prior = previous.as_ref().and_then(|j| j.forgejo.as_ref());
     let changed = prior.is_none_or(|old| {
@@ -108,13 +114,37 @@ pub(super) async fn upsert(
             enrichment_attempted_at: retained.and_then(|old| old.enrichment_attempted_at),
         }),
     };
-    execute(tx, "INSERT INTO forgejo_workflow_jobs(id,scope_key,fleet_key,fleet_incarnation,protocol_job_id,
-        summary_json,status,repository,job_name,in_snapshot,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,1,?,?)
-        ON CONFLICT(scope_key,protocol_job_id) DO UPDATE SET summary_json=excluded.summary_json,status=excluded.status,
-        repository=excluded.repository,job_name=excluded.job_name,in_snapshot=1,updated_at=excluded.updated_at",
-        vec![summary.id.clone().into(), scope.into(), fleet.into(), incarnation.into(), protocol_id.into(),
-            encode(&summary)?.into(), status.as_str().into(), repository_filter.into(), job.name.clone().into(),
-            summary.created_at.into(), summary.updated_at.into()]).await?;
+    jobs_table::Entity::insert(jobs_table::ActiveModel {
+        id: Set(summary.id.clone()),
+        scope_key: Set(scope.into()),
+        fleet_key: Set(fleet.into()),
+        fleet_incarnation: Set(incarnation.into()),
+        protocol_job_id: Set(protocol_id),
+        summary_json: Set(encode(&summary)?),
+        status: Set(status.as_str().into()),
+        repository: Set(Some(repository_filter)),
+        job_name: Set(Some(job.name.clone())),
+        in_snapshot: Set(true),
+        created_at: Set(summary.created_at),
+        updated_at: Set(summary.updated_at),
+    })
+    .on_conflict(
+        OnConflict::columns([
+            jobs_table::Column::ScopeKey,
+            jobs_table::Column::ProtocolJobId,
+        ])
+        .update_columns([
+            jobs_table::Column::SummaryJson,
+            jobs_table::Column::Status,
+            jobs_table::Column::Repository,
+            jobs_table::Column::JobName,
+        ])
+        .value(jobs_table::Column::InSnapshot, true)
+        .update_column(jobs_table::Column::UpdatedAt)
+        .to_owned(),
+    )
+    .exec_without_returning(tx)
+    .await?;
     if changed {
         event(
             tx,
@@ -178,6 +208,13 @@ async fn append_event(
         observed_at: now,
         source,
     };
-    execute(tx, "INSERT INTO forgejo_job_observations(id,job_record_id,data_json,observed_at) VALUES(?,?,?,?)",
-        vec![observation.id.clone().into(), id.into(), encode(&observation)?.into(), now.into()]).await
+    observations::Entity::insert(observations::ActiveModel {
+        id: Set(observation.id.clone()),
+        job_record_id: Set(id.into()),
+        data_json: Set(encode(&observation)?),
+        observed_at: Set(now),
+    })
+    .exec_without_returning(tx)
+    .await?;
+    Ok(())
 }

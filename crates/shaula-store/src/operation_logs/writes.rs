@@ -1,6 +1,17 @@
 use super::{invalid, missing, now, unavailable, OperationLogArchive};
+use crate::entities::{
+    jobs::workflow_generation_identity as identity,
+    lifecycle::runner_generations as generations,
+    operation_logs::{
+        operation_log_chunks as log_chunks, operation_log_invocations as log_invocations,
+    },
+};
 use async_trait::async_trait;
-use sea_orm::{ConnectionTrait, DbBackend, Statement};
+use sea_orm::{
+    sea_query::{Expr, Func},
+    ActiveValue::Set,
+    ColumnTrait, EntityTrait, JoinType, QueryFilter, QuerySelect,
+};
 use sha2::{Digest, Sha256};
 use shaula_core::{error::CoreResult, operation_log::*};
 use std::sync::atomic::Ordering;
@@ -14,33 +25,59 @@ impl OperationLogSink for OperationLogArchive {
         }
         let _writer = self.writer.lock().await;
         self.prune_locked(0).await?;
-        let generation = self.store.connection().query_one(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "SELECT g.fleet_key,g.template_profile_key,g.template_revision,g.template_artifact_digest,i.fleet_incarnation AS incarnation FROM runner_generations g LEFT JOIN workflow_generation_identity i ON i.generation_id=g.id WHERE g.id=?", [request.generation_id.clone().into()]
-        )).await.map_err(|_| unavailable())?.ok_or_else(missing)?;
-        let row = self.store.connection().query_one(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "SELECT COALESCE(MAX(ordinal),0)+1 AS ordinal FROM operation_log_invocations WHERE generation_id=? AND operation=?",
-            [request.generation_id.clone().into(), request.operation.clone().into()]
-        )).await.map_err(|_| unavailable())?.ok_or_else(unavailable)?;
+        let (
+            fleet_key,
+            template_profile_key,
+            template_revision,
+            template_artifact_digest,
+            incarnation,
+        ) = generations::Entity::find_by_id(request.generation_id.as_str())
+            .select_only()
+            .columns([
+                generations::Column::FleetKey,
+                generations::Column::TemplateProfileKey,
+                generations::Column::TemplateRevision,
+                generations::Column::TemplateArtifactDigest,
+            ])
+            .column(identity::Column::FleetIncarnation)
+            .join(
+                JoinType::LeftJoin,
+                generations::Entity::belongs_to(identity::Entity)
+                    .from(generations::Column::Id)
+                    .to(identity::Column::GenerationId)
+                    .into(),
+            )
+            .into_tuple::<(String, String, i64, String, Option<String>)>()
+            .one(self.store.connection())
+            .await
+            .map_err(|_| unavailable())?
+            .ok_or_else(missing)?;
+        let ordinal = log_invocations::Entity::find()
+            .select_only()
+            .expr(
+                Expr::expr(Func::coalesce([
+                    Expr::col(log_invocations::Column::Ordinal).max(),
+                    Expr::val(0).into(),
+                ]))
+                .add(1),
+            )
+            .filter(log_invocations::Column::GenerationId.eq(request.generation_id.as_str()))
+            .filter(log_invocations::Column::Operation.eq(request.operation.as_str()))
+            .into_tuple::<i64>()
+            .one(self.store.connection())
+            .await
+            .map_err(|_| unavailable())?
+            .ok_or_else(unavailable)?;
         let record = Invocation {
             id: uuid::Uuid::new_v4().to_string(),
             generation_id: request.generation_id,
-            fleet_key: generation
-                .try_get("", "fleet_key")
-                .map_err(|_| unavailable())?,
-            fleet_incarnation: generation
-                .try_get("", "incarnation")
-                .map_err(|_| unavailable())?,
-            template_profile_key: generation
-                .try_get("", "template_profile_key")
-                .map_err(|_| unavailable())?,
-            template_revision: generation
-                .try_get("", "template_revision")
-                .map_err(|_| unavailable())?,
-            template_artifact_digest: generation
-                .try_get("", "template_artifact_digest")
-                .map_err(|_| unavailable())?,
+            fleet_key,
+            fleet_incarnation: incarnation,
+            template_profile_key,
+            template_revision,
+            template_artifact_digest,
             operation: request.operation,
-            ordinal: row.try_get("", "ordinal").map_err(|_| unavailable())?,
+            ordinal,
             effect_attempt_id: None,
             started_at: request.started_at,
             ended_at: None,
@@ -55,10 +92,18 @@ impl OperationLogSink for OperationLogArchive {
             commands: Vec::new(),
         };
         let json = serde_json::to_string(&record).map_err(|_| unavailable())?;
-        self.store.connection().execute(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "INSERT INTO operation_log_invocations(id,generation_id,fleet_key,operation,ordinal,record_json) VALUES(?,?,?,?,?,?)",
-            [record.id.clone().into(), record.generation_id.clone().into(), record.fleet_key.clone().into(), record.operation.clone().into(), record.ordinal.into(), json.into()]
-        )).await.map_err(|_| unavailable())?;
+        log_invocations::Entity::insert(log_invocations::ActiveModel {
+            id: Set(record.id.clone()),
+            generation_id: Set(record.generation_id.clone()),
+            fleet_key: Set(record.fleet_key.clone()),
+            operation: Set(record.operation.clone()),
+            ordinal: Set(record.ordinal),
+            record_json: Set(json),
+            ..Default::default()
+        })
+        .exec_without_returning(self.store.connection())
+        .await
+        .map_err(|_| unavailable())?;
         Ok(record.id)
     }
 
@@ -74,26 +119,11 @@ impl OperationLogSink for OperationLogArchive {
         let mut record = self.load(&chunk.invocation_id).await?;
         let digest = hex::encode(Sha256::digest(chunk.text.as_bytes()));
         let rows = self.chunk_rows(&record.id).await?;
-        if let Some(existing) = rows
-            .iter()
-            .find(|r| r.try_get::<i64>("", "sequence").ok() == Some(sequence))
-        {
-            return if existing
-                .try_get::<String>("", "digest")
-                .map_err(|_| unavailable())?
-                == digest
-                && existing
-                    .try_get::<String>("", "phase")
-                    .map_err(|_| unavailable())?
-                    == chunk.phase
-                && existing
-                    .try_get::<String>("", "stream")
-                    .map_err(|_| unavailable())?
-                    == chunk.stream
-                && existing
-                    .try_get::<i64>("", "command_ordinal")
-                    .map_err(|_| unavailable())?
-                    == i64::from(chunk.command_ordinal)
+        if let Some(existing) = rows.iter().find(|r| r.sequence == sequence) {
+            return if existing.digest == digest
+                && existing.phase == chunk.phase
+                && existing.stream == chunk.stream
+                && existing.command_ordinal == i64::from(chunk.command_ordinal)
             {
                 Ok(())
             } else {
@@ -104,11 +134,7 @@ impl OperationLogSink for OperationLogArchive {
             return Err(invalid());
         }
         // A replay of an evicted historical chunk must never append it again.
-        if rows.last().is_some_and(|r| {
-            r.try_get::<i64>("", "sequence")
-                .ok()
-                .is_some_and(|latest| sequence <= latest)
-        }) {
+        if rows.last().is_some_and(|r| sequence <= r.sequence) {
             return Err(invalid());
         }
         let bytes = u64::try_from(chunk.text.len()).map_err(|_| invalid())?;
@@ -118,8 +144,7 @@ impl OperationLogSink for OperationLogArchive {
             if record.retained_bytes.saturating_add(bytes) <= self.config.invocation_bytes {
                 break;
             }
-            let size = u64::try_from(row.try_get::<i64>("", "bytes").map_err(|_| unavailable())?)
-                .map_err(|_| unavailable())?;
+            let size = u64::try_from(row.bytes).map_err(|_| unavailable())?;
             if head_used.saturating_add(size) <= head_budget {
                 head_used += size;
                 continue;
@@ -146,10 +171,20 @@ impl OperationLogSink for OperationLogArchive {
         let name = self
             .publish(&record.id, chunk.sequence, &chunk.text)
             .await?;
-        self.store.connection().execute(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "INSERT INTO operation_log_chunks(invocation_id,sequence,command_ordinal,phase,stream,observed_at,bytes,digest,file_name) VALUES(?,?,?,?,?,?,?,?,?)",
-            [record.id.clone().into(), sequence.into(), i64::from(chunk.command_ordinal).into(), chunk.phase.into(), chunk.stream.into(), chunk.observed_at.into(), i64::try_from(bytes).map_err(|_| invalid())?.into(), digest.into(), name.into()]
-        )).await.map_err(|_| unavailable())?;
+        log_chunks::Entity::insert(log_chunks::ActiveModel {
+            invocation_id: Set(record.id.clone()),
+            sequence: Set(sequence),
+            command_ordinal: Set(i64::from(chunk.command_ordinal)),
+            phase: Set(chunk.phase),
+            stream: Set(chunk.stream),
+            observed_at: Set(chunk.observed_at),
+            bytes: Set(i64::try_from(bytes).map_err(|_| invalid())?),
+            digest: Set(digest),
+            file_name: Set(name),
+        })
+        .exec_without_returning(self.store.connection())
+        .await
+        .map_err(|_| unavailable())?;
         record.retained_bytes = record.retained_bytes.saturating_add(bytes);
         if chunk.withheld {
             record

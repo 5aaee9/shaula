@@ -1,5 +1,6 @@
 use super::{invalid, unavailable, OperationLogArchive};
-use sea_orm::{ConnectionTrait, DbBackend, QueryResult, Statement};
+use crate::entities::operation_logs::operation_log_chunks as log_chunks;
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use sha2::{Digest, Sha256};
 use shaula_core::error::CoreResult;
 use std::collections::{HashMap, HashSet};
@@ -67,20 +68,17 @@ impl OperationLogArchive {
         Ok(name)
     }
 
-    pub(super) async fn chunk_rows(&self, id: &str) -> CoreResult<Vec<QueryResult>> {
-        self.store
-            .connection()
-            .query_all(Statement::from_sql_and_values(
-                DbBackend::Sqlite,
-                "SELECT * FROM operation_log_chunks WHERE invocation_id=? ORDER BY sequence",
-                [id.into()],
-            ))
+    pub(super) async fn chunk_rows(&self, id: &str) -> CoreResult<Vec<log_chunks::Model>> {
+        log_chunks::Entity::find()
+            .filter(log_chunks::Column::InvocationId.eq(id))
+            .order_by_asc(log_chunks::Column::Sequence)
+            .all(self.store.connection())
             .await
             .map_err(|_| unavailable())
     }
 
-    pub(super) async fn chunk_text(&self, id: &str, row: &QueryResult) -> CoreResult<String> {
-        let sequence: i64 = row.try_get("", "sequence").map_err(|_| unavailable())?;
+    pub(super) async fn chunk_text(&self, id: &str, row: &log_chunks::Model) -> CoreResult<String> {
+        let sequence = row.sequence;
         let path = self
             .directory(id)
             .await?
@@ -92,15 +90,14 @@ impl OperationLogArchive {
             return Err(unavailable());
         }
         let bytes = tokio::fs::read(path).await.map_err(|_| unavailable())?;
-        let digest: String = row.try_get("", "digest").map_err(|_| unavailable())?;
-        if hex::encode(Sha256::digest(&bytes)) != digest {
+        if hex::encode(Sha256::digest(&bytes)) != row.digest {
             return Err(unavailable());
         }
         String::from_utf8(bytes).map_err(|_| unavailable())
     }
 
-    pub(super) async fn remove_chunk(&self, id: &str, row: &QueryResult) -> CoreResult<()> {
-        let sequence: i64 = row.try_get("", "sequence").map_err(|_| unavailable())?;
+    pub(super) async fn remove_chunk(&self, id: &str, row: &log_chunks::Model) -> CoreResult<()> {
+        let sequence = row.sequence;
         let path = self
             .directory(id)
             .await?
@@ -119,13 +116,10 @@ impl OperationLogArchive {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             _ => return Err(unavailable()),
         }
-        self.store
-            .connection()
-            .execute(Statement::from_sql_and_values(
-                DbBackend::Sqlite,
-                "DELETE FROM operation_log_chunks WHERE invocation_id=? AND sequence=?",
-                [id.into(), sequence.into()],
-            ))
+        log_chunks::Entity::delete_many()
+            .filter(log_chunks::Column::InvocationId.eq(id))
+            .filter(log_chunks::Column::Sequence.eq(sequence))
+            .exec(self.store.connection())
             .await
             .map_err(|_| unavailable())?;
         Ok(())
@@ -142,21 +136,18 @@ impl OperationLogArchive {
 
     pub(super) async fn reap_orphans(&self) -> CoreResult<()> {
         // Callers hold the writer lock, so this snapshot cannot miss a publish.
-        let rows = self
-            .store
-            .connection()
-            .query_all(Statement::from_string(
-                DbBackend::Sqlite,
-                "SELECT invocation_id,file_name FROM operation_log_chunks",
-            ))
+        let rows = log_chunks::Entity::find()
+            .select_only()
+            .columns([
+                log_chunks::Column::InvocationId,
+                log_chunks::Column::FileName,
+            ])
+            .into_tuple::<(String, String)>()
+            .all(self.store.connection())
             .await
             .map_err(|_| unavailable())?;
         let mut registered: HashMap<String, HashSet<String>> = HashMap::new();
-        for row in rows {
-            let id: String = row
-                .try_get("", "invocation_id")
-                .map_err(|_| unavailable())?;
-            let name: String = row.try_get("", "file_name").map_err(|_| unavailable())?;
+        for (id, name) in rows {
             registered.entry(id).or_default().insert(name);
         }
         let root = self.root.clone();

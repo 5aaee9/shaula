@@ -1,14 +1,18 @@
 //! Retained message facts are committed in the listener's existing transaction.
 use std::collections::BTreeSet;
 
-use sea_orm::DatabaseTransaction;
+use sea_orm::{
+    sea_query::Expr, ActiveValue::Set, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter,
+    QuerySelect,
+};
 use shaula_core::jobs::{
     AssociationStatus, JobMetadata, JobObservation, JobSummary, ObservationKind, ObservedStatus,
 };
 use shaula_core::ports::PollMessage;
 use shaula_core::registry::SessionEffectContext;
 
-use super::{association, encode, execute, rows, scope};
+use super::{association, encode, scope};
+use crate::entities::jobs::{workflow_job_observations as observations, workflow_jobs as jobs};
 use crate::{Store, StoreError, StoreResult};
 
 struct Fact<'a> {
@@ -110,49 +114,50 @@ impl Store {
                 generation_id: None,
                 association_status: AssociationStatus::Unverified,
             };
-            execute(
-                tx,
-                "INSERT INTO workflow_job_observations(id,scope_key,job_record_id,protocol_job_id,
-                runner_request_id,runner_id,data_json,observed_at) VALUES(?,?,?,?,?,?,?,?)",
-                vec![
-                    observation.id.clone().into(),
-                    scope.key.clone().into(),
-                    job_id.into(),
-                    (if fact.job.trim().is_empty() {
-                        ""
-                    } else {
-                        fact.job
-                    })
-                    .into(),
-                    fact.request.into(),
-                    fact.runner.into(),
-                    encode(&observation)?.into(),
-                    now.into(),
-                ],
-            )
+            observations::Entity::insert(observations::ActiveModel {
+                id: Set(observation.id.clone()),
+                scope_key: Set(scope.key.clone()),
+                job_record_id: Set(job_id),
+                protocol_job_id: Set(if fact.job.trim().is_empty() {
+                    String::new()
+                } else {
+                    fact.job.into()
+                }),
+                runner_request_id: Set(fact.request),
+                runner_id: Set(fact.runner),
+                data_json: Set(encode(&observation)?),
+                observed_at: Set(now),
+            })
+            .exec_without_returning(tx)
             .await?;
         }
         for request in requests {
             // Missing jobId can be joined only when all facts for this scoped
             // request agree. A later conflict retracts this tentative promotion.
-            let candidates = rows(tx, "SELECT DISTINCT job_record_id FROM workflow_job_observations
-                WHERE scope_key=? AND runner_request_id=? AND protocol_job_id<>'' AND job_record_id IS NOT NULL",
-                vec![scope.key.clone().into(), request.into()]).await?;
+            let candidates = observations::Entity::find()
+                .select_only()
+                .column(observations::Column::JobRecordId)
+                .distinct()
+                .filter(observations::Column::ScopeKey.eq(scope.key.as_str()))
+                .filter(observations::Column::RunnerRequestId.eq(request))
+                .filter(observations::Column::ProtocolJobId.ne(""))
+                .filter(observations::Column::JobRecordId.is_not_null())
+                .into_tuple::<String>()
+                .all(tx)
+                .await?;
             let candidate = if candidates.len() == 1 {
-                Some(candidates[0].try_get::<String>("", "job_record_id")?)
+                Some(candidates[0].clone())
             } else {
                 None
             };
-            execute(
-                tx,
-                "UPDATE workflow_job_observations SET job_record_id=?
-                WHERE scope_key=? AND runner_request_id=? AND protocol_job_id=''",
-                vec![candidate.into(), scope.key.clone().into(), request.into()],
-            )
-            .await?;
-            for row in candidates {
-                affected.insert(row.try_get("", "job_record_id")?);
-            }
+            observations::Entity::update_many()
+                .col_expr(observations::Column::JobRecordId, Expr::value(candidate))
+                .filter(observations::Column::ScopeKey.eq(scope.key.as_str()))
+                .filter(observations::Column::RunnerRequestId.eq(request))
+                .filter(observations::Column::ProtocolJobId.eq(""))
+                .exec(tx)
+                .await?;
+            affected.extend(candidates);
         }
         for id in affected {
             association::refresh_job(tx, &id).await?;
@@ -171,14 +176,16 @@ async fn ensure_job(
     protocol_id: &str,
     now: i64,
 ) -> StoreResult<String> {
-    let found = rows(
-        tx,
-        "SELECT id FROM workflow_jobs WHERE scope_key=? AND protocol_job_id=?",
-        vec![scope.key.clone().into(), protocol_id.into()],
-    )
-    .await?;
-    if let Some(row) = found.first() {
-        return Ok(row.try_get("", "id")?);
+    let found = jobs::Entity::find()
+        .select_only()
+        .column(jobs::Column::Id)
+        .filter(jobs::Column::ScopeKey.eq(scope.key.as_str()))
+        .filter(jobs::Column::ProtocolJobId.eq(protocol_id))
+        .into_tuple::<String>()
+        .one(tx)
+        .await?;
+    if let Some(id) = found {
+        return Ok(id);
     }
     let summary = JobSummary {
         id: uuid::Uuid::new_v4().to_string(),
@@ -201,9 +208,20 @@ async fn ensure_job(
         created_at: now,
         updated_at: now,
     };
-    execute(tx, "INSERT INTO workflow_jobs(id,scope_key,fleet_key,fleet_incarnation,scale_set_id,
-        protocol_job_id,summary_json,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'unknown',?,?)",
-        vec![summary.id.clone().into(), scope.key.clone().into(), fleet.into(), scope.incarnation.clone().into(),
-            scope.scale_set_id.into(), protocol_id.into(), encode(&summary)?.into(), now.into(), now.into()]).await?;
+    jobs::Entity::insert(jobs::ActiveModel {
+        id: Set(summary.id.clone()),
+        scope_key: Set(scope.key.clone()),
+        fleet_key: Set(fleet.into()),
+        fleet_incarnation: Set(scope.incarnation.clone()),
+        scale_set_id: Set(scope.scale_set_id),
+        protocol_job_id: Set(protocol_id.into()),
+        summary_json: Set(encode(&summary)?),
+        status: Set("unknown".into()),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    })
+    .exec_without_returning(tx)
+    .await?;
     Ok(summary.id)
 }

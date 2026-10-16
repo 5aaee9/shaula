@@ -1,7 +1,12 @@
 //! Optional history work is scoped, bounded and incapable of changing Runner state.
-use super::{decode, encode, execute, forgejo_projection, forgejo_scope, rows};
+use super::{decode, encode, forgejo_projection, forgejo_scope};
+use crate::entities::jobs::{forgejo_job_polls as polls, forgejo_workflow_jobs as jobs_table};
+use crate::query_ext::json_extract;
 use crate::{Store, StoreError, StoreResult};
-use sea_orm::{ConnectionTrait, DbBackend, Statement};
+use sea_orm::{
+    sea_query::{Alias, Expr, Func, SimpleExpr},
+    ColumnTrait, EntityTrait, Order, QueryFilter, QueryOrder, QuerySelect,
+};
 use shaula_core::{
     jobs::{ForgejoJobLookup, ForgejoJobResult, ForgejoTaskResult, JobSummary, ObservedStatus},
     registry::FleetRuntimeGuard,
@@ -21,31 +26,49 @@ impl Store {
         };
         // This is a read-work budget, not an execution claim. It survives failure,
         // cancellation and restart; no network operation occurs inside the writer.
-        let reserved = tx
-            .execute(Statement::from_sql_and_values(
-                DbBackend::Sqlite,
-                "UPDATE forgejo_job_polls SET enrichment_attempted_at=? WHERE scope_key=?
-             AND (enrichment_attempted_at=0 OR enrichment_attempted_at<=?)",
-                [
-                    now.into(),
-                    scope.key.clone().into(),
-                    now.saturating_sub(30_000).into(),
-                ],
-            ))
+        let reserved = polls::Entity::update_many()
+            .col_expr(polls::Column::EnrichmentAttemptedAt, Expr::value(now))
+            .filter(polls::Column::ScopeKey.eq(scope.key.as_str()))
+            .filter(
+                polls::Column::EnrichmentAttemptedAt
+                    .eq(0)
+                    .or(polls::Column::EnrichmentAttemptedAt.lte(now.saturating_sub(30_000))),
+            )
+            .exec(&tx)
             .await?;
-        if reserved.rows_affected() != 1 {
+        if reserved.rows_affected != 1 {
             return Ok(Vec::new());
         }
-        let candidates = rows(&tx,
-            "SELECT id,summary_json FROM forgejo_workflow_jobs WHERE scope_key=? AND status!='completed'
-             AND CAST(json_extract(summary_json,'$.forgejo.task_id') AS INTEGER)>0
-             ORDER BY COALESCE(json_extract(summary_json,'$.forgejo.enrichment_attempted_at'),0),created_at,id LIMIT 100",
-            vec![scope.key.into()],
-        ).await?;
+        let summary = jobs_table::Column::SummaryJson;
+        let candidates = jobs_table::Entity::find()
+            .select_only()
+            .column(summary)
+            .filter(jobs_table::Column::ScopeKey.eq(scope.key))
+            .filter(jobs_table::Column::Status.ne("completed"))
+            .filter(
+                Expr::expr(Func::cast_as(
+                    json_extract(summary, "$.forgejo.task_id"),
+                    Alias::new("INTEGER"),
+                ))
+                .gt(0),
+            )
+            .order_by(
+                SimpleExpr::from(Func::coalesce([
+                    json_extract(summary, "$.forgejo.enrichment_attempted_at"),
+                    Expr::val(0).into(),
+                ])),
+                Order::Asc,
+            )
+            .order_by_asc(jobs_table::Column::CreatedAt)
+            .order_by_asc(jobs_table::Column::Id)
+            .limit(100)
+            .into_tuple::<String>()
+            .all(&tx)
+            .await?;
         let mut repositories = BTreeSet::new();
         let mut selected = Vec::new();
-        for row in candidates {
-            let mut summary: JobSummary = decode(&row.try_get::<String>("", "summary_json")?)?;
+        for summary_json in candidates {
+            let mut summary: JobSummary = decode(&summary_json)?;
             let state = summary
                 .forgejo
                 .as_mut()
@@ -61,12 +84,14 @@ impl Store {
                 task_id: decimal_id(&state.task_id)?,
             });
             state.enrichment_attempted_at = Some(now);
-            execute(
-                &tx,
-                "UPDATE forgejo_workflow_jobs SET summary_json=? WHERE id=?",
-                vec![encode(&summary)?.into(), summary.id.into()],
-            )
-            .await?;
+            jobs_table::Entity::update_many()
+                .col_expr(
+                    jobs_table::Column::SummaryJson,
+                    Expr::value(encode(&summary)?),
+                )
+                .filter(jobs_table::Column::Id.eq(summary.id))
+                .exec(&tx)
+                .await?;
             if selected.len() == 20 {
                 break;
             }
@@ -97,16 +122,18 @@ impl Store {
         result
             .validate_for_instance(&scope.target.instance_url)
             .map_err(|message| StoreError::Corrupt(message.into()))?;
-        let found = rows(
-            &tx,
-            "SELECT summary_json FROM forgejo_workflow_jobs WHERE scope_key=? AND id=?",
-            vec![scope.key.clone().into(), lookup.record_id.clone().into()],
-        )
-        .await?;
-        let Some(row) = found.first() else {
+        let found = jobs_table::Entity::find()
+            .select_only()
+            .column(jobs_table::Column::SummaryJson)
+            .filter(jobs_table::Column::ScopeKey.eq(scope.key.as_str()))
+            .filter(jobs_table::Column::Id.eq(lookup.record_id.as_str()))
+            .into_tuple::<String>()
+            .one(&tx)
+            .await?;
+        let Some(summary_json) = found else {
             return Ok(false);
         };
-        let mut summary: JobSummary = decode(&row.try_get::<String>("", "summary_json")?)?;
+        let mut summary: JobSummary = decode(&summary_json)?;
         let state = summary
             .forgejo
             .as_mut()
@@ -119,11 +146,23 @@ impl Store {
         }
         // Two different job/attempt records claiming the same task are ambiguous.
         // Matching a task ID alone must not spread a conclusion across those rows.
-        let identities = rows(&tx,
-            "SELECT id FROM forgejo_workflow_jobs WHERE scope_key=? AND json_extract(summary_json,'$.forgejo.repository_id')=?
-             AND json_extract(summary_json,'$.forgejo.task_id')=? LIMIT 2",
-            vec![scope.key.into(),state.repository_id.clone().into(),state.task_id.clone().into()],
-        ).await?;
+        let summary_column = jobs_table::Column::SummaryJson;
+        let identities = jobs_table::Entity::find()
+            .select_only()
+            .column(jobs_table::Column::Id)
+            .filter(jobs_table::Column::ScopeKey.eq(scope.key))
+            .filter(
+                Expr::expr(json_extract(summary_column, "$.forgejo.repository_id"))
+                    .eq(state.repository_id.as_str()),
+            )
+            .filter(
+                Expr::expr(json_extract(summary_column, "$.forgejo.task_id"))
+                    .eq(state.task_id.as_str()),
+            )
+            .limit(2)
+            .into_tuple::<String>()
+            .all(&tx)
+            .await?;
         if identities.len() != 1 {
             return Ok(false);
         }
@@ -145,9 +184,20 @@ impl Store {
         summary.metadata.owner_name = Some(result.owner.clone());
         summary.metadata.repository_name = Some(result.repository.clone());
         summary.updated_at = now;
-        execute(&tx,"UPDATE forgejo_workflow_jobs SET summary_json=?,status='completed',repository=?,updated_at=? WHERE id=?",
-            vec![encode(&summary)?.into(),format!("{}/{}",result.owner,result.repository).into(),now.into(),lookup.record_id.clone().into()],
-        ).await?;
+        jobs_table::Entity::update_many()
+            .col_expr(
+                jobs_table::Column::SummaryJson,
+                Expr::value(encode(&summary)?),
+            )
+            .col_expr(jobs_table::Column::Status, Expr::value("completed"))
+            .col_expr(
+                jobs_table::Column::Repository,
+                Expr::value(format!("{}/{}", result.owner, result.repository)),
+            )
+            .col_expr(jobs_table::Column::UpdatedAt, Expr::value(now))
+            .filter(jobs_table::Column::Id.eq(lookup.record_id.as_str()))
+            .exec(&tx)
+            .await?;
         forgejo_projection::result_event(&tx, &lookup.record_id, result, now).await?;
         tx.commit().await?;
         Ok(true)

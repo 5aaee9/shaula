@@ -1,6 +1,7 @@
-use super::{invalid, unavailable, OperationLogArchive};
+use super::{invalid, invocations::started_at, unavailable, OperationLogArchive};
+use crate::entities::operation_logs::operation_log_invocations as log_invocations;
 use async_trait::async_trait;
-use sea_orm::{ConnectionTrait, DbBackend, Statement};
+use sea_orm::{ColumnTrait, EntityTrait, Order, QueryFilter, QueryOrder, QuerySelect};
 use serde::{Deserialize, Serialize};
 use shaula_core::{error::CoreResult, operation_log::*};
 
@@ -26,15 +27,21 @@ impl OperationLogReadPort for OperationLogArchive {
     async fn list_invocations(&self, generation_id: &str) -> CoreResult<Vec<Invocation>> {
         uuid::Uuid::parse_str(generation_id).map_err(|_| invalid())?;
         let _writer = self.writer.lock().await;
-        let rows = self.store.connection().query_all(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "SELECT id FROM operation_log_invocations WHERE generation_id=? ORDER BY json_extract(record_json,'$.started_at') DESC,ordinal DESC,id DESC LIMIT 1000", [generation_id.into()]
-        )).await.map_err(|_| unavailable())?;
-        let mut result = Vec::with_capacity(rows.len());
-        for row in rows {
-            result.push(
-                self.load(&row.try_get::<String>("", "id").map_err(|_| unavailable())?)
-                    .await?,
-            );
+        let ids = log_invocations::Entity::find()
+            .select_only()
+            .column(log_invocations::Column::Id)
+            .filter(log_invocations::Column::GenerationId.eq(generation_id))
+            .order_by(started_at(), Order::Desc)
+            .order_by_desc(log_invocations::Column::Ordinal)
+            .order_by_desc(log_invocations::Column::Id)
+            .limit(1000)
+            .into_tuple::<String>()
+            .all(self.store.connection())
+            .await
+            .map_err(|_| unavailable())?;
+        let mut result = Vec::with_capacity(ids.len());
+        for id in ids {
+            result.push(self.load(&id).await?);
         }
         Ok(result)
     }
@@ -97,19 +104,22 @@ impl OperationLogReadPort for OperationLogArchive {
         let rows = self.chunk_rows(id).await?;
         let mut more = false;
         for row in rows {
-            let sequence: i64 = row.try_get("", "sequence").map_err(|_| unavailable())?;
+            let sequence = row.sequence;
             if sequence <= after {
                 continue;
             }
-            let phase: String = row.try_get("", "phase").map_err(|_| unavailable())?;
-            let stream: String = row.try_get("", "stream").map_err(|_| unavailable())?;
-            if query.phase.as_ref().is_some_and(|value| *value != phase)
-                || query.stream.as_ref().is_some_and(|value| *value != stream)
+            if query
+                .phase
+                .as_ref()
+                .is_some_and(|value| *value != row.phase)
+                || query
+                    .stream
+                    .as_ref()
+                    .is_some_and(|value| *value != row.stream)
             {
                 continue;
             }
-            let bytes: i64 = row.try_get("", "bytes").map_err(|_| unavailable())?;
-            if used + usize::try_from(bytes).map_err(|_| unavailable())? > limit {
+            if used + usize::try_from(row.bytes).map_err(|_| unavailable())? > limit {
                 more = true;
                 break;
             }
@@ -125,16 +135,12 @@ impl OperationLogReadPort for OperationLogArchive {
             used += text.len();
             after = sequence;
             page.entries.push(LogEntry {
-                command_ordinal: u32::try_from(
-                    row.try_get::<i64>("", "command_ordinal")
-                        .map_err(|_| unavailable())?,
-                )
-                .map_err(|_| unavailable())?,
-                phase,
-                stream,
+                command_ordinal: u32::try_from(row.command_ordinal).map_err(|_| unavailable())?,
+                phase: row.phase,
+                stream: row.stream,
                 sequence: u64::try_from(sequence).map_err(|_| unavailable())?,
                 text,
-                observed_at: row.try_get("", "observed_at").map_err(|_| unavailable())?,
+                observed_at: row.observed_at,
             });
         }
         // A live cursor remains useful even when no new durable output exists.
@@ -215,11 +221,7 @@ impl OperationLogReadPort for OperationLogArchive {
         let mut tail_bytes = 0usize;
         let mut filling_head = true;
         for row in self.chunk_rows(&record.id).await? {
-            if row
-                .try_get::<String>("", "phase")
-                .map_err(|_| unavailable())?
-                != "apply"
-            {
+            if row.phase != "apply" {
                 continue;
             }
             let text = match self.chunk_text(&record.id, &row).await {

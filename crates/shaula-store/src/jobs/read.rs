@@ -1,69 +1,28 @@
 //! Read-only allowlisted DTOs: workspace, Terraform inputs, state and auth never escape.
-use sea_orm::{QueryResult, TransactionTrait};
+use sea_orm::{
+    sea_query::{Alias, Expr, Order, Query},
+    ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QueryResult, QuerySelect, TransactionTrait,
+};
 use shaula_core::jobs::{
     AssociationStatus, GenerationDetail, GenerationSummary, GenerationsPage, GenerationsQuery,
     JobDetail, JobObservation, JobSummary, JobsPage, JobsQuery, JobsReadError, JobsReadPort,
 };
 
-use super::{decode, query::PageQuery, rows};
+use super::{decode, query::PageQuery, select_rows, views};
+use crate::entities::jobs::{
+    workflow_generation_identity as identity, workflow_job_observations as observations,
+    workflow_jobs as github_jobs,
+};
+use crate::query_ext::{col, json_extract, same};
 use crate::{Store, StoreResult};
-
-/// A GitHub job last observed `running` whose every verified Generation is
-/// Destroyed can no longer be running there; its Completed was never observed
-/// (e.g. lost across a listener restart). Spec 0019 §2.2: report the status as
-/// unknown/stale and keep the retained observations, never invent a completion.
-macro_rules! runner_retired {
-    () => {
-        "(j.status='running'
-        AND EXISTS(SELECT 1 FROM workflow_job_observations o JOIN runner_generations g
-            ON g.id=json_extract(o.data_json,'$.generation_id') WHERE o.job_record_id=j.id
-            AND json_extract(o.data_json,'$.association_status')='verified' AND g.state='Destroyed')
-        AND NOT EXISTS(SELECT 1 FROM workflow_job_observations o JOIN runner_generations g
-            ON g.id=json_extract(o.data_json,'$.generation_id') WHERE o.job_record_id=j.id
-            AND json_extract(o.data_json,'$.association_status')='verified' AND g.state<>'Destroyed'))"
-    };
-}
-
-const JOBS: &str = concat!(
-    "SELECT j.id,j.fleet_key,j.summary_json,CASE WHEN ",
-    runner_retired!(),
-    " THEN 'unknown' ELSE j.status END AS status,j.repository,j.job_name,
-    j.created_at,j.updated_at,NULL AS poll_time,NULL AS poll_failed,",
-    runner_retired!(),
-    " AS runner_retired FROM workflow_jobs j
-    UNION ALL SELECT j.id,j.fleet_key,j.summary_json,j.status,j.repository,j.job_name,
-    j.created_at,j.updated_at,p.observed_at AS poll_time,p.failed AS poll_failed,0 AS runner_retired
-    FROM forgejo_workflow_jobs j LEFT JOIN forgejo_job_polls p ON p.scope_key=j.scope_key
-    UNION ALL SELECT j.id,j.fleet_key,j.summary_json,j.status,j.repository,j.job_name,
-    j.created_at,j.updated_at,NULL AS poll_time,NULL AS poll_failed,0 AS runner_retired
-    FROM gitlab_workflow_jobs j"
-);
-
-pub(super) const GENERATIONS: &str = "SELECT g.id,g.fleet_key,g.runner_name,g.generation_name,g.state,g.subphase,
-    g.template_profile_key,g.template_revision,g.created_at,g.updated_at,i.fleet_incarnation,fi.runner_id AS forgejo_runner_id,gi.runner_id AS gitlab_runner_id,
-    COALESCE(i.github_runner_id,g.github_runner_id) AS github_runner_id,
-    CASE WHEN EXISTS(SELECT 1 FROM workflow_job_observations o WHERE o.scope_key=i.scope_key
-        AND o.runner_id=i.github_runner_id AND json_extract(o.data_json,'$.association_status')='ambiguous') THEN 'ambiguous'
-    WHEN EXISTS(SELECT 1 FROM workflow_job_observations o
-        WHERE json_extract(o.data_json,'$.generation_id')=g.id
-        AND json_extract(o.data_json,'$.association_status')='verified') THEN 'verified'
-    WHEN EXISTS(SELECT 1 FROM gitlab_job_generations l WHERE l.generation_id=g.id) THEN 'verified'
-    ELSE 'unverified' END AS association_status
-    FROM runner_generations g LEFT JOIN workflow_generation_identity i ON i.generation_id=g.id
-    LEFT JOIN forgejo_runner_identities fi ON fi.generation_id=g.id
-    LEFT JOIN gitlab_runner_identities gi ON gi.generation_id=g.id";
 
 #[async_trait::async_trait]
 impl JobsReadPort for Store {
     async fn list_jobs(&self, query: JobsQuery) -> Result<JobsPage, JobsReadError> {
         let page = PageQuery::jobs(&query)?;
-        let found = rows(
-            self.connection(),
-            &page.sql(&format!("SELECT * FROM ({JOBS})")),
-            page.values.clone(),
-        )
-        .await
-        .map_err(unavailable)?;
+        let found = select_rows(self.connection(), &page.select(views::jobs()))
+            .await
+            .map_err(unavailable)?;
         let items: Vec<JobSummary> = found
             .iter()
             .map(job_summary)
@@ -82,13 +41,10 @@ impl JobsReadPort for Store {
             .begin()
             .await
             .map_err(|_| JobsReadError::Unavailable)?;
-        let found = rows(
-            &tx,
-            &format!("SELECT * FROM ({JOBS}) WHERE id=?"),
-            vec![id.into()],
-        )
-        .await
-        .map_err(unavailable)?;
+        let job = views::from_view(views::jobs())
+            .and_where(Expr::col(Alias::new("id")).eq(id))
+            .to_owned();
+        let found = select_rows(&tx, &job).await.map_err(unavailable)?;
         let Some(row) = found.first() else {
             return Ok(None);
         };
@@ -105,19 +61,37 @@ impl JobsReadPort for Store {
                 .map(Some)
                 .map_err(unavailable);
         }
-        let found = rows(&tx, "SELECT data_json FROM workflow_job_observations WHERE job_record_id=? ORDER BY observed_at DESC,id DESC LIMIT 1001",
-            vec![id.into()]).await.map_err(unavailable)?;
+        let found = observations::Entity::find()
+            .select_only()
+            .column(observations::Column::DataJson)
+            .filter(observations::Column::JobRecordId.eq(id))
+            .order_by_desc(observations::Column::ObservedAt)
+            .order_by_desc(observations::Column::Id)
+            .limit(1001)
+            .into_tuple::<String>()
+            .all(&tx)
+            .await
+            .map_err(|_| JobsReadError::Unavailable)?;
         let mut observations: Vec<JobObservation> = found
             .iter()
-            .map(|r| decode(&r.try_get::<String>("", "data_json")?))
+            .map(|json| decode(json))
             .collect::<StoreResult<_>>()
             .map_err(unavailable)?;
         let observations_truncated = observations.len() > 1000;
         observations.truncate(1000);
-        let sql = format!(
-            "SELECT * FROM ({GENERATIONS}) WHERE id IN (SELECT DISTINCT json_extract(data_json,'$.generation_id') FROM workflow_job_observations WHERE job_record_id=?) ORDER BY created_at,id LIMIT 200"
-        );
-        let generations = rows(&tx, &sql, vec![id.into()])
+        let associated = Query::select()
+            .distinct()
+            .expr(json_extract(
+                observations::Column::DataJson,
+                "$.generation_id",
+            ))
+            .from(observations::Entity)
+            .and_where(Expr::col(observations::Column::JobRecordId).eq(id))
+            .to_owned();
+        let mut select = views::from_view(views::generations());
+        select.and_where(Expr::col(Alias::new("id")).in_subquery(associated));
+        views::keyset(&mut select, Order::Asc).limit(200);
+        let generations = select_rows(&tx, &select)
             .await
             .map_err(unavailable)?
             .iter()
@@ -139,8 +113,7 @@ impl JobsReadPort for Store {
         query: GenerationsQuery,
     ) -> Result<GenerationsPage, JobsReadError> {
         let page = PageQuery::generations(&query)?;
-        let select = format!("SELECT * FROM ({GENERATIONS})");
-        let found = rows(self.connection(), &page.sql(&select), page.values.clone())
+        let found = select_rows(self.connection(), &page.select(views::generations()))
             .await
             .map_err(unavailable)?;
         let items: Vec<GenerationSummary> = found
@@ -161,19 +134,47 @@ impl JobsReadPort for Store {
             .begin()
             .await
             .map_err(|_| JobsReadError::Unavailable)?;
-        let sql = format!("SELECT * FROM ({GENERATIONS}) WHERE id=?");
-        let found = rows(&tx, &sql, vec![id.into()])
-            .await
-            .map_err(unavailable)?;
+        let generation = views::from_view(views::generations())
+            .and_where(Expr::col(Alias::new("id")).eq(id))
+            .to_owned();
+        let found = select_rows(&tx, &generation).await.map_err(unavailable)?;
         let Some(row) = found.first() else {
             return Ok(None);
         };
         let generation = generation_summary(row).map_err(unavailable)?;
-        let found = rows(&tx, concat!("SELECT j.summary_json,", runner_retired!(), " AS runner_retired FROM workflow_jobs j WHERE j.id IN (
-            SELECT o.job_record_id FROM workflow_job_observations o JOIN workflow_generation_identity i
-            ON i.scope_key=o.scope_key AND i.github_runner_id=o.runner_id WHERE i.generation_id=?
-            AND (json_extract(o.data_json,'$.generation_id')=? OR json_extract(o.data_json,'$.association_status')='ambiguous'))
-            ORDER BY j.created_at DESC,j.id DESC LIMIT 200"), vec![id.into(), id.into()]).await.map_err(unavailable)?;
+        let observed = |path| {
+            Expr::expr(json_extract(
+                observations::Column::DataJson.as_column_ref(),
+                path,
+            ))
+        };
+        let ran = Query::select()
+            .column(observations::Column::JobRecordId.as_column_ref())
+            .from(observations::Entity)
+            .inner_join(
+                identity::Entity,
+                same(identity::Column::ScopeKey, observations::Column::ScopeKey).and(same(
+                    identity::Column::GithubRunnerId,
+                    observations::Column::RunnerId,
+                )),
+            )
+            .and_where(col(identity::Column::GenerationId).eq(id))
+            .and_where(
+                observed("$.generation_id")
+                    .eq(id)
+                    .or(observed("$.association_status").eq("ambiguous")),
+            )
+            .to_owned();
+        let jobs_run = Query::select()
+            .column(github_jobs::Column::SummaryJson.as_column_ref())
+            .expr_as(views::runner_retired(), Alias::new("runner_retired"))
+            .from(github_jobs::Entity)
+            .and_where(col(github_jobs::Column::Id).in_subquery(ran))
+            .order_by(github_jobs::Column::CreatedAt.as_column_ref(), Order::Desc)
+            .order_by(github_jobs::Column::Id.as_column_ref(), Order::Desc)
+            .limit(200)
+            .to_owned();
+        let found = select_rows(&tx, &jobs_run).await.map_err(unavailable)?;
         let mut jobs: Vec<JobSummary> = found
             .iter()
             .map(job_summary)

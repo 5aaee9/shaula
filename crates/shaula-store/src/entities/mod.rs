@@ -5,7 +5,9 @@
 pub mod auth;
 pub mod fleet;
 pub mod gitlab;
+pub mod jobs;
 pub mod lifecycle;
+pub mod operation_logs;
 pub mod shared;
 pub mod template;
 pub mod template_pool;

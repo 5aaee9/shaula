@@ -1,5 +1,5 @@
 //! One captured authority check for claim ingest and exact job reads.
-use super::{decode, encode, rows};
+use super::{decode, encode, guarded_spec};
 use crate::{StoreError, StoreResult};
 use sea_orm::DatabaseTransaction;
 use sha2::{Digest, Sha256};
@@ -20,24 +20,10 @@ pub(super) async fn current(
     fleet: &str,
     guard: &FleetRuntimeGuard,
 ) -> StoreResult<Option<ScopeSnapshot>> {
-    let found = rows(
-        tx,
-        "SELECT r.spec_json FROM fleets f JOIN fleet_revisions r
-         ON r.fleet_key=f.key AND r.incarnation=f.incarnation AND r.revision=f.desired_revision
-         WHERE f.key=? AND f.incarnation=? AND f.desired_revision=? AND f.mutation_fence=?
-         AND f.deletion_marker=0 AND f.tombstone=0",
-        vec![
-            fleet.into(),
-            guard.incarnation.clone().into(),
-            guard.desired_revision.into(),
-            guard.mutation_fence.into(),
-        ],
-    )
-    .await?;
-    let Some(row) = found.first() else {
+    let Some(json) = guarded_spec(tx, fleet, guard).await? else {
         return Ok(None);
     };
-    let spec: FleetSpec = decode(&row.try_get::<String>("", "spec_json")?)?;
+    let spec: FleetSpec = decode(&json)?;
     if spec.kind != FleetProviderKind::Gitlab {
         return Ok(None);
     }

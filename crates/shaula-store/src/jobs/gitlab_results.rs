@@ -1,8 +1,16 @@
 //! Optional exact job reads: scoped, bounded and incapable of changing Runner
 //! state or a recorded Verified association.
-use super::{decode, encode, execute, gitlab::find, gitlab_projection, gitlab_scope, rows};
+use super::{decode, encode, gitlab::find, gitlab_projection, gitlab_scope};
+use crate::entities::jobs::{
+    gitlab_job_generations as links, gitlab_job_polls as polls, gitlab_workflow_jobs as jobs_table,
+};
+use crate::query_ext::{col, json_extract};
 use crate::{Store, StoreError, StoreResult};
-use sea_orm::{ConnectionTrait, DbBackend, Statement};
+use sea_orm::{
+    sea_query::{Expr, Func, OnConflict, SimpleExpr},
+    ActiveValue::Set,
+    ColumnTrait, EntityTrait, Order, QueryFilter, QueryOrder, QuerySelect,
+};
 use shaula_core::{
     jobs::{GitlabJobLookup, GitlabObservationSource, JobSummary},
     ports::gitlab::GitlabJobDetail,
@@ -11,7 +19,7 @@ use shaula_core::{
 
 /// At most one batch per scope per interval, and at most this many jobs.
 const READ_INTERVAL_MS: i64 = 30_000;
-const READ_BATCH: usize = 20;
+const READ_BATCH: u64 = 20;
 
 impl Store {
     pub(super) async fn pending_gitlab_reads(
@@ -26,30 +34,48 @@ impl Store {
         };
         // A read-work budget, not an execution claim. It survives failure,
         // cancellation and restart; no network operation occurs inside the writer.
-        let reserved = tx
-            .execute(Statement::from_sql_and_values(
-                DbBackend::Sqlite,
-                "INSERT INTO gitlab_job_polls(scope_key,enrichment_attempted_at) VALUES(?,?)
-                 ON CONFLICT(scope_key) DO UPDATE SET enrichment_attempted_at=excluded.enrichment_attempted_at
-                 WHERE gitlab_job_polls.enrichment_attempted_at<=?",
-                [
-                    scope.key.clone().into(),
-                    now.into(),
-                    now.saturating_sub(READ_INTERVAL_MS).into(),
-                ],
-            ))
-            .await?;
-        if reserved.rows_affected() != 1 {
+        let reserved = polls::Entity::insert(polls::ActiveModel {
+            scope_key: Set(scope.key.clone()),
+            enrichment_attempted_at: Set(now),
+        })
+        .on_conflict(
+            OnConflict::column(polls::Column::ScopeKey)
+                .update_column(polls::Column::EnrichmentAttemptedAt)
+                .action_and_where(
+                    col(polls::Column::EnrichmentAttemptedAt)
+                        .lte(now.saturating_sub(READ_INTERVAL_MS)),
+                )
+                .to_owned(),
+        )
+        .exec_without_returning(&tx)
+        .await?;
+        if reserved != 1 {
             return Ok(Vec::new());
         }
-        let candidates = rows(&tx,
-            "SELECT summary_json FROM gitlab_workflow_jobs WHERE scope_key=? AND status!='completed'
-             ORDER BY COALESCE(json_extract(summary_json,'$.gitlab.enrichment_attempted_at'),0),created_at,id LIMIT ?",
-            vec![scope.key.into(), (READ_BATCH as i64).into()],
-        ).await?;
+        let candidates = jobs_table::Entity::find()
+            .select_only()
+            .column(jobs_table::Column::SummaryJson)
+            .filter(jobs_table::Column::ScopeKey.eq(scope.key))
+            .filter(jobs_table::Column::Status.ne("completed"))
+            .order_by(
+                SimpleExpr::from(Func::coalesce([
+                    json_extract(
+                        jobs_table::Column::SummaryJson,
+                        "$.gitlab.enrichment_attempted_at",
+                    ),
+                    Expr::val(0).into(),
+                ])),
+                Order::Asc,
+            )
+            .order_by_asc(jobs_table::Column::CreatedAt)
+            .order_by_asc(jobs_table::Column::Id)
+            .limit(READ_BATCH)
+            .into_tuple::<String>()
+            .all(&tx)
+            .await?;
         let mut selected = Vec::new();
-        for row in candidates {
-            let mut summary: JobSummary = decode(&row.try_get::<String>("", "summary_json")?)?;
+        for summary_json in candidates {
+            let mut summary: JobSummary = decode(&summary_json)?;
             let state = summary
                 .gitlab
                 .as_mut()
@@ -60,12 +86,14 @@ impl Store {
                 job_id: decimal_id(&state.job_id)?,
             });
             state.enrichment_attempted_at = Some(now);
-            execute(
-                &tx,
-                "UPDATE gitlab_workflow_jobs SET summary_json=? WHERE id=?",
-                vec![encode(&summary)?.into(), summary.id.into()],
-            )
-            .await?;
+            jobs_table::Entity::update_many()
+                .col_expr(
+                    jobs_table::Column::SummaryJson,
+                    Expr::value(encode(&summary)?),
+                )
+                .filter(jobs_table::Column::Id.eq(summary.id))
+                .exec(&tx)
+                .await?;
         }
         tx.commit().await?;
         Ok(selected)
@@ -108,17 +136,15 @@ impl Store {
         // `runner: null` (deleted registration) is no evidence either way; a
         // different registration contradicts the claim and is not applied.
         if let Some(runner) = read.runner_id {
-            let linked = rows(
-                &tx,
-                "SELECT runner_id FROM gitlab_job_generations WHERE job_record_id=?",
-                vec![summary.id.clone().into()],
-            )
-            .await?;
+            let linked = links::Entity::find()
+                .select_only()
+                .column(links::Column::RunnerId)
+                .filter(links::Column::JobRecordId.eq(summary.id.as_str()))
+                .into_tuple::<i64>()
+                .all(&tx)
+                .await?;
             let runner = super::gitlab::to_i64(runner)?;
-            if !linked.iter().all(|row| {
-                row.try_get::<i64>("", "runner_id")
-                    .is_ok_and(|id| id == runner)
-            }) {
+            if !linked.iter().all(|id| *id == runner) {
                 return Ok(false);
             }
         }

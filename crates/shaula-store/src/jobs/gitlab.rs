@@ -1,10 +1,21 @@
 //! Claim-time projection for GitLab, isolated from GitHub and Forgejo jobs.
-use super::{decode, execute, gitlab_projection, gitlab_scope, rows};
+use super::{decode, gitlab_projection, gitlab_scope};
+use crate::entities::{
+    fleet::fleet_revisions,
+    gitlab::{gitlab_job_associations as associations, gitlab_runner_identities as identities},
+    jobs::{gitlab_job_generations as links, gitlab_workflow_jobs as jobs_table},
+    lifecycle::runner_generations as generations,
+};
+use crate::query_ext::{same, JoinOn};
 use crate::{
     registry_impl::{core_err, SqliteControlPlane},
     Store, StoreResult,
 };
-use sea_orm::DatabaseTransaction;
+use sea_orm::{
+    sea_query::{Expr, OnConflict},
+    ActiveValue::Set,
+    ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect,
+};
 use shaula_core::{
     jobs::{GitlabJobLookup, GitlabJobsStore, GitlabObservationSource, JobSummary},
     ports::gitlab::{GitlabJobDetail, GitlabRunningJob},
@@ -101,17 +112,18 @@ impl Store {
             }
         };
         // Append-only: a later `runner: null` read never reaches this table.
-        execute(
-            &tx,
-            "INSERT INTO gitlab_job_generations(job_record_id,generation_id,runner_id,observed_at)
-            VALUES(?,?,?,?) ON CONFLICT(job_record_id,generation_id) DO NOTHING",
-            vec![
-                id.into(),
-                generation_id.into(),
-                to_i64(runner_id)?.into(),
-                now.into(),
-            ],
+        links::Entity::insert(links::ActiveModel {
+            job_record_id: Set(id),
+            generation_id: Set(generation_id.into()),
+            runner_id: Set(to_i64(runner_id)?),
+            observed_at: Set(now),
+        })
+        .on_conflict(
+            OnConflict::columns([links::Column::JobRecordId, links::Column::GenerationId])
+                .do_nothing()
+                .to_owned(),
         )
+        .exec_without_returning(&tx)
         .await?;
         tx.commit().await?;
         Ok(true)
@@ -128,23 +140,37 @@ async fn claimed(
     runner_id: u64,
     job: &GitlabRunningJob,
 ) -> StoreResult<bool> {
-    let found = rows(
-        tx,
-        "SELECT 1 FROM gitlab_job_associations a JOIN runner_generations g ON g.id=a.generation_id
-         JOIN fleet_revisions r ON r.fleet_key=g.fleet_key AND r.revision=g.fleet_revision
-         JOIN gitlab_runner_identities i ON i.generation_id=g.id
-         WHERE a.generation_id=? AND g.fleet_key=? AND r.incarnation=? AND i.runner_id=?
-         AND a.job_id=? AND a.project_id=?",
-        vec![
-            generation_id.into(),
-            fleet.into(),
-            guard.incarnation.clone().into(),
-            to_i64(runner_id)?.into(),
-            to_i64(job.id)?.into(),
-            to_i64(job.project_id)?.into(),
-        ],
-    )
-    .await?;
+    let found = associations::Entity::find()
+        .select_only()
+        .expr(Expr::val(1))
+        .inner_join_on(
+            generations::Entity,
+            same(generations::Column::Id, associations::Column::GenerationId),
+        )
+        .inner_join_on(
+            fleet_revisions::Entity,
+            same(
+                fleet_revisions::Column::FleetKey,
+                generations::Column::FleetKey,
+            )
+            .and(same(
+                fleet_revisions::Column::Revision,
+                generations::Column::FleetRevision,
+            )),
+        )
+        .inner_join_on(
+            identities::Entity,
+            same(identities::Column::GenerationId, generations::Column::Id),
+        )
+        .filter(associations::Column::GenerationId.eq(generation_id))
+        .filter(generations::Column::FleetKey.eq(fleet))
+        .filter(fleet_revisions::Column::Incarnation.eq(guard.incarnation.as_str()))
+        .filter(identities::Column::RunnerId.eq(to_i64(runner_id)?))
+        .filter(associations::Column::JobId.eq(to_i64(job.id)?))
+        .filter(associations::Column::ProjectId.eq(to_i64(job.project_id)?))
+        .into_tuple::<i64>()
+        .all(tx)
+        .await?;
     Ok(!found.is_empty())
 }
 
@@ -153,15 +179,16 @@ pub(super) async fn find(
     scope: &str,
     protocol_id: &str,
 ) -> StoreResult<Option<JobSummary>> {
-    rows(
-        tx,
-        "SELECT summary_json FROM gitlab_workflow_jobs WHERE scope_key=? AND protocol_job_id=?",
-        vec![scope.into(), protocol_id.into()],
-    )
-    .await?
-    .first()
-    .map(|row| decode(&row.try_get::<String>("", "summary_json")?))
-    .transpose()
+    jobs_table::Entity::find()
+        .select_only()
+        .column(jobs_table::Column::SummaryJson)
+        .filter(jobs_table::Column::ScopeKey.eq(scope))
+        .filter(jobs_table::Column::ProtocolJobId.eq(protocol_id))
+        .into_tuple::<String>()
+        .one(tx)
+        .await?
+        .map(|json| decode(&json))
+        .transpose()
 }
 
 pub(super) fn to_i64(id: u64) -> StoreResult<i64> {

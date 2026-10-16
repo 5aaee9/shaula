@@ -1,8 +1,19 @@
 //! Exact numeric runner evidence within a captured target/Scale Set scope.
-use sea_orm::ConnectionTrait;
+use sea_orm::{
+    sea_query::{Expr, Func},
+    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect,
+};
 use shaula_core::jobs::{project_observations, AssociationStatus, JobObservation, JobSummary};
 
-use super::{decode, encode, execute, rows};
+use super::{decode, encode};
+use crate::entities::{
+    jobs::{
+        workflow_generation_identity as identity, workflow_job_observations as observations,
+        workflow_jobs as jobs,
+    },
+    lifecycle::runner_generations as generations,
+};
+use crate::query_ext::{same, JoinOn};
 use crate::StoreResult;
 
 pub(super) async fn refresh_runner_jobs<C: ConnectionTrait>(
@@ -10,51 +21,64 @@ pub(super) async fn refresh_runner_jobs<C: ConnectionTrait>(
     scope: &str,
     runner: i64,
 ) -> StoreResult<()> {
-    for row in rows(
-        db,
-        "SELECT DISTINCT job_record_id FROM workflow_job_observations
-        WHERE scope_key=? AND runner_id=? AND job_record_id IS NOT NULL",
-        vec![scope.into(), runner.into()],
-    )
-    .await?
-    {
-        refresh_job(db, &row.try_get::<String>("", "job_record_id")?).await?;
+    let ids = observations::Entity::find()
+        .select_only()
+        .column(observations::Column::JobRecordId)
+        .distinct()
+        .filter(observations::Column::ScopeKey.eq(scope))
+        .filter(observations::Column::RunnerId.eq(runner))
+        .filter(observations::Column::JobRecordId.is_not_null())
+        .into_tuple::<String>()
+        .all(db)
+        .await?;
+    for id in ids {
+        refresh_job(db, &id).await?;
     }
     Ok(())
 }
 
+async fn save_observation<C: ConnectionTrait>(
+    db: &C,
+    observation: &JobObservation,
+) -> StoreResult<()> {
+    observations::Entity::update_many()
+        .col_expr(
+            observations::Column::DataJson,
+            Expr::value(encode(observation)?),
+        )
+        .filter(observations::Column::Id.eq(observation.id.as_str()))
+        .exec(db)
+        .await?;
+    Ok(())
+}
+
 pub(super) async fn refresh_job<C: ConnectionTrait>(db: &C, id: &str) -> StoreResult<()> {
-    let jobs = rows(
-        db,
-        "SELECT scope_key,summary_json FROM workflow_jobs WHERE id=?",
-        vec![id.into()],
-    )
-    .await?;
-    let Some(row) = jobs.first() else {
+    let job = jobs::Entity::find_by_id(id)
+        .select_only()
+        .columns([jobs::Column::ScopeKey, jobs::Column::SummaryJson])
+        .into_tuple::<(String, String)>()
+        .one(db)
+        .await?;
+    let Some((scope, summary_json)) = job else {
         return Ok(());
     };
-    let scope: String = row.try_get("", "scope_key")?;
-    let mut summary: JobSummary = decode(&row.try_get::<String>("", "summary_json")?)?;
+    let mut summary: JobSummary = decode(&summary_json)?;
     let mut observations = Vec::new();
-    for row in rows(
-        db,
-        "SELECT data_json FROM workflow_job_observations WHERE job_record_id=?",
-        vec![id.into()],
-    )
-    .await?
+    for data_json in observations::Entity::find()
+        .select_only()
+        .column(observations::Column::DataJson)
+        .filter(observations::Column::JobRecordId.eq(id))
+        .into_tuple::<String>()
+        .all(db)
+        .await?
     {
-        let mut observation: JobObservation = decode(&row.try_get::<String>("", "data_json")?)?;
+        let mut observation: JobObservation = decode(&data_json)?;
         associate(db, &scope, &mut observation).await?;
         if request_conflicts(db, &scope, observation.runner_request_id).await? {
             observation.generation_id = None;
             observation.association_status = AssociationStatus::Ambiguous;
         }
-        execute(
-            db,
-            "UPDATE workflow_job_observations SET data_json=? WHERE id=?",
-            vec![encode(&observation)?.into(), observation.id.clone().into()],
-        )
-        .await?;
+        save_observation(db, &observation).await?;
         observations.push(observation);
     }
     let projection = project_observations(&observations);
@@ -62,12 +86,7 @@ pub(super) async fn refresh_job<C: ConnectionTrait>(db: &C, id: &str) -> StoreRe
         for observation in &mut observations {
             observation.generation_id = None;
             observation.association_status = AssociationStatus::Ambiguous;
-            execute(
-                db,
-                "UPDATE workflow_job_observations SET data_json=? WHERE id=?",
-                vec![encode(observation)?.into(), observation.id.clone().into()],
-            )
-            .await?;
+            save_observation(db, observation).await?;
         }
     }
     summary.metadata = projection.metadata;
@@ -84,9 +103,22 @@ pub(super) async fn refresh_job<C: ConnectionTrait>(db: &C, id: &str) -> StoreRe
         .as_ref()
         .zip(summary.metadata.repository_name.as_ref())
         .map(|(owner, repo)| format!("{owner}/{repo}"));
-    execute(db, "UPDATE workflow_jobs SET summary_json=?,status=?,repository=?,job_name=?,updated_at=? WHERE id=?",
-        vec![encode(&summary)?.into(), summary.observed_status.as_str().into(), repository.into(),
-            summary.metadata.job_display_name.into(), summary.updated_at.into(), id.into()]).await
+    jobs::Entity::update_many()
+        .col_expr(jobs::Column::SummaryJson, Expr::value(encode(&summary)?))
+        .col_expr(
+            jobs::Column::Status,
+            Expr::value(summary.observed_status.as_str()),
+        )
+        .col_expr(jobs::Column::Repository, Expr::value(repository))
+        .col_expr(
+            jobs::Column::JobName,
+            Expr::value(summary.metadata.job_display_name),
+        )
+        .col_expr(jobs::Column::UpdatedAt, Expr::value(summary.updated_at))
+        .filter(jobs::Column::Id.eq(id))
+        .exec(db)
+        .await?;
+    Ok(())
 }
 
 async fn request_conflicts<C: ConnectionTrait>(
@@ -97,19 +129,24 @@ async fn request_conflicts<C: ConnectionTrait>(
     if request <= 0 {
         return Ok(false);
     }
-    let evidence = rows(
-        db,
-        "SELECT COUNT(DISTINCT NULLIF(protocol_job_id,'')) AS identities,
-        SUM(CASE WHEN protocol_job_id='' THEN 1 ELSE 0 END) AS unresolved
-        FROM workflow_job_observations WHERE scope_key=? AND runner_request_id=?",
-        vec![scope.into(), request.into()],
-    )
-    .await?;
-    let Some(row) = evidence.first() else {
+    let protocol = Expr::col(observations::Column::ProtocolJobId);
+    let evidence = observations::Entity::find()
+        .select_only()
+        .expr(Func::count_distinct(
+            Func::cust(sea_orm::sea_query::Alias::new("NULLIF"))
+                .arg(protocol.clone())
+                .arg(""),
+        ))
+        .expr(Func::sum(Expr::case(protocol.eq(""), 1).finally(0)))
+        .filter(observations::Column::ScopeKey.eq(scope))
+        .filter(observations::Column::RunnerRequestId.eq(request))
+        .into_tuple::<(i64, Option<i64>)>()
+        .one(db)
+        .await?;
+    let Some((identities, unresolved)) = evidence else {
         return Ok(false);
     };
-    Ok(row.try_get::<i64>("", "identities")? > 1
-        && row.try_get::<Option<i64>>("", "unresolved")?.unwrap_or(0) > 0)
+    Ok(identities > 1 && unresolved.unwrap_or(0) > 0)
 }
 
 async fn associate<C: ConnectionTrait>(
@@ -122,28 +159,40 @@ async fn associate<C: ConnectionTrait>(
     let Some(runner) = observation.runner_id else {
         return Ok(());
     };
-    let candidates = rows(db, "SELECT i.generation_id,g.runner_name FROM workflow_generation_identity i
-        JOIN runner_generations g ON g.id=i.generation_id WHERE i.scope_key=? AND i.github_runner_id=?",
-        vec![scope.into(), runner.into()]).await?;
-    if candidates.is_empty() {
+    let candidates = identity::Entity::find()
+        .select_only()
+        .column(identity::Column::GenerationId)
+        .column(generations::Column::RunnerName)
+        .inner_join_on(
+            generations::Entity,
+            same(generations::Column::Id, identity::Column::GenerationId),
+        )
+        .filter(identity::Column::ScopeKey.eq(scope))
+        .filter(identity::Column::GithubRunnerId.eq(runner))
+        .into_tuple::<(String, String)>()
+        .all(db)
+        .await?;
+    let Some((generation, name)) = candidates.first() else {
         return Ok(());
-    }
-    let distinct_jobs = rows(
-        db,
-        "SELECT DISTINCT protocol_job_id FROM workflow_job_observations
-        WHERE scope_key=? AND runner_id=? AND protocol_job_id<>''",
-        vec![scope.into(), runner.into()],
-    )
-    .await?;
-    let name: String = candidates[0].try_get("", "runner_name")?;
+    };
+    let distinct_jobs = observations::Entity::find()
+        .select_only()
+        .column(observations::Column::ProtocolJobId)
+        .distinct()
+        .filter(observations::Column::ScopeKey.eq(scope))
+        .filter(observations::Column::RunnerId.eq(runner))
+        .filter(observations::Column::ProtocolJobId.ne(""))
+        .into_tuple::<String>()
+        .all(db)
+        .await?;
     if candidates.len() != 1
         || distinct_jobs.len() > 1
-        || observation.runner_name.as_ref().is_some_and(|n| n != &name)
+        || observation.runner_name.as_ref().is_some_and(|n| n != name)
     {
         observation.association_status = AssociationStatus::Ambiguous;
         return Ok(());
     }
-    observation.generation_id = Some(candidates[0].try_get("", "generation_id")?);
+    observation.generation_id = Some(generation.clone());
     observation.association_status = AssociationStatus::Verified;
     Ok(())
 }

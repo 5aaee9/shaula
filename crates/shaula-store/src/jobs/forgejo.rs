@@ -1,8 +1,14 @@
 //! Snapshot projection for Forgejo, isolated from GitHub listener observations.
-use super::{decode, encode, execute, forgejo_projection, rows};
+use super::{decode, encode, forgejo_projection};
+use crate::entities::jobs::{forgejo_job_polls as polls, forgejo_workflow_jobs as jobs_table};
 use crate::{
     registry_impl::{core_err, SqliteControlPlane},
     Store, StoreError, StoreResult,
+};
+use sea_orm::{
+    sea_query::{Expr, OnConflict},
+    ActiveValue::Set,
+    ColumnTrait, EntityTrait, QueryFilter, QuerySelect,
 };
 use shaula_core::{
     jobs::{ForgejoJobsStore, JobSummary, ObservedStatus},
@@ -67,23 +73,31 @@ impl Store {
         };
         let target = scope.target;
         let scope = scope.key;
-        let polls = rows(
-            &tx,
-            "SELECT attempted_at FROM forgejo_job_polls WHERE scope_key=?",
-            vec![scope.clone().into()],
-        )
-        .await?;
-        if polls
-            .first()
-            .map(|row| row.try_get::<i64>("", "attempted_at"))
-            .transpose()?
-            .is_some_and(|previous| now < previous)
-        {
+        let previous = polls::Entity::find_by_id(scope.as_str())
+            .select_only()
+            .column(polls::Column::AttemptedAt)
+            .into_tuple::<i64>()
+            .one(&tx)
+            .await?;
+        if previous.is_some_and(|previous| now < previous) {
             return Ok(false);
         }
         let Some(jobs) = jobs else {
-            execute(&tx, "INSERT INTO forgejo_job_polls(scope_key,observed_at,attempted_at,failed) VALUES(?,0,?,1)
-                ON CONFLICT(scope_key) DO UPDATE SET attempted_at=excluded.attempted_at,failed=1", vec![scope.into(), now.into()]).await?;
+            polls::Entity::insert(polls::ActiveModel {
+                scope_key: Set(scope),
+                observed_at: Set(0),
+                attempted_at: Set(now),
+                failed: Set(true),
+                ..Default::default()
+            })
+            .on_conflict(
+                OnConflict::column(polls::Column::ScopeKey)
+                    .update_column(polls::Column::AttemptedAt)
+                    .value(polls::Column::Failed, true)
+                    .to_owned(),
+            )
+            .exec_without_returning(&tx)
+            .await?;
             tx.commit().await?;
             return Ok(true);
         };
@@ -102,18 +116,19 @@ impl Store {
             .await?;
             present.insert(id);
         }
-        for row in rows(
-            &tx,
-            "SELECT id,summary_json FROM forgejo_workflow_jobs WHERE scope_key=? AND in_snapshot=1",
-            vec![scope.clone().into()],
-        )
-        .await?
+        for (id, summary_json) in jobs_table::Entity::find()
+            .select_only()
+            .columns([jobs_table::Column::Id, jobs_table::Column::SummaryJson])
+            .filter(jobs_table::Column::ScopeKey.eq(scope.as_str()))
+            .filter(jobs_table::Column::InSnapshot.eq(true))
+            .into_tuple::<(String, String)>()
+            .all(&tx)
+            .await?
         {
-            let id: String = row.try_get("", "id")?;
             if present.contains(&id) {
                 continue;
             }
-            let mut summary: JobSummary = decode(&row.try_get::<String>("", "summary_json")?)?;
+            let mut summary: JobSummary = decode(&summary_json)?;
             let state = summary
                 .forgejo
                 .as_mut()
@@ -126,13 +141,40 @@ impl Store {
             summary.updated_at = summary.updated_at.max(now);
             // Last listed time stays attributed to the actual job. Absence is
             // a separate retained observation, never a synthetic success/result.
-            execute(&tx, "UPDATE forgejo_workflow_jobs SET summary_json=?,status=?,in_snapshot=0,updated_at=? WHERE id=?",
-                vec![encode(&summary)?.into(), summary.observed_status.as_str().into(), summary.updated_at.into(), id.clone().into()]).await?;
+            jobs_table::Entity::update_many()
+                .col_expr(
+                    jobs_table::Column::SummaryJson,
+                    Expr::value(encode(&summary)?),
+                )
+                .col_expr(
+                    jobs_table::Column::Status,
+                    Expr::value(summary.observed_status.as_str()),
+                )
+                .col_expr(jobs_table::Column::InSnapshot, Expr::value(false))
+                .col_expr(
+                    jobs_table::Column::UpdatedAt,
+                    Expr::value(summary.updated_at),
+                )
+                .filter(jobs_table::Column::Id.eq(id.as_str()))
+                .exec(&tx)
+                .await?;
             forgejo_projection::event(&tx, &id, None, &task_id, now).await?;
         }
-        execute(&tx, "INSERT INTO forgejo_job_polls(scope_key,observed_at,attempted_at,failed) VALUES(?,?,?,0)
-            ON CONFLICT(scope_key) DO UPDATE SET observed_at=excluded.observed_at,attempted_at=excluded.attempted_at,failed=0",
-            vec![scope.into(), now.into(), now.into()]).await?;
+        polls::Entity::insert(polls::ActiveModel {
+            scope_key: Set(scope),
+            observed_at: Set(now),
+            attempted_at: Set(now),
+            failed: Set(false),
+            ..Default::default()
+        })
+        .on_conflict(
+            OnConflict::column(polls::Column::ScopeKey)
+                .update_columns([polls::Column::ObservedAt, polls::Column::AttemptedAt])
+                .value(polls::Column::Failed, false)
+                .to_owned(),
+        )
+        .exec_without_returning(&tx)
+        .await?;
         tx.commit().await?;
         Ok(true)
     }

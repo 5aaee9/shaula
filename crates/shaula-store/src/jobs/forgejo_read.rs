@@ -1,7 +1,10 @@
 //! Read-time freshness expires even if the daemon stopped polling.
-use super::{decode, rows};
+use super::decode;
+use crate::entities::jobs::forgejo_job_observations as observations;
 use crate::StoreResult;
-use sea_orm::{ConnectionTrait, QueryResult};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QueryResult, QuerySelect,
+};
 use shaula_core::jobs::{ForgejoJobObservation, JobDetail, JobSummary};
 
 pub(super) fn freshness(job: &mut JobSummary, row: &QueryResult) {
@@ -29,10 +32,19 @@ pub(super) fn freshness(job: &mut JobSummary, row: &QueryResult) {
 }
 
 pub(super) async fn detail<C: ConnectionTrait>(tx: &C, job: JobSummary) -> StoreResult<JobDetail> {
-    let found = rows(tx, "SELECT data_json FROM forgejo_job_observations WHERE job_record_id=? ORDER BY observed_at DESC,id DESC LIMIT 1001", vec![job.id.clone().into()]).await?;
+    let found = observations::Entity::find()
+        .select_only()
+        .column(observations::Column::DataJson)
+        .filter(observations::Column::JobRecordId.eq(job.id.as_str()))
+        .order_by_desc(observations::Column::ObservedAt)
+        .order_by_desc(observations::Column::Id)
+        .limit(1001)
+        .into_tuple::<String>()
+        .all(tx)
+        .await?;
     let mut observations: Vec<ForgejoJobObservation> = found
         .iter()
-        .map(|r| decode(&r.try_get::<String>("", "data_json")?))
+        .map(|json| decode(json))
         .collect::<StoreResult<_>>()?;
     let observations_truncated = observations.len() > 1000;
     observations.truncate(1000);

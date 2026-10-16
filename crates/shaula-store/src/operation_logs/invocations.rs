@@ -1,9 +1,19 @@
 use super::{unavailable, OperationLogArchive};
-use sea_orm::{ConnectionTrait, DbBackend, Statement};
+use crate::entities::operation_logs::operation_log_invocations as log_invocations;
+use crate::query_ext::json_extract;
+use sea_orm::{
+    sea_query::{Expr, SimpleExpr},
+    ColumnTrait, EntityTrait, Order, QueryFilter, QueryOrder, QuerySelect,
+};
 use shaula_core::{
     error::CoreResult,
     operation_log::{Invocation, InvocationQuery, InvocationsPage},
 };
+
+/// The invocation's own `started_at`, kept inside its sanitized record.
+pub(super) fn started_at() -> SimpleExpr {
+    json_extract(log_invocations::Column::RecordJson, "$.started_at")
+}
 
 impl OperationLogArchive {
     pub(super) async fn invocations_page(
@@ -13,32 +23,31 @@ impl OperationLogArchive {
     ) -> CoreResult<InvocationsPage> {
         let limit = query.page_limit()?;
         let position = query.position_for(generation_id)?;
-        let mut values = vec![generation_id.into()];
-        let mut sql = "SELECT id FROM operation_log_invocations WHERE generation_id=?".to_string();
-        if let Some((started_at, id)) = position {
-            sql.push_str(" AND (json_extract(record_json,'$.started_at'),id)<(?,?)");
-            values.extend([started_at.into(), id.into()]);
+        let mut select = log_invocations::Entity::find()
+            .select_only()
+            .column(log_invocations::Column::Id)
+            .filter(log_invocations::Column::GenerationId.eq(generation_id));
+        if let Some((started, id)) = position {
+            select = select.filter(
+                Expr::tuple([started_at(), Expr::col(log_invocations::Column::Id).into()]).lt(
+                    Expr::tuple([Expr::val(started).into(), Expr::val(id).into()]),
+                ),
+            );
         }
-        sql.push_str(" ORDER BY json_extract(record_json,'$.started_at') DESC,id DESC LIMIT ?");
-        values.push(i64::try_from(limit + 1).map_err(|_| unavailable())?.into());
+        let select = select
+            .order_by(started_at(), Order::Desc)
+            .order_by_desc(log_invocations::Column::Id)
+            .limit(u64::try_from(limit + 1).map_err(|_| unavailable())?);
         let _reader = self.writer.lock().await;
-        let rows = self
-            .store
-            .connection()
-            .query_all(Statement::from_sql_and_values(
-                DbBackend::Sqlite,
-                sql,
-                values,
-            ))
+        let ids = select
+            .into_tuple::<String>()
+            .all(self.store.connection())
             .await
             .map_err(|_| unavailable())?;
-        let more = rows.len() > limit;
+        let more = ids.len() > limit;
         let mut items = Vec::with_capacity(limit);
-        for row in rows.into_iter().take(limit) {
-            items.push(
-                self.load(&row.try_get::<String>("", "id").map_err(|_| unavailable())?)
-                    .await?,
-            );
+        for id in ids.into_iter().take(limit) {
+            items.push(self.load(&id).await?);
         }
         let next_cursor = if more {
             items
@@ -61,13 +70,20 @@ impl OperationLogArchive {
         generation_id: &str,
         operation: &str,
     ) -> CoreResult<Option<Invocation>> {
-        let row = self.store.connection().query_one(Statement::from_sql_and_values(DbBackend::Sqlite,
-            "SELECT id FROM operation_log_invocations WHERE generation_id=? AND operation=? ORDER BY json_extract(record_json,'$.started_at') DESC,ordinal DESC,id DESC LIMIT 1", [generation_id.into(),operation.into()])).await.map_err(|_| unavailable())?;
-        match row {
-            Some(row) => Ok(Some(
-                self.load(&row.try_get::<String>("", "id").map_err(|_| unavailable())?)
-                    .await?,
-            )),
+        let id = log_invocations::Entity::find()
+            .select_only()
+            .column(log_invocations::Column::Id)
+            .filter(log_invocations::Column::GenerationId.eq(generation_id))
+            .filter(log_invocations::Column::Operation.eq(operation))
+            .order_by(started_at(), Order::Desc)
+            .order_by_desc(log_invocations::Column::Ordinal)
+            .order_by_desc(log_invocations::Column::Id)
+            .into_tuple::<String>()
+            .one(self.store.connection())
+            .await
+            .map_err(|_| unavailable())?;
+        match id {
+            Some(id) => Ok(Some(self.load(&id).await?)),
             None => Ok(None),
         }
     }

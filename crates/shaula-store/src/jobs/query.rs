@@ -1,14 +1,20 @@
 //! Keyset pagination binds the cursor to the complete filter, never a row offset.
-use sea_orm::Value;
+use sea_orm::sea_query::{
+    Alias, BinOper, Condition, Expr, Func, Order, SelectStatement, SimpleExpr,
+};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use shaula_core::jobs::{GenerationsQuery, JobsQuery, JobsReadError};
 
 pub(super) struct PageQuery {
-    pub clause: String,
-    pub values: Vec<Value>,
+    condition: Condition,
     pub limit: usize,
     binding: String,
+}
+
+/// A column of the paged view, addressed unqualified.
+fn field(column: &str) -> Expr {
+    Expr::col(Alias::new(column))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -80,7 +86,7 @@ impl PageQuery {
         page.equal("fleet_key", query.fleet_key.as_deref())?;
         page.equal("state", query.status.as_deref())?;
         if query.association.as_deref() == Some("unassigned") {
-            page.clause.push_str(" AND association_status<>'verified'");
+            page.and(field("association_status").ne("verified"));
         } else {
             page.equal("association_status", query.association.as_deref())?;
         }
@@ -111,18 +117,15 @@ impl PageQuery {
             serde_json::to_string(&(kind, filters)).map_err(|_| JobsReadError::Unavailable)?;
         let binding = hex::encode(sha2::Sha256::digest(json.as_bytes()));
         let mut result = Self {
-            clause: " WHERE 1=1".into(),
-            values: Vec::new(),
+            condition: Condition::all(),
             limit: limit as usize,
             binding,
         };
         if let Some(since) = since {
-            result.clause.push_str(" AND created_at>=?");
-            result.values.push(since.into());
+            result.and(field("created_at").gte(since));
         }
         if let Some(until) = until {
-            result.clause.push_str(" AND created_at<=?");
-            result.values.push(until.into());
+            result.and(field("created_at").lte(until));
         }
         if let Some(raw) = cursor {
             if raw.len() > 2048 {
@@ -135,24 +138,29 @@ impl PageQuery {
             if cursor.version != 1 || cursor.binding != result.binding || cursor.id.len() > 128 {
                 return Err(JobsReadError::InvalidQuery("cursor does not match query"));
             }
-            result
-                .clause
-                .push_str(" AND (created_at<? OR (created_at=? AND id<?))");
-            result.values.extend([
-                cursor.created_at.into(),
-                cursor.created_at.into(),
-                cursor.id.into(),
-            ]);
+            result.and(
+                field("created_at")
+                    .lt(cursor.created_at)
+                    .or(field("created_at")
+                        .eq(cursor.created_at)
+                        .and(field("id").lt(cursor.id))),
+            );
         }
         Ok(result)
+    }
+
+    fn and(&mut self, expr: SimpleExpr) {
+        self.condition = std::mem::replace(&mut self.condition, Condition::all()).add(expr);
     }
 
     fn equal(&mut self, column: &str, value: Option<&str>) -> Result<(), JobsReadError> {
         if let Some(value) = value {
             validate_text(value)?;
-            self.clause
-                .push_str(&format!(" AND {column}=? COLLATE NOCASE"));
-            self.values.push(value.into());
+            // `column = ? COLLATE NOCASE`: the bound value carries the collation.
+            self.and(field(column).binary(
+                BinOper::Equal,
+                Expr::cust_with_expr("? COLLATE NOCASE", Expr::val(value)),
+            ));
         }
         Ok(())
     }
@@ -160,9 +168,10 @@ impl PageQuery {
     fn contains(&mut self, column: &str, value: Option<&str>) -> Result<(), JobsReadError> {
         if let Some(value) = value {
             validate_text(value)?;
-            self.clause
-                .push_str(&format!(" AND instr(lower({column}),lower(?))>0"));
-            self.values.push(value.into());
+            let position = Func::cust(Alias::new("instr"))
+                .arg(Func::lower(field(column)))
+                .arg(Func::lower(Expr::val(value)));
+            self.and(Expr::expr(position).gt(0));
         }
         Ok(())
     }
@@ -201,12 +210,13 @@ impl PageQuery {
         Ok((items, next_cursor))
     }
 
-    pub fn sql(&self, select: &str) -> String {
-        format!(
-            "{select}{} ORDER BY created_at DESC,id DESC LIMIT {}",
-            self.clause,
-            self.limit + 1
-        )
+    /// Filters `view` and orders it newest first, probing one extra row.
+    pub fn select(&self, view: SelectStatement) -> SelectStatement {
+        let mut select = super::views::from_view(view);
+        select.cond_where(self.condition.clone());
+        super::views::keyset(&mut select, Order::Desc)
+            .limit(self.limit as u64 + 1)
+            .to_owned()
     }
 }
 

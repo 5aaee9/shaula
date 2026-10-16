@@ -1,8 +1,15 @@
 //! GitLab job IDs are scoped by Fleet incarnation/instance/scope/Auth Profile
 //! and `project_id/job_id`. A recorded terminal result is never overwritten.
-use super::{encode, execute, gitlab_scope::ScopeSnapshot};
+use super::{encode, gitlab_scope::ScopeSnapshot};
+use crate::entities::jobs::{
+    gitlab_job_observations as observations, gitlab_workflow_jobs as jobs_table,
+};
 use crate::{StoreError, StoreResult};
-use sea_orm::DatabaseTransaction;
+use sea_orm::{
+    sea_query::{Expr, OnConflict},
+    ActiveValue::Set,
+    ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter,
+};
 use shaula_core::{
     fleet::FleetProviderKind,
     jobs::{
@@ -126,14 +133,35 @@ pub(super) async fn apply(
             enrichment_attempted_at: prior.and_then(|old| old.enrichment_attempted_at),
         }),
     };
-    execute(tx, "INSERT INTO gitlab_workflow_jobs(id,scope_key,fleet_key,fleet_incarnation,protocol_job_id,
-        summary_json,status,repository,job_name,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)
-        ON CONFLICT(scope_key,protocol_job_id) DO UPDATE SET summary_json=excluded.summary_json,status=excluded.status,
-        repository=excluded.repository,job_name=excluded.job_name,updated_at=excluded.updated_at",
-        vec![summary.id.clone().into(), context.scope.key.clone().into(), context.fleet.into(),
-            context.incarnation.into(), reading.protocol_id().into(), encode(&summary)?.into(),
-            status.as_str().into(), reading.project_path.into(), reading.name.into(),
-            summary.created_at.into(), summary.updated_at.into()]).await?;
+    jobs_table::Entity::insert(jobs_table::ActiveModel {
+        id: Set(summary.id.clone()),
+        scope_key: Set(context.scope.key.clone()),
+        fleet_key: Set(context.fleet.into()),
+        fleet_incarnation: Set(context.incarnation.into()),
+        protocol_job_id: Set(reading.protocol_id()),
+        summary_json: Set(encode(&summary)?),
+        status: Set(status.as_str().into()),
+        repository: Set(Some(reading.project_path.into())),
+        job_name: Set(Some(reading.name.into())),
+        created_at: Set(summary.created_at),
+        updated_at: Set(summary.updated_at),
+    })
+    .on_conflict(
+        OnConflict::columns([
+            jobs_table::Column::ScopeKey,
+            jobs_table::Column::ProtocolJobId,
+        ])
+        .update_columns([
+            jobs_table::Column::SummaryJson,
+            jobs_table::Column::Status,
+            jobs_table::Column::Repository,
+            jobs_table::Column::JobName,
+            jobs_table::Column::UpdatedAt,
+        ])
+        .to_owned(),
+    )
+    .exec_without_returning(tx)
+    .await?;
     if changed {
         event(
             tx,
@@ -164,17 +192,22 @@ pub(super) async fn unlisted(
     state.listed = false;
     summary.observed_status = ObservedStatus::Unknown;
     summary.updated_at = summary.updated_at.max(now);
-    execute(
-        tx,
-        "UPDATE gitlab_workflow_jobs SET summary_json=?,status=?,updated_at=? WHERE id=?",
-        vec![
-            encode(&summary)?.into(),
-            summary.observed_status.as_str().into(),
-            summary.updated_at.into(),
-            summary.id.clone().into(),
-        ],
-    )
-    .await?;
+    jobs_table::Entity::update_many()
+        .col_expr(
+            jobs_table::Column::SummaryJson,
+            Expr::value(encode(&summary)?),
+        )
+        .col_expr(
+            jobs_table::Column::Status,
+            Expr::value(summary.observed_status.as_str()),
+        )
+        .col_expr(
+            jobs_table::Column::UpdatedAt,
+            Expr::value(summary.updated_at),
+        )
+        .filter(jobs_table::Column::Id.eq(summary.id.as_str()))
+        .exec(tx)
+        .await?;
     event(
         tx,
         &summary.id,
@@ -201,6 +234,13 @@ async fn event(
         runner_id: runner_id.map(|id| id.to_string()),
         observed_at: now,
     };
-    execute(tx, "INSERT INTO gitlab_job_observations(id,job_record_id,data_json,observed_at) VALUES(?,?,?,?)",
-        vec![observation.id.clone().into(), id.into(), encode(&observation)?.into(), now.into()]).await
+    observations::Entity::insert(observations::ActiveModel {
+        id: Set(observation.id.clone()),
+        job_record_id: Set(id.into()),
+        data_json: Set(encode(&observation)?),
+        observed_at: Set(now),
+    })
+    .exec_without_returning(tx)
+    .await?;
+    Ok(())
 }

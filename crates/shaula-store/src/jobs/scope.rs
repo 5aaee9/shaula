@@ -1,10 +1,21 @@
 //! Scope snapshots survive Fleet retirement and authentication revision rotation.
-use sea_orm::ConnectionTrait;
+use sea_orm::{
+    sea_query::{Expr, OnConflict},
+    ActiveValue::Set,
+    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect,
+};
 use sha2::Digest;
 use shaula_core::auth_context::ResolvedAuthContext;
 use shaula_core::registry::SessionEffectContext;
 
-use super::{decode, execute, rows};
+use super::decode;
+use crate::entities::{
+    auth::fleet_auth_contexts,
+    fleet::{fleet_revisions, fleets},
+    jobs::workflow_generation_identity as identity,
+    lifecycle::{fleet_sessions, scale_set_state},
+};
+use crate::query_ext::{same, JoinOn};
 use crate::{Store, StoreResult};
 
 pub(super) struct JobScope {
@@ -33,16 +44,17 @@ pub(super) async fn observed_scope<C: ConnectionTrait>(
     fleet: &str,
     context: &SessionEffectContext,
 ) -> StoreResult<Option<JobScope>> {
-    let found = rows(
-        db,
-        "SELECT scale_set_id FROM fleet_sessions WHERE fleet_key=? AND epoch=?",
-        vec![fleet.into(), context.epoch.into()],
-    )
-    .await?;
-    let Some(row) = found.first() else {
+    let found = fleet_sessions::Entity::find()
+        .select_only()
+        .column(fleet_sessions::Column::ScaleSetId)
+        .filter(fleet_sessions::Column::FleetKey.eq(fleet))
+        .filter(fleet_sessions::Column::Epoch.eq(context.epoch))
+        .into_tuple::<i64>()
+        .one(db)
+        .await?;
+    let Some(scale_set_id) = found else {
         return Ok(None);
     };
-    let scale_set_id: i64 = row.try_get("", "scale_set_id")?;
     Ok(Some(JobScope {
         key: scope_key(
             fleet,
@@ -62,24 +74,47 @@ impl Store {
         fleet: &str,
         revision: i64,
     ) -> StoreResult<()> {
-        let found = rows(db,
-            "SELECT f.incarnation,s.scale_set_id,a.observed_context_json
-             FROM fleets f JOIN fleet_revisions r ON r.fleet_key=f.key AND r.incarnation=f.incarnation
-             JOIN scale_set_state s ON s.fleet_key=f.key
-             JOIN fleet_auth_contexts a ON a.fleet_key=f.key
-             WHERE f.key=? AND r.revision=? AND s.state='Adopted' AND s.scale_set_id IS NOT NULL",
-            vec![fleet.into(), revision.into()]).await?;
-        let Some(row) = found.first() else {
-            return Ok(());
-        };
-        let Some(json) = row.try_get::<Option<String>>("", "observed_context_json")? else {
+        let found = fleets::Entity::find()
+            .select_only()
+            .column(fleets::Column::Incarnation)
+            .column(scale_set_state::Column::ScaleSetId)
+            .column(fleet_auth_contexts::Column::ObservedContextJson)
+            .inner_join_on(
+                fleet_revisions::Entity,
+                same(fleet_revisions::Column::FleetKey, fleets::Column::Key).and(same(
+                    fleet_revisions::Column::Incarnation,
+                    fleets::Column::Incarnation,
+                )),
+            )
+            .inner_join_on(
+                scale_set_state::Entity,
+                same(scale_set_state::Column::FleetKey, fleets::Column::Key),
+            )
+            .inner_join_on(
+                fleet_auth_contexts::Entity,
+                same(fleet_auth_contexts::Column::FleetKey, fleets::Column::Key),
+            )
+            .filter(fleets::Column::Key.eq(fleet))
+            .filter(fleet_revisions::Column::Revision.eq(revision))
+            .filter(scale_set_state::Column::State.eq("Adopted"))
+            .filter(scale_set_state::Column::ScaleSetId.is_not_null())
+            .into_tuple::<(String, i64, Option<String>)>()
+            .one(db)
+            .await?;
+        let Some((incarnation, id, Some(json))) = found else {
             return Ok(());
         };
         let auth: ResolvedAuthContext = decode(&json)?;
-        let incarnation: String = row.try_get("", "incarnation")?;
-        let id: i64 = row.try_get("", "scale_set_id")?;
-        execute(db, "INSERT OR IGNORE INTO workflow_generation_identity(generation_id,scope_key,fleet_incarnation)
-            VALUES(?,?,?)", vec![generation.into(), scope_key(fleet, &incarnation, id, &auth).into(), incarnation.into()]).await
+        identity::Entity::insert(identity::ActiveModel {
+            generation_id: Set(generation.into()),
+            scope_key: Set(scope_key(fleet, &incarnation, id, &auth)),
+            fleet_incarnation: Set(incarnation),
+            ..Default::default()
+        })
+        .on_conflict(OnConflict::new().do_nothing().to_owned())
+        .exec_without_returning(db)
+        .await?;
+        Ok(())
     }
 
     pub(crate) async fn jobs_register_runner_on<C: ConnectionTrait>(
@@ -87,21 +122,23 @@ impl Store {
         generation: &str,
         runner: i64,
     ) -> StoreResult<()> {
-        execute(
-            db,
-            "UPDATE workflow_generation_identity SET github_runner_id=?
-            WHERE generation_id=? AND (github_runner_id IS NULL OR github_runner_id=?)",
-            vec![runner.into(), generation.into(), runner.into()],
-        )
-        .await?;
-        let found = rows(
-            db,
-            "SELECT scope_key FROM workflow_generation_identity WHERE generation_id=?",
-            vec![generation.into()],
-        )
-        .await?;
-        if let Some(row) = found.first() {
-            let scope: String = row.try_get("", "scope_key")?;
+        identity::Entity::update_many()
+            .col_expr(identity::Column::GithubRunnerId, Expr::value(runner))
+            .filter(identity::Column::GenerationId.eq(generation))
+            .filter(
+                identity::Column::GithubRunnerId
+                    .is_null()
+                    .or(identity::Column::GithubRunnerId.eq(runner)),
+            )
+            .exec(db)
+            .await?;
+        let found = identity::Entity::find_by_id(generation)
+            .select_only()
+            .column(identity::Column::ScopeKey)
+            .into_tuple::<String>()
+            .one(db)
+            .await?;
+        if let Some(scope) = found {
             super::association::refresh_runner_jobs(db, &scope, runner).await?;
         }
         Ok(())
