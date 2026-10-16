@@ -98,6 +98,8 @@ mod tests {
 #[derive(Debug, Clone)]
 pub struct StateSnapshot {
     pub managed: Vec<String>,
+    /// Managed instance address → recorded `name` attribute, when present.
+    pub names: Vec<(String, String)>,
     pub serial: u64,
     pub lineage: String,
 }

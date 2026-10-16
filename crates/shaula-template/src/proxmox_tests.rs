@@ -138,3 +138,33 @@ fn real_proxmox_saved_plans_pass_the_runtime_admission_boundary() -> TestResult 
     assert!(parse_plan(&destroy).is_err());
     Ok(())
 }
+
+// molecule, 2026-10-16: after a VMID was reused, a stale Generation's
+// refresh adopted another Generation's VM and Destroy deleted it. Both plans
+// come from the real provider (templates/proxmox/tests/conformance.py); only
+// the refreshed VM name differs.
+#[test]
+fn real_proxmox_destroy_of_a_reused_vmid_is_refused_by_identity() -> TestResult {
+    use shaula_core::plan::admit_destroy_identity;
+
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/proxmox");
+    let read = |name: &str| -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+        Ok(serde_json::from_str(&std::fs::read_to_string(
+            fixtures.join(name),
+        )?)?)
+    };
+    // The raw `state pull` document after the harness's Create apply: only
+    // the managed VM records a name (the data source's is not a target).
+    let state = crate::engine::engine_state::parse_raw_state_v4(&read("state-pull.json")?)?;
+    let names = state.names;
+    assert_eq!(
+        names,
+        [(
+            "proxmox_qemu_vm.runner".to_string(),
+            "shaula-test-generation".to_string()
+        )]
+    );
+    admit_destroy_identity(&read("destroy.json")?, &names)?;
+    assert!(admit_destroy_identity(&read("destroy-reused.json")?, &names).is_err());
+    Ok(())
+}

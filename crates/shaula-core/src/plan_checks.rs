@@ -24,6 +24,39 @@ pub fn admit_destroy_plan_json(
     admit_checks(plan_json, &plan.instances)
 }
 
+/// Outcome phase of a Destroy refused by [`admit_destroy_identity`].
+pub const DESTROY_IDENTITY_PHASE: &str = "destroy.identity";
+
+/// Destroy identity: a provider may address a resource by a reusable key (a
+/// Proxmox VMID), so a refresh can adopt ANOTHER Generation's resource that
+/// now holds the same key and plan its deletion (molecule, 2026-10-16). Every
+/// planned delete whose bound state recorded a `name` must still carry that
+/// exact name after refresh; `names` maps instance address to that name.
+pub fn admit_destroy_identity(plan_json: &Value, names: &[(String, String)]) -> CoreResult<()> {
+    let changes = plan_json
+        .get("resource_changes")
+        .and_then(Value::as_array)
+        .ok_or_else(|| err("plan resource_changes missing"))?;
+    for (address, expected) in names {
+        let refreshed = changes
+            .iter()
+            .filter(|change| change.get("address").and_then(Value::as_str) == Some(address))
+            .map(|change| {
+                change
+                    .pointer("/change/before/name")
+                    .and_then(Value::as_str)
+            });
+        for name in refreshed {
+            if name != Some(expected.as_str()) {
+                return Err(err(format!(
+                    "destroy plan targets a different resource at {address}: refreshed name differs from the bound state"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn admit_checks(plan_json: &Value, deleted: &[PlannedInstance]) -> CoreResult<()> {
     let Some(checks) = plan_json.get("checks") else {
         return Ok(());

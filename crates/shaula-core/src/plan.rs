@@ -243,7 +243,7 @@ pub use plan_admit::{admit_create_plan, admit_destroy_plan, destroy_empty_state_
 
 #[path = "plan_checks.rs"]
 mod plan_checks;
-pub use plan_checks::admit_destroy_plan_json;
+pub use plan_checks::{admit_destroy_identity, admit_destroy_plan_json, DESTROY_IDENTITY_PHASE};
 
 #[cfg(test)]
 #[path = "plan_tests.rs"]

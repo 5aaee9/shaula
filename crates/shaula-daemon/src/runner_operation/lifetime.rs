@@ -92,6 +92,11 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
                         .await?;
                     return Ok(DestroyOutcome::Pending);
                 }
+                ResourceDestroy::Foreign => {
+                    return self
+                        .quarantine(id, now, super::destroy::FOREIGN_RESOURCE)
+                        .await;
+                }
             }
         }
         diagnostic.pass(StageId::ResourceCleanup);

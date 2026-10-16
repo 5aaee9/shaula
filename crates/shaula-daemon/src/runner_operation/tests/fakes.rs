@@ -219,6 +219,8 @@ impl ForgejoPoolPort for Forgejo {
 
 pub(super) struct Runtime {
     pub destroy_ok: AtomicBool,
+    /// Refuse Destroy because a foreign resource holds the bound address.
+    pub destroy_foreign: AtomicBool,
     pub destroys: AtomicUsize,
 }
 
@@ -226,6 +228,7 @@ impl Default for Runtime {
     fn default() -> Self {
         Self {
             destroy_ok: AtomicBool::new(true),
+            destroy_foreign: AtomicBool::new(false),
             destroys: AtomicUsize::new(0),
         }
     }
@@ -249,6 +252,11 @@ impl TemplateRuntimePort for Runtime {
         _: TemplateDestroyRequest,
     ) -> Result<DestroyClassification, TemplateOutcomeError> {
         self.destroys.fetch_add(1, Ordering::SeqCst);
+        if self.destroy_foreign.load(Ordering::SeqCst) {
+            return Err(TemplateOutcomeError::PlanFailed {
+                phase: shaula_core::plan::DESTROY_IDENTITY_PHASE.into(),
+            });
+        }
         if self.destroy_ok.load(Ordering::SeqCst) {
             Ok(DestroyClassification::Applied)
         } else {

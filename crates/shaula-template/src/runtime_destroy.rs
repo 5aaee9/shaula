@@ -106,6 +106,10 @@ impl TemplateRuntime {
             .map_err(|_| plan_err("destroy.plan"))?;
         admit_destroy_plan_json(&plan_json, &snapshot.managed, &request.managed_shape)
             .map_err(|_| plan_err("destroy.plan"))?;
+        // A distinct phase: a foreign resource at our address is proof, not
+        // a transient refusal, so the caller quarantines instead of retrying.
+        shaula_core::plan::admit_destroy_identity(&plan_json, &snapshot.names)
+            .map_err(|_| plan_err(shaula_core::plan::DESTROY_IDENTITY_PHASE))?;
 
         // DestroyApplyStarting must be durable before the child spawns
         // (spec 0004 section 6). The saved plan is this run's own baseline;

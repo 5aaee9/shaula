@@ -1,0 +1,49 @@
+{
+  "version": 4,
+  "terraform_version": "1.15.8",
+  "serial": 3,
+  "lineage": "e5324463-489e-dfbd-e72e-8b330455837b",
+  "resources": [
+    {
+      "mode": "data",
+      "type": "proxmox_qemu_vms",
+      "name": "template",
+      "provider": "provider[\"registry.terraform.io/indexyz/proxmox\"]",
+      "instances": [
+        {
+          "attributes": {
+            "id": "qemu_vms",
+            "name": "GitHub-Runner"
+          }
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "proxmox_nocloud_iso",
+      "name": "bootstrap",
+      "provider": "provider[\"registry.terraform.io/indexyz/proxmox\"]",
+      "instances": [
+        {
+          "attributes": {
+            "id": "pve-test/local/local:iso/shaula-test-generation.iso"
+          }
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "proxmox_qemu_vm",
+      "name": "runner",
+      "provider": "provider[\"registry.terraform.io/indexyz/proxmox\"]",
+      "instances": [
+        {
+          "attributes": {
+            "id": "pve-test/100",
+            "name": "shaula-test-generation"
+          }
+        }
+      ]
+    }
+  ]
+}

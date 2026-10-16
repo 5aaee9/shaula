@@ -16,3 +16,11 @@ template from the mock API inventory. Its owned ISO precondition is `unknown`
 with no instance results, while the provider-bound variable check still passes.
 The existing narrowly scoped deleted-resource exception admits this shape;
 Create must still reject it. The test does not prove real VM boot or jobs.
+
+Destroy fixtures also retain the refreshed VM `change.before.name`, the only
+value that tells a Generation's own VM from another Generation's VM that
+reused its VMID. `destroy-reused.json` is the real refresh-enabled
+`plan -destroy` after the harness renamed the VM at the same VMID (the VMID
+reuse seen on molecule, 2026-10-16); its delete must be refused by identity.
+`state-pull.json` is the raw `terraform state pull` document after the Create
+apply (Terraform 1.15.8), projected to each instance's `id` and `name`.

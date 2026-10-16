@@ -25,8 +25,16 @@ pub(super) struct DestroyProof {
 
 /// Outcome of one Runner Resource destroy effect, with its completion time.
 pub(super) enum ResourceDestroy {
-    Destroyed { at: i64 },
-    Failed { at: i64, known_failure: bool },
+    Destroyed {
+        at: i64,
+    },
+    Failed {
+        at: i64,
+        known_failure: bool,
+    },
+    /// The refreshed plan targets a resource that is provably not this
+    /// Generation's (e.g. a reused Proxmox VMID): never retried.
+    Foreign,
 }
 
 impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
@@ -153,6 +161,7 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
                     .await?;
                 Ok(DestroyOutcome::Pending)
             }
+            ResourceDestroy::Foreign => self.quarantine(id, now, FOREIGN_RESOURCE).await,
         }
     }
 
@@ -282,6 +291,11 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
             }
             Err(error) => {
                 record_iac(MetricResult::Failed);
+                if matches!(&error, shaula_core::ports::TemplateOutcomeError::PlanFailed { phase }
+                    if phase == shaula_core::plan::DESTROY_IDENTITY_PHASE)
+                {
+                    return Ok(ResourceDestroy::Foreign);
+                }
                 // Phases are fixed codes (e.g. `destroy.plan`); without them a
                 // repeated refusal is indistinguishable from a provider error.
                 let (kind, phase) = match &error {
@@ -311,6 +325,8 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
 
 const RETIRING_RANK: u8 = 2;
 const UNPROVEN_REMOVAL: &str = "runner registration cannot be proven removed";
+pub(super) const FOREIGN_RESOURCE: &str =
+    "destroy plan targets another resource at the bound address; its own resource is gone";
 
 /// Position on the Destroy chain; `None` means the state cannot be destroyed.
 fn chain_rank(state: G) -> Option<u8> {

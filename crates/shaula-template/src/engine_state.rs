@@ -52,13 +52,15 @@ pub(crate) fn parse_raw_state_v4(
     // (count/for_each). The plan JSON keeps the same instance-level
     // addresses, so exact-state coverage compares like for like.
     let mut managed = Vec::new();
+    let mut names = Vec::new();
     if let Some(resources) = obj.get("resources") {
-        collect_resource_array(resources, &mut managed)?;
+        collect_resource_array(resources, &mut managed, &mut names)?;
     }
     managed.sort();
     managed.dedup();
     Ok(crate::workspace::StateSnapshot {
         managed,
+        names,
         serial,
         lineage,
     })
@@ -186,7 +188,11 @@ fn instance_address(
 /// contributes its FULL address (`module.x.type.name["key"]`); a
 /// resource with zero instances contributes nothing — it holds no live
 /// object and must not fabricate a deletion target.
-fn collect_resource_array(resources: &serde_json::Value, into: &mut Vec<String>) -> CoreResult<()> {
+fn collect_resource_array(
+    resources: &serde_json::Value,
+    into: &mut Vec<String>,
+    names: &mut Vec<(String, String)>,
+) -> CoreResult<()> {
     let resources = resources.as_array().ok_or_else(|| {
         err(
             ReasonCode::TemplateExecutionFailed,
@@ -251,7 +257,18 @@ fn collect_resource_array(resources: &serde_json::Value, into: &mut Vec<String>)
                         format!("state instance malformed at {base}"),
                     )
                 })?;
-                into.push(instance_address(&base, instance)?);
+                let address = instance_address(&base, instance)?;
+                // The refreshed name proves a Destroy still targets this
+                // resource, not one that reused its provider key.
+                if let Some(name) = instance
+                    .get("attributes")
+                    .and_then(|a| a.get("name"))
+                    .and_then(|n| n.as_str())
+                    .filter(|n| !n.is_empty())
+                {
+                    names.push((address.clone(), name.to_string()));
+                }
+                into.push(address);
             }
         }
     }

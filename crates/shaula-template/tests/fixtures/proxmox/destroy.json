@@ -54,7 +54,10 @@
       "change": {
         "actions": [
           "delete"
-        ]
+        ],
+        "before": {
+          "name": "shaula-test-generation"
+        }
       }
     }
   ],

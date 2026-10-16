@@ -4,6 +4,7 @@
 mod backoff;
 mod fakes;
 mod fixture;
+mod identity;
 mod lifetime;
 mod retire;
 mod seed;
