@@ -24,3 +24,7 @@ reused its VMID. `destroy-reused.json` is the real refresh-enabled
 reuse seen on molecule, 2026-10-16); its delete must be refused by identity.
 `state-pull.json` is the raw `terraform state pull` document after the Create
 apply (Terraform 1.15.8), projected to each instance's `id` and `name`.
+`destroy-vanished.json` is the real `plan -destroy` after the VM disappeared:
+refresh drops it from both `resource_changes` and the refreshed
+`prior_state` (projected to resource identity, without values), which proves
+it is already gone.

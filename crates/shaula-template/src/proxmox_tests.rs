@@ -168,3 +168,33 @@ fn real_proxmox_destroy_of_a_reused_vmid_is_refused_by_identity() -> TestResult 
     assert!(admit_destroy_identity(&read("destroy-reused.json")?, &names).is_err());
     Ok(())
 }
+
+// The VM vanished before Destroy (or, from provider 0.7.1, its VMID was
+// reused): the real refresh-enabled plan omits it, and its refreshed
+// prior_state proves it gone, so the Destroy completes with the ISO alone.
+// The same omission while refresh still holds the VM would orphan it.
+#[test]
+fn real_proxmox_destroy_of_a_vanished_vm_is_admitted() -> TestResult {
+    use shaula_core::plan::admit_destroy_plan_json;
+
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/proxmox");
+    let read = |name: &str| -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+        Ok(serde_json::from_str(&std::fs::read_to_string(
+            fixtures.join(name),
+        )?)?)
+    };
+    let manifest =
+        crate::manifest::parse_manifest(&std::fs::read_to_string(source().join("profile.yaml"))?)?;
+    let owned = [
+        "proxmox_nocloud_iso.bootstrap".to_string(),
+        "proxmox_qemu_vm.runner".to_string(),
+    ];
+    let vanished = read("destroy-vanished.json")?;
+    admit_destroy_plan_json(&vanished, &owned, &manifest.managed_resource_shape)?;
+
+    let held = read("destroy.json")?["prior_state"].clone();
+    let mut orphaning = vanished;
+    orphaning["prior_state"] = held;
+    assert!(admit_destroy_plan_json(&orphaning, &owned, &manifest.managed_resource_shape).is_err());
+    Ok(())
+}

@@ -273,6 +273,21 @@ def main():
             assert adopted["change"]["before"]["name"] == "shaula-other-generation"
             assert server.events == ["upload", "clone", "attach", "start"]
             server.vms[vmid]["config"]["name"] = owned
+            # A VM that vanished out of band (or, from provider 0.7.1, one
+            # replaced by a VMID reuse) is dropped by refresh: a -destroy plan
+            # omits it from both resource_changes and its refreshed
+            # prior_state (it records no resource_drift).
+            vm = server.vms.pop(vmid)
+            vanished = plan("destroy-vanished", "-destroy")
+            for section in (
+                vanished["resource_changes"],
+                vanished["prior_state"]["values"]["root_module"]["resources"],
+            ):
+                assert [
+                    item["address"] for item in section if item["mode"] == "managed"
+                ] == ["proxmox_nocloud_iso.bootstrap"]
+            assert server.events == ["upload", "clone", "attach", "start"]
+            server.vms[vmid] = vm
             # Shaula retains exact state and uses a saved destroy plan. The
             # managed precondition may be unknown only on deleted resources.
             # Source-template deletion must not prevent owned-resource cleanup.
@@ -310,6 +325,22 @@ def main():
             assert (
                 not state.get("values", {}).get("root_module", {}).get("resources", [])
             )
+            # Applying a saved Destroy plan whose refresh dropped a vanished
+            # VM deletes only the ISO and ends with the empty state Shaula's
+            # Destroy requires.
+            server.inventory = [server.template(9000)]
+            run(terraform + ["apply", "-auto-approve", "-no-color", "-input=false"], module)
+            server.vms.clear()
+            server.events.clear()
+            run(
+                terraform
+                + ["plan", "-destroy", "-no-color", "-input=false", "-out=gone.plan"],
+                module,
+            )
+            run(terraform + ["apply", "-no-color", "-input=false", "gone.plan"], module)
+            assert server.events == ["iso-delete"], server.events
+            assert not run(terraform + ["state", "list"], module).strip()
+            assert not server.isos and not server.failures, server.failures
             print(
                 "PASS: real Terraform/provider create and destroy, six negative plans, literal hook/JIT rendering, API token splitting, variable Fleet hardware, lifecycle ordering and empty final state"
             )

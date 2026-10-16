@@ -204,6 +204,6 @@ fn create_rejects_nonempty_prior_state_snapshot() {
         ]}}},
     });
     let parsed = parse_plan(&with_prior_state).unwrap();
-    assert_eq!(parsed.prior_state_managed, 1);
+    assert_eq!(parsed.prior_state_managed.as_ref().map(Vec::len), Some(1));
     assert!(admit_create_plan(&parsed, true, &shape()).is_err());
 }

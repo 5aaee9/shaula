@@ -39,10 +39,12 @@ pub struct PlanAdmission {
     pub format_version: u64,
     pub terraform_version: Option<String>,
     pub instances: Vec<PlannedInstance>,
-    /// Managed resources carried in the plan's `prior_state` snapshot —
-    /// an independent witness of non-empty prior state alongside the
-    /// `state list` probe (spec 0004 §5.192).
-    pub prior_state_managed: usize,
+    /// Managed instance addresses in the plan's refreshed `prior_state`
+    /// snapshot — an independent witness of non-empty prior state alongside
+    /// the `state list` probe (spec 0004 §5.192), and the proof that a
+    /// refresh dropped a vanished resource. `None` when the plan carries no
+    /// prior_state.
+    pub prior_state_managed: Option<Vec<String>>,
 }
 
 fn err(msg: impl Into<String>) -> CoreError {
@@ -201,30 +203,29 @@ fn parse_plan_shape(plan_json: &Value) -> CoreResult<PlanAdmission> {
     // Managed entries inside the plan's own prior_state snapshot: an
     // independent non-empty-state witness (spec 0004 §5.192). Modules are
     // traversed recursively.
-    fn count_managed_resources(module: &Value) -> usize {
-        let mut count = module
-            .get("resources")
-            .and_then(Value::as_array)
-            .map(|resources| {
-                resources
-                    .iter()
-                    .filter(|r| r.get("mode").and_then(Value::as_str) == Some("managed"))
-                    .count()
-            })
-            .unwrap_or(0);
-        if let Some(children) = module.get("child_modules").and_then(Value::as_array) {
-            for child in children {
-                count += count_managed_resources(child);
+    fn collect_managed_addresses(module: &Value, into: &mut Vec<String>) {
+        let resources = module.get("resources").and_then(Value::as_array);
+        for resource in resources.into_iter().flatten() {
+            if resource.get("mode").and_then(Value::as_str) == Some("managed") {
+                // An address-less entry still witnesses non-empty prior state.
+                let address = resource.get("address").and_then(Value::as_str);
+                into.push(address.unwrap_or_default().to_string());
             }
         }
-        count
+        let children = module.get("child_modules").and_then(Value::as_array);
+        for child in children.into_iter().flatten() {
+            collect_managed_addresses(child, into);
+        }
     }
     let prior_state_managed = obj
         .get("prior_state")
         .and_then(|p| p.get("values"))
         .and_then(|v| v.get("root_module"))
-        .map(count_managed_resources)
-        .unwrap_or(0);
+        .map(|root| {
+            let mut addresses = Vec::new();
+            collect_managed_addresses(root, &mut addresses);
+            addresses
+        });
 
     Ok(PlanAdmission {
         format_version,

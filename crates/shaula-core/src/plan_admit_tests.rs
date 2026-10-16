@@ -288,3 +288,41 @@ fn destroy_rejects_duplicate_and_omitted_state_addresses() {
     let parsed = parse_plan(&json).unwrap();
     assert!(admit_destroy_plan(&parsed, &full_state, &shape()).is_ok());
 }
+
+// A resource that vanished out of band (or whose provider key was reused by
+// another resource) is dropped by the destroy plan's refresh: the plan then
+// omits it from resource_changes AND from its refreshed prior_state. Nothing
+// is left to orphan, so the destroy may complete (molecule, 2026-10-16).
+#[test]
+fn destroy_admits_an_omission_only_when_refresh_dropped_it() {
+    let secret = change(
+        "managed",
+        "kubernetes_secret_v1",
+        "kubernetes_secret_v1.bootstrap",
+        &["delete"],
+    );
+    let state = vec![
+        "kubernetes_secret_v1.bootstrap".to_string(),
+        "kubernetes_pod_v1.runner".to_string(),
+    ];
+    let with_prior = |addresses: &[&str]| {
+        let mut json = plan_json(serde_json::json!([secret.clone()]));
+        let resources: Vec<Value> = addresses
+            .iter()
+            .map(|address| serde_json::json!({"address": address, "mode": "managed"}))
+            .collect();
+        json["prior_state"] =
+            serde_json::json!({"values": {"root_module": {"resources": resources}}});
+        parse_plan(&json).unwrap()
+    };
+
+    // Refresh still holds the runner: omitting it would orphan it.
+    let held = with_prior(&["kubernetes_secret_v1.bootstrap", "kubernetes_pod_v1.runner"]);
+    assert!(admit_destroy_plan(&held, &state, &shape()).is_err());
+    // Without a refreshed prior_state there is no proof: fail closed.
+    let unproven = parse_plan(&plan_json(serde_json::json!([secret.clone()]))).unwrap();
+    assert!(admit_destroy_plan(&unproven, &state, &shape()).is_err());
+    // Refresh dropped the runner: it is already gone.
+    let dropped = with_prior(&["kubernetes_secret_v1.bootstrap"]);
+    admit_destroy_plan(&dropped, &state, &shape()).unwrap();
+}

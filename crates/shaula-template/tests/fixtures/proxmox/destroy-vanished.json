@@ -1,0 +1,123 @@
+{
+  "applyable": true,
+  "checks": [
+    {
+      "address": {
+        "kind": "resource",
+        "mode": "managed",
+        "name": "bootstrap",
+        "to_display": "proxmox_nocloud_iso.bootstrap",
+        "type": "proxmox_nocloud_iso"
+      },
+      "status": "unknown"
+    },
+    {
+      "address": {
+        "kind": "var",
+        "name": "shaula",
+        "to_display": "var.shaula"
+      },
+      "status": "pass",
+      "instances": [
+        {
+          "address": {
+            "to_display": "var.shaula"
+          },
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "complete": true,
+  "errored": false,
+  "format_version": "1.2",
+  "terraform_version": "1.15.8",
+  "prior_state": {
+    "values": {
+      "outputs": {
+        "shaula_result": {
+          "sensitive": true,
+          "value": {
+            "bindings_digest": "synthetic-bindings-digest",
+            "contract_version": 1,
+            "generation_id": "test-generation-id",
+            "resources": [
+              {
+                "id": "pve-test/local/local:iso/shaula-test-generation.iso",
+                "role": "bootstrap"
+              },
+              {
+                "id": "pve-test/100",
+                "role": "runner"
+              }
+            ]
+          },
+          "type": [
+            "object",
+            {
+              "bindings_digest": "string",
+              "contract_version": "number",
+              "generation_id": "string",
+              "resources": [
+                "tuple",
+                [
+                  [
+                    "object",
+                    {
+                      "id": "string",
+                      "role": "string"
+                    }
+                  ],
+                  [
+                    "object",
+                    {
+                      "id": "string",
+                      "role": "string"
+                    }
+                  ]
+                ]
+              ]
+            }
+          ]
+        }
+      },
+      "root_module": {
+        "resources": [
+          {
+            "address": "data.proxmox_qemu_vms.template",
+            "mode": "data",
+            "type": "proxmox_qemu_vms",
+            "name": "template",
+            "provider_name": "registry.terraform.io/indexyz/proxmox",
+            "schema_version": 0
+          },
+          {
+            "address": "proxmox_nocloud_iso.bootstrap",
+            "mode": "managed",
+            "type": "proxmox_nocloud_iso",
+            "name": "bootstrap",
+            "provider_name": "registry.terraform.io/indexyz/proxmox",
+            "schema_version": 0,
+            "depends_on": [
+              "data.proxmox_qemu_vms.template"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "resource_changes": [
+    {
+      "address": "proxmox_nocloud_iso.bootstrap",
+      "mode": "managed",
+      "type": "proxmox_nocloud_iso",
+      "name": "bootstrap",
+      "provider_name": "registry.terraform.io/indexyz/proxmox",
+      "change": {
+        "actions": [
+          "delete"
+        ]
+      }
+    }
+  ]
+}

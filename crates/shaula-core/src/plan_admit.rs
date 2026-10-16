@@ -20,7 +20,11 @@ pub fn admit_create_plan(
     if !prior_state_empty {
         return Err(err("create requires empty managed prior state"));
     }
-    if plan.prior_state_managed > 0 {
+    if plan
+        .prior_state_managed
+        .as_ref()
+        .is_some_and(|managed| !managed.is_empty())
+    {
         return Err(err(
             "create requires empty managed prior state (plan prior_state snapshot is not empty)",
         ));
@@ -97,8 +101,16 @@ pub fn admit_destroy_plan(
             ));
         }
     }
+    // An omitted address is admitted only when the plan's own refresh
+    // dropped it from prior_state: the resource is already gone, so the
+    // apply orphans nothing. Without a prior_state there is no such proof.
+    let refreshed_away = |address: &String| {
+        plan.prior_state_managed
+            .as_ref()
+            .is_some_and(|managed| !managed.contains(address))
+    };
     for state_address in state_addresses {
-        if !planned.contains(&state_address.as_str()) {
+        if !planned.contains(&state_address.as_str()) && !refreshed_away(state_address) {
             return Err(err(format!(
                 "destroy plan omits bound-state address {state_address:?}: the apply would orphan it"
             )));
