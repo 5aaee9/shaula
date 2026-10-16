@@ -369,6 +369,9 @@ pub mod forgejo;
 #[path = "ports/gitlab.rs"]
 pub mod gitlab;
 
+#[path = "ports/ledger_metrics.rs"]
+pub mod ledger_metrics;
+
 #[path = "ports/provenance.rs"]
 mod provenance;
 pub use provenance::{PlanProvenance, StateLineage};

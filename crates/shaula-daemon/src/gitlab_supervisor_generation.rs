@@ -115,7 +115,11 @@ impl GitlabPoolSupervisor {
         create
             .record_create_outcome(
                 &generation_id,
-                self.runtime.create(request).await,
+                crate::iac_metrics::timed(
+                    crate::iac_metrics::Effect::Create,
+                    self.runtime.create(request),
+                )
+                .await,
                 &apply_intent,
                 &mut diagnostic,
             )

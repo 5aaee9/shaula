@@ -213,6 +213,10 @@ pub struct ObservabilityConfig {
     pub service_name: String,
     #[serde(default)]
     pub otlp: OtlpConfig,
+    /// Loopback-only Prometheus `/metrics` listener, separate from
+    /// management HTTP; absent disables the endpoint.
+    #[serde(default)]
+    pub metrics_listen: Option<std::net::SocketAddr>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -249,6 +253,7 @@ impl Default for ObservabilityConfig {
         Self {
             service_name: default_service_name(),
             otlp: OtlpConfig::default(),
+            metrics_listen: None,
         }
     }
 }

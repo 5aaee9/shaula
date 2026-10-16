@@ -113,6 +113,13 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
     .with_runner_max_lifetime(bootstrap.runner_max_lifetime)
     .with_setup_info_issuer(diagnostics.issuer.clone());
     let (shutdown_tx, wiring_shutdown) = tokio::sync::watch::channel(false);
+    let metrics = crate::metrics::start(
+        bootstrap.metrics_listen,
+        jobs.as_ref().clone(),
+        service.clone(),
+        shutdown_tx.subscribe(),
+    )
+    .await?;
 
     // HTTP server (loopback-only; validated at config parse and bind).
     let (host, port) = bootstrap
@@ -359,6 +366,7 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
         let _ = worker_supervision.await;
     }
     let _ = diagnostics_task.await;
+    crate::metrics::stop(metrics).await;
     drop(_lock);
 
     // Fold the server outcome; the scan/wiring results are supervision

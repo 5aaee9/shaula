@@ -9,6 +9,7 @@ pub mod effect_gate;
 pub mod forgejo_supervisor;
 pub mod gitlab_supervisor;
 pub mod handoff;
+mod iac_metrics;
 pub mod listener;
 mod pool_create;
 mod pool_driver;

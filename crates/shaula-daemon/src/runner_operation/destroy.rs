@@ -262,6 +262,9 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
         let id = generation.id.as_str();
         let apply_intent =
             crate::apply_intent::TrackedApplyIntentSink::new(self.apply_intent.clone());
+        // A retry may observe a serial advanced by our own partial destroy.
+        let retry = self.lifecycle.generation_destroy_attempted(id).await?;
+        crate::iac_metrics::destroy_attempt(retry);
         let request = TemplateDestroyRequest {
             pinned_artifact_digest: generation.template_artifact_digest.clone(),
             workspace_path: std::path::PathBuf::from(&generation.workspace_path),
@@ -275,12 +278,15 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
             original_state: OriginalStateIdentity {
                 lineage: proof.lineage,
                 serial: proof.serial,
-                // A retry may observe a serial advanced by our own partial destroy.
-                allow_serial_advance: self.lifecycle.generation_destroy_attempted(id).await?,
+                allow_serial_advance: retry,
             },
             apply_intent_sink: Some(apply_intent.clone()),
         };
-        let result = self.runtime.destroy(request).await;
+        let result = crate::iac_metrics::timed(
+            crate::iac_metrics::Effect::Destroy,
+            self.runtime.destroy(request),
+        )
+        .await;
         let at = self.now_after(now);
         match result {
             Ok(_) => {

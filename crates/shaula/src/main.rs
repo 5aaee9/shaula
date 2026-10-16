@@ -28,6 +28,7 @@ pub(crate) mod http_oidc;
 mod job;
 mod lifecycle;
 mod maintenance;
+mod metrics;
 mod oidc_args;
 mod serve;
 mod wiring;

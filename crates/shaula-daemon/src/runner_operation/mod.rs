@@ -168,6 +168,7 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
         self.lifecycle
             .generation_advance(id, GenerationState::Quarantined, now)
             .await?;
+        crate::iac_metrics::quarantine(reason, destroy::FOREIGN_RESOURCE);
         Ok(DestroyOutcome::Quarantined)
     }
 

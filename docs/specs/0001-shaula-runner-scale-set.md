@@ -241,6 +241,9 @@ observability:
   otlp:
     endpoint: http://127.0.0.1:4318
     protocol: http/json
+  # Optional loopback-only Prometheus listener serving GET /metrics; it
+  # must differ from http.listen and setup_info.listen. Omit to disable.
+  metrics_listen: 127.0.0.1:9464
 ```
 
 Bootstrap MUST NOT 包含任何 Fleet、Template Profile、GitHub Auth Profile 或平台 binding catalog。前三类资源只通过 HTTP 创建并保存在 SQLite；平台 bindings 属于 Template Profile Revision。HTTP clients 可以从 YAML 或 Git 生成请求，但这些文件不是 daemon watch 的真相源。
@@ -574,6 +577,8 @@ Operation Log 是 spec 0019 定义的专门持久制品，不通过 OTel/普通�
 Metrics 至少覆盖 HTTP、registry admission、desired-to-observed lag、Profile Change、Auth rollout、active Fleets、capacity/occupancy、reconcile/queue、Runner Operation、GitHub access、IaC operation、listener/inventory/reaper、quarantine 和 exporter degradation。v1 的 `shaula.operations.total{operation,result}` 覆盖其中 HTTP request、registry admission、reconcile、Runner/GitHub operation、IaC operation 和 exporter degradation（`MetricOperation::Exporter` 只进进程内 counter，不产生导出流量）；其余维度随后续 spec 交付。
 
 属性必须来自 finite allowlist。`action=create|destroy`；Template `platform=kubernetes|docker|proxmox|other` 仅作为 bounded metadata。Fleet/Profile key、revision、artifact digest、actor、Target owner/repository、Runner/job/Workspace/resource identity、URL 和 error text 不得作为 metric labels。
+
+可选的 Prometheus scrape surface（`observability.metrics_listen`）是独立的 loopback-only listener，只服务 `GET /metrics`（text format 0.0.4），不挂在管理 router 上，因此不经部署 proxy 暴露，也不需要凭据：能连上它即已具备本机访问权。它输出 `shaula_operations_total` 的进程内镜像、IaC create/destroy 结果与耗时 histogram、按固定 runtime phase（如 `destroy.identity`）分类的失败、destroy 重试与 quarantine 原因，以及 scrape 时从 ledger 读取的 Generation/job/capacity gauges。作为本节 label 规则的唯一例外，这些 gauges 带 `fleet` label：Fleet key 由 operator 选定且受 `max_active_fleets` 约束，基数有界；OTLP 导出仍不携带它。Generation/job/Runner identity、URL、actor 与 error text 仍不得成为 label，label 值统一经固定字符集校验，不符合者折叠为 `other`。
 
 结构化日志始终写 local sink，并在适用时携带 `trace_id`、`span_id` 和高基数 correlation identifiers。所有字段经过统一 redaction。SQLite audit 是 mutation audit truth；OTel 可以 sampled/lost，不能替代 audit。
 

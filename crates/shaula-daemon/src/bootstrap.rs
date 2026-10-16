@@ -31,6 +31,7 @@ pub struct ValidatedBootstrap {
     pub terraform_executable: PathBuf,
     pub service_name: String,
     pub otlp_endpoint: Option<String>,
+    pub metrics_listen: Option<std::net::SocketAddr>,
     pub operation_logs: shaula_core::operation_log::LogConfig,
     pub setup_info: Option<shaula_core::setup_info::SetupInfoConfig>,
 }
@@ -61,6 +62,7 @@ impl std::fmt::Debug for ValidatedBootstrap {
             .field("runner_max_lifetime", &self.runner_max_lifetime)
             .field("terraform_executable", &self.terraform_executable)
             .field("service_name", &self.service_name)
+            .field("metrics_listen", &self.metrics_listen)
             .field("operation_logs", &self.operation_logs)
             .field("setup_info", &self.setup_info)
             .finish()
@@ -157,6 +159,14 @@ impl ValidatedBootstrap {
             delivery.validate()?;
             if config.http.listen.parse::<std::net::SocketAddr>().ok() == Some(delivery.listen) {
                 return Err("setup_info listener must be separate from management HTTP".into());
+            }
+        }
+        if let Some(metrics) = config.observability.metrics_listen {
+            shaula_core::net::verify_loopback(&metrics.ip().to_string())?;
+            let management = config.http.listen.parse::<std::net::SocketAddr>().ok();
+            let setup = config.setup_info.as_ref().map(|delivery| delivery.listen);
+            if management == Some(metrics) || setup == Some(metrics) {
+                return Err("observability.metrics_listen must be a separate listener".into());
             }
         }
         if config.version != 1 {
@@ -281,6 +291,7 @@ impl ValidatedBootstrap {
             terraform_executable,
             service_name: config.observability.service_name,
             otlp_endpoint: config.observability.otlp.endpoint,
+            metrics_listen: config.observability.metrics_listen,
             operation_logs: config.operation_logs,
             setup_info: config.setup_info,
         })

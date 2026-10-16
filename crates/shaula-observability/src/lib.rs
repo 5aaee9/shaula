@@ -13,6 +13,7 @@ use tracing_subscriber::EnvFilter;
 
 use crate::traces::{Message, TraceLayer, TRACE_BUFFER};
 
+pub mod prometheus;
 mod traces;
 
 static EXPORTER: OnceLock<Arc<OtlpExporter>> = OnceLock::new();
@@ -339,6 +340,13 @@ impl MetricResult {
     }
 }
 
+/// `shaula_operations_total`: the OTLP operation counter, mirrored for scrapes.
+pub static OPERATIONS: prometheus::Family = prometheus::Family {
+    name: "shaula_operations_total",
+    help: "Shaula operation outcomes by fixed operation and result codes.",
+    kind: prometheus::Kind::Counter,
+};
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TelemetryHandle;
 impl TelemetryHandle {
@@ -351,6 +359,14 @@ impl TelemetryHandle {
     /// the in-process degraded-export counter, so degradation reporting can
     /// never recurse into the failing exporter.
     pub fn record(&self, operation: MetricOperation, result: MetricResult, delta: u64) {
+        prometheus::count(
+            &OPERATIONS,
+            &[
+                ("operation", operation.as_str()),
+                ("result", result.as_str()),
+            ],
+            delta,
+        );
         if operation == MetricOperation::Exporter {
             count_degraded_export(delta);
         } else if let Some(exporter) = EXPORTER.get() {

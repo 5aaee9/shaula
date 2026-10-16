@@ -11,6 +11,7 @@
 extern crate self as shaula_http;
 
 pub mod dto;
+pub mod metrics;
 pub mod oidc;
 pub mod problem;
 pub mod router;

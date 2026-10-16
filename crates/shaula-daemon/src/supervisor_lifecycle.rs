@@ -131,7 +131,11 @@ impl FleetSupervisor {
         );
         self.finish_generation_create(
             &generation_id,
-            self.runtime.create(request).await,
+            crate::iac_metrics::timed(
+                crate::iac_metrics::Effect::Create,
+                self.runtime.create(request),
+            )
+            .await,
             &apply_intent,
             now,
             &mut diagnostic,
