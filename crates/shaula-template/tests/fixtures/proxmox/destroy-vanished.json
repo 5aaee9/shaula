@@ -34,53 +34,6 @@
   "terraform_version": "1.15.8",
   "prior_state": {
     "values": {
-      "outputs": {
-        "shaula_result": {
-          "sensitive": true,
-          "value": {
-            "bindings_digest": "synthetic-bindings-digest",
-            "contract_version": 1,
-            "generation_id": "test-generation-id",
-            "resources": [
-              {
-                "id": "pve-test/local/local:iso/shaula-test-generation.iso",
-                "role": "bootstrap"
-              },
-              {
-                "id": "pve-test/100",
-                "role": "runner"
-              }
-            ]
-          },
-          "type": [
-            "object",
-            {
-              "bindings_digest": "string",
-              "contract_version": "number",
-              "generation_id": "string",
-              "resources": [
-                "tuple",
-                [
-                  [
-                    "object",
-                    {
-                      "id": "string",
-                      "role": "string"
-                    }
-                  ],
-                  [
-                    "object",
-                    {
-                      "id": "string",
-                      "role": "string"
-                    }
-                  ]
-                ]
-              ]
-            }
-          ]
-        }
-      },
       "root_module": {
         "resources": [
           {

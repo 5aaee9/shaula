@@ -22,4 +22,4 @@ managed_resource_shape:
     terraform_type: proxmox_qemu_vm
     exact_count: 1
 runner_image_digests: []
-runtime_policy_digest: sha256:4700ac53697651512cda62829d6551a8b2af1cbdb2b8b7217117acd82e8662dd
+runtime_policy_digest: sha256:b54d1d18025738dc86d38e331e9b454b011775dd62d7a7ad0ee5e0f505ae42db

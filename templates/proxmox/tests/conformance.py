@@ -256,21 +256,22 @@ def main():
                 (args.output_dir / "state-pull.json").write_text(
                     run(terraform + ["state", "pull"], module), encoding="utf-8"
                 )
-            # VMID reuse (molecule, 2026-10-16): once another Generation's VM
-            # holds this VMID, refresh adopts it and plans its deletion. Only
-            # the refreshed name tells the two apart; Shaula's destroy
-            # admission must refuse this plan. Planning has no side effects.
+            # VMID reuse (molecule, 2026-10-16): another Generation's VM now
+            # holds this VMID. Provider 0.7.1 checks the recorded name, so
+            # refresh drops the foreign VM exactly like a vanished one instead
+            # of adopting it (0.5.1 planned its deletion). Planning has no
+            # side effects.
             (vmid,) = server.vms
             owned = server.vms[vmid]["config"]["name"]
             server.vms[vmid]["config"]["name"] = "shaula-other-generation"
             reused = plan("destroy-reused", "-destroy")
-            adopted = next(
-                item
-                for item in reused["resource_changes"]
-                if item["address"] == "proxmox_qemu_vm.runner"
-            )
-            assert adopted["change"]["actions"] == ["delete"]
-            assert adopted["change"]["before"]["name"] == "shaula-other-generation"
+            for section in (
+                reused["resource_changes"],
+                reused["prior_state"]["values"]["root_module"]["resources"],
+            ):
+                assert [
+                    item["address"] for item in section if item["mode"] == "managed"
+                ] == ["proxmox_nocloud_iso.bootstrap"]
             assert server.events == ["upload", "clone", "attach", "start"]
             server.vms[vmid]["config"]["name"] = owned
             # A VM that vanished out of band (or, from provider 0.7.1, one

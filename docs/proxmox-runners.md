@@ -1,6 +1,6 @@
 # Proxmox Runner
 
-内置 `proxmox` 模板通过 `indexyz/proxmox` 0.5.0 创建一个链接克隆 VM 和专属 NoCloud ISO。
+内置 `proxmox` 模板通过 `indexyz/proxmox` 0.7.1 创建一个链接克隆 VM 和专属 NoCloud ISO。
 模板随包启动同步到数据库，进入 **Templates → New template → Default template** 后选择
 `proxmox`；发布时配置平台 bindings，Fleet 选择发布后的 Template，并可为每个 Fleet 选择 CPU
 核心数和内存大小。
@@ -91,4 +91,4 @@ provider 的每项 PVE task 等待上限为 10 分钟；大型 full clone 应先
 ISO、cloud-init 缓存、Terraform state 和 provider 临时目录可能保存 JIT；它们是凭据材料。
 guest 临时 JIT 文件清除不代表对拥有 root/sudo 的 workflow 提供隔离。
 
-上游接口与已知边界见 [provider NoCloud 指南](https://github.com/Indexyz/terraform-provider-proxmox/blob/v0.5.0/docs/guides/nocloud-runner-vm.md)。
+上游接口与已知边界见 [provider NoCloud 指南](https://github.com/Indexyz/terraform-provider-proxmox/blob/v0.7.1/docs/guides/nocloud-runner-vm.md)。

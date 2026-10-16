@@ -165,7 +165,7 @@ fn real_proxmox_destroy_of_a_reused_vmid_is_refused_by_identity() -> TestResult 
         )]
     );
     admit_destroy_identity(&read("destroy.json")?, &names)?;
-    assert!(admit_destroy_identity(&read("destroy-reused.json")?, &names).is_err());
+    assert!(admit_destroy_identity(&read("destroy-reused-0.5.1.json")?, &names).is_err());
     Ok(())
 }
 
@@ -189,6 +189,12 @@ fn real_proxmox_destroy_of_a_vanished_vm_is_admitted() -> TestResult {
         "proxmox_nocloud_iso.bootstrap".to_string(),
         "proxmox_qemu_vm.runner".to_string(),
     ];
+    // From provider 0.7.1 a reused VMID is dropped exactly like a vanished VM.
+    admit_destroy_plan_json(
+        &read("destroy-reused.json")?,
+        &owned,
+        &manifest.managed_resource_shape,
+    )?;
     let vanished = read("destroy-vanished.json")?;
     admit_destroy_plan_json(&vanished, &owned, &manifest.managed_resource_shape)?;
 

@@ -1,9 +1,5 @@
 {
-  "format_version": "1.2",
-  "terraform_version": "1.9.8",
   "applyable": true,
-  "complete": true,
-  "errored": false,
   "checks": [
     {
       "address": {
@@ -32,35 +28,10 @@
       ]
     }
   ],
-  "resource_changes": [
-    {
-      "address": "proxmox_nocloud_iso.bootstrap",
-      "mode": "managed",
-      "type": "proxmox_nocloud_iso",
-      "name": "bootstrap",
-      "provider_name": "registry.terraform.io/indexyz/proxmox",
-      "change": {
-        "actions": [
-          "delete"
-        ]
-      }
-    },
-    {
-      "address": "proxmox_qemu_vm.runner",
-      "mode": "managed",
-      "type": "proxmox_qemu_vm",
-      "name": "runner",
-      "provider_name": "registry.terraform.io/indexyz/proxmox",
-      "change": {
-        "actions": [
-          "delete"
-        ],
-        "before": {
-          "name": "shaula-other-generation"
-        }
-      }
-    }
-  ],
+  "complete": true,
+  "errored": false,
+  "format_version": "1.2",
+  "terraform_version": "1.15.8",
   "prior_state": {
     "values": {
       "root_module": {
@@ -83,21 +54,23 @@
             "depends_on": [
               "data.proxmox_qemu_vms.template"
             ]
-          },
-          {
-            "address": "proxmox_qemu_vm.runner",
-            "mode": "managed",
-            "type": "proxmox_qemu_vm",
-            "name": "runner",
-            "provider_name": "registry.terraform.io/indexyz/proxmox",
-            "schema_version": 0,
-            "depends_on": [
-              "data.proxmox_qemu_vms.template",
-              "proxmox_nocloud_iso.bootstrap"
-            ]
           }
         ]
       }
     }
-  }
+  },
+  "resource_changes": [
+    {
+      "address": "proxmox_nocloud_iso.bootstrap",
+      "mode": "managed",
+      "type": "proxmox_nocloud_iso",
+      "name": "bootstrap",
+      "provider_name": "registry.terraform.io/indexyz/proxmox",
+      "change": {
+        "actions": [
+          "delete"
+        ]
+      }
+    }
+  ]
 }

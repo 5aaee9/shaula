@@ -5,7 +5,7 @@ this immutable Template Revision, never a Fleet parameter. JIT/Listener details
 below describe GitHub; the Forgejo and GitLab cloud-init contracts follow.
 
 Each Generation owns exactly one cloned QEMU VM and one NoCloud seed ISO.
-Terraform provider `indexyz/proxmox` 0.5.1 owns their entire resource lifecycle.
+Terraform provider `indexyz/proxmox` 0.7.1 owns their entire resource lifecycle.
 The provider finds exactly one visible template by its case-sensitive name,
 clones on that template's node, allocates a free VMID at or above the bound,
 attaches the seed to `ide2`, and starts the VM once. The clone is a linked
