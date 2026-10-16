@@ -1,5 +1,8 @@
+use crate::entities::diagnostics::diagnostic_snapshots as snapshots;
+use crate::entities::fleet::fleets;
+use crate::query_ext::json_extract;
 use crate::Store;
-use sea_orm::{ConnectionTrait, DatabaseBackend::Sqlite, Statement, TransactionTrait};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait};
 use shaula_core::{
     diagnostics::*,
     registry::{Actor, Scope},
@@ -52,17 +55,14 @@ impl Store {
     ) -> Result<Option<DiagnosticReportV1>, ReadFailure> {
         let tx = self.connection().begin().await?;
         if kind == SubjectKind::Fleet {
-            if let Some(row) = tx
-                .query_one(Statement::from_sql_and_values(
-                    Sqlite,
-                    "SELECT tombstone FROM fleets WHERE key=?",
-                    vec![key.into()],
-                ))
-                .await?
-            {
-                if row.try_get::<bool>("", "tombstone")? {
-                    return Err(ReadFailure::Gone);
-                }
+            let tombstone = fleets::Entity::find_by_id(key)
+                .select_only()
+                .column(fleets::Column::Tombstone)
+                .into_tuple::<bool>()
+                .one(&tx)
+                .await?;
+            if tombstone == Some(true) {
+                return Err(ReadFailure::Gone);
             }
         }
 
@@ -74,14 +74,20 @@ impl Store {
         // Forgejo has no GitHub workflow identity. Only a captured exact
         // Generation identity may fill this gap; never join by Fleet name.
         if guard.is_none() && kind == SubjectKind::Generation {
-            if let Ok(Some(row)) = tx.query_one(Statement::from_sql_and_values(Sqlite,
-                "SELECT payload FROM diagnostic_snapshots WHERE json_extract(payload,'$.guard.generation_id')=? ORDER BY observed_at DESC LIMIT 1", vec![key.into()])).await {
-                if let Ok(payload) = row.try_get::<String>("", "payload") {
-                    if let Ok(o) = serde_json::from_str::<DecisionObservation>(&payload) {
-                        if o.version == 1 && super::guard_valid(&tx, &o.guard).await? {
-                            subject.fleet_incarnation = Some(o.guard.incarnation.clone());
-                            guard = Some(o.guard);
-                        }
+            let latest = snapshots::Entity::find()
+                .select_only()
+                .column(snapshots::Column::Payload)
+                .filter(json_extract(snapshots::Column::Payload, "$.guard.generation_id").eq(key))
+                .order_by_desc(snapshots::Column::ObservedAt)
+                .limit(1)
+                .into_tuple::<String>()
+                .one(&tx)
+                .await;
+            if let Ok(Some(payload)) = latest {
+                if let Ok(o) = serde_json::from_str::<DecisionObservation>(&payload) {
+                    if o.version == 1 && super::guard_valid(&tx, &o.guard).await? {
+                        subject.fleet_incarnation = Some(o.guard.incarnation.clone());
+                        guard = Some(o.guard);
                     }
                 }
             }
@@ -89,16 +95,20 @@ impl Store {
         let mut truncated = false;
         if let Some(guard) = guard {
             // A bounded set of fixed lanes; no Generation/Job table scan per GET.
-            let rows = tx.query_all(Statement::from_sql_and_values(Sqlite,
-                "SELECT payload FROM diagnostic_snapshots WHERE subject_key=? ORDER BY question,lane LIMIT 22",
-                vec![super::subject_key(&guard).into()])).await;
+            let rows = snapshots::Entity::find()
+                .select_only()
+                .column(snapshots::Column::Payload)
+                .filter(snapshots::Column::SubjectKey.eq(super::subject_key(&guard)))
+                .order_by_asc(snapshots::Column::Question)
+                .order_by_asc(snapshots::Column::Lane)
+                .limit(22)
+                .into_tuple::<String>()
+                .all(&tx)
+                .await;
             // Optional projection failure leaves the independently read ledger usable.
             if let Ok(rows) = rows {
                 truncated = rows.len() > 21;
-                for row in rows.into_iter().take(21) {
-                    let Ok(payload) = row.try_get::<String>("", "payload") else {
-                        continue;
-                    };
+                for payload in rows.into_iter().take(21) {
                     let Ok(mut o) = serde_json::from_str::<DecisionObservation>(&payload) else {
                         continue;
                     };

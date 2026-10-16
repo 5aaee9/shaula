@@ -4,8 +4,10 @@
 
 pub mod access_tokens;
 pub mod auth;
+pub mod diagnostics;
 pub mod fleet;
 pub mod gitlab;
+pub mod http_state;
 pub mod jobs;
 pub mod lifecycle;
 pub mod listener;

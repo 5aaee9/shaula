@@ -32,14 +32,20 @@ pub(crate) fn probe(table: impl IntoTableRef) -> SelectStatement {
     Query::select().expr(Expr::val(1)).from(table).to_owned()
 }
 
-/// Inner joins on an arbitrary condition, for tables without declared relations.
+/// Joins on an arbitrary condition, for tables without declared relations.
 pub(crate) trait JoinOn: Sized {
     fn inner_join_on(self, table: impl IntoTableRef, on: SimpleExpr) -> Self;
+    fn left_join_on(self, table: impl IntoTableRef, on: SimpleExpr) -> Self;
 }
 
 impl<E: EntityTrait> JoinOn for Select<E> {
     fn inner_join_on(mut self, table: impl IntoTableRef, on: SimpleExpr) -> Self {
         QueryTrait::query(&mut self).inner_join(table, on);
+        self
+    }
+
+    fn left_join_on(mut self, table: impl IntoTableRef, on: SimpleExpr) -> Self {
+        QueryTrait::query(&mut self).left_join(table, on);
         self
     }
 }

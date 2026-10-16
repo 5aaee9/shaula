@@ -1,9 +1,20 @@
 use super::Hub;
+use crate::entities::auth::fleet_auth_contexts;
+use crate::entities::diagnostics::diagnostic_snapshots as snapshots;
+use crate::entities::fleet::fleets;
+use crate::entities::lifecycle::{fleet_sessions, runner_generations, runner_operations};
+use crate::query_ext::{col, json_extract, probe};
 use crate::store::{StoreError, StoreResult};
 use sea_orm::{
-    ConnectionTrait, DatabaseBackend::Sqlite, DatabaseConnection, Statement, TransactionTrait,
+    sea_query::{Expr, OnConflict, SimpleExpr},
+    ActiveValue::Set,
+    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
+    TransactionTrait,
 };
 use shaula_core::diagnostics::*;
+
+/// Snapshots older than this are evicted.
+const RETENTION_MS: i64 = 7 * 86_400_000;
 
 pub(crate) fn subject_key(guard: &Guard) -> String {
     // JSON framing avoids collisions between names containing separators.
@@ -11,87 +22,79 @@ pub(crate) fn subject_key(guard: &Guard) -> String {
 }
 
 pub(crate) async fn guard_valid(db: &impl ConnectionTrait, guard: &Guard) -> StoreResult<bool> {
-    let row = db
-        .query_one(Statement::from_sql_and_values(
-            Sqlite,
-            "SELECT incarnation,desired_revision,mutation_fence,tombstone FROM fleets WHERE key=?",
-            vec![guard.fleet_key.clone().into()],
-        ))
-        .await?;
-    let Some(row) = row else { return Ok(false) };
-    if row.try_get::<String>("", "incarnation")? != guard.incarnation
-        || row.try_get::<i64>("", "desired_revision")? != guard.revision
-        || row.try_get::<i64>("", "mutation_fence")? != guard.mutation_fence
-        || row.try_get::<bool>("", "tombstone")?
+    let Some(fleet) = fleets::Entity::find_by_id(guard.fleet_key.as_str())
+        .one(db)
+        .await?
+    else {
+        return Ok(false);
+    };
+    if fleet.incarnation != guard.incarnation
+        || fleet.desired_revision != guard.revision
+        || fleet.mutation_fence != guard.mutation_fence
+        || fleet.tombstone
     {
         return Ok(false);
     }
     if let Some(expected) = guard.session_epoch {
-        let row = db
-            .query_one(Statement::from_sql_and_values(
-                Sqlite,
-                "SELECT epoch FROM fleet_sessions WHERE fleet_key=?",
-                vec![guard.fleet_key.clone().into()],
-            ))
+        let epoch = fleet_sessions::Entity::find_by_id(guard.fleet_key.as_str())
+            .select_only()
+            .column(fleet_sessions::Column::Epoch)
+            .into_tuple::<i64>()
+            .one(db)
             .await?;
-        let epoch = row.map(|r| r.try_get::<i64>("", "epoch")).transpose()?;
         if epoch != expected {
             return Ok(false);
         }
     }
     if let Some((key, revision)) = &guard.auth {
-        let row = db.query_one(Statement::from_sql_and_values(Sqlite,
-            "SELECT observed_profile_key,observed_revision FROM fleet_auth_contexts WHERE fleet_key=?",
-            vec![guard.fleet_key.clone().into()])).await?;
-        let Some(row) = row else { return Ok(false) };
-        if row
-            .try_get::<Option<String>>("", "observed_profile_key")?
-            .as_ref()
-            != Some(key)
-            || row.try_get::<Option<i64>>("", "observed_revision")? != Some(*revision)
+        let Some(context) = fleet_auth_contexts::Entity::find_by_id(guard.fleet_key.as_str())
+            .one(db)
+            .await?
+        else {
+            return Ok(false);
+        };
+        if context.observed_profile_key.as_ref() != Some(key)
+            || context.observed_revision != Some(*revision)
         {
             return Ok(false);
         }
     }
     if let Some(id) = &guard.generation_id {
-        let row = db
-            .query_one(Statement::from_sql_and_values(
-                Sqlite,
-                "SELECT fleet_key,fleet_revision,updated_at,template_profile_key,template_revision,template_artifact_digest,attestation_id,inputs_digest FROM runner_generations WHERE id=?",
-                vec![id.clone().into()],
-            ))
-            .await?;
-        let Some(row) = row else { return Ok(false) };
-        if row.try_get::<String>("", "fleet_key")? != guard.fleet_key
-            || guard.generation_revision.is_some_and(|revision| {
-                row.try_get::<i64>("", "fleet_revision").ok() != Some(revision)
-            })
+        let Some(generation) = runner_generations::Entity::find_by_id(id.as_str())
+            .one(db)
+            .await?
+        else {
+            return Ok(false);
+        };
+        if generation.fleet_key != guard.fleet_key
+            || guard
+                .generation_revision
+                .is_some_and(|revision| generation.fleet_revision != revision)
             || guard
                 .generation_updated_at
-                .is_some_and(|v| row.try_get::<i64>("", "updated_at").ok() != Some(v))
+                .is_some_and(|v| generation.updated_at != v)
         {
             return Ok(false);
         }
         if let Some(pins) = &guard.generation_pins {
-            if row.try_get::<String>("", "template_profile_key")? != pins.profile
-                || row.try_get::<i64>("", "template_revision")? != pins.revision
-                || row.try_get::<String>("", "template_artifact_digest")? != pins.artifact
-                || row.try_get::<String>("", "attestation_id")? != pins.attestation
-                || row.try_get::<String>("", "inputs_digest")? != pins.inputs
+            if generation.template_profile_key != pins.profile
+                || generation.template_revision != pins.revision
+                || generation.template_artifact_digest != pins.artifact
+                || generation.attestation_id != pins.attestation
+                || generation.inputs_digest != pins.inputs
             {
                 return Ok(false);
             }
         }
         if let Some(attempt) = &guard.attempt_id {
-            if db
-                .query_one(Statement::from_sql_and_values(
-                    Sqlite,
-                    "SELECT 1 FROM runner_operations WHERE generation_id=? AND id=?",
-                    vec![id.clone().into(), attempt.clone().into()],
-                ))
-                .await?
-                .is_none()
-            {
+            let operation = runner_operations::Entity::find_by_id(attempt.as_str())
+                .filter(runner_operations::Column::GenerationId.eq(id.as_str()))
+                .select_only()
+                .column(runner_operations::Column::Id)
+                .into_tuple::<String>()
+                .one(db)
+                .await?;
+            if operation.is_none() {
                 return Ok(false);
             }
         }
@@ -116,13 +119,14 @@ pub(super) async fn write(
     let lane = format!("{:?}", o.lane);
     let question = format!("{:?}", o.question.question);
     let mut next = o.clone();
-    let old = tx.query_one(Statement::from_sql_and_values(Sqlite,
-        "SELECT payload FROM diagnostic_snapshots WHERE subject_key=? AND lane=? AND question=?",
-        vec![key.clone().into(), lane.clone().into(), question.clone().into()])).await?;
+    let old = snapshots::Entity::find_by_id((key.clone(), lane.clone(), question.clone()))
+        .select_only()
+        .column(snapshots::Column::Payload)
+        .into_tuple::<String>()
+        .one(&tx)
+        .await?;
     if let Some(old) = old {
-        if let Ok(previous) =
-            serde_json::from_str::<DecisionObservation>(&old.try_get::<String>("", "payload")?)
-        {
+        if let Ok(previous) = serde_json::from_str::<DecisionObservation>(&old) {
             if previous.epoch == o.epoch
                 && previous.sequence < o.sequence
                 && o.observed_at < previous.observed_at
@@ -171,31 +175,68 @@ pub(super) async fn write(
     if payload.len() > 65_536 {
         return Err(StoreError::Corrupt("diagnostic budget exceeded".into()));
     }
-    tx.execute(Statement::from_sql_and_values(Sqlite,
-        "INSERT INTO diagnostic_snapshots(subject_key,lane,question,epoch,sequence,observed_at,payload) VALUES(?,?,?,?,?,?,?)
-         ON CONFLICT(subject_key,lane,question) DO UPDATE SET epoch=excluded.epoch,sequence=excluded.sequence,observed_at=excluded.observed_at,payload=excluded.payload",
-        vec![key.into(),lane.into(),question.into(),o.epoch.clone().into(),(o.sequence as i64).into(),o.observed_at.into(),payload.into()])).await?;
+    snapshots::Entity::insert(snapshots::ActiveModel {
+        subject_key: Set(key),
+        lane: Set(lane),
+        question: Set(question),
+        epoch: Set(o.epoch.clone()),
+        sequence: Set(o.sequence as i64),
+        observed_at: Set(o.observed_at),
+        payload: Set(payload),
+    })
+    .on_conflict(
+        OnConflict::columns([
+            snapshots::Column::SubjectKey,
+            snapshots::Column::Lane,
+            snapshots::Column::Question,
+        ])
+        .update_columns([
+            snapshots::Column::Epoch,
+            snapshots::Column::Sequence,
+            snapshots::Column::ObservedAt,
+            snapshots::Column::Payload,
+        ])
+        .to_owned(),
+    )
+    .exec_without_returning(&tx)
+    .await?;
     // Only the disposable table is collected. Older live observations may also
     // be evicted; all original domain retention remains unchanged.
-    tx.execute(Statement::from_sql_and_values(
-        Sqlite,
-        "DELETE FROM diagnostic_snapshots WHERE observed_at < ?",
-        vec![o.observed_at.saturating_sub(7 * 86_400_000).into()],
-    ))
-    .await?;
+    snapshots::Entity::delete_many()
+        .filter(snapshots::Column::ObservedAt.lt(o.observed_at.saturating_sub(RETENTION_MS)))
+        .exec(&tx)
+        .await?;
     tx.commit().await?;
     Ok(())
 }
 
+/// `json_extract(diagnostic_snapshots.payload, path)`.
+fn payload(path: &'static str) -> SimpleExpr {
+    json_extract((snapshots::Entity, snapshots::Column::Payload), path)
+}
+
 /// Optional retention never deletes from the authoritative ledger.
 pub(crate) async fn collect(db: &DatabaseConnection, now: i64) -> StoreResult<()> {
-    db.execute(Statement::from_sql_and_values(Sqlite,
-        "DELETE FROM diagnostic_snapshots WHERE observed_at < ? OR
-         (json_extract(payload,'$.guard.generation_id') IS NOT NULL AND NOT EXISTS
-          (SELECT 1 FROM runner_generations g WHERE g.id=json_extract(payload,'$.guard.generation_id'))) OR
-         (json_extract(payload,'$.guard.generation_id') IS NULL AND NOT EXISTS
-          (SELECT 1 FROM fleets f WHERE f.key=json_extract(payload,'$.guard.fleet_key')
-           AND f.incarnation=json_extract(payload,'$.guard.incarnation')))",
-        vec![now.saturating_sub(7 * 86_400_000).into()])).await?;
+    let generation = || payload("$.guard.generation_id");
+    let generation_gone = probe(runner_generations::Entity)
+        .and_where(col(runner_generations::Column::Id).eq(generation()))
+        .to_owned();
+    let fleet_gone = probe(fleets::Entity)
+        .and_where(col(fleets::Column::Key).eq(payload("$.guard.fleet_key")))
+        .and_where(col(fleets::Column::Incarnation).eq(payload("$.guard.incarnation")))
+        .to_owned();
+    snapshots::Entity::delete_many()
+        .filter(
+            col(snapshots::Column::ObservedAt)
+                .lt(now.saturating_sub(RETENTION_MS))
+                .or(Expr::expr(generation())
+                    .is_not_null()
+                    .and(Expr::exists(generation_gone).not()))
+                .or(Expr::expr(generation())
+                    .is_null()
+                    .and(Expr::exists(fleet_gone).not())),
+        )
+        .exec(db)
+        .await?;
     Ok(())
 }

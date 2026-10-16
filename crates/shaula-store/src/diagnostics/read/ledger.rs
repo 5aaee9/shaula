@@ -1,5 +1,18 @@
+use crate::entities::fleet::fleets;
+use crate::entities::jobs::{
+    forgejo_job_polls as polls, forgejo_workflow_jobs as forgejo_jobs,
+    workflow_generation_identity as identity, workflow_jobs as github_jobs,
+};
+use crate::entities::lifecycle::{
+    runner_generations as generations, runner_operations as operations,
+};
+use crate::entities::shared::audit_records as audit;
+use crate::query_ext::{col, probe, same, JoinOn};
 use crate::StoreResult;
-use sea_orm::{ConnectionTrait, DatabaseBackend::Sqlite, QueryResult, Statement};
+use sea_orm::{
+    sea_query::Expr, ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter,
+    QueryOrder, QuerySelect,
+};
 use shaula_core::{
     diagnostics::*,
     jobs::{AssociationStatus, JobSummary, ObservedStatus},
@@ -32,14 +45,13 @@ pub(super) async fn read(
 }
 
 async fn fleet(db: &impl ConnectionTrait, key: &str) -> StoreResult<Option<View>> {
-    let row = db.query_one(Statement::from_sql_and_values(Sqlite,
-        "SELECT incarnation,desired_revision,mutation_fence,deletion_marker,tombstone,updated_at FROM fleets WHERE key=?", vec![key.into()])).await?;
+    let row = fleets::Entity::find_by_id(key).one(db).await?;
     let Some(row) = row else { return Ok(None) };
     let guard = Guard {
         fleet_key: key.into(),
-        incarnation: row.try_get("", "incarnation")?,
-        revision: row.try_get("", "desired_revision")?,
-        mutation_fence: row.try_get("", "mutation_fence")?,
+        incarnation: row.incarnation.clone(),
+        revision: row.desired_revision,
+        mutation_fence: row.mutation_fence,
         session_epoch: None,
         auth: None,
         generation_id: None,
@@ -48,10 +60,10 @@ async fn fleet(db: &impl ConnectionTrait, key: &str) -> StoreResult<Option<View>
         attempt_id: None,
         generation_pins: None,
     };
-    let at = row.try_get("", "updated_at")?;
+    let at = row.updated_at;
     let mut scale = DiagnosticQuestion::unavailable(QuestionId::ScaleUp);
     let mut rollout = DiagnosticQuestion::unavailable(QuestionId::Rollout);
-    if row.try_get::<bool>("", "deletion_marker")? || row.try_get::<bool>("", "tombstone")? {
+    if row.deletion_marker || row.tombstone {
         scale = ledger(QuestionId::ScaleUp, at, Some(guard.revision));
         scale.reason(
             Code::ControlDecommissioning,
@@ -86,18 +98,63 @@ async fn fleet(db: &impl ConnectionTrait, key: &str) -> StoreResult<Option<View>
     )))
 }
 
+/// One Generation joined to its recorded identity and, through that
+/// identity's incarnation only, to the live Fleet head.
+#[derive(FromQueryResult)]
+struct GenerationRow {
+    state: String,
+    fleet_key: String,
+    fleet_revision: i64,
+    updated_at: i64,
+    expiry_requested_at: Option<i64>,
+    resources_destroyed_at: Option<i64>,
+    fleet_incarnation: Option<String>,
+    mutation_fence: Option<i64>,
+    desired_revision: Option<i64>,
+    finalized: bool,
+}
+
 async fn generation(db: &impl ConnectionTrait, key: &str) -> StoreResult<Option<View>> {
-    let row = db.query_one(Statement::from_sql_and_values(Sqlite,
-        "SELECT g.state,g.fleet_key,g.fleet_revision,g.updated_at,g.expiry_requested_at,g.resources_destroyed_at,
-         i.fleet_incarnation,f.mutation_fence,f.desired_revision,
-         EXISTS(SELECT 1 FROM audit_records a WHERE a.resource_kind='generation' AND a.resource_key=g.id AND a.action='finalize') AS finalized
-         FROM runner_generations g LEFT JOIN workflow_generation_identity i ON i.generation_id=g.id
-         LEFT JOIN fleets f ON f.key=g.fleet_key AND f.incarnation=i.fleet_incarnation WHERE g.id=?", vec![key.into()])).await?;
+    let finalized = probe(audit::Entity)
+        .and_where(col(audit::Column::ResourceKind).eq("generation"))
+        .and_where(same(audit::Column::ResourceKey, generations::Column::Id))
+        .and_where(col(audit::Column::Action).eq("finalize"))
+        .to_owned();
+    let row = generations::Entity::find_by_id(key)
+        .select_only()
+        .columns([
+            generations::Column::State,
+            generations::Column::FleetKey,
+            generations::Column::FleetRevision,
+            generations::Column::UpdatedAt,
+            generations::Column::ExpiryRequestedAt,
+            generations::Column::ResourcesDestroyedAt,
+        ])
+        .column(identity::Column::FleetIncarnation)
+        .columns([
+            fleets::Column::MutationFence,
+            fleets::Column::DesiredRevision,
+        ])
+        .expr_as(Expr::exists(finalized), "finalized")
+        .left_join_on(
+            identity::Entity,
+            same(identity::Column::GenerationId, generations::Column::Id),
+        )
+        .left_join_on(
+            fleets::Entity,
+            same(fleets::Column::Key, generations::Column::FleetKey).and(same(
+                fleets::Column::Incarnation,
+                identity::Column::FleetIncarnation,
+            )),
+        )
+        .into_model::<GenerationRow>()
+        .one(db)
+        .await?;
     let Some(row) = row else { return Ok(None) };
-    let incarnation: Option<String> = row.try_get("", "fleet_incarnation")?;
-    let revision = row.try_get("", "fleet_revision")?;
-    let at = row.try_get("", "updated_at")?;
-    let state: String = row.try_get("", "state")?;
+    let incarnation = row.fleet_incarnation.clone();
+    let revision = row.fleet_revision;
+    let at = row.updated_at;
+    let state = row.state.clone();
     let mut readiness = ledger(QuestionId::Readiness, at, Some(revision));
     let mut cleanup = ledger(QuestionId::Cleanup, at, Some(revision));
     match state.as_str() {
@@ -113,7 +170,7 @@ async fn generation(db: &impl ConnectionTrait, key: &str) -> StoreResult<Option<
                 EvidenceKind::LedgerFact,
             );
             cleanup.stage(StageId::Completion, Evaluation::Passed);
-            let source = if row.try_get::<bool>("", "finalized")? {
+            let source = if row.finalized {
                 CompletionSource::OperatorAttested
             } else {
                 CompletionSource::Unknown
@@ -128,11 +185,7 @@ async fn generation(db: &impl ConnectionTrait, key: &str) -> StoreResult<Option<
         ),
         _ => {}
     }
-    if state != "Destroyed"
-        && row
-            .try_get::<Option<i64>>("", "expiry_requested_at")?
-            .is_some()
-    {
+    if state != "Destroyed" && row.expiry_requested_at.is_some() {
         // Expiry intent is durable even when a restart loses runtime capture.
         // Keep the mode attached to that fact at both cleanup checkpoints.
         cleanup.cleanup_mode = Some(CleanupMode::HardLifetime);
@@ -143,11 +196,7 @@ async fn generation(db: &impl ConnectionTrait, key: &str) -> StoreResult<Option<
             EvidenceKind::LedgerFact,
         );
     }
-    if state != "Destroyed"
-        && row
-            .try_get::<Option<i64>>("", "resources_destroyed_at")?
-            .is_some()
-    {
+    if state != "Destroyed" && row.resources_destroyed_at.is_some() {
         cleanup.stage(StageId::ResourceCleanup, Evaluation::Passed);
         cleanup.reason(
             Code::CleanupRegistrationPending,
@@ -156,10 +205,18 @@ async fn generation(db: &impl ConnectionTrait, key: &str) -> StoreResult<Option<
             EvidenceKind::LedgerFact,
         );
     }
-    let operation = db.query_one(Statement::from_sql_and_values(Sqlite,
-        "SELECT state,kind,updated_at FROM runner_operations WHERE generation_id=? ORDER BY created_at DESC,id DESC LIMIT 1", vec![key.into()])).await?;
-    if let Some(op) = operation {
-        operation_fact(&op, &mut readiness, &mut cleanup)?;
+    let operation = operations::Entity::find()
+        .select_only()
+        .columns([operations::Column::Kind, operations::Column::State])
+        .filter(operations::Column::GenerationId.eq(key))
+        .order_by_desc(operations::Column::CreatedAt)
+        .order_by_desc(operations::Column::Id)
+        .limit(1)
+        .into_tuple::<(String, String)>()
+        .one(db)
+        .await?;
+    if let Some((kind, state)) = operation {
+        operation_fact(&kind, &state, &mut readiness, &mut cleanup);
     }
     let subject = DiagnosticSubject {
         kind: SubjectKind::Generation,
@@ -167,12 +224,11 @@ async fn generation(db: &impl ConnectionTrait, key: &str) -> StoreResult<Option<
         key: None,
         fleet_incarnation: incarnation.clone(),
     };
-    let fence: Option<i64> = row.try_get("", "mutation_fence")?;
-    let guard = match (incarnation, fence) {
-        (Some(incarnation), Some(mutation_fence)) => Some(Guard {
-            fleet_key: row.try_get("", "fleet_key")?,
+    let guard = match (incarnation, row.mutation_fence, row.desired_revision) {
+        (Some(incarnation), Some(mutation_fence), Some(desired_revision)) => Some(Guard {
+            fleet_key: row.fleet_key,
             incarnation,
-            revision: row.try_get("", "desired_revision")?,
+            revision: desired_revision,
             mutation_fence,
             session_epoch: None,
             auth: None,
@@ -188,26 +244,25 @@ async fn generation(db: &impl ConnectionTrait, key: &str) -> StoreResult<Option<
 }
 
 fn operation_fact(
-    row: &QueryResult,
+    kind: &str,
+    state: &str,
     readiness: &mut DiagnosticQuestion,
     cleanup: &mut DiagnosticQuestion,
-) -> StoreResult<()> {
-    let kind: String = row.try_get("", "kind")?;
+) {
     let q = if kind == "Destroy" {
         cleanup
     } else {
         readiness
     };
     if q.coverage == Coverage::Complete {
-        return Ok(());
+        return;
     }
     let stage = if kind == "Destroy" {
         StageId::ResourceCleanup
     } else {
         StageId::CreateEffect
     };
-    let state: String = row.try_get("", "state")?;
-    match state.as_str() {
+    match state {
         "BootstrapStarting" => {
             q.stage(StageId::CreateEffect, Evaluation::Passed);
             q.reason(
@@ -231,14 +286,40 @@ fn operation_fact(
         ),
         _ => {}
     }
-    Ok(())
+}
+
+/// A GitHub job summary, else a Forgejo one with its scope's last poll outcome.
+async fn job_summary(
+    db: &impl ConnectionTrait,
+    key: &str,
+) -> StoreResult<Option<(String, Option<bool>)>> {
+    let github = github_jobs::Entity::find_by_id(key)
+        .select_only()
+        .column(github_jobs::Column::SummaryJson)
+        .into_tuple::<String>()
+        .one(db)
+        .await?;
+    if let Some(summary) = github {
+        return Ok(Some((summary, None)));
+    }
+    Ok(forgejo_jobs::Entity::find_by_id(key)
+        .select_only()
+        .column(forgejo_jobs::Column::SummaryJson)
+        .column(polls::Column::Failed)
+        .left_join_on(
+            polls::Entity,
+            same(polls::Column::ScopeKey, forgejo_jobs::Column::ScopeKey),
+        )
+        .into_tuple::<(String, Option<bool>)>()
+        .one(db)
+        .await?)
 }
 
 async fn job(db: &impl ConnectionTrait, key: &str, now: i64) -> StoreResult<Option<View>> {
-    let row = db.query_one(Statement::from_sql_and_values(Sqlite,
-        "SELECT summary_json,NULL AS poll_time,NULL AS poll_failed FROM workflow_jobs WHERE id=? UNION ALL SELECT j.summary_json,p.observed_at AS poll_time,p.failed AS poll_failed FROM forgejo_workflow_jobs j LEFT JOIN forgejo_job_polls p ON p.scope_key=j.scope_key WHERE j.id=? LIMIT 1", vec![key.into(),key.into()])).await?;
-    let Some(row) = row else { return Ok(None) };
-    let summary: JobSummary = serde_json::from_str(&row.try_get::<String>("", "summary_json")?)
+    let Some((summary_json, poll_failed)) = job_summary(db, key).await? else {
+        return Ok(None);
+    };
+    let summary: JobSummary = serde_json::from_str(&summary_json)
         .map_err(|_| crate::StoreError::Corrupt("invalid job summary".into()))?;
     let mut q = ledger(QuestionId::JobDispatch, summary.updated_at, None);
     if summary.observed_status != ObservedStatus::Completed {
@@ -276,7 +357,7 @@ async fn job(db: &impl ConnectionTrait, key: &str, now: i64) -> StoreResult<Opti
         if forgejo.result.is_none() {
             q.basis.observed_at = timestamp(forgejo.last_observed_at);
             q.basis.valid_until = timestamp(forgejo.last_observed_at.saturating_add(30_000));
-            if !forgejo.in_snapshot || row.try_get::<Option<i64>>("", "poll_failed")? != Some(0) {
+            if !forgejo.in_snapshot || poll_failed != Some(false) {
                 q.basis.freshness = Freshness::Stale;
                 q.outcome = Outcome::Unknown;
                 q.primary_reason_id = None;

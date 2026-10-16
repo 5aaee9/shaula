@@ -1,7 +1,15 @@
 //! Project only durable worker facts. No authority is reconstructed here and
 //! no state bytes, capabilities, locks, process paths or inputs are exposed.
+use crate::entities::http_state::{
+    generation_http_state as states, lifecycle_deployment as deployment,
+    lifecycle_fences as fences, lifecycle_workers as workers,
+};
+use crate::query_ext::{col, same, scalar, JoinOn};
 use crate::StoreResult;
-use sea_orm::{ConnectionTrait, DatabaseBackend::Sqlite, Statement};
+use sea_orm::{
+    sea_query::{Expr, Query},
+    ConnectionTrait, EntityTrait, QuerySelect,
+};
 use shaula_core::diagnostics::*;
 
 pub(super) async fn enrich(
@@ -14,16 +22,13 @@ pub(super) async fn enrich(
     if !matches!(kind, SubjectKind::Fleet | SubjectKind::Generation) {
         return Ok(());
     }
-    let mode = db
-        .query_one(Statement::from_string(
-            Sqlite,
-            "SELECT migration_required FROM lifecycle_deployment WHERE singleton = 1",
-        ))
+    let migration_required = deployment::Entity::find_by_id(1)
+        .select_only()
+        .column(deployment::Column::MigrationRequired)
+        .into_tuple::<bool>()
+        .one(db)
         .await?;
-    if mode.is_some_and(|r| {
-        r.try_get::<bool>("", "migration_required")
-            .is_ok_and(|required| required)
-    }) {
+    if migration_required == Some(true) {
         for question in questions
             .iter_mut()
             .filter(|q| matches!(q.question, QuestionId::ScaleUp | QuestionId::Cleanup))
@@ -39,9 +44,33 @@ pub(super) async fn enrich(
     if kind != SubjectKind::Generation {
         return Ok(());
     }
-    let row = db.query_one(Statement::from_sql_and_values(Sqlite,
-        "SELECT w.phase, w.handover IS NOT NULL AS handover, w.cleanup_only, w.completion_receipt IS NOT NULL AS receipt, s.state_bytes IS NOT NULL AS state_present, (SELECT CASE WHEN confirmed_fenced = 1 THEN 'fenced' ELSE outcome END FROM lifecycle_fences f WHERE f.worker_attempt = s.worker_attempt) AS fence FROM lifecycle_workers w JOIN generation_http_state s ON s.generation_id = w.generation_id WHERE w.generation_id = ?", vec![key.into()])).await?;
-    let Some(row) = row else {
+    let fence = Query::select()
+        .expr(
+            Expr::case(col(fences::Column::ConfirmedFenced).eq(true), "fenced")
+                .finally(col(fences::Column::Outcome)),
+        )
+        .from(fences::Entity)
+        .and_where(same(
+            fences::Column::WorkerAttempt,
+            states::Column::WorkerAttempt,
+        ))
+        .to_owned();
+    let row = workers::Entity::find_by_id(key)
+        .select_only()
+        .column(workers::Column::Phase)
+        .expr(col(workers::Column::Handover).is_not_null())
+        .column(workers::Column::CleanupOnly)
+        .expr(col(workers::Column::CompletionReceipt).is_not_null())
+        .expr(col(states::Column::StateBytes).is_not_null())
+        .expr(scalar(fence))
+        .inner_join_on(
+            states::Entity,
+            same(states::Column::GenerationId, workers::Column::GenerationId),
+        )
+        .into_tuple::<(String, bool, bool, bool, bool, Option<String>)>()
+        .one(db)
+        .await?;
+    let Some((phase, handover, cleanup_only, receipt, state_present, fence)) = row else {
         return Ok(());
     };
     let Some(question) = questions
@@ -50,7 +79,7 @@ pub(super) async fn enrich(
     else {
         return Ok(());
     };
-    if row.try_get::<bool>("", "receipt")? {
+    if receipt {
         add(
             question,
             Code::WorkerReceiptCommitted,
@@ -59,9 +88,7 @@ pub(super) async fn enrich(
         );
         return Ok(());
     }
-    if row.try_get::<String>("", "phase")? == "launch_pending"
-        || row.try_get::<bool>("", "handover")?
-    {
+    if phase == "launch_pending" || handover {
         add(
             question,
             Code::WorkerLaunchUnresolved,
@@ -69,10 +96,10 @@ pub(super) async fn enrich(
             now,
         );
     }
-    if row.try_get::<Option<String>>("", "fence")?.as_deref() == Some("unknown") {
+    if fence.as_deref() == Some("unknown") {
         add(question, Code::WorkerFencingUnknown, Effect::Blocking, now);
     }
-    if !row.try_get::<bool>("", "state_present")? {
+    if !state_present {
         add(
             question,
             Code::WorkerStateUnavailable,
@@ -80,7 +107,7 @@ pub(super) async fn enrich(
             now,
         );
     }
-    if row.try_get::<bool>("", "cleanup_only")? {
+    if cleanup_only {
         add(
             question,
             Code::WorkerCleanupOnly,
