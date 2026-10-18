@@ -16,11 +16,7 @@ impl StateBackend for SqliteStateBackend {
     }
 
     async fn read(&self, access: &StateAccess) -> StateResult<Option<StateSnapshot>> {
-        let tx = self
-            .store
-            .begin()
-            .await
-            .map_err(|_| StateError::Unavailable)?;
+        let tx = self.store.begin().await.map_err(unavailable)?;
         let row = Row::load(&tx, &access.generation_id.to_string()).await?;
         row.authorize(access)?;
         let snapshot = row.snapshot(&tx).await?;

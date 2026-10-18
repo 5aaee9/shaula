@@ -52,7 +52,10 @@ impl Workers {
         loop {
             tokio::select! {
                 _ = shutdown.changed() => return Ok(()),
-                _ = tick.tick() => self.reap_completed().await?,
+                _ = tick.tick() => if let Err(error) = self.reap_completed().await {
+                    tracing::error!(%error, "worker supervision failed; daemon will exit");
+                    return Err(error);
+                },
             }
         }
     }
@@ -66,7 +69,11 @@ impl Workers {
             .map(|(id, session)| (*id, session.clone()))
             .collect();
         for (id, session) in sessions {
-            let Some(receipt) = self.journal.receipt(&session.access).await? else {
+            let receipt = self.journal.receipt(&session.access).await;
+            let Some(receipt) = receipt.inspect_err(|error| {
+                tracing::error!(generation_id = %id, %error, "completion receipt read failed");
+            })?
+            else {
                 continue;
             };
             let mut completed = session.completed.lock().await;
@@ -78,6 +85,8 @@ impl Workers {
                 if !session.fenced.load(Ordering::Acquire)
                     && self.executor.stop_and_fence(&identity).await != FenceOutcome::Fenced
                 {
+                    tracing::error!(generation_id = %id, process_id = identity.process_id,
+                        "completed worker could not be fenced");
                     return Err(StateError::Unavailable);
                 }
                 session.fenced.store(true, Ordering::Release);

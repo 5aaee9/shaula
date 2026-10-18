@@ -309,7 +309,8 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
             service.set_ready(false);
             None
         }
-        _ = &mut worker_supervision => {
+        result = &mut worker_supervision => {
+            if let Err(join) = result { tracing::error!(%join, "worker supervision task panicked"); }
             worker_stopped = true;
             service.set_ready(false);
             None

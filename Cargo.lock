@@ -2637,6 +2637,7 @@ dependencies = [
  "sha2 0.10.9",
  "shaula-core",
  "tokio",
+ "tracing",
  "uuid",
  "zeroize",
 ]
@@ -2761,6 +2762,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
+ "tracing",
  "uuid",
 ]
 

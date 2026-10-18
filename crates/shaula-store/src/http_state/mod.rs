@@ -55,11 +55,7 @@ impl SqliteStateBackend {
     /// pools/Store handles and rolls back safely on cancellation; a Rust mutex
     /// alone would not. No transaction is held across HTTP body reads.
     async fn writer(&self, generation_id: &str) -> StateResult<DatabaseTransaction> {
-        let tx = self
-            .store
-            .begin()
-            .await
-            .map_err(|_| StateError::Unavailable)?;
+        let tx = self.store.begin().await.map_err(unavailable)?;
         states::Entity::update_many()
             .col_expr(
                 states::Column::Revision,
@@ -73,7 +69,10 @@ impl SqliteStateBackend {
     }
 }
 
-fn unavailable(_: sea_orm::DbErr) -> StateError {
+// The opaque StateError hides the cause; keep it in the log. Driver errors
+// carry SQLite codes and messages, never bound parameter values.
+fn unavailable(error: impl std::fmt::Display) -> StateError {
+    tracing::warn!(%error, "authoritative state store error");
     StateError::Unavailable
 }
 

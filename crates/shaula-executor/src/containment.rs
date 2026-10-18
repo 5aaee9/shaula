@@ -78,10 +78,11 @@ pub(crate) fn empty(path: &Path) -> StateResult<bool> {
 /// Kills every member of `path` and waits for the kernel to report it empty.
 /// A successful kill write alone is not a fence.
 pub(crate) async fn kill(path: &Path) -> bool {
-    if !empty(path).is_ok_and(|empty| empty)
-        && std::fs::write(path.join("cgroup.kill"), "1").is_err()
-    {
-        return false;
+    if !empty(path).is_ok_and(|empty| empty) {
+        if let Err(error) = std::fs::write(path.join("cgroup.kill"), "1") {
+            tracing::error!(%error, cgroup = %path.display(), "cgroup.kill write failed");
+            return false;
+        }
     }
     for _ in 0..100 {
         if empty(path).is_ok_and(|empty| empty) {
@@ -89,6 +90,12 @@ pub(crate) async fn kill(path: &Path) -> bool {
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
+    let events = std::fs::read_to_string(path.join("cgroup.events"));
+    let procs = std::fs::read_to_string(path.join("cgroup.procs"));
+    tracing::error!(cgroup = %path.display(),
+        events = %events.as_deref().unwrap_or("<unreadable>").replace('\n', " "),
+        procs = %procs.as_deref().unwrap_or("<unreadable>").replace('\n', " "),
+        "cgroup still populated 2s after kill");
     false
 }
 

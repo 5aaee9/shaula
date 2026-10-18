@@ -65,7 +65,7 @@ impl SqliteStateBackend {
         };
         Store::generation_insert_on(&tx, record)
             .await
-            .map_err(|_| StateError::Unavailable)?;
+            .map_err(unavailable)?;
         states::Entity::insert(states::ActiveModel {
             generation_id: Set(id.to_string()),
             worker_epoch: Set(claim.worker_epoch),

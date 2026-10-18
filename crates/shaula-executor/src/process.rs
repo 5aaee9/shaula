@@ -228,12 +228,21 @@ impl Executor for ExecExecutor {
     }
 
     async fn stop_and_fence(&self, identity: &ProcessIdentity) -> FenceOutcome {
-        let Ok(path) = containment::path(&self.root, identity) else {
-            return FenceOutcome::Unknown;
+        let path = match containment::path(&self.root, identity) {
+            Ok(path) => path,
+            Err(error) => {
+                tracing::error!(%error, containment = %identity.containment,
+                    "fence refused: recorded containment is not a worker cgroup");
+                return FenceOutcome::Unknown;
+            }
         };
         match containment::ended(&self.root, identity) {
             Ok(true) => return FenceOutcome::Fenced,
-            Err(_) => return FenceOutcome::Unknown,
+            Err(error) => {
+                tracing::error!(%error, containment = %identity.containment,
+                    "fence refused: cannot prove whether the worker boot/cgroup ended");
+                return FenceOutcome::Unknown;
+            }
             Ok(false) => {}
         }
         if !containment::kill(&path).await {

@@ -198,7 +198,7 @@ impl WorkerJournal for SqliteWorkerJournal {
         let worker = WorkerRow::load(self.backend.store.connection(), access).await?;
         worker
             .completion_receipt
-            .map(|json| serde_json::from_str(&json).map_err(|_| StateError::Unavailable))
+            .map(|json| serde_json::from_str(&json).map_err(unavailable))
             .transpose()
     }
 }
