@@ -330,7 +330,10 @@ def main():
             # VM deletes only the ISO and ends with the empty state Shaula's
             # Destroy requires.
             server.inventory = [server.template(9000)]
-            run(terraform + ["apply", "-auto-approve", "-no-color", "-input=false"], module)
+            run(
+                terraform + ["apply", "-auto-approve", "-no-color", "-input=false"],
+                module,
+            )
             server.vms.clear()
             server.events.clear()
             run(
