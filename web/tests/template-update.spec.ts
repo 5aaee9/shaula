@@ -359,7 +359,10 @@ for (const status of ["Retiring", "Retired"]) {
       page.getByRole("button", { name: "Update custom-docker from default" }),
     ).toHaveCount(0);
     await page.goto("/templates/custom-docker");
-    await expect(page.getByRole("button", { name: "Update", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Review update" })).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Update custom-docker from default" }),
+    ).toHaveCount(0);
     await page.goto(updatePath);
     await expect(page.getByRole("alert")).toContainText(
       "retiring or retired template cannot be updated",

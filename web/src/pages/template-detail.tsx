@@ -8,7 +8,7 @@ import { useTemplateRevision } from "@/lib/use-template-revision";
 import { ErrorNotice, Loading, StatusBadge } from "@/components/status";
 import { RetireDialog } from "@/components/retire-dialog";
 import { QuickUpdateDialog } from "@/components/quick-update-dialog";
-import { SourceUpdateBadge } from "@/components/source-update-badge";
+import { SourceUpdateStatus } from "@/components/source-update-status";
 import {
   TemplateDetailActions,
   TemplateProfileSummary,
@@ -41,6 +41,7 @@ export function TemplateDetailPage({ scopes }: { scopes: string[] }) {
   if (query.isPending) return <Loading />;
   if (query.error) return <ErrorNotice error={query.error} retry={() => void query.refetch()} />;
   const { data } = query.data;
+  const retired = ["Retiring", "Retired"].includes(data.status);
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -52,7 +53,14 @@ export function TemplateDetailPage({ scopes }: { scopes: string[] }) {
             <StatusBadge value={data.status} />
             {data.platform && <span>{data.platform}</span>}
             {data.sourceUpdate && <span>{data.sourceUpdate.sourceKey}</span>}
-            <SourceUpdateBadge update={data.sourceUpdate} />
+            {!retired && (
+              <SourceUpdateStatus
+                profileKey={profileKey}
+                update={data.sourceUpdate}
+                disabled={!scopes.includes("template.publish")}
+                onUpdate={() => setUpdating(true)}
+              />
+            )}
           </>
         }
         actions={
@@ -60,9 +68,7 @@ export function TemplateDetailPage({ scopes }: { scopes: string[] }) {
             profileKey={profileKey}
             canPublish={scopes.includes("template.publish")}
             canRetire={scopes.includes("template.retire")}
-            retired={["Retiring", "Retired"].includes(data.status)}
-            updateAvailable={data.sourceUpdate?.state === "Available"}
-            onUpdate={() => setUpdating(true)}
+            retired={retired}
             onRetire={() => setRetire(true)}
           />
         }

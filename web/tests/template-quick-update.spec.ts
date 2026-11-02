@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { scopes } from "./fixtures";
 import { dockerDigest, variables } from "./template-library-fixtures";
 import {
   availableUpdate,
@@ -27,8 +28,12 @@ test("an available default update is applied from the list without choosing a te
   const bodies: unknown[] = [];
   await acceptUpdates(page, bodies);
   await page.goto("/templates");
-  await expect(page.getByRole("row", { name: /custom-docker/ })).toContainText("Update available");
-  await page.getByRole("button", { name: "Update custom-docker from default" }).click();
+  const chip = page
+    .getByRole("row", { name: /custom-docker/ })
+    .getByRole("button", { name: "Update custom-docker from default" });
+  await expect(chip).toHaveText("Update");
+  await page.getByRole("table").screenshot({ path: testInfo.outputPath("update-chip-list.png") });
+  await chip.click();
   const dialog = page.getByRole("dialog", { name: "Update custom-docker?" });
   await expect(dialog).toContainText("docker");
   await expect(dialog).toContainText(`sha256:${"a".repeat(12)}`);
@@ -59,7 +64,6 @@ test("up-to-date and unavailable sources offer no one-click update", async ({ pa
   await page.goto("/templates");
   const row = page.getByRole("row", { name: /custom-docker/ });
   await expect(row).toContainText("docker");
-  await expect(row).not.toContainText("Update available");
   await expect(page.getByRole("button", { name: "Update custom-docker from default" })).toHaveCount(
     0,
   );
@@ -155,9 +159,9 @@ test("the detail page updates from its header and returns to templates", async (
   const bodies: unknown[] = [];
   await acceptUpdates(page, bodies);
   await page.goto("/templates/custom-docker");
-  await expect(page.locator("[data-slot=page-header]")).toContainText("Update available");
-  await expect(page.getByRole("button", { name: "Review update" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Update", exact: true }).click();
+  const header = page.locator("[data-slot=page-header]");
+  await expect(header.getByRole("button", { name: "Review update" })).toBeEnabled();
+  await header.getByRole("button", { name: "Update custom-docker from default" }).click();
   await page
     .getByRole("dialog", { name: "Update custom-docker?" })
     .getByRole("button", { name: "Update", exact: true })
@@ -165,6 +169,22 @@ test("the detail page updates from its header and returns to templates", async (
   await expect(page).toHaveURL(/\/templates\?key=custom-docker$/);
   await expect(page.getByText("Change for custom-docker")).toBeVisible();
   expect(bodies).toHaveLength(1);
+});
+
+test("the update chip is disabled without publish permission", async ({ page }) => {
+  await mockTemplateUpdate(page, {
+    sourceKey: "docker",
+    sourceUpdate: availableUpdate,
+    permissions: scopes.filter((scope) => scope !== "template.publish"),
+  });
+  await page.goto("/templates");
+  await expect(
+    page.getByRole("button", { name: "Update custom-docker from default" }),
+  ).toBeDisabled();
+  await page.goto("/templates/custom-docker");
+  await expect(
+    page.getByRole("button", { name: "Update custom-docker from default" }),
+  ).toBeDisabled();
 });
 
 test("a new revision keeps the recorded default source selected", async ({ page }) => {

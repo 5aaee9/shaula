@@ -114,7 +114,6 @@ test("published source survives real database reads and an explicit source-only 
   await page.goto("/templates");
   const row = page.getByRole("row", { name: /browser-source/ });
   await expect(row).toContainText("docker");
-  await expect(row).not.toContainText("Update available");
   await expect(
     page.getByRole("button", { name: "Update browser-source from default" }),
   ).toHaveCount(0);

@@ -6,7 +6,7 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { ArrowUpFromLine, Layers3, RefreshCw, Search } from "lucide-react";
+import { Layers3, RefreshCw, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import type { useTemplates } from "@/lib/queries";
 import type { TemplateSummary } from "@/lib/types";
@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tip } from "@/components/icon-tooltip";
 import { Empty, ErrorNotice, Loading, StatusBadge } from "@/components/status";
-import { SourceUpdateBadge } from "@/components/source-update-badge";
+import { SourceUpdateStatus } from "@/components/source-update-status";
 
 type TemplatesQuery = ReturnType<typeof useTemplates>;
 
@@ -40,9 +40,6 @@ function TemplatesTable({
             <TableHead>Default source</TableHead>
             <TableHead>Active revision</TableHead>
             <TableHead>Desired revision</TableHead>
-            <TableHead>
-              <span className="sr-only">Actions</span>
-            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -65,28 +62,20 @@ function TemplatesTable({
               <TableCell>
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="text-sm">{item.sourceUpdate?.sourceKey || "--"}</span>
-                  <SourceUpdateBadge update={item.sourceUpdate} />
+                  {!["Retiring", "Retired"].includes(item.status) && (
+                    <SourceUpdateStatus
+                      profileKey={item.key}
+                      update={item.sourceUpdate}
+                      disabled={!canPublish}
+                      onUpdate={() => onUpdate(item.key)}
+                    />
+                  )}
                 </span>
               </TableCell>
               <TableCell className="font-mono text-xs">
                 {item.activeRevision ? `r${item.activeRevision}` : "--"}
               </TableCell>
               <TableCell className="font-mono text-xs">r{item.desiredRevision}</TableCell>
-              <TableCell className="text-right">
-                {item.sourceUpdate?.state === "Available" &&
-                  !["Retiring", "Retired"].includes(item.status) && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={!canPublish}
-                      aria-label={`Update ${item.key} from default`}
-                      onClick={() => onUpdate(item.key)}
-                    >
-                      <ArrowUpFromLine />
-                      Update
-                    </Button>
-                  )}
-              </TableCell>
             </TableRow>
           ))}
         </TableBody>

@@ -1,4 +1,4 @@
-import { ArrowUpFromLine, Trash2, Upload } from "lucide-react";
+import { Trash2, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { isSensitiveMarker, type TemplateResource, type TemplateRevision } from "@/lib/types";
 import { ErrorNotice, KeyValue, Loading, StatusBadge } from "@/components/status";
@@ -21,36 +21,25 @@ export function TemplateDetailActions({
   canPublish,
   canRetire,
   retired,
-  updateAvailable,
-  onUpdate,
   onRetire,
 }: {
   profileKey: string;
   canPublish: boolean;
   canRetire: boolean;
   retired: boolean;
-  updateAvailable: boolean;
-  onUpdate: () => void;
   onRetire: () => void;
 }) {
   const navigate = useNavigate();
   return (
     <div className="flex gap-2">
-      {updateAvailable ? (
-        <Button size="sm" disabled={!canPublish || retired} onClick={onUpdate}>
-          <ArrowUpFromLine />
-          Update
-        </Button>
-      ) : (
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!canPublish || retired}
-          onClick={() => navigate(`/templates/${encodeURIComponent(profileKey)}/update`)}
-        >
-          Review update
-        </Button>
-      )}
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={!canPublish || retired}
+        onClick={() => navigate(`/templates/${encodeURIComponent(profileKey)}/update`)}
+      >
+        Review update
+      </Button>
       <Button
         variant="outline"
         size="sm"
