@@ -83,6 +83,24 @@ Templates 已发布模板提供 **Update**，进入独立 review 页面。操作
    Fleet 仍保留原 pin，采用新 Active 需显式 Fleet replacement 并满足原 occupancy 门禁。
    bare key 引用的 follower Fleet 由 daemon 级联自动升级（spec 0023），本条款不再适用。
 
+### 4.1 Source update read and one-click update (Revision 2)
+
+- Template Profile list/detail 读取返回 `sourceUpdate`：desired Revision 无来源时为 `null`；
+  否则为 `{sourceKey, state, targetDigest, targetEngine}`。`state` 为 `UpToDate`（当前
+  catalog 同 key 的 digest 与 engine 与 Revision 相同）、`Available`（不同）或
+  `Unavailable`（来源已撤下，或 Revision 已知 platform 与来源不一致；此时 target 为 `null`）。
+  Validating Revision 尚无 platform，沿用 admission 时的 manifest platform 校验。
+  这是只读比较，不写入数据库、不自动发布，也不改变 §5 的提交约束。
+- `Available` 时列表与详情页显示 **Update available** 并提供一键 **Update**：确认对话框
+  重新读取 head ETag 与 desired Revision，展示 artifact/engine 变化，提交时只携带读取到的
+  `source_key`、`artifact_digest`、`engine_ref`，bindings 与 policy 由服务器从 base 复用。
+  目标声明了 base 未设置且无默认值的 required binding 时禁用一键提交，只提供 review 页。
+  412/409/422 保留对话框错误并提供 **Review changes**，不静默重试。
+- `UpToDate`/无来源不显示一键入口；详情页保留 **Review update** 进入 §4 review 页，用于
+  显式 policy 替换或为无来源 Revision 建立关联。`Unavailable` 显示 **Source unavailable**。
+- New revision 在 desired Revision 的来源仍可用时默认选中该 Default template，避免普通
+  修订意外丢弃来源关联；切换到 archive/existing artifact 仍按 §3 省略来源。
+
 ## 5. HTTP publication and update contract
 
 普通 Template Profile PUT 和下述 Update 请求均增加可选 `source_key`。省略或 `null`

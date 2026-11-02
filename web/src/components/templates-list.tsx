@@ -6,7 +6,7 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { Layers3, RefreshCw, Search } from "lucide-react";
+import { ArrowUpFromLine, Layers3, RefreshCw, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import type { useTemplates } from "@/lib/queries";
 import type { TemplateSummary } from "@/lib/types";
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tip } from "@/components/icon-tooltip";
 import { Empty, ErrorNotice, Loading, StatusBadge } from "@/components/status";
+import { SourceUpdateBadge } from "@/components/source-update-badge";
 
 type TemplatesQuery = ReturnType<typeof useTemplates>;
 
@@ -21,10 +22,12 @@ function TemplatesTable({
   items,
   selectedKey,
   canPublish,
+  onUpdate,
 }: {
   items: TemplateSummary[];
   selectedKey: string | null;
   canPublish: boolean;
+  onUpdate: (key: string) => void;
 }) {
   const navigate = useNavigate();
   return (
@@ -34,6 +37,7 @@ function TemplatesTable({
           <TableRow>
             <TableHead>Template profile</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Default source</TableHead>
             <TableHead>Active revision</TableHead>
             <TableHead>Desired revision</TableHead>
             <TableHead>
@@ -58,20 +62,30 @@ function TemplatesTable({
               <TableCell>
                 <StatusBadge value={item.status} />
               </TableCell>
+              <TableCell>
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm">{item.sourceUpdate?.sourceKey || "--"}</span>
+                  <SourceUpdateBadge update={item.sourceUpdate} />
+                </span>
+              </TableCell>
               <TableCell className="font-mono text-xs">
                 {item.activeRevision ? `r${item.activeRevision}` : "--"}
               </TableCell>
               <TableCell className="font-mono text-xs">r{item.desiredRevision}</TableCell>
               <TableCell className="text-right">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!canPublish || ["Retiring", "Retired"].includes(item.status)}
-                  aria-label={`Update ${item.key} from default`}
-                  onClick={() => navigate(`/templates/${encodeURIComponent(item.key)}/update`)}
-                >
-                  Update
-                </Button>
+                {item.sourceUpdate?.state === "Available" &&
+                  !["Retiring", "Retired"].includes(item.status) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!canPublish}
+                      aria-label={`Update ${item.key} from default`}
+                      onClick={() => onUpdate(item.key)}
+                    >
+                      <ArrowUpFromLine />
+                      Update
+                    </Button>
+                  )}
               </TableCell>
             </TableRow>
           ))}
@@ -99,12 +113,14 @@ export function PublishedTemplates({
   onSearchChange,
   selectedKey,
   canPublish,
+  onUpdate,
 }: {
   templates: TemplatesQuery;
   search: string;
   onSearchChange: (value: string) => void;
   selectedKey: string | null;
   canPublish: boolean;
+  onUpdate: (key: string) => void;
 }) {
   const items =
     templates.data?.data.profiles.filter((item) =>
@@ -148,7 +164,12 @@ export function PublishedTemplates({
       ) : !items.length ? (
         <NoTemplates search={search} onClearSearch={() => onSearchChange("")} />
       ) : (
-        <TemplatesTable items={items} selectedKey={selectedKey} canPublish={canPublish} />
+        <TemplatesTable
+          items={items}
+          selectedKey={selectedKey}
+          canPublish={canPublish}
+          onUpdate={onUpdate}
+        />
       )}
     </>
   );

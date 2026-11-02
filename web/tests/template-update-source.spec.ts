@@ -35,15 +35,17 @@ for (const source of sources) {
         json: { changeId: "saved-source", state: "Accepted", revision: 4 },
       });
     });
-    await page.goto("/templates");
-    await page.getByRole("button", { name: "Update custom-docker from default" }).click();
+    await page.goto(updatePath);
     await expect(page.getByRole("combobox", { name: "Default template", exact: true })).toHaveCount(
       0,
     );
-    await expect(page.getByRole("region", { name: "Target revision", exact: true })).toContainText(
+    await expect(page.getByRole("region", { name: "Revision changes", exact: true })).toContainText(
       source.artifactDigest,
     );
-    await expect(page.getByRole("region", { name: "Update source" })).toContainText(source.key);
+    await expect(page.getByRole("region", { name: "Update source" })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Revision changes", exact: true })).toContainText(
+      source.key,
+    );
     if (source.key === "docker") {
       await page.screenshot({
         path: testInfo.outputPath("saved-template-source-desktop.png"),
@@ -71,7 +73,7 @@ for (const source of sources) {
     await page.goto(updatePath);
     await expect(page.getByLabel("Default template", { exact: true })).toHaveValue(source.key);
     await expect(page.getByRole("button", { name: "Update", exact: true })).toBeEnabled();
-    await expect(page.getByRole("region", { name: "Target revision", exact: true })).toContainText(
+    await expect(page.getByRole("region", { name: "Revision changes", exact: true })).toContainText(
       source.artifactDigest,
     );
   });
@@ -154,14 +156,15 @@ test("a changed default rejected with 422 preserves the reviewed source until a 
   await expect(
     page.getByRole("status").filter({ hasText: "Your draft is retained" }),
   ).toBeVisible();
-  await expect(page.getByRole("region", { name: "Target revision", exact: true })).toContainText(
+  await expect(page.getByRole("region", { name: "Revision changes", exact: true })).toContainText(
     dockerDigest,
   );
   await expect(page.getByLabel("Replacement policy")).toContainText("9007199254740993");
   await expect(page.getByRole("button", { name: "Update", exact: true })).toBeDisabled();
   expect(writes).toBe(1);
   await page.getByRole("link", { name: "Back to templates" }).click();
-  await page.getByRole("button", { name: "Update custom-docker from default" }).click();
+  await page.getByRole("button", { name: "custom-docker", exact: true }).click();
+  await page.getByRole("button", { name: "Review update" }).click();
   await expect(page.getByRole("status")).toContainText(
     "Saved default template docker is unavailable",
   );
@@ -240,7 +243,7 @@ test("clearing or changing a legacy selection survives background refresh with i
   await refreshBackgroundQueries(page, "Refreshed after choosing");
   await expect(select).toHaveValue("docker-alternative");
   await expect(page.getByLabel("Replacement policy")).toContainText("9007199254740993");
-  await expect(page.getByRole("region", { name: "Target revision", exact: true })).toContainText(
+  await expect(page.getByRole("region", { name: "Revision changes", exact: true })).toContainText(
     dockerDigest,
   );
   expect(catalogReads).toBe(initialReads);

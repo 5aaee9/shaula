@@ -81,9 +81,9 @@ test("published source survives real database reads and an explicit source-only 
   // selects the source without a dropdown or any caller-supplied route state.
   await page.goto("/templates/browser-source/update");
   await expect(review.getByRole("combobox", { name: "Default template" })).toHaveCount(0);
-  await expect(review.getByRole("region", { name: "Update source" })).toContainText("docker");
+  await expect(review.getByRole("region", { name: "Update source" })).toHaveCount(0);
   await expect(
-    review.getByRole("region", { name: "Target revision" }).getByRole("status"),
+    review.getByRole("region", { name: "Revision changes" }).getByRole("status"),
   ).toContainText("Up to date");
   await expect(review.getByRole("button", { name: "Update", exact: true })).toBeDisabled();
   await expect(review.getByRole("button", { name: "Use declared options" })).toBeVisible();
@@ -102,4 +102,24 @@ test("published source survives real database reads and an explicit source-only 
   expect(await unchangedResponse.json()).toMatchObject({ noOp: true, changeId: "" });
   await expect(page.getByText("No changes were needed.", { exact: true })).toBeVisible();
   expect(await (await page.request.get(profilePath)).json()).toMatchObject({ desiredRevision: 3 });
+
+  // The real read model reports the recorded source as current: the list shows
+  // it without a one-click Update, and the profile read carries the same target.
+  expect((await (await page.request.get(profilePath)).json()).sourceUpdate).toEqual({
+    sourceKey: "docker",
+    state: "UpToDate",
+    targetDigest: initial.artifact_digest,
+    targetEngine: initial.engine_ref,
+  });
+  await page.goto("/templates");
+  const row = page.getByRole("row", { name: /browser-source/ });
+  await expect(row).toContainText("docker");
+  await expect(row).not.toContainText("Update available");
+  await expect(
+    page.getByRole("button", { name: "Update browser-source from default" }),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("source-up-to-date-list.png"),
+    fullPage: true,
+  });
 });

@@ -139,6 +139,14 @@ export interface TemplateSummary {
   status: string;
   /** The Active revision's selected backend. Null is unresolved, not GitHub. */
   runnerBackend?: import("./runner-backend").RunnerBackend | null;
+  /** The desired revision's recorded default source against the current catalog. */
+  sourceUpdate?: SourceUpdate | null;
+}
+export interface SourceUpdate {
+  sourceKey: string;
+  state: "UpToDate" | "Available" | "Unavailable";
+  targetDigest: string | null;
+  targetEngine: string | null;
 }
 export interface TemplatePoolSummary {
   key: string;

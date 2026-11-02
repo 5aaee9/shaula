@@ -2,7 +2,10 @@
 use super::{unprocessable, ControlPlane};
 use shaula_core::{
     error::{CoreError, CoreResult, ReasonCode},
-    registry::{Actor, MutationError, Scope, TemplateProfileView, TemplateRevisionRow},
+    registry::{
+        Actor, MutationError, Scope, TemplateProfileView, TemplateRevisionRow,
+        TemplateSourceUpdate, TemplateSourceUpdateState,
+    },
 };
 
 impl ControlPlane {
@@ -28,7 +31,12 @@ impl ControlPlane {
             Some(row) => self.project_template_bindings(row).await?,
             None => None,
         };
+        let source_update = match &revision {
+            Some(row) => self.template_source_update(row).await?,
+            None => None,
+        };
         Ok(Ok(TemplateProfileView {
+            source_update,
             key: key.to_string(),
             incarnation: profile.incarnation.clone(),
             desired_revision: profile.desired_revision,
@@ -50,6 +58,48 @@ impl ControlPlane {
                 .as_ref()
                 .map(|r| r.bindings_present)
                 .unwrap_or(false),
+        }))
+    }
+
+    /// Compares the recorded source with the current catalog by exact content.
+    async fn template_source_update(
+        &self,
+        row: &TemplateRevisionRow,
+    ) -> CoreResult<Option<TemplateSourceUpdate>> {
+        let Some(source_key) = row.source_key.clone() else {
+            return Ok(None);
+        };
+        let source = self
+            .store
+            .template_source_get(&source_key)
+            .await?
+            // A Validating revision has no platform yet; admission already
+            // matched its source's platform against the artifact manifest.
+            .filter(|source| {
+                row.platform
+                    .as_deref()
+                    .is_none_or(|platform| platform == source.platform)
+            });
+        let Some(source) = source else {
+            return Ok(Some(TemplateSourceUpdate {
+                source_key,
+                state: TemplateSourceUpdateState::Unavailable,
+                target_digest: None,
+                target_engine: None,
+            }));
+        };
+        let state = if source.artifact_digest == row.artifact_digest
+            && source.engine_ref == row.engine_ref
+        {
+            TemplateSourceUpdateState::UpToDate
+        } else {
+            TemplateSourceUpdateState::Available
+        };
+        Ok(Some(TemplateSourceUpdate {
+            source_key,
+            state,
+            target_digest: Some(source.artifact_digest),
+            target_engine: Some(source.engine_ref),
         }))
     }
 

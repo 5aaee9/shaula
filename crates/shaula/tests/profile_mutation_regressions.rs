@@ -6,6 +6,8 @@ mod container_profile_policy;
 mod template_profile_sources;
 #[path = "support/template_profile_updates.rs"]
 mod template_profile_updates;
+#[path = "support/template_source_update_reads.rs"]
+mod template_source_update_reads;
 #[path = "support/template_updates.rs"]
 mod template_updates;
 use axum::http::{HeaderValue, StatusCode};

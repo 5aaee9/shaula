@@ -1,6 +1,13 @@
 import type { Page } from "@playwright/test";
 import { mockApi, profile, scopes } from "./fixtures";
-import { sources, variables } from "./template-library-fixtures";
+import { dockerDigest, sources, variables } from "./template-library-fixtures";
+
+interface SourceUpdate {
+  sourceKey: string;
+  state: "UpToDate" | "Available" | "Unavailable";
+  targetDigest: string | null;
+  targetEngine: string | null;
+}
 
 export const currentDigest = `sha256:${"a".repeat(64)}`;
 export const updatePath = "/templates/custom-docker/update";
@@ -9,6 +16,13 @@ export const updateSources = [
   ...sources,
   { ...sources[0], key: "docker-alternative", engineRef: "opentofu" },
 ];
+
+export const availableUpdate: SourceUpdate = {
+  sourceKey: "docker",
+  state: "Available",
+  targetDigest: dockerDigest,
+  targetEngine: "terraform",
+};
 
 export async function mockTemplateUpdate(
   page: Page,
@@ -20,6 +34,7 @@ export async function mockTemplateUpdate(
     platform?: string;
     sourceKey?: string | null;
     sources?: typeof updateSources;
+    sourceUpdate?: SourceUpdate | null;
   } = {},
 ) {
   await mockApi(page, options.permissions || scopes);
@@ -28,6 +43,7 @@ export async function mockTemplateUpdate(
     platform: options.platform || "docker",
     bindingsContract: "shaula.bindings.docker/v1",
     bindings_present: true,
+    sourceUpdate: options.sourceUpdate ?? null,
   };
   await page.route("**/api/v1/template-profiles", (route) =>
     route.fulfill({ json: { profiles: [resource] } }),

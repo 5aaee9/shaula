@@ -2,7 +2,8 @@ import { ArrowUpFromLine, LoaderCircle } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import type { TemplateSource, TemplateVariables } from "@/lib/template-variables";
 import type { TemplateResource, TemplateRevision } from "@/lib/types";
-import { ErrorNotice, Field, KeyValue, Loading } from "./status";
+import { ErrorNotice, Field, Loading } from "./status";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Button } from "./ui/button";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select";
 
@@ -20,11 +21,7 @@ function DefaultTemplatePicker({
   onSelect: (key: string) => void;
 }) {
   if (sourceKey)
-    return target ? (
-      <dl className="text-sm">
-        <KeyValue label="Default template">{sourceKey}</KeyValue>
-      </dl>
-    ) : (
+    return (
       <p role="status" className="text-sm text-muted-foreground">
         Saved default template {sourceKey} is unavailable for this platform. Use New revision to
         choose another source.
@@ -56,6 +53,7 @@ function DefaultTemplatePicker({
   );
 }
 
+/** Only shown when there is a choice to make or the recorded source is gone. */
 export function UpdateSourceSection({
   sourceKey,
   target,
@@ -69,6 +67,7 @@ export function UpdateSourceSection({
   platform: string | null;
   onSelect: (key: string) => void;
 }) {
+  if (sourceKey && target) return null;
   return (
     <section className="space-y-4 rounded-xl border bg-card p-5 sm:p-6" aria-label="Update source">
       <DefaultTemplatePicker
@@ -78,14 +77,47 @@ export function UpdateSourceSection({
         platform={platform}
         onSelect={onSelect}
       />
-      <p className="text-sm text-muted-foreground">
-        Updating replaces the template code, including any customizations.
-      </p>
+      {!sourceKey && (
+        <p className="text-sm text-muted-foreground">
+          Updating replaces the template code, including any customizations.
+        </p>
+      )}
     </section>
   );
 }
 
-export function RevisionComparison({
+function ChangeRow({
+  label,
+  current,
+  target,
+  mono = false,
+}: {
+  label: string;
+  current: string;
+  target?: string;
+  mono?: boolean;
+}) {
+  const changed = target !== undefined && target !== current;
+  const value = mono ? "break-all font-mono text-xs" : "break-words";
+  return (
+    <TableRow>
+      <TableHead
+        scope="row"
+        className="h-auto py-2 align-top font-normal whitespace-normal text-muted-foreground"
+      >
+        {label}
+      </TableHead>
+      <TableCell className={`align-top whitespace-normal ${value}`}>{current}</TableCell>
+      <TableCell
+        className={`align-top whitespace-normal ${value} ${changed ? "font-semibold" : "text-muted-foreground"}`}
+      >
+        {target ?? "--"}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+export function RevisionChanges({
   resource,
   revision,
   target,
@@ -97,46 +129,38 @@ export function RevisionComparison({
   upToDate: boolean;
 }) {
   return (
-    <div className="grid min-w-0 gap-4 md:grid-cols-2">
-      <section
-        className="min-w-0 rounded-xl border bg-card p-5 sm:p-6"
-        aria-label="Current revision"
-      >
-        <h2>Current revision r{resource.desiredRevision}</h2>
-        <dl className="mt-4 space-y-4 text-sm">
-          <KeyValue label="Artifact">
-            <span className="break-all font-mono text-xs">{revision.artifactDigest}</span>
-          </KeyValue>
-          <KeyValue label="Engine">{revision.engineRef}</KeyValue>
-        </dl>
-      </section>
-      <section
-        className="min-w-0 rounded-xl border bg-card p-5 sm:p-6"
-        aria-label="Target revision"
-      >
-        <h2>Target revision</h2>
-        {target ? (
-          <dl className="mt-4 space-y-4 text-sm">
-            <KeyValue label="Default template">{target.key}</KeyValue>
-            <KeyValue label="Artifact">
-              <span className="break-all font-mono text-xs">{target.artifactDigest}</span>
-            </KeyValue>
-            <KeyValue label="Engine">{target.engineRef}</KeyValue>
-          </dl>
-        ) : (
-          <p className="mt-4 text-sm text-muted-foreground">
-            {revision.sourceKey
-              ? "The saved default template is unavailable."
-              : "Choose a default to review its contents."}
-          </p>
-        )}
-        {upToDate && (
-          <p role="status" className="mt-4 text-sm font-medium">
-            Up to date with the selected default.
-          </p>
-        )}
-      </section>
-    </div>
+    <section className="min-w-0 rounded-xl border bg-card p-5 sm:p-6" aria-label="Revision changes">
+      <Table className="table-fixed">
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-24 sm:w-36">
+              <span className="sr-only">Field</span>
+            </TableHead>
+            <TableHead>Current r{resource.desiredRevision}</TableHead>
+            <TableHead>Target</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <ChangeRow
+            label="Default template"
+            current={revision.sourceKey || "--"}
+            target={target?.key}
+          />
+          <ChangeRow
+            label="Artifact"
+            current={revision.artifactDigest}
+            target={target?.artifactDigest}
+            mono
+          />
+          <ChangeRow label="Engine" current={revision.engineRef} target={target?.engineRef} />
+        </TableBody>
+      </Table>
+      {upToDate && (
+        <p role="status" className="mt-4 text-sm font-medium">
+          Up to date with the selected default.
+        </p>
+      )}
+    </section>
   );
 }
 

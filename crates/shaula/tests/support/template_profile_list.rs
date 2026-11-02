@@ -62,11 +62,13 @@ async fn template_collection_orders_current_heads_without_filtering_existing_act
             {"key": "a-upgrading", "incarnation": "incarnation-a-upgrading", "desiredRevision": 1,
                 "activeRevision": 1, "runnerBackend": null, "status": "Validating",
                 "platform":null,"bindingsContract":null,"bindings_present":false,"bindings":null,
-                "validation":{"revision":1,"state":"Active","reason":null},"references":{"inUse":false}},
+                "validation":{"revision":1,"state":"Active","reason":null},"references":{"inUse":false},
+                "sourceUpdate":null},
             {"key": "z-retiring", "incarnation": "incarnation-z-retiring", "desiredRevision": 1,
                 "activeRevision": 1, "runnerBackend": null, "status": "Retiring",
                 "platform":null,"bindingsContract":null,"bindings_present":false,"bindings":null,
-                "validation":{"revision":1,"state":"Active","reason":null},"references":{"inUse":false}}
+                "validation":{"revision":1,"state":"Active","reason":null},"references":{"inUse":false},
+                "sourceUpdate":null}
         ], "next_cursor": null})
     );
     database.close().await?;

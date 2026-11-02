@@ -7,6 +7,7 @@ import type { ChangeRef } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { ErrorNotice } from "@/components/status";
 import { ChangeNotice } from "@/components/change-notice";
+import { QuickUpdateDialog } from "@/components/quick-update-dialog";
 import { TemplateLibrary } from "@/components/template-library";
 import { PublishedTemplates } from "@/components/templates-list";
 export function TemplatesPage({ scopes }: { scopes: string[] }) {
@@ -16,7 +17,11 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
   const [search, setSearch] = useState("");
   const [params] = useSearchParams();
   const publication = location.state as { change?: ChangeRef | null; noOp?: boolean } | null;
-  const [change] = useState<ChangeRef | null>(publication?.change ?? null);
+  const [result, setResult] = useState(() => ({
+    change: publication?.change ?? null,
+    noOp: !!publication?.noOp,
+  }));
+  const [updating, setUpdating] = useState<string | null>(null);
   const canPublish = scopes.includes("template.publish");
   // `key` is still honoured in the URL so a redirected detail view can mark
   // its row, but the row no longer expands — the name links to the detail page.
@@ -31,8 +36,8 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
           </Button>
         }
       />
-      <ChangeNotice change={change} />
-      {!change && publication?.noOp && (
+      <ChangeNotice key={result.change?.id} change={result.change} />
+      {!result.change && result.noOp && (
         <p role="status" className="mb-5 text-sm text-muted-foreground">
           No changes were needed.
         </p>
@@ -51,8 +56,19 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
             onSearchChange={setSearch}
             selectedKey={params.get("key")}
             canPublish={canPublish}
+            onUpdate={setUpdating}
           />
         </>
+      )}
+      {updating && (
+        <QuickUpdateDialog
+          profileKey={updating}
+          onClose={() => setUpdating(null)}
+          onAccepted={(change) => {
+            setUpdating(null);
+            setResult({ change, noOp: change === null });
+          }}
+        />
       )}
     </>
   );

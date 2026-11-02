@@ -112,7 +112,10 @@ pub struct MutationAccepted {
 }
 
 mod template_profile;
-pub use template_profile::{TemplateProfilePut, TemplateProfileUpdate, TemplateProfileView};
+pub use template_profile::{
+    TemplateProfilePut, TemplateProfileUpdate, TemplateProfileView, TemplateSourceUpdate,
+    TemplateSourceUpdateState,
+};
 
 /// Submission payload for a provider Auth Candidate. Secret bytes are
 /// carried as [`crate::secret::SecretString`] and never logged. GitHub App

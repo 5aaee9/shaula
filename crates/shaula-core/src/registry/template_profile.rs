@@ -21,6 +21,38 @@ pub struct TemplateProfileView {
     /// Selection frozen in the Active revision, not the Candidate's capability list.
     /// None means there is no Active revision or its contract cannot be resolved.
     pub runner_backend: Option<crate::fleet::FleetProviderKind>,
+    /// The desired revision's recorded default source compared with the
+    /// current catalog; None when the revision has no recorded source.
+    pub source_update: Option<TemplateSourceUpdate>,
+}
+
+/// Whether the recorded default source offers different executable content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemplateSourceUpdateState {
+    UpToDate,
+    Available,
+    /// Removed from the catalog or no longer on the revision's platform.
+    Unavailable,
+}
+
+impl TemplateSourceUpdateState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::UpToDate => "UpToDate",
+            Self::Available => "Available",
+            Self::Unavailable => "Unavailable",
+        }
+    }
+}
+
+/// Read-only comparison; a client still submits the reviewed target explicitly.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TemplateSourceUpdate {
+    pub source_key: String,
+    pub state: TemplateSourceUpdateState,
+    /// The current catalog target; present unless the source is unavailable.
+    pub target_digest: Option<String>,
+    pub target_engine: Option<String>,
 }
 
 /// Submission payload for a Template Profile Candidate revision.

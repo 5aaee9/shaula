@@ -7,6 +7,8 @@ import type { TemplateResource } from "@/lib/types";
 import { useTemplateRevision } from "@/lib/use-template-revision";
 import { ErrorNotice, Loading, StatusBadge } from "@/components/status";
 import { RetireDialog } from "@/components/retire-dialog";
+import { QuickUpdateDialog } from "@/components/quick-update-dialog";
+import { SourceUpdateBadge } from "@/components/source-update-badge";
 import {
   TemplateDetailActions,
   TemplateProfileSummary,
@@ -33,6 +35,7 @@ export function TemplateDetailPage({ scopes }: { scopes: string[] }) {
     enabled: canRead,
   });
   const [retire, setRetire] = useState(false);
+  const [updating, setUpdating] = useState(false);
 
   if (!canRead) return <ErrorNotice error={new Error("Template read permission is required.")} />;
   if (query.isPending) return <Loading />;
@@ -48,6 +51,8 @@ export function TemplateDetailPage({ scopes }: { scopes: string[] }) {
           <>
             <StatusBadge value={data.status} />
             {data.platform && <span>{data.platform}</span>}
+            {data.sourceUpdate && <span>{data.sourceUpdate.sourceKey}</span>}
+            <SourceUpdateBadge update={data.sourceUpdate} />
           </>
         }
         actions={
@@ -56,6 +61,8 @@ export function TemplateDetailPage({ scopes }: { scopes: string[] }) {
             canPublish={scopes.includes("template.publish")}
             canRetire={scopes.includes("template.retire")}
             retired={["Retiring", "Retired"].includes(data.status)}
+            updateAvailable={data.sourceUpdate?.state === "Available"}
+            onUpdate={() => setUpdating(true)}
             onRetire={() => setRetire(true)}
           />
         }
@@ -69,6 +76,15 @@ export function TemplateDetailPage({ scopes }: { scopes: string[] }) {
         data={selection.query.data?.data}
       />
 
+      {updating && (
+        <QuickUpdateDialog
+          profileKey={profileKey}
+          onClose={() => setUpdating(false)}
+          onAccepted={(change) =>
+            navigate(backTo, { replace: true, state: { change, noOp: change === null } })
+          }
+        />
+      )}
       {retire && (
         <RetireDialog
           name={profileKey}

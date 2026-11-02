@@ -13,7 +13,7 @@ import { useTemplateUpdate } from "@/lib/use-template-update";
 import { TemplateUpdateBindings } from "./template-update-bindings";
 import { TemplateUpdatePolicy } from "./template-update-policy";
 import {
-  RevisionComparison,
+  RevisionChanges,
   TargetDiscoveryStatus,
   UpdateActionBar,
   UpdateSourceSection,
@@ -83,7 +83,7 @@ export function TemplateUpdateForm({
           }}
         />
 
-        <RevisionComparison
+        <RevisionChanges
           resource={snapshot.resource.data}
           revision={snapshot.revision}
           target={target}

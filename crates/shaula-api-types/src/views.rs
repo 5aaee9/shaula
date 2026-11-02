@@ -47,6 +47,7 @@ pub struct Profile {
     pub bindings_present: Option<bool>,
     pub validation: Option<Document>,
     pub references: Option<Document>,
+    pub source_update: Option<Document>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Pool {

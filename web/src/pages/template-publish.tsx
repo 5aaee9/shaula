@@ -19,10 +19,20 @@ export function TemplatePublishPage({ scopes }: { scopes: string[] }) {
     queryFn: ({ signal }) =>
       api<TemplateResource>(resourcePath("template-profiles", profileKey!), { signal }),
   });
-  const initialSource =
-    !profileKey && canRead
+  const recorded = query.data?.data.sourceUpdate;
+  // A new revision keeps its recorded default source unless the publisher switches.
+  const initialSource = !canRead
+    ? undefined
+    : !profileKey
       ? (location.state as { initialSource?: TemplateSource } | null)?.initialSource
-      : undefined;
+      : recorded?.targetDigest && recorded.targetEngine && query.data?.data.platform
+        ? {
+            key: recorded.sourceKey,
+            artifactDigest: recorded.targetDigest,
+            engineRef: recorded.targetEngine,
+            platform: query.data.data.platform,
+          }
+        : undefined;
   const backTo = profileKey
     ? `/templates?${new URLSearchParams({ key: profileKey })}`
     : "/templates";

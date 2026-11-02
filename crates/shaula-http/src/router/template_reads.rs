@@ -22,7 +22,13 @@ pub(super) fn profile(view: &TemplateProfileView) -> serde_json::Value {
         "bindings_present": view.bindings_present,
         "bindings": view.bindings,
         "validation": {"revision":view.desired_revision,"state":view.validation_state,"reason":view.validation_reason},
-        "references": {"inUse":view.references_in_use}
+        "references": {"inUse":view.references_in_use},
+        "sourceUpdate": view.source_update.as_ref().map(|update| serde_json::json!({
+            "sourceKey": update.source_key,
+            "state": update.state.as_str(),
+            "targetDigest": update.target_digest,
+            "targetEngine": update.target_engine,
+        })),
     })
 }
 
