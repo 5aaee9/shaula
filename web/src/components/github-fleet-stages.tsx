@@ -1,6 +1,5 @@
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { cn } from "cn";
-import type { Placement } from "@/lib/fleet-form-body";
 import type { ProfileChoices } from "@/lib/profile-choice";
 import type { GitHubFleetSpec, GitHubTarget, TemplatePoolSummary } from "@/lib/types";
 import type { FleetInputs } from "@/lib/use-fleet-inputs";
@@ -24,16 +23,9 @@ export function GitHubTargetStage({
   onChange: (target: GitHubTarget) => void;
 }) {
   return (
-    <FleetStage
-      title="GitHub target"
-      description={
-        editing
-          ? "The organization or repository this fleet serves is fixed at creation."
-          : "Where GitHub Actions jobs for this fleet run."
-      }
-    >
+    <FleetStage title="GitHub target">
       <div className="form-grid">
-        <Field label="GitHub target">
+        <Field label="Target type">
           <NativeSelect
             disabled={editing}
             value={target.kind}
@@ -90,10 +82,7 @@ export function GitHubAuthStage({
   onChange: (value: string) => void;
 }) {
   return (
-    <FleetStage
-      title="Authentication"
-      description="The GitHub App profile used to manage runners for this fleet."
-    >
+    <FleetStage title="Authentication">
       <ProfileSelector
         label="GitHub authentication profile"
         value={value}
@@ -115,13 +104,6 @@ export function GitHubAuthStage({
     </FleetStage>
   );
 }
-
-const placementDescriptions: Record<Placement, string> = {
-  single: "All runners in this fleet use one template profile.",
-  pool: "Each new runner draws one member by weight. Weights shape the long-run mix across backends.",
-  shared:
-    "This fleet draws runners from a shared pool resource; multiple fleets can use the same mix.",
-};
 
 const placementOptions = [
   ["single", "Single template"],
@@ -147,7 +129,7 @@ export function GitHubPlacementStage({
 }) {
   const { placement, setPlacement, poolRef, setPoolRef } = draft;
   return (
-    <FleetStage title="Template placement" description={placementDescriptions[placement]}>
+    <FleetStage title="Template placement">
       {!editing && (
         <div
           role="radiogroup"
@@ -194,11 +176,6 @@ export function GitHubPlacementStage({
                 Switching pools re-routes every future draw and needs the fleet to be empty.
               </p>
             )}
-            <p className="text-muted-foreground text-sm">
-              The pool defines members, weights and caps. Each member follows its template's latest
-              Active revision. A pool change applies on the next pass: idle runners are replaced and
-              busy ones finish their job first.
-            </p>
           </Field>
         }
       />
@@ -234,7 +211,7 @@ export function GitHubCapacityStage({
     !!labels.trim(),
   ].filter(Boolean).length;
   return (
-    <FleetStage title="Capacity" description="How many concurrent runners this fleet may run.">
+    <FleetStage title="Capacity">
       <div className="form-grid">
         <RunnerCountField
           label="Maximum runners"
@@ -247,11 +224,7 @@ export function GitHubCapacityStage({
       <AdvancedSettings
         open={advancedOpen}
         onOpenChange={setAdvancedOpen}
-        summary={
-          customSettings
-            ? `${customSettings} custom settings`
-            : "Default runner group, 0 minimum runners"
-        }
+        summary={customSettings ? `${customSettings} custom settings` : undefined}
       >
         <div className="form-grid">
           <Field label="Scale set name">
@@ -262,9 +235,6 @@ export function GitHubCapacityStage({
               placeholder={fleetKey || "Fleet key"}
               onChange={(event) => github({ scale_set_name: event.target.value })}
             />
-            {!editing && (
-              <p className="text-muted-foreground text-sm">Uses the fleet key when left empty.</p>
-            )}
           </Field>
           <Field label="Runner group">
             <Input
@@ -292,9 +262,9 @@ export function GitHubCapacityStage({
             placeholder="linux, x64"
           />
           <p className="text-muted-foreground text-sm">
-            Separate labels with commas. Leave empty to use the scale set name as the label.
-            {editing &&
-              " Changes sync to GitHub after saving. Running jobs continue while labels update."}
+            {editing
+              ? "Changes sync to GitHub after saving."
+              : "Empty uses the scale set name as the label."}
           </p>
         </Field>
       </AdvancedSettings>

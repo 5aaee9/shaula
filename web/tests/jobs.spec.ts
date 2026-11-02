@@ -208,9 +208,7 @@ test("ambiguous candidate jobs are visibly unconfirmed", async ({ page }) => {
   await expect(page.getByText("Job association", { exact: true }).locator("..")).toContainText(
     "ambiguous",
   );
-  await expect(
-    page.getByText("No workflow job is confirmed for this runner.", { exact: false }),
-  ).toBeVisible();
+  await expect(page.getByText("none is confirmed", { exact: false })).toBeVisible();
 });
 
 test("older attempt pages keep current Apply and Destroy outcomes", async ({ page }) => {

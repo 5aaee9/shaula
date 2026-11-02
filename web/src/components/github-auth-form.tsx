@@ -155,10 +155,7 @@ export function GitHubAuthForm({
         <section className="form-stack min-w-0 rounded-xl border p-6">
           {mode === "rotate" ? (
             <>
-              <h2>Active target policy</h2>
-              <p className="text-sm text-muted-foreground">
-                These targets are retained when the credential is rotated.
-              </p>
+              <h2>Retained targets</h2>
               <ul className="flex flex-wrap gap-2">
                 {previousPolicy.map((selector) => (
                   <li className="label-chip" key={selectorKey(selector)}>

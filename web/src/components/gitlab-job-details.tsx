@@ -39,14 +39,6 @@ export function GitlabJobFacts({ job }: { job: JobDetail }) {
         <KeyValue label="Job ID">{data.job_id}</KeyValue>
         <KeyValue label="Last observed">{historyTime(data.last_observed_at)}</KeyValue>
       </dl>
-      <p className="mt-4 text-sm text-muted-foreground">
-        The association is Verified: this job ran on the registration of a Shaula Runner, recorded
-        before that registration was paused. GitLab clears the job’s runner once the registration is
-        deleted; the recorded association remains.
-        {data.result
-          ? " The result is the job’s own terminal status."
-          : " Without a read of the job’s own terminal status, the result stays unknown."}
-      </p>
       {jobUrl && (
         <a
           className="mt-3 inline-block underline underline-offset-4"

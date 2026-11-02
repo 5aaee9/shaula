@@ -205,7 +205,7 @@ test("read permission gates library and inspection without blocking manual publi
   await page.getByRole("button", { name: "Publish template", exact: true }).click();
   await expect(page.getByRole("button", { name: "Inspect variables", exact: true })).toHaveCount(0);
   await expect(page.getByRole("form", { name: "Template configuration" })).toContainText(
-    "Manual publishing is available",
+    "Publish manually from Advanced settings",
   );
   expect(discoveryReads).toBe(0);
 });

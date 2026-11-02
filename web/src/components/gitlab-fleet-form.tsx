@@ -5,6 +5,7 @@ import { gitlabTargetName } from "@/lib/runner-backend";
 import { useTokenFleet } from "@/lib/use-token-fleet";
 import type { FleetResource, GitlabFleetSpec } from "@/lib/types";
 import type { FleetFormProps } from "./fleet-form";
+import { FleetStage } from "./fleet-form-parts";
 import { ProfileSelector } from "./profile-selector";
 import { TokenFleetFrame } from "./token-fleet-sections";
 import { Input } from "./ui/input";
@@ -46,8 +47,7 @@ export function GitlabFleetForm({
       placeholder="gitlab-linux"
       buildBody={() => gitlabFleetBody({ ...fleet, fleetKey: key, tags, runUntagged })}
     >
-      <section className="form-stack border-t pt-6">
-        <h2>GitLab authentication</h2>
+      <FleetStage title="Authentication">
         <ProfileSelector
           label="GitLab authentication profile"
           query={fleet.choices}
@@ -62,11 +62,6 @@ export function GitlabFleetForm({
             {gitlabTargetName(target)}
           </p>
         )}
-        <p className="text-sm text-muted-foreground">
-          The instance and group or project come from the profile's Active revision. Target,
-          profile, runner prefix and tags are fixed at fleet creation. Rotate the profile's token to
-          replace credentials.
-        </p>
         <Field label="Runner name prefix">
           <Input
             disabled={editing}
@@ -95,11 +90,10 @@ export function GitlabFleetForm({
           Run untagged jobs
         </label>
         <p className="text-sm text-muted-foreground">
-          Use a unique prefix per fleet. Jobs run with the shell executor inside the runner
-          container or VM, so a job's image: is ignored; choose a template that provides the tools
-          your jobs need. Do not share tags with persistent runners: they may pick up the same jobs.
+          Jobs use the shell executor, so image: is ignored. Don't share tags with persistent
+          runners; they may take the same jobs.
         </p>
-      </section>
+      </FleetStage>
     </TokenFleetFrame>
   );
 }

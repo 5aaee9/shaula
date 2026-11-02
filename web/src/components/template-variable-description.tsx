@@ -14,8 +14,8 @@ export function TemplateVariableDescription({ variable }: { variable: TemplateVa
         </p>
       )}
       {!variable.sensitive && variable.defaultValueJson !== undefined && (
-        <div>
-          <p className="mb-1 font-medium">Terraform default</p>
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="shrink-0 text-xs text-muted-foreground">Default</span>
           <RawInputValuePreview raw={variable.defaultValueJson} />
         </div>
       )}

@@ -45,12 +45,6 @@ export function ForgejoJobFacts({ job }: { job: JobDetail }) {
         <KeyValue label="Last listed">{historyTime(data.last_observed_at)}</KeyValue>
         <KeyValue label="Runs on">{data.runs_on.join(", ")}</KeyValue>
       </dl>
-      <p className="mt-4 text-sm text-muted-foreground">
-        Forgejo snapshots report waiting and running jobs, not a verified runner assignment.
-        {data.result
-          ? " The result comes from repository history for the exact observed Task ID. It does not identify which Runner executed the job."
-          : " Disappearance does not prove completion or success. Without an exact Task ID, readable task history, or a match within the bounded history window, the result stays unknown."}
-      </p>
       {runUrl && (
         <a
           className="mt-3 inline-block underline underline-offset-4"

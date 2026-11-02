@@ -1,6 +1,7 @@
+import { PageHeader } from "@/components/page-header";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, ShieldCheck } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api, resourcePath } from "@/lib/api";
 import type { AuthResource, ChangeRef } from "@/lib/types";
@@ -11,7 +12,7 @@ import { AuthBindings } from "@/components/auth-bindings";
 import { AuthConnections } from "@/components/auth-connections";
 import { AuthDetailsActions, AuthProfileFacts } from "@/components/auth-details-sections";
 import { Button } from "@/components/ui/button";
-import { ErrorNotice, Loading } from "@/components/status";
+import { ErrorNotice, Loading, StatusBadge } from "@/components/status";
 import { RetireDialog } from "@/components/retire-dialog";
 import { ChangeNotice } from "@/components/change-notice";
 
@@ -24,16 +25,15 @@ export function AuthPage({ scopes }: { scopes: string[] }) {
   const [change, setChange] = useState<ChangeRef | null>(publication?.change ?? null);
   return (
     <>
-      <div className="page-heading">
-        <div>
-          <h1>Authentication</h1>
-          <p>GitHub, Forgejo and GitLab connections, targets, and validated profile revisions.</p>
-        </div>
-        <Button disabled={!scopes.includes("auth.write")} onClick={() => navigate("/auth/new")}>
-          <Plus />
-          Create profile
-        </Button>
-      </div>
+      <PageHeader
+        title="Authentication"
+        actions={
+          <Button disabled={!scopes.includes("auth.write")} onClick={() => navigate("/auth/new")}>
+            <Plus />
+            Create profile
+          </Button>
+        }
+      />
       <ChangeNotice change={change} />
       {!scopes.includes("auth.read") ? (
         <ErrorNotice error={new Error("Authentication profile read permission is required.")} />
@@ -69,10 +69,10 @@ function AuthDetails({
   return (
     <section className="details-section">
       <div className="section-heading">
-        <h2 className="flex min-w-0 items-center gap-2 break-all">
-          <ShieldCheck className="size-5 shrink-0 text-emerald-600" />
-          {profileKey}
-        </h2>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h2 className="break-all">{profileKey}</h2>
+          <StatusBadge value={data.status} />
+        </div>
         <AuthDetailsActions
           profileKey={profileKey}
           profile={data}
@@ -81,19 +81,12 @@ function AuthDetails({
           onRetire={() => setRetire(true)}
         />
       </div>
-      {canManage && data.kind === "github_app" && (
-        <p className="mb-5 text-sm text-muted-foreground">
-          Re-auth opens GitHub to install this App on more accounts. After returning, edit the
-          target policy to enable those targets.
-        </p>
-      )}
       <AuthProfileFacts profile={data} />
       {data.active?.forgejo && <ForgejoAuthDetails state={data.active.forgejo} />}
       {data.active?.gitlab && <GitlabAuthDetails state={data.active.gitlab} />}
       {data.status === "Unsupported" && (
         <p className="text-sm text-muted-foreground">
-          This authentication format is no longer supported. Create a GitHub App profile to use it
-          with Fleets.
+          This format is no longer supported. Create a GitHub App profile instead.
         </p>
       )}
       {data.active?.schema_version === 2 && <AuthBindings revision={data.active} />}

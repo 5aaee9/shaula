@@ -62,11 +62,6 @@ export function AuthBindings({ revision }: { revision: AuthRevisionState }) {
                     {health.reason && (
                       <p className="text-xs text-muted-foreground">{health.reason}</p>
                     )}
-                    {health.state === "Validated" && (
-                      <p className="text-xs">
-                        Candidate validation only; current access is checked per Fleet.
-                      </p>
-                    )}
                     {binding.checked_at_ms && (
                       <p className="text-xs">
                         Checked {new Date(binding.checked_at_ms).toLocaleString()}

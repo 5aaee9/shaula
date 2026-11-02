@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import { useState } from "react";
 import { useAccessTokenIssuance, useAccessTokenList, type Token } from "@/lib/use-access-tokens";
 import {
@@ -31,16 +32,7 @@ export function AccessTokensPage({
   }
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold">Access tokens</h1>
-        <p className="text-muted-foreground mt-2">
-          Use a personal token with the API or CLI. Permissions apply to every resource in a
-          selected category.
-        </p>
-        <p className="text-muted-foreground text-sm mt-1">
-          Tokens expire and can be revoked. Signing out of the browser does not revoke them.
-        </p>
-      </div>
+      <PageHeader title="Access tokens" />
       {issuance.error && (
         <p role="alert" className="text-destructive">
           {issuance.error}
@@ -59,12 +51,7 @@ export function AccessTokensPage({
           onRevoke={(token) => void issuance.revoke(token)}
         />
       )}
-      {!enabled && (
-        <p>
-          Personal access tokens are disabled by the deployment. Existing token metadata remains
-          available for review and revocation.
-        </p>
-      )}
+      {!enabled && <p role="status">Personal access tokens are disabled by the deployment.</p>}
       {writable && (
         <AccessTokenIssueForm
           scopes={scopes}

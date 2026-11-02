@@ -4,6 +4,7 @@ import type {
   GitlabTarget,
   RunnerBackend,
 } from "@/lib/runner-backend";
+import { FleetStage } from "./fleet-form-parts";
 import { Field } from "./status";
 import { Input } from "./ui/input";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select";
@@ -16,14 +17,15 @@ export function BackendSelector({
   onChange: (value: RunnerBackend) => void;
 }) {
   return (
-    <Field label="Runner backend">
-      <NativeSelect value={value} onChange={(e) => onChange(e.target.value as RunnerBackend)}>
-        <NativeSelectOption value="github">GitHub Actions</NativeSelectOption>
-        <NativeSelectOption value="forgejo">Forgejo</NativeSelectOption>
-        <NativeSelectOption value="gitlab">GitLab</NativeSelectOption>
-      </NativeSelect>
-      <p className="text-sm text-muted-foreground">Changing backend starts a new configuration.</p>
-    </Field>
+    <FleetStage title="Runner backend">
+      <Field label="Runner backend" hideLabel>
+        <NativeSelect value={value} onChange={(e) => onChange(e.target.value as RunnerBackend)}>
+          <NativeSelectOption value="github">GitHub Actions</NativeSelectOption>
+          <NativeSelectOption value="forgejo">Forgejo</NativeSelectOption>
+          <NativeSelectOption value="gitlab">GitLab</NativeSelectOption>
+        </NativeSelect>
+      </Field>
+    </FleetStage>
   );
 }
 

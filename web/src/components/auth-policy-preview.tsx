@@ -64,10 +64,6 @@ export function AuthPolicyPreview({
           })}
         </ul>
       )}
-      <p className="text-muted-foreground">
-        Coverage is structural. GitHub access is verified before activation, and current Fleet
-        references are checked again at publication.
-      </p>
     </section>
   );
 }

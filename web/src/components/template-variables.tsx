@@ -149,19 +149,13 @@ export function TemplateVariables({
   if (!variables.available)
     return (
       <p className="text-sm text-muted-foreground" role="status">
-        {variables.reason || "Variable discovery is unavailable for this template."} You can still
-        publish with manual bindings and input policy.
+        {variables.reason || "Variable discovery is unavailable for this template."}
       </p>
     );
   return (
     <div className="form-stack min-w-0">
       <section className="form-stack min-w-0" aria-label="Template bindings">
-        <div>
-          <h3 className="text-sm font-semibold">Template bindings</h3>
-          <p className="text-sm text-muted-foreground">
-            Configure the environment used by every fleet on this template.
-          </p>
-        </div>
+        <h3 className="text-sm font-semibold">Template bindings</h3>
         {!!defaults.length && (
           <Button
             type="button"
@@ -202,13 +196,7 @@ export function TemplateVariables({
         )}
       </section>
       <section className="form-stack min-w-0" aria-label="Fleet input variables">
-        <div>
-          <h3 className="text-sm font-semibold">Fleet input variables</h3>
-          <p className="text-sm text-muted-foreground">
-            Review declared values, then choose which values fleets may use. Defaults do not approve
-            values automatically.
-          </p>
-        </div>
+        <h3 className="text-sm font-semibold">Fleet input variables</h3>
         {!!declared.length && (
           <Button
             type="button"

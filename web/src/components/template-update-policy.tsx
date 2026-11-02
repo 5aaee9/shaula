@@ -26,8 +26,8 @@ export function TemplateUpdatePolicy({
         <h2>Fleet input policy</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {policy === undefined
-            ? "Retain the policy from the current revision. Reading variables does not change approved values."
-            : "Replace the entire policy by choosing which values fleets may use. Other approved values will be removed."}
+            ? "Retain the policy from the current revision."
+            : "Replace the entire policy with the values chosen below."}
         </p>
       </div>
       {!!declared.length && policy === undefined && (
@@ -42,9 +42,6 @@ export function TemplateUpdatePolicy({
               </div>
             ))}
           </div>
-          <p className="text-xs text-muted-foreground">
-            Using these options replaces the entire policy, including approvals for other variables.
-          </p>
           <Button
             type="button"
             variant="outline"

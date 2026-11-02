@@ -27,10 +27,6 @@ export function GitHubJobFacts({ job }: { job: JobDetail }) {
         <KeyValue label="Association">{job.association_status}</KeyValue>
         <KeyValue label="Last observed">{historyTime(job.updated_at)}</KeyValue>
       </dl>
-      <p className="mt-4 text-sm text-muted-foreground">
-        Status reflects listener observations. An assignment result alone does not establish the
-        workflow job’s final conclusion.
-      </p>
     </section>
   );
 }
@@ -41,16 +37,12 @@ export function RunnerHistory({ job, scopes }: { job: JobDetail; scopes: string[
       <h2>Runner history</h2>
       {job.generations.length === 0 ? (
         <Empty title="No verified runner association">
-          <p>
-            Provisioning history is available in{" "}
-            <Link
-              className="underline"
-              to={`/jobs/runners?fleet_key=${encodeURIComponent(job.fleet_key)}`}
-            >
-              Unassigned runners
-            </Link>
-            .
-          </p>
+          <Link
+            className="underline"
+            to={`/jobs/runners?fleet_key=${encodeURIComponent(job.fleet_key)}`}
+          >
+            Unassigned runners
+          </Link>
         </Empty>
       ) : (
         job.generations.map((generation) => (

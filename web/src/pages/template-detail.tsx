@@ -1,11 +1,11 @@
+import { PageHeader } from "@/components/page-header";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { ArrowLeft } from "lucide-react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { api, resourcePath } from "@/lib/api";
 import type { TemplateResource } from "@/lib/types";
 import { useTemplateRevision } from "@/lib/use-template-revision";
-import { ErrorNotice, Loading } from "@/components/status";
+import { ErrorNotice, Loading, StatusBadge } from "@/components/status";
 import { RetireDialog } from "@/components/retire-dialog";
 import {
   TemplateDetailActions,
@@ -41,23 +41,25 @@ export function TemplateDetailPage({ scopes }: { scopes: string[] }) {
 
   return (
     <div className="mx-auto w-full max-w-5xl">
-      <Link className="back-link" to={backTo}>
-        <ArrowLeft className="size-4" aria-hidden="true" />
-        Back to templates
-      </Link>
-      <div className="page-heading">
-        <div>
-          <h1 className="break-all">{profileKey}</h1>
-          <p>Template profile detail and published revisions.</p>
-        </div>
-        <TemplateDetailActions
-          profileKey={profileKey}
-          canPublish={scopes.includes("template.publish")}
-          canRetire={scopes.includes("template.retire")}
-          retired={["Retiring", "Retired"].includes(data.status)}
-          onRetire={() => setRetire(true)}
-        />
-      </div>
+      <PageHeader
+        back={{ to: backTo, label: "Templates" }}
+        title={profileKey}
+        meta={
+          <>
+            <StatusBadge value={data.status} />
+            {data.platform && <span>{data.platform}</span>}
+          </>
+        }
+        actions={
+          <TemplateDetailActions
+            profileKey={profileKey}
+            canPublish={scopes.includes("template.publish")}
+            canRetire={scopes.includes("template.retire")}
+            retired={["Retiring", "Retired"].includes(data.status)}
+            onRetire={() => setRetire(true)}
+          />
+        }
+      />
 
       <TemplateProfileSummary data={data} />
       <TemplateRevisionSection

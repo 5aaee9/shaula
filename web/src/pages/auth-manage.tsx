@@ -1,11 +1,10 @@
+import { PageHeader } from "@/components/page-header";
 import { useState } from "react";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { AuthForm, type AuthFormMode } from "@/components/auth-form";
 import { ErrorNotice, Loading } from "@/components/status";
 import { api, resourcePath, type Resource } from "@/lib/api";
-import { authManageCopy } from "@/lib/auth-manage-copy";
 import { canManageAuthProfile } from "@/lib/auth-policy";
 import type { AuthResource, ChangeRef } from "@/lib/types";
 
@@ -32,19 +31,15 @@ export function AuthManagePage({ scopes, mode }: { scopes: string[]; mode: AuthF
       state: { change },
     });
   }
-  const { title, description } = authManageCopy(mode, profileKey);
+  const title =
+    mode === "create"
+      ? "Create authentication profile"
+      : mode === "policy"
+        ? `Edit target policy for ${profileKey}`
+        : `Rotate credential for ${profileKey}`;
   return (
     <div className="mx-auto w-full max-w-4xl">
-      <Link className="back-link" to={backTo}>
-        <ArrowLeft className="size-4" aria-hidden="true" />
-        Back to authentication
-      </Link>
-      <div className="page-heading">
-        <div>
-          <h1 className="break-all">{title}</h1>
-          <p>{description}</p>
-        </div>
-      </div>
+      <PageHeader back={{ to: backTo, label: "Authentication" }} title={title} />
       {!canWrite || (!creating && !canRead) ? (
         <ErrorNotice
           error={new Error("Authentication profile read and write permissions are required.")}

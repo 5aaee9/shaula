@@ -316,7 +316,7 @@ test("Forgejo token rotation locks scope, previews impact, and uses the reviewed
   await expect(page.getByLabel("Forgejo scope", { exact: true })).toBeDisabled();
   await expect(page.getByLabel("Access token", { exact: true })).toHaveValue("");
   await expect(page.getByLabel("Credential rotation impact")).toContainText(
-    "not a seamless handoff",
+    "Keep the previous token valid",
   );
   await page.getByLabel("Access token", { exact: true }).fill("replacement-canary");
   let body: unknown;

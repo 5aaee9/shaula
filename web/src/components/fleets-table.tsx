@@ -1,4 +1,4 @@
-import { ArrowRight, Boxes, CircleDot } from "lucide-react";
+import { ArrowRight, Boxes } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
   Table,
@@ -22,7 +22,7 @@ export function FleetsTable({ rows, total }: { rows: FleetRow[]; total: number }
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Fleet / GitHub target</TableHead>
+            <TableHead>Fleet</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Capacity</TableHead>
             <TableHead>Template</TableHead>
@@ -41,10 +41,6 @@ export function FleetsTable({ rows, total }: { rows: FleetRow[]; total: number }
       <div className="table-footer">
         <span>
           {rows.length} of {total} fleets
-        </span>
-        <span className="flex items-center gap-1.5">
-          <CircleDot className="size-3 text-emerald-600" />
-          Live status
         </span>
       </div>
     </div>
@@ -77,10 +73,10 @@ function FleetTableRow({ row }: { row: FleetRow }) {
       <TableCell>
         <div className="table-detail">
           {poolSize ? `${poolSize} weighted members` : resolved?.template?.key || "--"}
+          {resolved?.template && !poolSize && (
+            <span className="text-muted-foreground"> r{resolved.template.revision}</span>
+          )}
         </div>
-        {resolved?.template && !poolSize && (
-          <small className="text-muted-foreground">Revision {resolved.template.revision}</small>
-        )}
       </TableCell>
       <TableCell>
         <span className="mono text-xs">r{row.revision}</span>

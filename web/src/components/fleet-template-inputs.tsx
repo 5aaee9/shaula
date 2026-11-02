@@ -18,7 +18,6 @@ export function FleetTemplateInputs({ editor }: { editor: FleetInputs }) {
       <fieldset disabled={editor.loading || !!editor.pending}>
         <ApprovedValueSelect
           label="Input configuration"
-          description="Choose one complete approved configuration. Its individual values cannot be edited."
           required
           options={contract.presets}
           value={editor.presetChosen ? editor.json : undefined}

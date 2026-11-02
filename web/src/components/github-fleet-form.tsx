@@ -108,14 +108,7 @@ export function GitHubFleetForm({
       }
     >
       {backendSelector}
-      <FleetStage
-        title="Fleet"
-        description={
-          editing
-            ? "The fleet key identifies this scale set and cannot be changed."
-            : "A stable key for this runner fleet."
-        }
-      >
+      <FleetStage title="Fleet">
         <Field label="Fleet key">
           <Input
             required

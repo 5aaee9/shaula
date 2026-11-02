@@ -10,11 +10,13 @@ function DefaultTemplatePicker({
   sourceKey,
   target,
   candidates,
+  platform,
   onSelect,
 }: {
   sourceKey?: string | null;
   target?: TemplateSource;
   candidates: TemplateSource[];
+  platform: string | null;
   onSelect: (key: string) => void;
 }) {
   if (sourceKey)
@@ -41,7 +43,9 @@ function DefaultTemplatePicker({
         value={target?.key || ""}
         onChange={(event) => onSelect(event.target.value)}
       >
-        <NativeSelectOption value="">Choose a default template</NativeSelectOption>
+        <NativeSelectOption value="">
+          {platform ? `Choose a ${platform} default` : "Choose a default template"}
+        </NativeSelectOption>
         {candidates.map((source) => (
           <NativeSelectOption key={source.key} value={source.key}>
             {source.key}
@@ -67,23 +71,16 @@ export function UpdateSourceSection({
 }) {
   return (
     <section className="space-y-4 rounded-xl border bg-card p-5 sm:p-6" aria-label="Update source">
-      <div>
-        <h2>Update from default</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {target
-            ? "Review the selected default template."
-            : sourceKey
-              ? "The saved default template must be available to update."
-              : `Choose a default for the ${platform || "current"} platform.`}{" "}
-          This replaces the template code; review it before updating a customized template.
-        </p>
-      </div>
       <DefaultTemplatePicker
         sourceKey={sourceKey}
         target={target}
         candidates={candidates}
+        platform={platform}
         onSelect={onSelect}
       />
+      <p className="text-sm text-muted-foreground">
+        Updating replaces the template code, including any customizations.
+      </p>
     </section>
   );
 }
@@ -135,7 +132,7 @@ export function RevisionComparison({
         )}
         {upToDate && (
           <p role="status" className="mt-4 text-sm font-medium">
-            Up to date. This revision already uses the selected default, artifact and engine.
+            Up to date with the selected default.
           </p>
         )}
       </section>
@@ -200,9 +197,8 @@ export function UpdateActionBar({
       )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-lg text-xs text-muted-foreground">
-          The new revision activates after validation. Fleets use the new Active revision for new
-          jobs on the next pass (spec 0023); running jobs finish on their current revision. No
-          per-fleet update is needed.
+          Fleets switch to the new revision after validation; running jobs finish on their current
+          one.
         </p>
         <div className="flex gap-2">
           <Button type="button" variant="outline" disabled={busy} onClick={onClose}>

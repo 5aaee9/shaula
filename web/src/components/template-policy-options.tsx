@@ -1,10 +1,6 @@
 import { useId } from "react";
 import { optionLabel, parseInputValue, sameInputValue } from "@/lib/input-values";
-import {
-  approvedValues,
-  policyApprovalHint,
-  policyOptionValues,
-} from "@/lib/template-policy-approvals";
+import { approvedValues, policyOptionValues } from "@/lib/template-policy-approvals";
 import type { TemplateVariable } from "@/lib/template-variables";
 import { RawInputValuePreview } from "./template-input-values";
 import { TemplatePolicyValueInput } from "./template-policy-value-input";
@@ -57,7 +53,6 @@ function PolicyOptionChoices({
   const isApproved = (raw: string) => selected?.some((item) => sameInputValue(item, raw)) ?? false;
   return (
     <>
-      {!!variable.options.length && <p className="text-sm font-medium">Declared options</p>}
       <div className="grid min-w-0 gap-2 sm:grid-cols-2">
         {policyOptionValues(variable, selected).map((raw, index) => (
           <PolicyOptionCard
@@ -105,15 +100,13 @@ export function TemplatePolicyOptions({
   return (
     <fieldset
       className="min-w-0 space-y-3 rounded-lg border p-4"
-      aria-describedby={`${id}-hint`}
+      aria-describedby={selected === null ? `${id}-hint` : undefined}
       disabled={!editable}
     >
       <legend className="px-1 text-sm font-medium">{variable.label || variable.key}</legend>
       <TemplateVariableDescription variable={variable} />
       {variable.sensitive ? (
-        <p className="text-sm text-muted-foreground">
-          Configure approved values in Fleet input policy (JSON) under Advanced settings.
-        </p>
+        <p className="text-sm text-muted-foreground">Sensitive · edit in Advanced settings.</p>
       ) : (
         <PolicyOptionChoices
           variable={variable}
@@ -122,9 +115,11 @@ export function TemplatePolicyOptions({
           onToggle={toggle}
         />
       )}
-      <p id={`${id}-hint`} className="text-xs text-muted-foreground" role="status">
-        {policyApprovalHint(selected, variable.sensitive)}
-      </p>
+      {!variable.sensitive && selected === null && (
+        <p id={`${id}-hint`} className="text-sm" role="status">
+          Approved values must be a JSON array. Correct this variable in Advanced settings.
+        </p>
+      )}
     </fieldset>
   );
 }

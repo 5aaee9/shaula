@@ -97,11 +97,6 @@ function TextPolicyValueField({
           Enter {integer ? "an integer" : "a number"}.
         </p>
       )}
-      {kind === "string" && text === "" && (
-        <p className="text-xs text-muted-foreground">
-          Adding a blank value approves an empty string.
-        </p>
-      )}
     </>
   );
 }
@@ -121,12 +116,7 @@ export function TemplatePolicyValueInput({
   const kind = policyValueKind(variable.typeName);
   const defaultValue = scalarDefault(variable);
 
-  if (!kind)
-    return (
-      <p className="text-sm text-muted-foreground">
-        Configure approved values in Fleet input policy (JSON) under Advanced settings.
-      </p>
-    );
+  if (!kind) return <p className="text-sm text-muted-foreground">Edit in Advanced settings.</p>;
 
   const { canAdd, invalid } = policyDraftValidity(kind, variable.typeName, text);
 

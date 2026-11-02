@@ -1,6 +1,6 @@
+import { PageHeader } from "@/components/page-header";
 import type { ReactNode } from "react";
-import { ArrowLeft } from "lucide-react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { ErrorNotice, Loading } from "@/components/status";
 import { FleetForm } from "@/components/fleet-form";
@@ -48,20 +48,10 @@ export function FleetManagePage({ scopes, mode }: { scopes: string[]; mode: "cre
   }
   return (
     <div className="mx-auto w-full max-w-5xl">
-      <Link className="back-link" to={backTo}>
-        <ArrowLeft className="size-4" aria-hidden="true" />
-        Back to fleets
-      </Link>
-      <div className="page-heading">
-        <div>
-          <h1>{editing ? `Edit ${key}` : "New fleet"}</h1>
-          <p>
-            {editing
-              ? "Update capacity, authentication, and template placement."
-              : "A fleet manages short-lived runners for GitHub Actions, Forgejo or GitLab."}
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        back={{ to: backTo, label: editing && key ? key : "Fleets" }}
+        title={editing ? `Edit ${key}` : "New fleet"}
+      />
       <FleetFormGate
         editing={editing}
         canRead={canRead}

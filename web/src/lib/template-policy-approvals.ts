@@ -23,11 +23,3 @@ export function policyOptionValues(
     if (!options.some((option) => sameInputValue(option, raw))) options.push(raw);
   return options;
 }
-
-export function policyApprovalHint(selected: string[] | null, sensitive: boolean): string {
-  if (selected === null)
-    return "Approved values must be a JSON array. Correct this variable in Advanced settings to use visual editing.";
-  if (sensitive) return "Sensitive values are not displayed.";
-  if (!selected.length) return "No values approved yet.";
-  return `${selected.length} ${selected.length === 1 ? "value" : "values"} approved. Uncheck to remove an approval.`;
-}

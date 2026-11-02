@@ -1,5 +1,6 @@
 import type { ProfileChoices } from "@/lib/profile-choice";
 import { forgejoTargetName, type ForgejoTarget } from "@/lib/runner-backend";
+import { FleetStage } from "./fleet-form-parts";
 import { ProfileSelector } from "./profile-selector";
 import { Input } from "./ui/input";
 import { Field } from "./status";
@@ -30,8 +31,7 @@ export function ForgejoAuthSection({
   setLabels: (labels: string) => void;
 }) {
   return (
-    <section className="form-stack border-t pt-6">
-      <h2>Forgejo authentication</h2>
+    <FleetStage title="Authentication">
       <ProfileSelector
         label="Forgejo authentication profile"
         query={choices}
@@ -46,11 +46,6 @@ export function ForgejoAuthSection({
           {forgejoTargetName(target)}
         </p>
       )}
-      <p className="text-sm text-muted-foreground">
-        The instance and scope come from the profile's Active revision. Target, profile, runner
-        prefix and labels are fixed at fleet creation. Rotate the profile's token to replace
-        credentials.
-      </p>
       <Field label="Runner name prefix">
         <Input
           disabled={editing}
@@ -69,11 +64,6 @@ export function ForgejoAuthSection({
           placeholder="linux:host"
         />
       </Field>
-      <p className="text-sm text-muted-foreground">
-        Use a unique prefix per fleet. Every workflow runs-on label must be declared by the runner.
-        Bundled templates support explicit :host targets only. Do not share labels with persistent
-        runners: they may consume the same queued jobs.
-      </p>
-    </section>
+    </FleetStage>
   );
 }

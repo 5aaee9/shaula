@@ -64,20 +64,11 @@ export function FleetFormFrame({
 }
 
 /** One form stage: a quiet left rail that names the facet, beside its controls. */
-export function FleetStage({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: ReactNode;
-}) {
+export function FleetStage({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="grid grid-cols-1 gap-4 border-t pt-6 first:border-t-0 first:pt-0 sm:grid-cols-[11rem_1fr] sm:gap-6">
       <div className="min-w-0">
         <h2 className="text-sm font-medium">{title}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
       </div>
       <div className="form-stack min-w-0">{children}</div>
     </section>

@@ -1,4 +1,7 @@
 import { Diagnostics } from "@/components/diagnostics";
+import { PageHeader } from "@/components/page-header";
+
+const runnersBack = { to: "/jobs/runners", label: "Unassigned runners" };
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,15 +33,7 @@ export function UnassignedRunners({ scopes }: { scopes: string[] }) {
   }
   return (
     <>
-      <Link className="back-link" to="/jobs">
-        ← Jobs
-      </Link>
-      <div className="page-heading">
-        <div>
-          <h1>Unassigned runners</h1>
-          <p>Warm, failed, or historical runners without a verified workflow job association.</p>
-        </div>
-      </div>
+      <PageHeader back={{ to: "/jobs", label: "Jobs" }} title="Unassigned runners" />
       {!permitted ? (
         <ErrorNotice error={new Error("fleet.read permission is required.")} />
       ) : (
@@ -131,30 +126,39 @@ export function RunnerDetail({ scopes }: { scopes: string[] }) {
   const generation = detail.data;
   return (
     <>
-      <Link className="back-link" to="/jobs/runners">
-        ← Unassigned runners
-      </Link>
+      {!generation && <PageHeader back={runnersBack} title="Runner" />}
       {detail.error && <ErrorNotice error={detail.error} retry={() => void detail.refetch()} />}
       {generation && (
         <>
-          <div className="page-heading">
-            <div>
-              <h1>{generation.runner_name}</h1>
-              <p>Runner generation and retained provisioning history.</p>
-            </div>
-            {generation.state === "Quarantined" && scopes.includes("fleet.retire") && (
-              <FinalizeRunner
-                generationId={generation.id}
-                runnerName={generation.runner_name}
-                onAccepted={() => void detail.refetch()}
-              />
-            )}
-          </div>
+          <PageHeader
+            back={runnersBack}
+            title={generation.runner_name}
+            meta={
+              <>
+                <StatusBadge value={generation.state} />
+                <Link
+                  className="text-link"
+                  to={`/fleets/${encodeURIComponent(generation.fleet_key)}`}
+                >
+                  {generation.fleet_key}
+                </Link>
+              </>
+            }
+            actions={
+              generation.state === "Quarantined" &&
+              scopes.includes("fleet.retire") && (
+                <FinalizeRunner
+                  generationId={generation.id}
+                  runnerName={generation.runner_name}
+                  onAccepted={() => void detail.refetch()}
+                />
+              )
+            }
+          />
           {generation.state === "Quarantined" && (
             <p className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
-              This runner is quarantined: its destroy could not be verified, so the generation is
-              held until an operator confirms the external resources are gone. A quarantined runner
-              keeps the fleet's decommission open.
+              Destroy could not be verified. Confirm the external resources are gone, then finalize
+              to let the fleet finish decommissioning.
             </p>
           )}
           <Diagnostics
@@ -166,15 +170,7 @@ export function RunnerDetail({ scopes }: { scopes: string[] }) {
           <section className="details-section">
             <h2>Runner</h2>
             <dl className="details-grid">
-              <KeyValue label="Status">
-                <StatusBadge value={generation.state} />
-              </KeyValue>
               <KeyValue label="Phase">{generation.subphase || "Unknown"}</KeyValue>
-              <KeyValue label="Fleet">
-                <Link to={`/fleets/${encodeURIComponent(generation.fleet_key)}`}>
-                  {generation.fleet_key}
-                </Link>
-              </KeyValue>
               <KeyValue
                 label={
                   generation.forgejo_runner_id
@@ -200,8 +196,7 @@ export function RunnerDetail({ scopes }: { scopes: string[] }) {
             <h2>Workflow jobs</h2>
             {generation.association_status !== "verified" && generation.jobs.length > 0 && (
               <p className="mb-3 text-sm text-muted-foreground">
-                These are candidate jobs with conflicting association evidence. No workflow job is
-                confirmed for this runner.
+                Candidates with conflicting evidence; none is confirmed.
               </p>
             )}
             {generation.jobs.length ? (

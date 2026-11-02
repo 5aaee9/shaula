@@ -1,22 +1,16 @@
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import type { FleetSpec, FleetStatus } from "@/lib/types";
 import { Empty, ErrorNotice, Loading, StatusBadge } from "@/components/status";
-import { SectionCards } from "@/components/section-cards";
+import { MetricStrip } from "@/components/metric-strip";
 import { TableColumns } from "@/components/table-columns";
 
-/** Phase, revisions and capacity metrics from the fleet's live status. */
+/** Capacity metrics and the last error from the fleet's live status. */
 export function FleetStatusSummary({ status, spec }: { status: FleetStatus; spec: FleetSpec }) {
   // Token backends have no assignment step, so their demand is the queue of waiting jobs.
   const demandLabel = !spec.kind || spec.kind === "github" ? "Assigned demand" : "Waiting jobs";
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <StatusBadge value={status.phase} />
-        <span className="text-xs text-muted-foreground">
-          Observed r{status.observedRevision} / Desired r{status.desiredRevision}
-        </span>
-      </div>
-      <SectionCards
+      <MetricStrip
         metrics={Object.entries(status.capacity).map(([label, value]) => ({
           label: label === "assignedDemand" ? demandLabel : label[0].toUpperCase() + label.slice(1),
           value,

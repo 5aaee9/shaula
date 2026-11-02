@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -10,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tip } from "@/components/icon-tooltip";
 import { Empty, ErrorNotice, Loading } from "@/components/status";
-import { SectionCards } from "@/components/section-cards";
+import { MetricStrip } from "@/components/metric-strip";
 import { ChangeNotice } from "@/components/change-notice";
 import { FleetsTable } from "@/components/fleets-table";
 export function FleetsPage({ scopes }: { scopes: string[] }) {
@@ -24,40 +25,31 @@ export function FleetsPage({ scopes }: { scopes: string[] }) {
     return <ErrorNotice error={new Error("Fleet read permission is required.")} />;
   return (
     <>
-      <div className="page-heading">
-        <div>
-          <h1>Fleets</h1>
-          <p>GitHub Actions runner capacity and reconciliation.</p>
-        </div>
-        {scopes.includes("fleet.write") ? (
-          <Button asChild>
-            <Link to="/fleets/new" role="button">
+      <PageHeader
+        title="Fleets"
+        actions={
+          scopes.includes("fleet.write") ? (
+            <Button asChild>
+              <Link to="/fleets/new" role="button">
+                <Plus />
+                Create fleet
+              </Link>
+            </Button>
+          ) : (
+            <Button disabled>
               <Plus />
               Create fleet
-            </Link>
-          </Button>
-        ) : (
-          <Button disabled>
-            <Plus />
-            Create fleet
-          </Button>
-        )}
-      </div>
+            </Button>
+          )
+        }
+      />
       <ChangeNotice change={change} />
-      <SectionCards
+      <MetricStrip
         metrics={[
-          {
-            label: "Total fleets",
-            value: fleets.data ? rows.length : null,
-            detail: "Registered fleets",
-          },
-          {
-            label: "Effective capacity",
-            value: total("effective"),
-            detail: "Available runner capacity",
-          },
-          { label: "Assigned demand", value: total("assignedDemand"), detail: "Assigned jobs" },
-          { label: "Target capacity", value: total("target"), detail: "Desired runner capacity" },
+          { label: "Total fleets", value: fleets.data ? rows.length : null },
+          { label: "Effective capacity", value: total("effective") },
+          { label: "Assigned demand", value: total("assignedDemand") },
+          { label: "Target capacity", value: total("target") },
         ]}
       />
       <FleetInventory fleets={fleets} rows={rows} scopes={scopes} />
@@ -80,23 +72,13 @@ function FleetInventory({
   const filtered = rows.filter((row) => fleetRowMatches(row, search, filter));
   return (
     <section className="resource-section" aria-label="Fleet inventory">
-      <div className="section-heading">
-        <h2>
-          All fleets <span className="count">{rows.length}</span>
-        </h2>
-        <span className="text-xs text-muted-foreground">
-          {fleets.dataUpdatedAt
-            ? `Updated ${new Date(fleets.dataUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-            : "Awaiting response"}
-        </span>
-      </div>
       <div className="toolbar">
         <div className="search-input">
           <Search />
           <Input
             className="pl-9"
             aria-label="Search fleets"
-            placeholder="Search fleets or GitHub targets..."
+            placeholder="Search fleets or targets..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -129,6 +111,14 @@ function FleetInventory({
             <RefreshCw className={fleets.isFetching ? "animate-spin" : ""} />
           </Button>
         </Tip>
+        {!!fleets.dataUpdatedAt && (
+          <span className="ml-auto text-xs text-muted-foreground">
+            {new Date(fleets.dataUpdatedAt).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </span>
+        )}
       </div>
       {fleets.error ? (
         <ErrorNotice error={fleets.error} retry={() => void fleets.refetch()} />

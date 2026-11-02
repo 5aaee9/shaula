@@ -15,7 +15,7 @@ export function GitlabAuthForm(props: AuthFormProps & { backendSelector?: ReactN
       targetFields={(target, setTarget, disabled) => (
         <GitlabTargetFields value={target} onChange={setTarget} disabled={disabled} />
       )}
-      guidance="Use a group or project access token with the Owner or Maintainer role and the create_runner, manage_runner and read_api scopes. The token is write-only and is never sent to job runners. Shaula validates access before activation."
+      guidance="Group or project token · Owner or Maintainer · create_runner, manage_runner, read_api"
     />
   );
 }

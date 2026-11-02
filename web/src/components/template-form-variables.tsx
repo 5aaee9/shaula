@@ -22,8 +22,8 @@ function DiscoveryPlaceholder({
   if (!canRead)
     return (
       <p className="rounded-lg bg-muted/50 p-4 text-sm text-muted-foreground">
-        Template read permission is required to inspect variables. Manual publishing is available in
-        Advanced settings.
+        Template read permission is required to inspect variables. Publish manually from Advanced
+        settings.
       </p>
     );
   if (discovery.loading)
@@ -40,18 +40,15 @@ function DiscoveryPlaceholder({
   return (
     <div className="flex items-start gap-3 rounded-lg border border-dashed p-5">
       <FileSearch className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <div className="space-y-1 text-sm">
-        <p className="font-medium">
-          {ready ? "Your template is ready to inspect" : "Choose a source to get started"}
-        </p>
-        <p className="text-muted-foreground">
-          {source === "archive"
-            ? "Inspect variables uploads your archive and loads its configurable fields."
-            : source === "default"
-              ? "Variables load automatically when you choose a default template."
-              : "Enter an artifact digest, then inspect its configurable fields."}
-        </p>
-      </div>
+      <p className="text-sm text-muted-foreground">
+        {source === "default"
+          ? "Variables load when you choose a default template."
+          : ready
+            ? "Inspect variables to load its configurable fields."
+            : source === "archive"
+              ? "Choose an archive to inspect."
+              : "Enter an artifact digest to inspect."}
+      </p>
     </div>
   );
 }
@@ -85,12 +82,9 @@ export function TemplateVariablesSection({
       aria-busy={discovery.loading}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1 basis-56">
-          <h2 id={`${id}-variables`}>Configure variables</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Set shared bindings and the values fleets are allowed to use.
-          </p>
-        </div>
+        <h2 id={`${id}-variables`} className="min-w-0 flex-1 basis-56">
+          Configure variables
+        </h2>
         {canRead && (
           <Button
             type="button"
@@ -109,7 +103,7 @@ export function TemplateVariablesSection({
         <>
           <ErrorNotice error={discovery.error} />
           <p className="text-sm text-muted-foreground">
-            Try inspecting again, or configure bindings and input policy in Advanced settings.
+            Inspect again, or configure bindings and policy in Advanced settings.
           </p>
         </>
       )}

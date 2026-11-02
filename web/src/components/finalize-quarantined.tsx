@@ -118,7 +118,7 @@ export function FinalizeQuarantined({
       <Modal
         open={open}
         title={`Finalize quarantined runners — ${fleetKey}`}
-        description="Mark every quarantined runner generation Destroyed after you verify the external resources are gone. This unblocks the fleet's decommission."
+        description="Marks every quarantined generation Destroyed without contacting the provider."
         onOpenChange={(next) => {
           if (!next && !busy) setOpen(false);
         }}
@@ -140,10 +140,6 @@ export function FinalizeQuarantined({
                 onChange={(event) => setReason(event.target.value)}
                 placeholder="How you confirmed the VMs / runners are gone"
               />
-              <p className="text-sm text-muted-foreground">
-                This attests every listed runner's external resources no longer exist. Finalizing
-                never contacts the provider — it is a ledger-only close.
-              </p>
             </Field>
           </fieldset>
           {progress && (

@@ -26,16 +26,11 @@ export function TemplateLibrary({
       className="mb-8 space-y-5 rounded-xl border bg-muted/30 p-4 sm:p-5"
       aria-label="Default templates"
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-lg border bg-background">
           <Library className="size-4 text-muted-foreground" aria-hidden="true" />
         </span>
-        <div className="min-w-0">
-          <h2 className="text-base font-semibold">Default templates</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Choose a starting point, configure its variables, and publish your own template.
-          </p>
-        </div>
+        <h2 className="min-w-0 text-base font-semibold">Default templates</h2>
       </div>
       {query.error ? (
         <ErrorNotice error={query.error} retry={() => void query.refetch()} />
@@ -44,9 +39,6 @@ export function TemplateLibrary({
       ) : !query.data.data.sources.length ? (
         <div className="rounded-lg border border-dashed bg-background px-4 py-5">
           <p className="font-medium">No default templates are available.</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            You can still publish a template from an archive or an existing artifact.
-          </p>
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">

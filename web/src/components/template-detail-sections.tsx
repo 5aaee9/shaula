@@ -66,11 +66,7 @@ export function TemplateProfileSummary({ data }: { data: TemplateResource }) {
   return (
     <section className="rounded-xl border bg-card p-5 sm:p-6">
       <dl className="details-grid">
-        <KeyValue label="Platform">{data.platform || "--"}</KeyValue>
         <KeyValue label="Bindings contract">{data.bindingsContract || "--"}</KeyValue>
-        <KeyValue label="Status">
-          <StatusBadge value={data.status} />
-        </KeyValue>
         <KeyValue label="Active revision">
           {data.activeRevision ? `r${data.activeRevision}` : "--"}
         </KeyValue>
@@ -78,7 +74,7 @@ export function TemplateProfileSummary({ data }: { data: TemplateResource }) {
       </dl>
       {data.status === "Ready" && (
         <p className="mt-4 text-sm text-muted-foreground" role="status">
-          Validation passed. Waiting for automatic activation.
+          Validation passed. Activating automatically.
         </p>
       )}
     </section>
@@ -90,9 +86,6 @@ function RevisionBindings({ revision }: { revision: TemplateRevision }) {
   return (
     <div className="mt-6">
       <h3 className="text-sm font-medium">Bindings</h3>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Non-secret values are shown; secrets are never returned.
-      </p>
       {Object.keys(bindings).length ? (
         <dl className="details-grid mt-4">
           {Object.entries(bindings).map(([name, value]) => (

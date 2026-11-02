@@ -34,11 +34,6 @@ export function NavUser({ session, onRefresh }: { session?: Session; onRefresh: 
     }
   }
   const name = session?.name || "Unauthenticated";
-  const role = session
-    ? session.scopes.some((scope) => /\.(write|retire)$/.test(scope))
-      ? "Operator"
-      : "Viewer"
-    : "No session";
   return (
     <SidebarMenu>
       <SidebarMenuItem>
@@ -54,10 +49,7 @@ export function NavUser({ session, onRefresh }: { session?: Session; onRefresh: 
                   {name.charAt(0).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
-              <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">{name}</span>
-                <span className="truncate text-xs text-muted-foreground">{role}</span>
-              </div>
+              <span className="min-w-0 flex-1 truncate text-left text-sm font-medium">{name}</span>
               <MoreVertical className="ml-auto size-4" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>

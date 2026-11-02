@@ -84,11 +84,6 @@ function TemplatesTable({
 function NoTemplates({ search, onClearSearch }: { search: string; onClearSearch: () => void }) {
   return (
     <Empty title={search ? "No matching templates" : "No templates yet"}>
-      <p className="max-w-sm text-sm text-muted-foreground">
-        {search
-          ? "Try another template name or clear your search to see all templates."
-          : "Choose a default template above, or publish your own template to get started."}
-      </p>
       {search && (
         <Button variant="outline" size="sm" onClick={onClearSearch}>
           Clear search
@@ -118,15 +113,10 @@ export function PublishedTemplates({
   return (
     <>
       <div className="section-heading">
-        <div>
-          <h2>
-            Published templates
-            {templates.data && <span className="count">{templates.data.data.profiles.length}</span>}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            New revisions activate automatically after validation.
-          </p>
-        </div>
+        <h2>
+          Published templates
+          {templates.data && <span className="count">{templates.data.data.profiles.length}</span>}
+        </h2>
       </div>
       <div className="toolbar">
         <div className="search-input">

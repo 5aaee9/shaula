@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,15 +28,14 @@ export function JobsPage({ scopes }: { scopes: string[] }) {
   }
   return (
     <>
-      <div className="page-heading">
-        <div>
-          <h1>Jobs</h1>
-          <p>Workflow jobs observed by Shaula, with runner and provisioning history.</p>
-        </div>
-        <Button asChild variant="outline">
-          <Link to="/jobs/runners">Unassigned runners</Link>
-        </Button>
-      </div>
+      <PageHeader
+        title="Jobs"
+        actions={
+          <Button asChild variant="outline">
+            <Link to="/jobs/runners">Unassigned runners</Link>
+          </Button>
+        }
+      />
       {!permitted ? (
         <ErrorNotice error={new Error("fleet.read permission is required.")} />
       ) : (

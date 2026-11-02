@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useState, type FormEvent } from "react";
 import { Search } from "lucide-react";
@@ -16,12 +17,7 @@ export function ChangesPage({ scopes }: { scopes: string[] }) {
       : scopes.includes("template.read") || scopes.includes("auth.read");
   return (
     <>
-      <div className="page-heading">
-        <div>
-          <h1>Changes</h1>
-          <p>Accepted mutations and their convergence state.</p>
-        </div>
-      </div>
+      <PageHeader title="Changes" />
       <ChangeLookupForm
         initialId={currentId || ""}
         initialKind={type}

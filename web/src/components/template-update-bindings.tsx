@@ -43,10 +43,6 @@ function SensitiveBindingEditor({
         />
       </Field>
       <VariableDescription variable={variable} />
-      <p className="text-sm text-muted-foreground">
-        Stored secret is never shown. Enter a new value to replace it, or leave blank to keep the
-        current one.
-      </p>
     </div>
   );
 }
@@ -144,13 +140,7 @@ export function TemplateUpdateBindings({
       className="space-y-4 rounded-xl border bg-card p-5 sm:p-6"
       aria-label="Template bindings"
     >
-      <div>
-        <h2>Template bindings</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Non-secret values are editable. Secrets stay on the server — enter a new value to replace
-          one, or leave it blank to keep it.
-        </p>
-      </div>
+      <h2>Template bindings</h2>
       {!bindingValues ? (
         <p className="text-sm" role="status">
           Bindings JSON is invalid. Correct it below to use visual editing.

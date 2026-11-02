@@ -1,12 +1,17 @@
 import type { ReactNode } from "react";
 import type { Placement } from "@/lib/fleet-form-body";
 import type { ProfileChoices } from "@/lib/profile-choice";
-import { backendLabel, type RunnerBackend } from "@/lib/runner-backend";
+import type { RunnerBackend } from "@/lib/runner-backend";
 import type { FleetSpec, TemplatePoolSummary } from "@/lib/types";
 import type { FleetInputs } from "@/lib/use-fleet-inputs";
 import type { FleetPlacementDraft } from "@/lib/use-fleet-placement";
 import type { useTokenFleet } from "@/lib/use-token-fleet";
-import { FleetFormFrame, PlacementControls, RunnerCountField } from "./fleet-form-parts";
+import {
+  FleetFormFrame,
+  FleetStage,
+  PlacementControls,
+  RunnerCountField,
+} from "./fleet-form-parts";
 import { Input } from "./ui/input";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select";
 import { ErrorNotice, Field } from "./status";
@@ -48,11 +53,11 @@ function TokenSharedPoolField({
         ))}
       </NativeSelect>
       {!!poolsError && <ErrorNotice error={poolsError} />}
-      <p className="text-sm text-muted-foreground">
-        {canRead
-          ? "Pool members are checked by the server. Switching pools or following an updated revision waits for this fleet to drain."
-          : "Template read permission is required to choose a different pool. The existing reference can be retained."}
-      </p>
+      {!canRead && (
+        <p className="text-sm text-muted-foreground">
+          Template read permission is required to choose a different pool.
+        </p>
+      )}
     </Field>
   );
 }
@@ -77,9 +82,8 @@ function TokenPlacementSection({
   poolsError: unknown;
 }) {
   return (
-    <section className="form-stack border-t pt-6">
-      <h2>Template placement</h2>
-      <Field label="Template placement">
+    <FleetStage title="Template placement">
+      <Field label="Template placement" hideLabel>
         <NativeSelect
           value={draft.placement}
           disabled={editing}
@@ -90,11 +94,6 @@ function TokenPlacementSection({
           <NativeSelectOption value="shared">Shared pool</NativeSelectOption>
         </NativeSelect>
       </Field>
-      <p className="text-sm text-muted-foreground">
-        Every member must use the {backendLabel(backend)} runner backend and support this fleet's{" "}
-        {backend === "gitlab" ? "runner tags" : "label targets"}. Weights choose infrastructure for
-        new runners, not which job they receive.
-      </p>
       <PlacementControls
         draft={draft}
         editor={editor}
@@ -110,7 +109,7 @@ function TokenPlacementSection({
           />
         }
       />
-    </section>
+    </FleetStage>
   );
 }
 
@@ -122,8 +121,7 @@ function TokenCapacitySection({
   setCapacity: (capacity: FleetSpec["capacity"]) => void;
 }) {
   return (
-    <section className="form-stack border-t pt-6">
-      <h2>Capacity</h2>
+    <FleetStage title="Capacity">
       <div className="form-grid">
         <RunnerCountField
           label="Minimum runners"
@@ -136,12 +134,7 @@ function TokenCapacitySection({
           onChange={(max_runners) => setCapacity({ ...capacity, max_runners })}
         />
       </div>
-      <p className="text-sm text-muted-foreground">
-        Minimum runners stay waiting and consume infrastructure. Each ephemeral runner executes at
-        most one job. The server's maximum lifetime can interrupt running jobs; token rotation may
-        require runners to drain and be recreated.
-      </p>
-    </section>
+    </FleetStage>
   );
 }
 
@@ -181,17 +174,19 @@ export function TokenFleetFrame({
       onSubmit={(event) => void fleet.submit(event, buildBody)}
     >
       {backendSelector}
-      <Field label="Fleet key">
-        <Input
-          required
-          disabled={editing}
-          pattern="[a-z0-9][a-z0-9-]*"
-          maxLength={63}
-          value={key}
-          onChange={(e) => fleet.setKey(e.target.value)}
-          placeholder={placeholder}
-        />
-      </Field>
+      <FleetStage title="Fleet">
+        <Field label="Fleet key">
+          <Input
+            required
+            disabled={editing}
+            pattern="[a-z0-9][a-z0-9-]*"
+            maxLength={63}
+            value={key}
+            onChange={(e) => fleet.setKey(e.target.value)}
+            placeholder={placeholder}
+          />
+        </Field>
+      </FleetStage>
       {children}
       <TokenPlacementSection
         backend={backend}

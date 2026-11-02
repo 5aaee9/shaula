@@ -30,9 +30,7 @@ export function AuthTargetPolicy({
   const summary =
     !existing && additional.length
       ? `${additional.length} additional target${additional.length === 1 ? "" : "s"}: ${additional.map((row) => (row.owner.trim() ? selectorLabel(selectorFromRow(row)) : "Unnamed target")).join(", ")}`
-      : existing
-        ? "GitHub access details"
-        : "Additional targets and GitHub access details";
+      : undefined;
   function targetFields(row: SelectorRow, index: number, removable: boolean) {
     return (
       <AuthTargetFields
@@ -91,11 +89,6 @@ export function AuthTargetPolicy({
             {addTarget}
           </>
         )}
-        <p className="text-sm text-muted-foreground">
-          Account repositories include future repositories only when the GitHub installation uses
-          “All repositories”. Organization targets allow organization runners; repository access
-          follows the runner group.
-        </p>
       </AdvancedSettings>
     </>
   );
@@ -172,12 +165,6 @@ function AuthTargetFields({
           </Button>
         )}
       </div>
-      {row.kind === "account_repositories" && (
-        <p className="text-sm text-muted-foreground">
-          Only owned repositories accessible to this App, including future repositories when its
-          installation allows them.
-        </p>
-      )}
     </div>
   );
 }

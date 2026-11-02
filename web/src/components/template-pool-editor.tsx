@@ -72,10 +72,6 @@ export function TemplatePoolEditor({
             />
           ))}
         </div>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Each new runner draws a member independently by weight. Weights shape the long-run mix;
-          finite batches can vary and workflow job routing is not controlled.
-        </p>
       </div>
 
       {members.map((member, index) => {
@@ -112,9 +108,7 @@ export function TemplatePoolEditor({
         >
           <Plus /> Add member
         </Button>
-        <p className="text-sm text-muted-foreground">
-          {members.length} of 32 members · integer weights 1–10000
-        </p>
+        <p className="text-sm text-muted-foreground">{members.length} / 32 members</p>
       </div>
 
       <Field label="Failure policy">
@@ -122,16 +116,13 @@ export function TemplatePoolEditor({
           value={failurePolicy}
           onChange={(e) => setFailurePolicy(e.target.value as typeof failurePolicy)}
         >
-          <NativeSelectOption value="backpressure">Backpressure</NativeSelectOption>
+          <NativeSelectOption value="backpressure">
+            Backpressure: pause when a member is capped
+          </NativeSelectOption>
           <NativeSelectOption value="redistribute">
-            Redistribute to other members
+            Redistribute to uncapped members
           </NativeSelectOption>
         </NativeSelect>
-        <p className="text-sm text-muted-foreground">
-          Inline pools pause when any member reaches its cap (backpressure), or draw from uncapped
-          members (redistribute). Shared pools always exclude capped members. An admitted runner
-          keeps its selected template, even after failure.
-        </p>
       </Field>
     </div>
   );
@@ -311,7 +302,6 @@ export function MemberTemplateInputs({
     return (
       <ApprovedValueSelect
         label="Input configuration"
-        description="Choose one complete approved configuration for this member."
         required
         options={contract.presets}
         value={values.size ? inputsJson(values) : undefined}

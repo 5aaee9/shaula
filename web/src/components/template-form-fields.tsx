@@ -23,12 +23,7 @@ export function TemplateDetailsSection({
       className="space-y-6 rounded-xl border bg-card p-5 sm:p-6"
       aria-labelledby={`${id}-details`}
     >
-      <div>
-        <h2 id={`${id}-details`}>Template details</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Give your template a name and choose where its configuration comes from.
-        </p>
-      </div>
+      <h2 id={`${id}-details`}>Template details</h2>
       <Field label="Profile key">
         <Input
           required
@@ -38,15 +33,15 @@ export function TemplateDetailsSection({
           placeholder="e.g. docker-linux"
           autoComplete="off"
           spellCheck={false}
-          aria-describedby={`${id}-key-hint`}
+          aria-describedby={locked ? undefined : `${id}-key-hint`}
           value={profileKey}
           onChange={(event) => onKeyChange(event.target.value)}
         />
-        <p id={`${id}-key-hint`} className="text-xs text-muted-foreground">
-          {locked
-            ? "The profile key stays the same for every revision."
-            : "A unique name used by fleets. Lowercase letters, numbers and hyphens, up to 63 characters."}
-        </p>
+        {!locked && (
+          <p id={`${id}-key-hint`} className="text-xs text-muted-foreground">
+            Lowercase letters, numbers and hyphens.
+          </p>
+        )}
       </Field>
       <div className="border-t pt-6">{children}</div>
     </section>
@@ -77,11 +72,7 @@ export function ManualPublishSettings({
 }) {
   return (
     <div className="rounded-xl border bg-card px-5 pb-5 pt-3 sm:px-6">
-      <AdvancedSettings
-        open={open}
-        onOpenChange={onOpenChange}
-        summary="Engine reference, manual bindings and fleet input policy."
-      >
+      <AdvancedSettings open={open} onOpenChange={onOpenChange}>
         <Field label="Engine reference">
           <Input
             required
@@ -90,10 +81,7 @@ export function ManualPublishSettings({
             onChange={(event) => setEngine(event.target.value)}
           />
           {fixedEngine && (
-            <p className="text-xs text-muted-foreground">
-              The default template fixes its engine. Choose Existing artifact to use a custom
-              engine.
-            </p>
+            <p className="text-xs text-muted-foreground">Fixed by the default template.</p>
           )}
         </Field>
         <Field label="Bindings (JSON)">

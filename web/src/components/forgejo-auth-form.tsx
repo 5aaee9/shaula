@@ -15,7 +15,7 @@ export function ForgejoAuthForm(props: AuthFormProps & { backendSelector?: React
       targetFields={(target, setTarget, disabled) => (
         <ForgejoTargetFields value={target} onChange={setTarget} disabled={disabled} />
       )}
-      guidance="The token is write-only and is never sent to workflow runners. Instance scope requires an administrator; other scopes require runner-management access to that exact target. Shaula validates access before activation."
+      guidance="Instance scope needs an administrator token; other scopes need runner management on that target."
     />
   );
 }

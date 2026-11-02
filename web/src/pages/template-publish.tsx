@@ -1,6 +1,6 @@
+import { PageHeader } from "@/components/page-header";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { TemplatePublishGate } from "@/components/template-publish-gate";
 import { TemplateForm } from "@/components/template-form";
 import { api, resourcePath } from "@/lib/api";
@@ -36,22 +36,10 @@ export function TemplatePublishPage({ scopes }: { scopes: string[] }) {
 
   return (
     <div className="mx-auto w-full max-w-5xl">
-      <Link className="back-link" to={backTo}>
-        <ArrowLeft className="size-4" aria-hidden="true" />
-        Back to templates
-      </Link>
-      <div className="page-heading">
-        <div>
-          <h1 className="break-all">
-            {profileKey ? `Publish revision of ${profileKey}` : "Publish template"}
-          </h1>
-          <p>
-            {profileKey
-              ? "Configure a new revision. It will activate automatically after validation."
-              : "Choose a source and configure a reusable template for your fleets."}
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        back={{ to: backTo, label: "Templates" }}
+        title={profileKey ? `Publish revision of ${profileKey}` : "Publish template"}
+      />
       <TemplatePublishGate
         profileKey={profileKey}
         canPublish={canPublish}

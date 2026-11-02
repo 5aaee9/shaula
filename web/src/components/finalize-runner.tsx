@@ -71,7 +71,7 @@ export function FinalizeRunner({
       <Modal
         open={open}
         title={`Finalize ${runnerName}`}
-        description="Record that this runner's external resources are gone and close the generation."
+        description="Marks the generation Destroyed without contacting the provider."
         onOpenChange={(next) => {
           if (!next && !busy) setOpen(false);
         }}
@@ -85,10 +85,6 @@ export function FinalizeRunner({
                 onChange={(event) => setReason(event.target.value)}
                 placeholder="How you confirmed the VM / runner is gone"
               />
-              <p className="text-sm text-muted-foreground">
-                Finalizing marks the generation Destroyed without contacting the provider. Use it
-                only after you have verified the external resources no longer exist.
-              </p>
             </Field>
           </fieldset>
           {error !== null && <ErrorNotice error={error} />}

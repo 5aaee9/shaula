@@ -1,7 +1,7 @@
+import { PageHeader } from "@/components/page-header";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { ArrowLeft } from "lucide-react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ErrorNotice, Loading } from "@/components/status";
 import { TemplateUpdateForm } from "@/components/template-update-form";
 import { api, resourcePath } from "@/lib/api";
@@ -38,16 +38,10 @@ export function TemplateUpdatePage({ scopes }: { scopes: string[] }) {
 
   return (
     <div className="mx-auto w-full max-w-5xl">
-      <Link className="back-link" to={backTo}>
-        <ArrowLeft className="size-4" aria-hidden="true" />
-        Back to templates
-      </Link>
-      <div className="page-heading">
-        <div>
-          <h1 className="break-words">Update {profileKey} from default</h1>
-          <p>Review a default template and publish a new revision with your existing bindings.</p>
-        </div>
-      </div>
+      <PageHeader
+        back={{ to: backTo, label: "Templates" }}
+        title={`Update ${profileKey} from default`}
+      />
       {!canRead || !canPublish ? (
         <ErrorNotice error={new Error("Template read and publish permissions are required.")} />
       ) : query.isPending ? (

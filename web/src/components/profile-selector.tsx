@@ -2,6 +2,7 @@ import { RefreshCw } from "lucide-react";
 import { profileUnavailableReason, type ProfileChoices } from "@/lib/profile-choice";
 import { profileOptionLabel, sortedProfiles } from "@/lib/profile-selector-options";
 import type { TemplateSummary } from "@/lib/types";
+import { Tip } from "./icon-tooltip";
 import { ErrorNotice, Field } from "./status";
 import { Button } from "./ui/button";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select";
@@ -38,6 +39,24 @@ function ProfileListNotice({
   return null;
 }
 
+function ProfileRefresh({ label, query }: { label: string; query: ProfileChoices }) {
+  const name = `Refresh ${label}s`;
+  return (
+    <Tip label={name}>
+      <Button
+        type="button"
+        size="icon"
+        variant="outline"
+        aria-label={name}
+        disabled={query.isFetching}
+        onClick={() => void query.refetch()}
+      >
+        <RefreshCw className={query.isFetching ? "animate-spin" : undefined} />
+      </Button>
+    </Tip>
+  );
+}
+
 function ProfileChoiceStatus({
   label,
   value,
@@ -54,21 +73,11 @@ function ProfileChoiceStatus({
   const unavailable = selected && profileUnavailableReason(selected);
   return (
     <>
-      <Button
-        type="button"
-        variant="outline"
-        aria-label={`Refresh ${label}s`}
-        disabled={query.isFetching}
-        onClick={() => void query.refetch()}
-      >
-        <RefreshCw className={query.isFetching ? "animate-spin" : undefined} />
-        Refresh profiles
-      </Button>
       <ProfileListNotice noun={label.toLowerCase()} query={query} profiles={profiles} />
       {query.isSuccess && value && (!selected || unavailable) && (
         <p role="status" className="text-sm">
           {value}: {unavailable ?? "This profile is no longer in the list"}. Choose an available
-          profile for a new reference. An unchanged original reference is preserved.
+          profile; an unchanged original reference is preserved.
         </p>
       )}
     </>
@@ -96,30 +105,35 @@ export function ProfileSelector({
   const selected = profiles.find((profile) => profile.key === value);
   return (
     <div className="form-stack gap-2 min-w-0">
-      <Field label={label}>
-        <NativeSelect
-          required
-          value={value}
-          disabled={disabled || !canRead || !query.isSuccess}
-          onChange={(event) => onChange(event.target.value)}
-        >
-          <NativeSelectOption value="">Choose a profile</NativeSelectOption>
-          {value && !selected && (
-            <NativeSelectOption value={value} disabled>
-              {value} · Current selection (not in the available list)
-            </NativeSelectOption>
-          )}
-          {profiles.map((profile) => (
-            <NativeSelectOption
-              key={profile.key}
-              value={profile.key}
-              disabled={!!profileUnavailableReason(profile)}
+      <div className="flex min-w-0 items-end gap-2">
+        <div className="min-w-0 flex-1">
+          <Field label={label}>
+            <NativeSelect
+              required
+              value={value}
+              disabled={disabled || !canRead || !query.isSuccess}
+              onChange={(event) => onChange(event.target.value)}
             >
-              {profileOptionLabel(profile)}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
-      </Field>
+              <NativeSelectOption value="">Choose a profile</NativeSelectOption>
+              {value && !selected && (
+                <NativeSelectOption value={value} disabled>
+                  {value} · Current selection (not in the available list)
+                </NativeSelectOption>
+              )}
+              {profiles.map((profile) => (
+                <NativeSelectOption
+                  key={profile.key}
+                  value={profile.key}
+                  disabled={!!profileUnavailableReason(profile)}
+                >
+                  {profileOptionLabel(profile)}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </Field>
+        </div>
+        {canRead && <ProfileRefresh label={label} query={query} />}
+      </div>
       {canRead ? (
         <ProfileChoiceStatus
           label={label}

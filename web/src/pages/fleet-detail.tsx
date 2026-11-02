@@ -36,6 +36,7 @@ function FleetView({ fleetKey, scopes }: { fleetKey: string; scopes: string[] })
       <FleetDetailHeader
         fleetKey={fleetKey}
         spec={data.spec}
+        status={live}
         scopes={scopes}
         onRefresh={() => {
           void fleet.refetch();

@@ -62,11 +62,22 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
     </EmptyRoot>
   );
 }
-export function Field({ label, children }: { label: string; children: ReactNode }) {
+/** A labelled control; `hideLabel` keeps the name for assistive technology when a heading already shows it. */
+export function Field({
+  label,
+  hideLabel = false,
+  children,
+}: {
+  label: string;
+  hideLabel?: boolean;
+  children: ReactNode;
+}) {
   const id = useId();
   return (
     <FieldRoot className="min-w-0 gap-2">
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <FieldLabel htmlFor={id} className={hideLabel ? "sr-only" : undefined}>
+        {label}
+      </FieldLabel>
       {Children.map(children, (child, index) =>
         index === 0 && isValidElement<{ id?: string }>(child) ? cloneElement(child, { id }) : child,
       )}

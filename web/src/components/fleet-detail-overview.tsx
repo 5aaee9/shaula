@@ -41,14 +41,6 @@ export function FleetOverview({ fleet, status }: { fleet: FleetResource; status?
           <span className="mono text-xs">{fleet.metadata.incarnation}</span>
         </KeyValue>
       </dl>
-      {spec.kind === "gitlab" && (
-        <p className="mt-4 text-xs text-muted-foreground">
-          Demand comes from a paused, tokenless anchor runner Shaula keeps for this fleet. Each
-          runner claims one job with gitlab-runner run-single and the shell executor inside the
-          runner container, so .gitlab-ci.yml image: is ignored. Runners are paused after claiming a
-          job and deleted once it finishes.
-        </p>
-      )}
       {fleet.resolved.templatePool?.length ? (
         <PoolMembers members={fleet.resolved.templatePool} />
       ) : null}
@@ -68,6 +60,7 @@ function BackendFacts({ spec }: { spec: FleetSpec }) {
           </div>
         </KeyValue>
         <KeyValue label="Untagged jobs">{spec.gitlab.run_untagged ? "Run" : "Not run"}</KeyValue>
+        <KeyValue label="Executor">Shell · image: is ignored</KeyValue>
       </>
     );
   if (spec.kind === "forgejo")
@@ -97,18 +90,7 @@ function BackendFacts({ spec }: { spec: FleetSpec }) {
 }
 
 function TemplateProfile({ resolved }: { resolved: Resolved }) {
-  if (resolved.templatePool?.length)
-    return (
-      <div className="form-stack gap-1">
-        <span>{resolved.templatePool.length} weighted members</span>
-        {resolved.templatePool.map((member) => (
-          <span key={member.key} className="text-sm text-muted-foreground">
-            {member.key}: {member.template_profile_key} / r{member.template_revision} · weight{" "}
-            {member.weight}
-          </span>
-        ))}
-      </div>
-    );
+  if (resolved.templatePool?.length) return `${resolved.templatePool.length} weighted members`;
   if (resolved.template)
     return (
       <Link
@@ -138,9 +120,6 @@ function AuthContextValue({ context }: { context: AuthContext }) {
         route={context.observedRoute}
         reference={context.observed}
       />
-      <p className="text-xs text-muted-foreground">
-        Observed records the last accepted route. Access is verified again before GitHub operations.
-      </p>
     </KeyValue>
   );
 }
@@ -174,10 +153,6 @@ function PoolMembers({ members }: { members: NonNullable<Resolved["templatePool"
           </TableBody>
         </Table>
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Each Runner is assigned by an independent weighted random draw. This does not guarantee
-        exact ratios; the table shows the admitted member configuration.
-      </p>
     </div>
   );
 }

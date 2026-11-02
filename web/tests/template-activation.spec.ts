@@ -23,13 +23,11 @@ test("Ready automatically refreshes to Active and becomes selectable with its in
   await mockContract(page, contract([field("image", ['"runner:approved"'], true)], "local-docker"));
   await page.goto("/templates/local-docker");
   await expect(
-    page.getByRole("status").filter({ hasText: "Waiting for automatic activation" }),
+    page.getByRole("status").filter({ hasText: "Activating automatically" }),
   ).toBeVisible();
   active = true;
   await page.clock.fastForward(10_001);
-  await expect(page.getByText("Waiting for automatic activation.", { exact: false })).toHaveCount(
-    0,
-  );
+  await expect(page.getByText("Activating automatically.", { exact: false })).toHaveCount(0);
   await page.goto("/templates");
   await expect(page.getByRole("row").filter({ hasText: "local-docker" })).toContainText("Active");
 
@@ -68,7 +66,5 @@ test("rejected revision shows the server reason while the previous Active remain
   const row = page.getByRole("row").filter({ hasText: "local-docker" });
   await expect(row).toContainText("r2");
   await expect(row).toContainText("r3");
-  await expect(page.getByText("Waiting for automatic activation.", { exact: false })).toHaveCount(
-    0,
-  );
+  await expect(page.getByText("Activating automatically.", { exact: false })).toHaveCount(0);
 });

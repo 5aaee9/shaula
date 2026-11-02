@@ -48,9 +48,11 @@ test("published update reviews an explicit source and retains bindings and polic
   );
   await source.selectOption("docker");
   await expect(form.getByRole("button", { name: "Use declared options" })).toBeVisible();
-  await expect(form.getByRole("region", { name: "Template bindings" })).toContainText(
-    "Secrets stay on the server",
-  );
+  await expect(
+    form
+      .getByRole("region", { name: "Template bindings" })
+      .getByLabel("Access token", { exact: true }),
+  ).toHaveAttribute("placeholder", "Leave blank to keep the stored secret");
   await expect(form.getByRole("region", { name: "Fleet input policy", exact: true })).toContainText(
     "Retain the policy",
   );
@@ -58,9 +60,7 @@ test("published update reviews an explicit source and retains bindings and polic
   // value is never sent to or displayed by the form.
   const token = form.getByLabel("Access token", { exact: true });
   await expect(token).toHaveValue("");
-  await expect(form.getByRole("region", { name: "Template bindings" })).toContainText(
-    "leave it blank to keep it",
-  );
+  await expect(token).toHaveAttribute("placeholder", "Leave blank to keep the stored secret");
   await expect(form).not.toContainText("never-display-this");
   expect(updates).toBe(0);
   await form.getByRole("button", { name: "Update", exact: true }).click();
@@ -330,7 +330,7 @@ test("published template detail actions fit a 390px viewport", async ({ page }) 
   await expect(update).toBeVisible();
   const bounds = await update.evaluate((button) => {
     const group = button.parentElement!;
-    const section = group.closest(".page-heading")!.getBoundingClientRect();
+    const section = group.closest("[data-slot=page-header]")!.getBoundingClientRect();
     return {
       documentWidth: document.documentElement.scrollWidth,
       viewportWidth: window.innerWidth,

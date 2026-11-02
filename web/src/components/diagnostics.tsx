@@ -33,9 +33,7 @@ function DiagnosticsBody({
         </p>
       )}
       {report?.truncated && (
-        <p className="text-sm text-muted-foreground">
-          Partial report: some evidence was omitted to stay within the response budget.
-        </p>
+        <p className="text-sm text-muted-foreground">Partial report: some evidence was omitted.</p>
       )}
       {questions.map((question) => (
         <QuestionView
@@ -45,12 +43,6 @@ function DiagnosticsBody({
           scopes={scopes}
         />
       ))}
-      {questions.length > 0 && (
-        <p className="text-xs text-muted-foreground">
-          Explanations describe recorded controller decisions; they never authorize lifecycle
-          operations.
-        </p>
-      )}
     </>
   );
 }
@@ -80,12 +72,14 @@ export function Diagnostics({
   const error = query.error;
   const questions = (!isForbidden(error) && permitted && query.data?.questions) || [];
   const summary = summarizeOutcomes(questions, !!error);
+  // With nothing to explain, the reason sits on the heading line instead of opening a body.
+  const inlineError = permitted && expanded && !!error && !questions.length;
   return (
     <section className="details-section" aria-label="Why">
-      <h2 className="mb-0">
+      <h2 className="mb-0 flex flex-wrap items-center gap-x-3 gap-y-1">
         <button
           type="button"
-          className="flex w-full items-center gap-2 text-left"
+          className="flex items-center gap-2 text-left"
           aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
         >
@@ -96,8 +90,13 @@ export function Diagnostics({
           <span>Why</span>
           {summary && <span className="text-sm font-normal text-muted-foreground">{summary}</span>}
         </button>
+        {inlineError && (
+          <span role="status" className="text-sm font-normal text-muted-foreground">
+            {diagnosticsErrorMessage(error)}
+          </span>
+        )}
       </h2>
-      {expanded && (
+      {expanded && !inlineError && (
         <div className="mt-4 space-y-3">
           {permitted ? (
             <DiagnosticsBody

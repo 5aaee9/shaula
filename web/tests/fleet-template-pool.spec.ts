@@ -24,7 +24,7 @@ test("creates a weighted template pool with independent random draw semantics", 
   await form.getByRole("radio", { name: "Weighted pool" }).click();
   await form.getByLabel("Template profile").selectOption("kubernetes-linux");
   await form.getByRole("spinbutton", { name: "Weight" }).fill("20");
-  await expect(form).toContainText("independently by weight");
+  await expect(form).toContainText("100%of draws");
   await form.getByRole("button", { name: "Create fleet", exact: true }).click();
   await expect
     .poll(() => submitted)

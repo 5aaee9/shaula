@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
@@ -21,16 +22,15 @@ export function TemplatesPage({ scopes }: { scopes: string[] }) {
   // its row, but the row no longer expands — the name links to the detail page.
   return (
     <>
-      <div className="page-heading">
-        <div>
-          <h1>Templates</h1>
-          <p>Create reusable templates and manage their published revisions.</p>
-        </div>
-        <Button onClick={() => navigate("/templates/new")} disabled={!canPublish}>
-          <Plus />
-          Publish template
-        </Button>
-      </div>
+      <PageHeader
+        title="Templates"
+        actions={
+          <Button onClick={() => navigate("/templates/new")} disabled={!canPublish}>
+            <Plus />
+            Publish template
+          </Button>
+        }
+      />
       <ChangeNotice change={change} />
       {!change && publication?.noOp && (
         <p role="status" className="mb-5 text-sm text-muted-foreground">

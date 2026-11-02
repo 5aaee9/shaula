@@ -51,8 +51,8 @@ export function RetireDialog({
       title={`Retire ${name}?`}
       description={
         type === "fleet"
-          ? "The fleet will stop accepting new capacity and begin decommissioning. Existing work may delay retirement."
-          : "The profile will be retired. Referencing fleets and pending work may block completion."
+          ? "Stops new capacity and begins decommissioning."
+          : "Referencing fleets and pending work may block retirement."
       }
       onOpenChange={(open) => {
         if (!open && !busy) onClose();

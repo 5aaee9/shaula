@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, RefreshCw } from "lucide-react";
@@ -19,23 +20,15 @@ export function PoolsPage({ scopes }: { scopes: string[] }) {
     return <ErrorNotice error={new Error("Template read permission is required.")} />;
   return (
     <>
-      <div className="page-heading">
-        <div>
-          <h1>Template pools</h1>
-          <p>Weighted template mixes shared across fleets.</p>
-        </div>
-        {scopes.includes("template.publish") ? (
-          <Button onClick={() => setEditing("new")}>
+      <PageHeader
+        title="Template pools"
+        actions={
+          <Button disabled={!scopes.includes("template.publish")} onClick={() => setEditing("new")}>
             <Plus />
             Create pool
           </Button>
-        ) : (
-          <Button disabled>
-            <Plus />
-            Create pool
-          </Button>
-        )}
-      </div>
+        }
+      />
       <PoolInventory pools={pools} scopes={scopes} onEdit={setEditing} />
       <PoolEditor editing={editing} scopes={scopes} onClose={() => setEditing(null)} />
     </>
@@ -54,15 +47,7 @@ function PoolInventory({
   const summaries = pools.data?.data.pools || [];
   if (pools.error) return <ErrorNotice error={pools.error} retry={() => void pools.refetch()} />;
   if (pools.isPending) return <Loading />;
-  if (!summaries.length)
-    return (
-      <Empty title="No template pools yet">
-        <p className="text-sm text-muted-foreground">
-          A pool defines a weighted mix of template members. Fleets reference it by key and draw one
-          member per new runner.
-        </p>
-      </Empty>
-    );
+  if (!summaries.length) return <Empty title="No template pools yet" />;
   return (
     <section className="resource-section" aria-label="Template pool inventory">
       <div className="section-heading">
@@ -82,10 +67,9 @@ function PoolInventory({
       <ul className="divide-y">
         {summaries.map((pool) => (
           <li key={pool.key} className="flex flex-wrap items-center justify-between gap-3 py-3">
-            <div className="min-w-0">
-              <p className="font-medium break-all">{pool.key}</p>
-              <p className="text-sm text-muted-foreground">Revision {pool.revision}</p>
-            </div>
+            <p className="min-w-0 font-medium break-all">
+              {pool.key} <span className="font-normal text-muted-foreground">r{pool.revision}</span>
+            </p>
             {scopes.includes("template.publish") && (
               <Button variant="outline" size="sm" onClick={() => onEdit(pool.key)}>
                 Edit

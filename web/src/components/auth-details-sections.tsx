@@ -2,10 +2,10 @@ import { RotateCw, SlidersHorizontal, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import type { AuthResource, TargetSelector } from "@/lib/types";
 import { selectorLabel } from "@/lib/types";
-import { authKindLabel, forgejoTargetName, gitlabTargetName } from "@/lib/runner-backend";
+import { forgejoTargetName, gitlabTargetName } from "@/lib/runner-backend";
 import { selectorKey } from "@/lib/auth-policy";
 import { Button } from "@/components/ui/button";
-import { KeyValue, StatusBadge } from "@/components/status";
+import { KeyValue } from "@/components/status";
 import { AuthReauth } from "@/components/auth-reauth";
 
 export function AuthDetailsActions({
@@ -65,20 +65,12 @@ export function AuthDetailsActions({
 export function AuthProfileFacts({ profile }: { profile: AuthResource }) {
   return (
     <dl className="details-grid">
-      <KeyValue label="Status">
-        <StatusBadge value={profile.status} />
-      </KeyValue>
-      <KeyValue label="Credential type">{authKindLabel(profile.kind)}</KeyValue>
       {profile.schema_version === 2 && (
         <KeyValue label="App ID">{profile.active?.app_id || profile.app_id || "--"}</KeyValue>
       )}
       <KeyValue label="Credential">{profile.credential_present ? "Configured" : "Absent"}</KeyValue>
-      <KeyValue label="Active revision">
-        {profile.activeRevision ? `r${profile.activeRevision}` : "--"}
-      </KeyValue>
-      <KeyValue label="Desired revision">r{profile.desiredRevision}</KeyValue>
       {profile.active?.schema_version === 2 && (
-        <KeyValue label="Active target policy">
+        <KeyValue label="Target policy">
           <TargetPolicyChips policy={profile.active.target_policy} />
         </KeyValue>
       )}

@@ -4,7 +4,8 @@ import type { Resource } from "@/lib/api";
 import type { Issued, Token } from "@/lib/use-access-tokens";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ErrorNotice, Loading } from "@/components/status";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { ErrorNotice, Field, KeyValue, Loading } from "@/components/status";
 
 export function IssuedTokenPanel({
   issued,
@@ -28,7 +29,7 @@ export function IssuedTokenPanel({
   onRevoke: (token: Token) => void;
 }) {
   return (
-    <section aria-label="Token created" className="border rounded-lg p-5 space-y-3">
+    <section aria-label="Token created" className="form-stack rounded-xl border p-6">
       <h2 className="font-semibold">
         {saved
           ? "New token saved and verified"
@@ -36,14 +37,15 @@ export function IssuedTokenPanel({
             ? "Save your token now"
             : "Request recovered — secret unavailable"}
       </h2>
-      <p>
+      <p className="text-sm text-muted-foreground break-all">
         {issued.access_token.name} · {issued.access_token.id}
       </p>
-      {issued.token ? (
-        <>
-          <p>This is the only time this token is shown. Save it securely before closing.</p>
+      {issued.token && (
+        <div className="flex flex-wrap items-center gap-2">
           {revealed ? (
-            <code className="block break-all select-all p-3 bg-muted">{issued.token}</code>
+            <code className="block w-full break-all select-all rounded-md bg-muted p-3">
+              {issued.token}
+            </code>
           ) : (
             <Button variant="outline" onClick={onReveal}>
               Reveal token
@@ -52,30 +54,20 @@ export function IssuedTokenPanel({
           <Button disabled={busy} onClick={onVerify}>
             I have saved it — verify
           </Button>
-        </>
-      ) : saved ? (
-        <p>
-          The new credential is valid.{" "}
-          {rotating
-            ? "The old token is still active until you revoke it below."
-            : "Keep its saved copy secure."}
-        </p>
-      ) : (
-        <p>
-          The server already accepted this request. Revoke this token and create another to receive
-          a new secret.
-        </p>
+        </div>
       )}
-      {saved && rotating && canRevoke && (
-        <Button disabled={busy} onClick={() => onRevoke(rotating)}>
-          Revoke old token: {rotating.name}
-        </Button>
-      )}
-      {canRevoke && (
-        <Button variant="outline" disabled={busy} onClick={() => onRevoke(issued.access_token)}>
-          Revoke this token
-        </Button>
-      )}
+      <div className="flex flex-wrap gap-2">
+        {saved && rotating && canRevoke && (
+          <Button disabled={busy} onClick={() => onRevoke(rotating)}>
+            Revoke old token: {rotating.name}
+          </Button>
+        )}
+        {canRevoke && (
+          <Button variant="outline" disabled={busy} onClick={() => onRevoke(issued.access_token)}>
+            Revoke this token
+          </Button>
+        )}
+      </div>
     </section>
   );
 }
@@ -107,21 +99,17 @@ export function AccessTokenIssueForm({
 }) {
   return (
     <form
-      className="max-w-2xl space-y-4"
+      className="form-stack max-w-2xl"
       onSubmit={(e) => {
         e.preventDefault();
         onSubmit();
       }}
     >
-      <h2 className="text-lg font-semibold">
-        {rotating ? `Replace ${rotating.name}` : "Create a token"}
-      </h2>
-      <label className="block space-y-2">
-        <span>Name</span>
+      <h2>{rotating ? `Replace ${rotating.name}` : "Create a token"}</h2>
+      <Field label="Name">
         <Input required value={name} maxLength={128} onChange={(e) => onName(e.target.value)} />
-      </label>
-      <label className="block space-y-2">
-        <span>Expires in days</span>
+      </Field>
+      <Field label="Expires in days">
         <Input
           type="number"
           required
@@ -130,13 +118,10 @@ export function AccessTokenIssueForm({
           value={days}
           onChange={(e) => onDays(Number(e.target.value))}
         />
-      </label>
+      </Field>
       <fieldset className="space-y-2">
-        <legend className="font-medium mb-2">Permissions</legend>
-        <p className="text-muted-foreground text-sm">
-          Select only what the script needs. Write permissions do not include read access.
-        </p>
-        <div className="grid sm:grid-cols-2 gap-2">
+        <legend className="mb-2 text-sm font-medium">Permissions</legend>
+        <div className="grid gap-2 text-sm sm:grid-cols-2">
           {scopes
             .filter((s) => s !== "access-token.write")
             .map((scope) => (
@@ -154,12 +139,8 @@ export function AccessTokenIssueForm({
               </label>
             ))}
         </div>
-        <p className="text-muted-foreground text-sm">
-          auth.write can change provider credentials; template.publish can change runner
-          provisioning; logs.read exposes sanitized diagnostics. These are high-trust permissions.
-        </p>
       </fieldset>
-      <Button type="submit" disabled={submitDisabled}>
+      <Button type="submit" className="self-start" disabled={submitDisabled}>
         {busy ? "Saving…" : "Create token"}
       </Button>
     </form>
@@ -167,6 +148,10 @@ export function AccessTokenIssueForm({
 }
 
 const TOKEN_STATES = ["all", "active", "expired", "revoked", "disabled"];
+
+function scopeList(scopes: string[]) {
+  return scopes.join(", ") || "Identity only";
+}
 
 export function AccessTokenList({
   tokens,
@@ -185,16 +170,17 @@ export function AccessTokenList({
 }) {
   return (
     <section className="space-y-4">
-      <div className="flex gap-4 items-center">
-        <h2 className="text-lg font-semibold">Your tokens</h2>
-        <label>
-          State{" "}
-          <select aria-label="Token state" value={state} onChange={(e) => onState(e.target.value)}>
+      <div className="section-heading">
+        <h2>Your tokens</h2>
+        <Field label="Token state" hideLabel>
+          <NativeSelect value={state} onChange={(e) => onState(e.target.value)}>
             {TOKEN_STATES.map((s) => (
-              <option key={s}>{s}</option>
+              <NativeSelectOption key={s} value={s}>
+                {s === "all" ? "All states" : s[0].toUpperCase() + s.slice(1)}
+              </NativeSelectOption>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </Field>
       </div>
       {tokens.isPending ? (
         <Loading />
@@ -242,17 +228,17 @@ function TokenRow({ token, actions }: { token: Token; actions: TokenRowActions }
     <article className="py-4 flex flex-wrap items-start justify-between gap-4">
       <div className="min-w-0 space-y-1">
         <h3 className="font-medium">
-          {token.name} <span className="text-muted-foreground">({token.state})</span>
+          {token.name} <span className="font-normal text-muted-foreground">({token.state})</span>
         </h3>
-        <p className="text-sm break-all">{token.id}</p>
-        <p className="text-sm">Expires {token.expires_at}</p>
-        <p className="text-sm">Permissions: {token.scopes.join(", ") || "Identity only"}</p>
-        <p className="text-sm">
-          Effective now: {token.effective_scopes.join(", ") || "Identity only"}
-        </p>
-        <p className="text-muted-foreground text-sm">
-          Last used: {token.last_used_at || "Not recorded"} (approximate)
-        </p>
+        <p className="text-xs text-muted-foreground break-all">{token.id}</p>
+        <dl className="details-grid pt-2 text-sm">
+          <KeyValue label="Permissions">{scopeList(token.scopes)}</KeyValue>
+          {scopeList(token.effective_scopes) !== scopeList(token.scopes) && (
+            <KeyValue label="Effective now">{scopeList(token.effective_scopes)}</KeyValue>
+          )}
+          <KeyValue label="Expires">{token.expires_at}</KeyValue>
+          <KeyValue label="Last used">{token.last_used_at || "Never"}</KeyValue>
+        </dl>
       </div>
       {actions.canRevoke && token.state !== "revoked" && (
         <Button variant="outline" disabled={actions.busy} onClick={() => actions.onRevoke(token)}>

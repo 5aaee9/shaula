@@ -122,11 +122,7 @@ export function TokenAuthForm<T extends { instance_url: string }>({
         {resource && (
           <section className="form-stack text-sm" aria-label="Credential rotation impact">
             <h2>Live Fleet impact</h2>
-            <p>
-              The instance and scope are unchanged. Rotation is not a seamless handoff: existing
-              runners may need to finish and be recreated. Keep the previous token valid until their
-              cleanup completes.
-            </p>
+            <p>Keep the previous token valid until existing runners are recreated.</p>
             {impact.error ? (
               <ErrorNotice error={impact.error} retry={() => void impact.refetch()} />
             ) : impact.isPending ? (

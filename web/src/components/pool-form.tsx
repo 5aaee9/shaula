@@ -91,10 +91,6 @@ export function PoolForm({
               onChange={(event) => setKey(event.target.value)}
               placeholder="hkg-builders"
             />
-            <p className="text-muted-foreground text-sm">
-              Fleets reference this pool by key. Deleting a referenced pool is blocked while any
-              live fleet uses it.
-            </p>
           </Field>
           <TemplatePoolEditor
             members={members}

@@ -6,12 +6,11 @@ import {
   subscribeAuthentication,
 } from "@/lib/authentication";
 import { useQuery } from "@tanstack/react-query";
-import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { useSession } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
-import { navigation } from "@/lib/navigation";
 import { SiteHeader } from "@/components/site-header";
 import { ErrorNotice, Loading } from "@/components/status";
 import { FleetsPage } from "@/pages/fleets";
@@ -33,7 +32,6 @@ import { UnassignedRunners, RunnerDetail } from "@/pages/job-runners";
 export function App() {
   const expired = useSyncExternalStore(subscribeAuthentication, authenticationExpired);
   const session = useSession();
-  const location = useLocation();
   const health = useQuery({
     queryKey: ["health"],
     queryFn: async ({ signal }) => {
@@ -44,16 +42,12 @@ export function App() {
     refetchInterval: 10_000,
     enabled: !expired,
   });
-  const current =
-    navigation.find((item) => location.pathname.startsWith(item.url))?.title || "Control plane";
   const scopes = session.data?.data.scopes || [];
-  const healthLabel = health.error
+  const healthProblem = health.error
     ? "Offline"
-    : health.isPending
-      ? "Connecting"
-      : health.data?.ready
-        ? "Ready"
-        : "Not ready";
+    : health.data && !health.data.ready
+      ? "Not ready"
+      : undefined;
   if (expired)
     return (
       <main className="flex min-h-svh flex-col items-center justify-center gap-4 p-6">
@@ -78,7 +72,7 @@ export function App() {
         onRefreshSession={() => void session.refetch()}
       />
       <SidebarInset className="min-w-0">
-        <SiteHeader title={current} health={healthLabel} />
+        <SiteHeader problem={healthProblem} />
         <div className="flex min-w-0 flex-1 flex-col">
           <div
             id="main-content"
