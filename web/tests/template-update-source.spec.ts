@@ -163,11 +163,14 @@ test("a changed default rejected with 422 preserves the reviewed source until a 
   await expect(page.getByRole("button", { name: "Update", exact: true })).toBeDisabled();
   expect(writes).toBe(1);
   await page.getByRole("link", { name: "Back to templates" }).click();
-  await page.getByRole("button", { name: "custom-docker", exact: true }).click();
-  await page.getByRole("button", { name: "Review update" }).click();
-  await expect(page.getByRole("status")).toContainText(
-    "Saved default template docker is unavailable",
-  );
+  await expect(page).toHaveURL(/\/templates\?key=custom-docker$/);
+  await page.evaluate((path) => {
+    history.pushState(null, "", path);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, updatePath);
+  await expect(
+    page.getByRole("status").filter({ hasText: "Saved default template docker is unavailable" }),
+  ).toBeVisible();
 });
 
 for (const duplicateExactMatch of [false, true]) {

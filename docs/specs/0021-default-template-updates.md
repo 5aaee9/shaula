@@ -96,8 +96,14 @@ Templates 已发布模板提供 **Update**，进入独立 review 页面。操作
   `source_key`、`artifact_digest`、`engine_ref`，bindings 与 policy 由服务器从 base 复用。
   目标声明了 base 未设置且无默认值的 required binding 时禁用一键提交，只提供 review 页。
   412/409/422 保留对话框错误并提供 **Review changes**，不静默重试。
-- `UpToDate`/无来源不显示一键入口；详情页保留 **Review update** 进入 §4 review 页，用于
-  显式 policy 替换或为无来源 Revision 建立关联。`Unavailable` 显示 **Source unavailable**。
+- `UpToDate`/无来源不显示一键入口。`UpToDate` 时详情页提供 **Edit settings**，进入同一
+  review 路由的 settings-only 模式：标题为 “Edit {key} settings”，不显示代码对比，提交按钮为
+  **Save**，目标固定为当前代码，仅修改 bindings 或显式替换 policy。`Available` 时不提供 Edit
+  settings（catalog 目标已变化，无法在保留来源的同时只改设置），改走一键 Update 或其 Review。
+  无来源模板只提供 **New revision**；为其建立关联即在 New revision 中选择 Default template。
+  review 路由仍支持直接打开，以兼容无来源 Revision 的旧入口。`Unavailable` 显示 **Source unavailable**。
+- 详情页标题信息行以图标区分来源与 platform；Active 与 Desired 相同时只显示一个 Revision；
+  查看 desired Revision 时不重复显示其来源，查看历史 Revision 时才显示。
 - New revision 在 desired Revision 的来源仍可用时默认选中该 Default template，避免普通
   修订意外丢弃来源关联；切换到 archive/existing artifact 仍按 §3 省略来源。
 

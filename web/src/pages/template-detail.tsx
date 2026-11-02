@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/page-header";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { Library } from "lucide-react";
 import { api, resourcePath } from "@/lib/api";
 import type { TemplateResource } from "@/lib/types";
 import { useTemplateRevision } from "@/lib/use-template-revision";
@@ -52,7 +53,12 @@ export function TemplateDetailPage({ scopes }: { scopes: string[] }) {
           <>
             <StatusBadge value={data.status} />
             {data.platform && <span>{data.platform}</span>}
-            {data.sourceUpdate && <span>{data.sourceUpdate.sourceKey}</span>}
+            {data.sourceUpdate && (
+              <span className="inline-flex items-center gap-1" title="Default template">
+                <Library className="size-3.5" aria-label="Default template" />
+                {data.sourceUpdate.sourceKey}
+              </span>
+            )}
             {!retired && (
               <SourceUpdateStatus
                 profileKey={profileKey}
@@ -69,6 +75,7 @@ export function TemplateDetailPage({ scopes }: { scopes: string[] }) {
             canPublish={scopes.includes("template.publish")}
             canRetire={scopes.includes("template.retire")}
             retired={retired}
+            editable={data.sourceUpdate?.state === "UpToDate"}
             onRetire={() => setRetire(true)}
           />
         }
@@ -80,6 +87,7 @@ export function TemplateDetailPage({ scopes }: { scopes: string[] }) {
         onRevisionChange={selection.setSelected}
         error={selection.query.error}
         data={selection.query.data?.data}
+        desired={data.desiredRevision}
       />
 
       {updating && (

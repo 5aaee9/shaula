@@ -160,7 +160,9 @@ test("the detail page updates from its header and returns to templates", async (
   await acceptUpdates(page, bodies);
   await page.goto("/templates/custom-docker");
   const header = page.locator("[data-slot=page-header]");
-  await expect(header.getByRole("button", { name: "Review update" })).toBeEnabled();
+  // Settings edit in place only while the source is current.
+  await expect(header.getByRole("button", { name: "Edit settings" })).toHaveCount(0);
+  await expect(header).toContainText("docker");
   await header.getByRole("button", { name: "Update custom-docker from default" }).click();
   await page
     .getByRole("dialog", { name: "Update custom-docker?" })
@@ -185,6 +187,61 @@ test("the update chip is disabled without publish permission", async ({ page }) 
   await expect(
     page.getByRole("button", { name: "Update custom-docker from default" }),
   ).toBeDisabled();
+});
+
+test("a current source edits settings in place without a code comparison", async ({
+  page,
+}, testInfo) => {
+  await mockTemplateUpdate(page, {
+    sourceKey: "docker",
+    digest: dockerDigest,
+    sourceUpdate: { ...availableUpdate, state: "UpToDate" },
+  });
+  let written: Record<string, unknown> | null = null;
+  await page.route(updateApi, (route) => {
+    written = route.request().postDataJSON();
+    return route.fulfill({
+      status: 202,
+      json: { changeId: "settings", state: "Accepted", revision: 4 },
+    });
+  });
+  await page.goto("/templates/custom-docker");
+  const header = page.locator("[data-slot=page-header]");
+  await expect(
+    header.getByRole("button", { name: "Update custom-docker from default" }),
+  ).toHaveCount(0);
+  await expect(header.getByLabel("Default template")).toBeVisible();
+  // One revision fact while Active and Desired agree; the source is not repeated below.
+  await expect(page.getByText("Active revision")).toHaveCount(0);
+  await expect(page.getByText("Default source")).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("template-detail-current.png"),
+    fullPage: true,
+  });
+  await header.getByRole("button", { name: "Edit settings" }).click();
+  await expect(page).toHaveURL(new RegExp(`${updatePath}$`));
+  await expect(page.getByRole("heading", { name: "Edit custom-docker settings" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Revision changes" })).toHaveCount(0);
+  const save = page.getByRole("button", { name: "Save", exact: true });
+  await expect(save).toBeDisabled();
+  await page.getByRole("button", { name: "Use declared options" }).click();
+  await save.click();
+  await expect(page).toHaveURL(/\/templates\?key=custom-docker$/);
+  expect(written).toMatchObject({
+    artifact_digest: dockerDigest,
+    engine_ref: "terraform",
+    source_key: "docker",
+  });
+  expect(written!.fleet_input_policy).toBeTruthy();
+});
+
+test("a custom template only offers a new revision", async ({ page }) => {
+  await mockTemplateUpdate(page);
+  await page.goto("/templates/custom-docker");
+  const header = page.locator("[data-slot=page-header]");
+  await expect(header.getByRole("button", { name: "New revision" })).toBeEnabled();
+  await expect(header.getByRole("button", { name: "Edit settings" })).toHaveCount(0);
+  await expect(header.getByRole("button", { name: /from default/ })).toHaveCount(0);
 });
 
 test("a new revision keeps the recorded default source selected", async ({ page }) => {

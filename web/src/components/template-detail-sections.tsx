@@ -1,4 +1,4 @@
-import { Trash2, Upload } from "lucide-react";
+import { Settings2, Trash2, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { isSensitiveMarker, type TemplateResource, type TemplateRevision } from "@/lib/types";
 import { ErrorNotice, KeyValue, Loading, StatusBadge } from "@/components/status";
@@ -21,25 +21,31 @@ export function TemplateDetailActions({
   canPublish,
   canRetire,
   retired,
+  editable,
   onRetire,
 }: {
   profileKey: string;
   canPublish: boolean;
   canRetire: boolean;
   retired: boolean;
+  /** Settings edit in place only while the recorded source is current. */
+  editable: boolean;
   onRetire: () => void;
 }) {
   const navigate = useNavigate();
   return (
     <div className="flex gap-2">
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={!canPublish || retired}
-        onClick={() => navigate(`/templates/${encodeURIComponent(profileKey)}/update`)}
-      >
-        Review update
-      </Button>
+      {editable && (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!canPublish || retired}
+          onClick={() => navigate(`/templates/${encodeURIComponent(profileKey)}/update`)}
+        >
+          <Settings2 />
+          Edit settings
+        </Button>
+      )}
       <Button
         variant="outline"
         size="sm"
@@ -67,10 +73,16 @@ export function TemplateProfileSummary({ data }: { data: TemplateResource }) {
     <section className="rounded-xl border bg-card p-5 sm:p-6">
       <dl className="details-grid">
         <KeyValue label="Bindings contract">{data.bindingsContract || "--"}</KeyValue>
-        <KeyValue label="Active revision">
-          {data.activeRevision ? `r${data.activeRevision}` : "--"}
-        </KeyValue>
-        <KeyValue label="Desired revision">r{data.desiredRevision}</KeyValue>
+        {data.activeRevision === data.desiredRevision ? (
+          <KeyValue label="Revision">r{data.desiredRevision}</KeyValue>
+        ) : (
+          <>
+            <KeyValue label="Active revision">
+              {data.activeRevision ? `r${data.activeRevision}` : "--"}
+            </KeyValue>
+            <KeyValue label="Desired revision">r{data.desiredRevision}</KeyValue>
+          </>
+        )}
       </dl>
       {data.status === "Ready" && (
         <p className="mt-4 text-sm text-muted-foreground" role="status">
@@ -101,7 +113,13 @@ function RevisionBindings({ revision }: { revision: TemplateRevision }) {
   );
 }
 
-function RevisionDetails({ revision }: { revision: TemplateRevision }) {
+function RevisionDetails({
+  revision,
+  showSource,
+}: {
+  revision: TemplateRevision;
+  showSource: boolean;
+}) {
   return (
     <>
       <dl className="details-grid mt-4">
@@ -112,7 +130,9 @@ function RevisionDetails({ revision }: { revision: TemplateRevision }) {
         <KeyValue label="Revision status">
           <StatusBadge value={revision.state} />
         </KeyValue>
-        {revision.sourceKey && <KeyValue label="Default source">{revision.sourceKey}</KeyValue>}
+        {showSource && revision.sourceKey && (
+          <KeyValue label="Default source">{revision.sourceKey}</KeyValue>
+        )}
         {revision.reason && <KeyValue label="Validation reason">{revision.reason}</KeyValue>}
       </dl>
       <RevisionBindings revision={revision} />
@@ -125,11 +145,14 @@ export function TemplateRevisionSection({
   onRevisionChange,
   error,
   data,
+  desired,
 }: {
   revision: string;
   onRevisionChange: (value: string) => void;
   error: Error | null;
   data: TemplateRevision | undefined;
+  /** The header already shows the desired revision's source. */
+  desired: number;
 }) {
   return (
     <section className="mt-6 rounded-xl border bg-card p-5 sm:p-6">
@@ -148,7 +171,7 @@ export function TemplateRevisionSection({
       {error ? (
         <ErrorNotice error={error} />
       ) : data ? (
-        <RevisionDetails revision={data} />
+        <RevisionDetails revision={data} showSource={data.revision !== desired} />
       ) : (
         <Loading />
       )}

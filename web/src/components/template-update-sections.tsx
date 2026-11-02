@@ -193,12 +193,14 @@ export function UpdateActionBar({
   busy,
   conflict,
   error,
+  submitLabel,
   submitDisabled,
   onClose,
 }: {
   busy: boolean;
   conflict: boolean;
   error: unknown;
+  submitLabel: string;
   submitDisabled: boolean;
   onClose: () => void;
 }) {
@@ -230,7 +232,7 @@ export function UpdateActionBar({
           </Button>
           <Button type="submit" disabled={submitDisabled}>
             {busy ? <LoaderCircle className="animate-spin" /> : <ArrowUpFromLine />}
-            {busy ? "Updating…" : "Update"}
+            {busy ? "Saving…" : submitLabel}
           </Button>
         </div>
       </div>

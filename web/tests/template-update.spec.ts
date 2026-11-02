@@ -36,9 +36,7 @@ test("published update reviews an explicit source and retains bindings and polic
       json: { changeId: "template-updated", state: "Accepted", revision: 4 },
     });
   });
-  await page.goto("/templates/custom-docker");
-  await page.getByRole("button", { name: "Review update" }).click();
-  await expect(page).toHaveURL(new RegExp(`${updatePath}$`));
+  await page.goto(updatePath);
   const form = page.getByRole("form", { name: "Template update review" });
   const source = form.getByRole("combobox", { name: "Default template", exact: true });
   await expect(source).toHaveValue("");
@@ -256,8 +254,12 @@ test("starting a new review after a conflict loads a new base instead of cached 
     }),
   );
   await page.getByRole("link", { name: "Back to templates" }).click();
-  await page.getByRole("button", { name: "custom-docker", exact: true }).click();
-  await page.getByRole("button", { name: "Review update" }).click();
+  await expect(page).toHaveURL(/\/templates\?key=custom-docker$/);
+  // Unlinked revisions have no page entry; reopen the review in the same app session.
+  await page.evaluate((path) => {
+    history.pushState(null, "", path);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, updatePath);
   await expect(page.getByRole("region", { name: "Revision changes", exact: true })).toContainText(
     "r4",
   );
@@ -314,16 +316,21 @@ for (const missing of ["template.publish", "template.read"]) {
     expect(reads).toBe(0);
     if (missing === "template.publish") {
       await page.goto("/templates/custom-docker");
-      await expect(page.getByRole("button", { name: "Review update" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "New revision" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Edit settings" })).toHaveCount(0);
     }
   });
 }
 
 test("published template detail actions fit a 390px viewport", async ({ page }) => {
-  await mockTemplateUpdate(page);
+  await mockTemplateUpdate(page, {
+    sourceKey: "docker",
+    digest: dockerDigest,
+    sourceUpdate: { ...availableUpdate, state: "UpToDate" },
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/templates/custom-docker");
-  const update = page.getByRole("button", { name: "Review update" });
+  const update = page.getByRole("button", { name: "Edit settings" });
   await update.scrollIntoViewIfNeeded();
   await expect(update).toBeVisible();
   const bounds = await update.evaluate((button) => {
@@ -359,7 +366,7 @@ for (const status of ["Retiring", "Retired"]) {
       page.getByRole("button", { name: "Update custom-docker from default" }),
     ).toHaveCount(0);
     await page.goto("/templates/custom-docker");
-    await expect(page.getByRole("button", { name: "Review update" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "New revision" })).toBeDisabled();
     await expect(
       page.getByRole("button", { name: "Update custom-docker from default" }),
     ).toHaveCount(0);

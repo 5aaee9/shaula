@@ -32,6 +32,9 @@ export function TemplateUpdatePage({ scopes }: { scopes: string[] }) {
     },
   });
 
+  // A current recorded source keeps its code; the page only edits settings.
+  const editing = query.data?.resource.data.sourceUpdate?.state === "UpToDate";
+
   function accepted(change: ChangeRef | null) {
     navigate(backTo, { replace: true, state: { change, noOp: change === null } });
   }
@@ -40,7 +43,7 @@ export function TemplateUpdatePage({ scopes }: { scopes: string[] }) {
     <div className="mx-auto w-full max-w-5xl">
       <PageHeader
         back={{ to: backTo, label: "Templates" }}
-        title={`Update ${profileKey} from default`}
+        title={editing ? `Edit ${profileKey} settings` : `Update ${profileKey} from default`}
       />
       {!canRead || !canPublish ? (
         <ErrorNotice error={new Error("Template read and publish permissions are required.")} />
@@ -56,6 +59,7 @@ export function TemplateUpdatePage({ scopes }: { scopes: string[] }) {
           resource={query.data.resource}
           revision={query.data.revision}
           sources={query.data.sources}
+          editing={editing}
           onClose={() => navigate(backTo)}
           onAccepted={accepted}
         />

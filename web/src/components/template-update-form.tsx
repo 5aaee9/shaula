@@ -23,12 +23,15 @@ export function TemplateUpdateForm({
   resource,
   revision,
   sources,
+  editing,
   onClose,
   onAccepted,
 }: {
   resource: Resource<TemplateResource>;
   revision: TemplateRevision;
   sources: TemplateSource[];
+  /** Settings-only edit: the target equals the current code, so no comparison. */
+  editing: boolean;
   onClose: () => void;
   onAccepted: (change: ChangeRef | null) => void;
 }) {
@@ -83,12 +86,14 @@ export function TemplateUpdateForm({
           }}
         />
 
-        <RevisionChanges
-          resource={snapshot.resource.data}
-          revision={snapshot.revision}
-          target={target}
-          upToDate={upToDate}
-        />
+        {!editing && (
+          <RevisionChanges
+            resource={snapshot.resource.data}
+            revision={snapshot.revision}
+            target={target}
+            upToDate={upToDate}
+          />
+        )}
 
         <TemplateUpdateBindings variables={variables} bindings={bindings} onChange={setBindings} />
 
@@ -109,6 +114,7 @@ export function TemplateUpdateForm({
         busy={update.busy}
         conflict={update.conflict}
         error={update.error}
+        submitLabel={editing ? "Save" : "Update"}
         submitDisabled={update.busy || !target || upToDate || update.conflict || discovery.loading}
         onClose={onClose}
       />

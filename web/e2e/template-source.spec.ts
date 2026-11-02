@@ -81,11 +81,11 @@ test("published source survives real database reads and an explicit source-only 
   // selects the source without a dropdown or any caller-supplied route state.
   await page.goto("/templates/browser-source/update");
   await expect(review.getByRole("combobox", { name: "Default template" })).toHaveCount(0);
+  // A current recorded source turns the review into a settings-only edit.
+  await expect(page.getByRole("heading", { name: "Edit browser-source settings" })).toBeVisible();
   await expect(review.getByRole("region", { name: "Update source" })).toHaveCount(0);
-  await expect(
-    review.getByRole("region", { name: "Revision changes" }).getByRole("status"),
-  ).toContainText("Up to date");
-  await expect(review.getByRole("button", { name: "Update", exact: true })).toBeDisabled();
+  await expect(review.getByRole("region", { name: "Revision changes" })).toHaveCount(0);
+  await expect(review.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   await expect(review.getByRole("button", { name: "Use declared options" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("saved-default-source.png"), fullPage: true });
 
@@ -96,7 +96,7 @@ test("published source survives real database reads and an explicit source-only 
     (response) =>
       response.url().endsWith(`${profilePath}/updates`) && response.request().method() === "POST",
   );
-  await review.getByRole("button", { name: "Update", exact: true }).click();
+  await review.getByRole("button", { name: "Save", exact: true }).click();
   const unchangedResponse = await unchanged;
   expect(unchangedResponse.status()).toBe(200);
   expect(await unchangedResponse.json()).toMatchObject({ noOp: true, changeId: "" });
