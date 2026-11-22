@@ -1,9 +1,8 @@
 //! Store handle: single-writer SQLite connection with explicit pragmas.
 
 use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr, TransactionTrait};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use shaula_store_migration as migration;
 
@@ -34,30 +33,7 @@ pub type StoreResult<T> = Result<T, StoreError>;
 pub struct Store {
     db: DatabaseConnection,
     pub(crate) diagnostics: Arc<crate::diagnostics::Hub>,
-    writer_waits: Arc<WriterContentionCounters>,
 }
-
-/// Aggregated evidence of SQLite writer contention since the store opened.
-///
-/// A wait is recorded only when reserving the writer takes at least 10 ms;
-/// short scheduler noise is not useful evidence of a lock queue. The counters
-/// are intentionally process-local: durable state remains the source of truth,
-/// while this snapshot explains transient busy delays in readiness diagnostics.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct WriterContention {
-    pub waits: u64,
-    pub total_wait_ms: u64,
-    pub max_wait_ms: u64,
-}
-
-#[derive(Default)]
-struct WriterContentionCounters {
-    waits: AtomicU64,
-    total_wait_ms: AtomicU64,
-    max_wait_ms: AtomicU64,
-}
-
-const CONTENTION_RECORD_AFTER: Duration = Duration::from_millis(10);
 
 impl Store {
     /// Opens (creating if needed) the SQLite database with WAL, foreign
@@ -93,11 +69,7 @@ impl Store {
             });
         let db = Database::connect(options).await?;
         let diagnostics = crate::diagnostics::Hub::start(db.clone());
-        Ok(Self {
-            diagnostics,
-            db,
-            writer_waits: Arc::new(WriterContentionCounters::default()),
-        })
+        Ok(Self { diagnostics, db })
     }
 
     /// Connection accessor for migrations only.
@@ -112,18 +84,6 @@ impl Store {
         use sea_orm::ConnectionTrait;
         self.db.execute_unprepared(sql).await?;
         Ok(())
-    }
-
-    /// Returns process-local evidence of waits for SQLite's single writer.
-    ///
-    /// This is diagnostic only; it does not participate in admission or
-    /// recovery decisions and resets when the daemon restarts.
-    pub fn writer_contention(&self) -> WriterContention {
-        WriterContention {
-            waits: self.writer_waits.waits.load(Ordering::Relaxed),
-            total_wait_ms: self.writer_waits.total_wait_ms.load(Ordering::Relaxed),
-            max_wait_ms: self.writer_waits.max_wait_ms.load(Ordering::Relaxed),
-        }
     }
 
     /// Applies pending forward migrations and verifies the durable-format
@@ -194,29 +154,8 @@ impl Store {
         // snapshots use this short, serialized boundary; ordinary read queries
         // remain concurrent on the WAL pool. SeaORM still owns commit/rollback
         // and cancellation, including when reservation is interrupted.
-        let started = Instant::now();
         tx.execute_unprepared("UPDATE durable_format SET version=version WHERE 0")
             .await?;
-        let waited = started.elapsed();
-        if waited >= CONTENTION_RECORD_AFTER {
-            let wait_ms = waited.as_millis().min(u128::from(u64::MAX)) as u64;
-            self.writer_waits.waits.fetch_add(1, Ordering::Relaxed);
-            self.writer_waits
-                .total_wait_ms
-                .fetch_add(wait_ms, Ordering::Relaxed);
-            let mut previous = self.writer_waits.max_wait_ms.load(Ordering::Relaxed);
-            while previous < wait_ms {
-                match self.writer_waits.max_wait_ms.compare_exchange_weak(
-                    previous,
-                    wait_ms,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => break,
-                    Err(observed) => previous = observed,
-                }
-            }
-        }
         Ok(tx)
     }
 

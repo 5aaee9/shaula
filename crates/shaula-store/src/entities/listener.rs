@@ -54,30 +54,3 @@ pub mod listener_acquisitions {
 
     impl ActiveModelBehavior for ActiveModel {}
 }
-
-pub mod listener_job_observations {
-    use sea_orm::entity::prelude::*;
-
-    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "listener_job_observations")]
-    pub struct Model {
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub fleet_key: String,
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub epoch: i64,
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub message_id: i64,
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub observation_kind: String,
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub runner_request_id: i64,
-        pub job_id: String,
-        pub runner_name: Option<String>,
-        pub observed_at: i64,
-    }
-
-    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
-
-    impl ActiveModelBehavior for ActiveModel {}
-}

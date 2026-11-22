@@ -25,7 +25,6 @@ mod lifecycle_repo;
 mod listener_acquisitions;
 mod listener_activity;
 mod listener_messages;
-mod listener_observations;
 mod metrics;
 pub mod operation_logs;
 mod pool_repo;

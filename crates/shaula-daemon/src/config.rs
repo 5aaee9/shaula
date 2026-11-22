@@ -111,23 +111,16 @@ fn default_artifact_limit() -> String {
 pub struct LimitsConfig {
     #[serde(default = "default_max_fleets")]
     pub max_active_fleets: usize,
-    #[serde(default = "default_max_pending")]
-    pub max_pending_changes: usize,
 }
 
 fn default_max_fleets() -> usize {
     100
 }
 
-fn default_max_pending() -> usize {
-    1000
-}
-
 impl Default for LimitsConfig {
     fn default() -> Self {
         Self {
             max_active_fleets: default_max_fleets(),
-            max_pending_changes: default_max_pending(),
         }
     }
 }

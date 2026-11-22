@@ -108,7 +108,7 @@ async fn replacement_classifies_old_work_and_same_message_id_is_a_new_epoch() ->
     assert_eq!(
         number(
             &store,
-            "SELECT COUNT(*) AS value FROM listener_job_observations WHERE message_id=1"
+            "SELECT COUNT(*) AS value FROM listener_messages WHERE message_id=1"
         )
         .await?,
         2

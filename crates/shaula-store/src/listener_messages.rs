@@ -143,7 +143,7 @@ impl Store {
         )
         .exec_without_returning(&tx)
         .await?;
-        self.listener_observations_tx(&tx, fleet, context.epoch, message, now)
+        self.listener_acquisitions_insert_tx(&tx, fleet, context.epoch, message, now)
             .await?;
         self.listener_activity_tx(&tx, fleet, message, now).await?;
         self.jobs_ingest_tx(&tx, fleet, context, message, now)

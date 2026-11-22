@@ -115,10 +115,10 @@ async fn ingest_commits_all_facts_before_ack_and_recovers_pending_work() -> Test
     assert_eq!(
         number(
             &store,
-            "SELECT COUNT(*) AS value FROM listener_job_observations"
+            "SELECT COUNT(*) AS value FROM workflow_job_observations"
         )
         .await?,
-        1
+        2
     );
     assert_eq!(
         number(
@@ -179,7 +179,7 @@ async fn failed_message_transaction_leaves_no_checkpoint_demand_observation_or_a
     for table in [
         "listener_messages",
         "listener_acquisitions",
-        "listener_job_observations",
+        "workflow_job_observations",
     ] {
         assert_eq!(
             number(&store, &format!("SELECT COUNT(*) AS value FROM {table}")).await?,
@@ -242,10 +242,10 @@ async fn redelivery_does_not_rewind_statistics_or_duplicate_acquisition() -> Tes
     assert_eq!(
         number(
             &store,
-            "SELECT COUNT(*) AS value FROM listener_job_observations"
+            "SELECT COUNT(*) AS value FROM workflow_job_observations"
         )
         .await?,
-        2
+        4
     );
     assert!(store
         .listener_ingest("fleet", &context, &message(1, 20), 23)

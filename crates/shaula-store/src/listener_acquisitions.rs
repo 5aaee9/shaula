@@ -1,8 +1,10 @@
 //! Durable at-most-once acquisition attempts and old-session classification.
 use sea_orm::{
-    sea_query::{Expr, SimpleExpr},
+    sea_query::{Expr, OnConflict, SimpleExpr},
+    ActiveValue::Set,
     ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect,
 };
+use shaula_core::ports::PollMessage;
 use shaula_core::registry::SessionEffectContext;
 
 use crate::entities::listener::listener_acquisitions as acquisitions;
@@ -10,6 +12,40 @@ use crate::query_ext::col;
 use crate::{Store, StoreError, StoreResult};
 
 impl Store {
+    pub(crate) async fn listener_acquisitions_insert_tx(
+        &self,
+        tx: &DatabaseTransaction,
+        fleet: &str,
+        epoch: i64,
+        message: &PollMessage,
+        now: i64,
+    ) -> StoreResult<()> {
+        for job in &message.job_available {
+            if job.runner_request_id <= 0 {
+                return Err(StoreError::Corrupt("invalid runner request ID".into()));
+            }
+            acquisitions::Entity::insert(acquisitions::ActiveModel {
+                fleet_key: Set(fleet.to_owned()),
+                epoch: Set(epoch),
+                message_id: Set(message.message_id),
+                runner_request_id: Set(job.runner_request_id),
+                state: Set("Pending".to_owned()),
+                updated_at: Set(now),
+            })
+            .on_conflict(
+                OnConflict::columns([
+                    acquisitions::Column::FleetKey,
+                    acquisitions::Column::Epoch,
+                    acquisitions::Column::RunnerRequestId,
+                ])
+                .do_nothing()
+                .to_owned(),
+            )
+            .exec_without_returning(tx)
+            .await?;
+        }
+        Ok(())
+    }
     pub(crate) async fn listener_acquire_start(
         &self,
         fleet: &str,

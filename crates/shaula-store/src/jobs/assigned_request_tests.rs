@@ -241,7 +241,6 @@ async fn zero_request_execution_facts_keep_exact_runner_identity_and_completion(
         assert_eq!(detail.generations[0].id, format!("generation-{runner}"));
     }
     assert_eq!(count(&store, "workflow_job_observations").await?, 6);
-    assert_eq!(count(&store, "listener_job_observations").await?, 0);
     assert!(store.listener_acknowledge("fleet", &context, 1, 21).await?);
     assert_eq!(
         store

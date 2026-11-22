@@ -22,7 +22,6 @@ pub struct ValidatedBootstrap {
     pub request_body_limit: usize,
     pub artifact_body_limit: usize,
     pub max_active_fleets: usize,
-    pub max_pending_changes: usize,
     pub create_concurrency: usize,
     pub destroy_concurrency: usize,
     pub template_create_concurrency: Option<usize>,
@@ -51,7 +50,6 @@ impl std::fmt::Debug for ValidatedBootstrap {
             .field("request_body_limit", &self.request_body_limit)
             .field("artifact_body_limit", &self.artifact_body_limit)
             .field("max_active_fleets", &self.max_active_fleets)
-            .field("max_pending_changes", &self.max_pending_changes)
             .field("create_concurrency", &self.create_concurrency)
             .field("destroy_concurrency", &self.destroy_concurrency)
             .field(
@@ -282,7 +280,6 @@ impl ValidatedBootstrap {
             request_body_limit,
             artifact_body_limit,
             max_active_fleets: config.limits.max_active_fleets,
-            max_pending_changes: config.limits.max_pending_changes,
             create_concurrency: config.execution.create_concurrency,
             destroy_concurrency: config.execution.destroy_concurrency,
             template_create_concurrency: config.execution.template_create_concurrency,
