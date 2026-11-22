@@ -54,6 +54,19 @@ impl SetupInfoDescriptor {
     }
 
     pub fn validate(&self) -> CoreResult<()> {
+        self.validate_parsed_url().map(|_| ())
+    }
+
+    pub fn validate_for_generation(&self, generation: &str) -> CoreResult<()> {
+        if let Some(parsed) = self.validate_parsed_url()? {
+            if parsed.path() != format!("/runner/v1/generations/{generation}/setup-info") {
+                return Err(invalid());
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_parsed_url(&self) -> CoreResult<Option<url::Url>> {
         let Self::Enabled {
             url,
             capability,
@@ -61,7 +74,7 @@ impl SetupInfoDescriptor {
             wait_seconds,
         } = self
         else {
-            return Ok(());
+            return Ok(None);
         };
         let parsed = url::Url::parse(url).map_err(|_| invalid())?;
         if url.len() > 2048
@@ -82,18 +95,7 @@ impl SetupInfoDescriptor {
         {
             return Err(invalid());
         }
-        Ok(())
-    }
-
-    pub fn validate_for_generation(&self, generation: &str) -> CoreResult<()> {
-        self.validate()?;
-        if let Self::Enabled { url, .. } = self {
-            let parsed = url::Url::parse(url).map_err(|_| invalid())?;
-            if parsed.path() != format!("/runner/v1/generations/{generation}/setup-info") {
-                return Err(invalid());
-            }
-        }
-        Ok(())
+        Ok(Some(parsed))
     }
 }
 

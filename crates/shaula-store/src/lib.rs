@@ -2,42 +2,42 @@
 //! typed repositories. No `DatabaseConnection`, entity or ORM error escapes
 //! this crate.
 
-pub mod artifact_library;
+mod artifact_library;
 mod artifact_metadata;
 mod auth_dependents_repo;
 mod auth_execution_repo;
-pub mod auth_policy_repo;
-pub mod auth_repo;
-pub mod auth_v2_repo;
+mod auth_policy_repo;
+mod auth_repo;
+mod auth_v2_repo;
 mod entities;
 mod fleet_auth_ack;
-pub mod fleet_auth_context_repo;
-pub mod fleet_auth_repo;
+mod fleet_auth_context_repo;
+mod fleet_auth_repo;
 mod fleet_observations;
-pub mod fleet_repo;
+mod fleet_repo;
 mod generation_counts;
 mod gitlab_pool_repo;
 pub mod http_state;
-pub mod jobs;
+mod jobs;
 mod key_pages;
 mod lifecycle_bootstrap;
-pub mod lifecycle_repo;
+mod lifecycle_repo;
 mod listener_acquisitions;
 mod listener_activity;
 mod listener_messages;
 mod listener_observations;
 mod metrics;
 pub mod operation_logs;
-pub mod pool_repo;
+mod pool_repo;
 mod query_ext;
 pub mod registry_impl;
 mod runtime_guards;
-pub mod scaleset_ownership_repo;
+mod scaleset_ownership_repo;
 pub mod setup_info;
-pub mod shared_repo;
-pub mod store;
+mod shared_repo;
+mod store;
 mod template_activation;
-pub mod template_repo;
+mod template_repo;
 
 pub use store::{Store, StoreError, StoreResult};
 

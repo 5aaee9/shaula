@@ -32,7 +32,7 @@ macro_rules! resource {
                     .prepare(
                         Method::PUT,
                         &["api", "v1", $path, key],
-                        body.raw(),
+                        body.raw().to_owned(),
                         Some(options),
                         None,
                     )
@@ -50,7 +50,7 @@ macro_rules! resource {
                     .prepare(
                         Method::DELETE,
                         &["api", "v1", $path, key],
-                        "",
+                        String::new(),
                         Some(options),
                         None,
                     )
@@ -186,7 +186,7 @@ impl Templates<'_> {
                     "attestations",
                     attestation,
                 ],
-                body.raw(),
+                body.raw().to_owned(),
                 Some(options),
                 None,
             )
@@ -205,7 +205,7 @@ impl Templates<'_> {
             .prepare(
                 Method::POST,
                 &["api", "v1", "template-profiles", key, "updates"],
-                body.raw(),
+                body.raw().to_owned(),
                 Some(options),
                 None,
             )
@@ -268,7 +268,7 @@ impl AuthProfiles<'_> {
             .prepare(
                 Method::POST,
                 &["api", "v1", "github-auth-profiles", key, "policy-updates"],
-                body.raw(),
+                body.raw().to_owned(),
                 Some(options),
                 None,
             )
@@ -308,7 +308,7 @@ impl Client {
         self.prepare(
             Method::POST,
             &["api", "v1", "generations", id, "finalize"],
-            &serde_json::json!({"reason":reason}).to_string(),
+            serde_json::json!({"reason":reason}).to_string(),
             None,
             key,
         )

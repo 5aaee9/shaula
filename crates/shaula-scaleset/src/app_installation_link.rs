@@ -19,7 +19,7 @@ impl AppInstallationResolver {
         app_id: &str,
         private_key: &SecretString,
     ) -> Result<String, ScalesetError> {
-        let response = self.app_request(app_id, private_key, "/app").await??;
+        let response = self.app_request(app_id, private_key, "/app").await?;
         let body: serde_json::Value =
             response
                 .bounded_json()

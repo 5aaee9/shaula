@@ -5,16 +5,16 @@
 pub(crate) mod access_tokens;
 pub mod auth_installation_link;
 mod diagnostics;
-pub mod fleet_routes;
+mod fleet_routes;
 mod input_contract;
 mod jobs;
 mod key_page;
 mod pool_routes;
 mod preconditions;
 mod profile_auth_policy;
-pub mod profile_auth_reads;
-pub mod profile_reads;
-pub mod profile_routes;
+mod profile_auth_reads;
+mod profile_reads;
+mod profile_routes;
 mod template_library;
 mod template_reads;
 mod template_update;
@@ -35,7 +35,9 @@ use tracing::Instrument;
 use crate::oidc::{Authenticated, Oidc};
 use crate::problem::problem;
 
-pub(crate) use preconditions::{if_none_match_star, parse_if_match, put_preconditions};
+pub(crate) use preconditions::{
+    if_none_match_star, parse_if_match, put_preconditions, require_if_match,
+};
 
 /// Shared handler state.
 #[derive(Clone)]

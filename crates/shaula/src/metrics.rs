@@ -22,7 +22,7 @@ pub(crate) async fn start(
     let Some(listen) = listen else {
         return Ok(None);
     };
-    shaula_http::server::loopback_policy(&listen.ip().to_string())?;
+    shaula_core::net::verify_loopback(&listen.ip().to_string())?;
     let listener = tokio::net::TcpListener::bind(listen)
         .await
         .map_err(|_| "metrics listener bind failed")?;

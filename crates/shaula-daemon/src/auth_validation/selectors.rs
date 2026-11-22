@@ -115,12 +115,12 @@ fn check_account_continuity(
     selector: &TargetSelector,
     bindings: &[AccountBinding],
 ) -> Step<()> {
-    let proof_login = selector.account().to_string();
+    let proof_login = selector.account();
     if let Some(prior) = predecessor_identities(predecessor)
         .iter()
-        .find(|p| p.login.eq_ignore_ascii_case(&proof_login))
+        .find(|p| p.login.eq_ignore_ascii_case(proof_login))
     {
-        let current = frozen_binding(bindings, &proof_login)?;
+        let current = frozen_binding(bindings, proof_login)?;
         if prior.account_id != current.account_id {
             return Err(Stop::Rejected("InstallationChanged"));
         }
@@ -199,12 +199,7 @@ async fn prove_repository_identity(
     let TargetSelector::Repository { owner, repository } = selector else {
         return Ok(());
     };
-    let Some(binding) = bindings
-        .iter()
-        .find(|b| b.account_matches(selector.account()))
-    else {
-        return Ok(());
-    };
+    let binding = frozen_binding(bindings, selector.account())?;
     match input
         .resolver
         .repository_identity(

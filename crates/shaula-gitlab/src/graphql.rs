@@ -120,7 +120,7 @@ impl GitlabClient {
         {
             return Err(GitlabError::PermissionDenied);
         }
-        let runner_count = self.runner_count().await?;
+        let runner_count = self.runner_count_for_scope(target_id).await?;
         let elapsed = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|_| GitlabError::unavailable("system clock is before Unix epoch"))?;

@@ -4,7 +4,6 @@
 //! builds (`allow_test_endpoints` stays private to this crate and is only
 //! settable from tests).
 
-use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::github::GitHubTarget;
 
 /// The Actions Service base URL for github.com targets. In production this
@@ -35,17 +34,6 @@ impl GitHubConfig {
         self.target.config_url()
     }
 
-    pub fn registration_token_path(&self) -> String {
-        match &self.target {
-            GitHubTarget::Organization { owner } => {
-                format!("/orgs/{owner}/actions/runners/registration-token")
-            }
-            GitHubTarget::Repository { owner, repository } => {
-                format!("/repos/{owner}/{repository}/actions/runners/registration-token")
-            }
-        }
-    }
-
     #[cfg(test)]
     pub fn test_local(
         target: GitHubTarget,
@@ -60,37 +48,5 @@ impl GitHubConfig {
             },
             actions_service_base,
         )
-    }
-}
-
-/// Validates a caller-supplied config URL shape against the typed target.
-/// The URL itself is never used as an endpoint.
-pub fn validate_config_url_matches(url: &str, target: &GitHubTarget) -> CoreResult<()> {
-    let expected = target.config_url();
-    let normalized = url.trim_end_matches('/');
-    if normalized.eq_ignore_ascii_case(expected.trim_end_matches('/')) {
-        Ok(())
-    } else {
-        Err(CoreError::new(
-            ReasonCode::SpecInvalid,
-            "config URL does not match the typed GitHub target",
-        ))
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn config_url_validation() {
-        let target = GitHubTarget::organization("example-org").unwrap();
-        assert!(validate_config_url_matches("https://github.com/example-org", &target).is_ok());
-        assert!(validate_config_url_matches("https://github.com/example-org/", &target).is_ok());
-        assert!(
-            validate_config_url_matches("https://evil.example.com/example-org", &target).is_err()
-        );
-        assert!(validate_config_url_matches("https://github.com/other-org", &target).is_err());
     }
 }

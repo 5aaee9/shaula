@@ -11,7 +11,6 @@ use tar::EntryType;
 
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 
-pub const SUPPORTED_MEDIA: &str = "application/gzip";
 const DEFAULT_MAX_EXPANSION_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 10_000;
 
@@ -141,6 +140,7 @@ impl ArtifactStore {
         }
     }
 
+    #[cfg(test)]
     pub fn with_expansion_limit(mut self, limit: u64) -> Self {
         self.max_expansion = limit;
         self
@@ -223,15 +223,6 @@ impl ArtifactStore {
     /// authority. `None` for a malformed digest: never guess a path.
     pub fn path_for(&self, digest: &str) -> Option<PathBuf> {
         shaula_core::artifact_layout::artifact_dir(&self.root, digest)
-    }
-
-    /// Reads the manifest of a published artifact by digest.
-    pub fn manifest(&self, digest: &str) -> CoreResult<String> {
-        let path = self
-            .path_for(digest)
-            .ok_or_else(|| err("artifact digest is malformed"))?
-            .join("profile.yaml");
-        std::fs::read_to_string(path).map_err(|_| err("artifact is not published"))
     }
 }
 

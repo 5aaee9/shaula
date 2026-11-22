@@ -67,6 +67,7 @@ impl ForgejoAuthPutFormat {
 /// (spec 0043 §7). Never a fallback for any other provider.
 #[derive(Debug, Clone)]
 pub(crate) struct GitlabAuthPutFormat {
+    pub target: shaula_core::gitlab::GitlabTarget,
     pub target_json: String,
 }
 
@@ -107,7 +108,10 @@ impl GitlabAuthPutFormat {
         }
         let target_json = serde_json::to_string(&target)
             .map_err(|error| (ReasonCode::Internal, error.to_string()))?;
-        Ok(Self { target_json })
+        Ok(Self {
+            target,
+            target_json,
+        })
     }
 
     pub(crate) fn canonical_body(&self) -> String {

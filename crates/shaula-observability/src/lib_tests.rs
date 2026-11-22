@@ -111,7 +111,7 @@ async fn a_non_2xx_collector_response_counts_as_degraded() {
 
 #[test]
 fn local_init_is_idempotent() {
-    let _first = init_local("shaula-test");
-    let _second = init_local("shaula-test-again");
+    let _first = init("shaula-test", None);
+    let _second = init("shaula-test-again", None);
     TelemetryHandle::new().record(MetricOperation::Http, MetricResult::Ok, 1);
 }

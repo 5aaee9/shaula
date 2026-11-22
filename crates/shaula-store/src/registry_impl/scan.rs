@@ -25,21 +25,13 @@ impl SqliteControlPlane {
 
         // Structural validation only. Supported candidates remain pending
         // until their own provider's online authentication worker verifies them.
-        for key in self.store.auth_profiles_list().await.map_err(core_err)? {
-            let Some(profile) = self
-                .store
-                .auth_profile_get(&key.key)
-                .await
-                .map_err(core_err)?
-            else {
-                continue;
-            };
+        for profile in self.store.auth_profiles_list().await.map_err(core_err)? {
             if profile.status != "Validating" {
                 continue;
             }
             let Some(candidate) = self
                 .store
-                .auth_revision_get(&key.key, profile.desired_revision)
+                .auth_revision_get(&profile.key, profile.desired_revision)
                 .await
                 .map_err(core_err)?
             else {
@@ -65,12 +57,13 @@ impl SqliteControlPlane {
                 };
             if !structurally_valid {
                 self.store
-                    .auth_scan_apply(
-                        &key.key,
+                    .auth_apply_full(
+                        &profile.key,
                         profile.desired_revision,
                         false,
                         Some("CredentialMalformed"),
                         now,
+                        None,
                     )
                     .await
                     .map_err(core_err)?;
@@ -92,7 +85,6 @@ pub struct ScanReport {
     pub candidates_ready: usize,
     pub candidates_activated: usize,
     pub candidates_rejected: usize,
-    pub auth_promoted: usize,
     pub auth_rejected: usize,
     pub profiles_retired: usize,
 }

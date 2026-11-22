@@ -19,7 +19,6 @@ use shaula_core::ports::{
 use shaula_core::template::ShaulaResultEnvelope;
 
 use crate::engine::TerraformFlow;
-use crate::workspace;
 
 fn plan_err(phase: &str) -> TemplateOutcomeError {
     TemplateOutcomeError::PlanFailed {
@@ -152,27 +151,3 @@ mod destroy_flow;
 mod logging;
 #[path = "runtime_recovery.rs"]
 mod recovery;
-
-/// Convenience wrapper for constructing the workspace before a Create.
-pub fn prepare_workspace(
-    work_root: &std::path::Path,
-    fleet_key: &str,
-    generation_id: &str,
-) -> CoreResult<PathBuf> {
-    let path = workspace::generation_workspace(work_root, fleet_key, generation_id)?;
-    workspace::create_workspace(&path)?;
-    Ok(path)
-}
-
-/// Removes a workspace after terminal Destroy with empty-state proof.
-pub fn cleanup_workspace(
-    work_root: &std::path::Path,
-    fleet_key: &str,
-    generation_id: &str,
-) -> CoreResult<()> {
-    let path = workspace::generation_workspace(work_root, fleet_key, generation_id)?;
-    workspace::remove_workspace(&path)
-}
-
-/// Shared handle type used across the daemon.
-pub type SharedTemplateRuntime = Arc<TemplateRuntime>;

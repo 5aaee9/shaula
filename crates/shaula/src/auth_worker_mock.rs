@@ -238,8 +238,8 @@ pub(crate) async fn mock_server_cfg(cfg: MockConfig) -> Mock {
     }
 }
 
-pub(crate) fn endpoints(base: &str) -> crate::auth_worker_probe::WorkerEndpoints {
-    crate::auth_worker_probe::WorkerEndpoints {
+pub(crate) fn endpoints(base: &str) -> shaula_scaleset::validation::WorkerEndpoints {
+    shaula_scaleset::validation::WorkerEndpoints {
         api_base: base.to_string(),
         allow_test_endpoints: true,
     }

@@ -71,7 +71,7 @@ impl SupervisorWiring {
             GitlabPoolSupervisor::new(
                 key,
                 section,
-                spec.capacity.into(),
+                spec.capacity,
                 GitlabPoolSupervisorDeps {
                     guard: FleetRuntimeGuard::from(&head),
                     auth: (profile, auth_revision),

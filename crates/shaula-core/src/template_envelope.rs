@@ -199,7 +199,7 @@ impl ShaulaInputEnvelope {
                     && self.gitlab_vm.is_some()
                         == manifest.gitlab_vm_bootstrap_contract.is_some() =>
             {
-                manifest.validate_gitlab_generation_target()?;
+                manifest.check_gitlab_generation_target()?;
             }
             "forgejo"
                 if self.forgejo.is_some()
@@ -211,7 +211,7 @@ impl ShaulaInputEnvelope {
                         == manifest.forgejo_vm_bootstrap_contract.is_some() =>
             {
                 if let Some(identity) = &self.forgejo {
-                    manifest.validate_forgejo_targets(&identity.labels)?;
+                    manifest.check_forgejo_targets(&identity.labels)?;
                 }
             }
             _ => {

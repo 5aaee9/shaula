@@ -2,6 +2,7 @@ import type { FleetInputs } from "./use-fleet-inputs";
 import type { ProfileChoices } from "./profile-choice";
 import { canChooseProfile } from "./profile-choice";
 import type { ForgejoTarget, GitlabTarget } from "./runner-backend";
+import { poolMembersProblem } from "./template-pool";
 import type {
   FleetSpec,
   ForgejoFleetSpec,
@@ -13,8 +14,6 @@ import type {
 
 /** How a fleet routes new runners to templates (spec 0037 §4). */
 export type Placement = "single" | "pool" | "shared";
-
-const memberKeyPattern = /^[a-z0-9][a-z0-9-]*$/;
 
 export function initialPlacement(spec?: {
   template_pool?: unknown;
@@ -48,21 +47,6 @@ function placementBody(
   }
   if (placement === "pool") return JSON.stringify({ ...base, template_pool: pool });
   return JSON.stringify({ ...base, template_pool_ref: poolRef });
-}
-
-/** First problem with GitHub pool members, reported member by member. */
-function githubPoolProblem(members: TemplatePoolMemberSpec[]) {
-  if (members.length < 1 || members.length > 32)
-    return "Template pool must contain between 1 and 32 members.";
-  const keys = new Set<string>();
-  for (const member of members) {
-    if (!memberKeyPattern.test(member.key)) return `Invalid member key: ${member.key}`;
-    if (keys.has(member.key)) return `Duplicate member key: ${member.key}`;
-    keys.add(member.key);
-    if (!Number.isInteger(member.weight) || member.weight < 1 || member.weight > 10000)
-      return `Weight for ${member.key} must be an integer from 1 to 10000.`;
-  }
-  return null;
 }
 
 /**
@@ -101,7 +85,7 @@ export function githubFleetProblem({
     return { kind: "selection", message: "Choose a template pool for this fleet." };
   if (capacity.min_runners > capacity.max_runners)
     return { kind: "capacity", message: "Minimum runners cannot exceed maximum runners." };
-  const poolProblem = placement === "pool" ? githubPoolProblem(members) : null;
+  const poolProblem = placement === "pool" ? poolMembersProblem(members) : null;
   return poolProblem ? { kind: "pool", message: poolProblem } : null;
 }
 
@@ -143,26 +127,6 @@ export function githubFleetBody({
   );
 }
 
-function invalidTokenPoolMember(member: TemplatePoolMemberSpec) {
-  const cap = member.max_runners;
-  return (
-    !memberKeyPattern.test(member.key) ||
-    !Number.isInteger(member.weight) ||
-    member.weight < 1 ||
-    member.weight > 10000 ||
-    (cap !== undefined && (!Number.isInteger(cap) || cap < 0))
-  );
-}
-
-function tokenPoolValid(pool: TemplatePoolSpec) {
-  const keys = new Set(pool.members.map((member) => member.key));
-  return (
-    keys.size === pool.members.length &&
-    pool.members.length <= 32 &&
-    !pool.members.some(invalidTokenPoolMember)
-  );
-}
-
 /** Draft fields shared by the token backends (Forgejo and GitLab). */
 interface TokenFleetDraft<T> {
   fleetKey: string;
@@ -182,10 +146,10 @@ function checkTokenDraft<T>(provider: string, input: TokenFleetDraft<T>): T {
     throw new Error(
       `Choose an available ${provider} authentication profile and compatible template placement before submitting.`,
     );
-  if (draft.placement === "pool" && !tokenPoolValid(draft.pool))
-    throw new Error(
-      "Use 1–32 uniquely named members, integer weights 1–10000 and non-negative runner caps.",
-    );
+  if (draft.placement === "pool") {
+    const problem = poolMembersProblem(draft.pool.members);
+    if (problem) throw new Error(problem);
+  }
   if (capacity.min_runners > capacity.max_runners)
     throw new Error("Minimum runners cannot exceed maximum runners.");
   return target;

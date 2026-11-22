@@ -53,56 +53,14 @@ pub(super) fn validate(
     if shape.secret.is_empty() || info.to_string().contains(shape.secret) {
         return Err(failed());
     }
-    let identity = &request.input.generation;
-    let short: String = identity.id.chars().take(24).collect();
-    let name = format!("/shaula-{}-{short}", identity.fleet_key);
-    let config = &info["Config"];
-    let state = &info["State"];
+    let (config, environment, user) = super::validate_common(info, id, image_id, request)?;
     let host = &info["HostConfig"];
-    let environment = config["Env"].as_array().ok_or_else(failed)?;
-    let user = config["User"]
-        .as_str()
-        .unwrap_or_default()
-        .split(':')
-        .next()
-        .unwrap_or_default();
-    if info["Id"] != id
-        || info["Name"] != name
-        || info["Image"] != image_id
-        || config["Cmd"] != shape.command
+    if config["Cmd"] != shape.command
         || config["Entrypoint"] != json!(["/usr/bin/dumb-init"])
         || config["WorkingDir"] != shape.working_dir
-        || config["Labels"]["shaula.fleet"] != identity.fleet_key
-        || config["Labels"]["shaula.generation"] != identity.id
-        || state["Status"] != "created"
-        || state["Running"] != false
-        || state["Restarting"] != false
-        || state["Dead"] != false
-        || host["RestartPolicy"]["Name"] != "no"
-        || host["AutoRemove"] != false
-        || host["Privileged"] != false
-        || user.is_empty()
-        || user == "root"
-        || user.bytes().all(|byte| byte == b'0')
         || shape.user.is_some_and(|expected| user != expected)
         || !image_volumes(info, shape.volumes)
-        || [
-            "Binds",
-            "Mounts",
-            "VolumesFrom",
-            "CapAdd",
-            "Devices",
-            "DeviceRequests",
-        ]
-        .iter()
-        .any(|key| !host[*key].is_null() && host[*key] != json!([]))
-        || ["PidMode", "IpcMode", "NetworkMode", "UTSMode", "UsernsMode"]
-            .iter()
-            .any(|key| {
-                host[*key]
-                    .as_str()
-                    .is_some_and(|value| value == "host" || value.starts_with("container:"))
-            })
+        || (!host["Mounts"].is_null() && host["Mounts"] != json!([]))
         || environment.iter().filter_map(Value::as_str).any(|entry| {
             entry
                 .to_ascii_uppercase()

@@ -38,11 +38,11 @@ pub struct SupervisorWiring {
     /// change rebuilds the client.
     cache: HashMap<supervisor::SupervisorCacheKey, Arc<FleetSupervisor>>,
     listeners: HashMap<String, Arc<shaula_daemon::listener::FleetListener>>,
-    tasks: crate::fleet_tasks::FleetTasks,
+    tasks: shaula_daemon::fleet_tasks::FleetTasks,
     auth_workers: shaula_daemon::auth_validation::AuthWorkerScheduler,
     /// Transport seam for the auth worker (G1): production wiring pins
     /// the fixed github.com endpoints; tests inject a scripted server.
-    auth_worker_endpoints: crate::auth_worker_probe::WorkerEndpoints,
+    auth_worker_endpoints: shaula_scaleset::validation::WorkerEndpoints,
 }
 
 impl SupervisorWiring {
@@ -72,9 +72,9 @@ impl SupervisorWiring {
             runner_max_lifetime: shaula_core::runner_lifetime::DEFAULT_MAX_LIFETIME,
             cache: HashMap::new(),
             listeners: HashMap::new(),
-            tasks: crate::fleet_tasks::FleetTasks::default(),
+            tasks: shaula_daemon::fleet_tasks::FleetTasks::default(),
             auth_workers: Default::default(),
-            auth_worker_endpoints: crate::auth_worker_probe::WorkerEndpoints::production(),
+            auth_worker_endpoints: shaula_scaleset::validation::WorkerEndpoints::production(),
         }
     }
 
@@ -97,7 +97,7 @@ impl SupervisorWiring {
     #[cfg(test)]
     pub(crate) fn with_auth_worker_endpoints(
         mut self,
-        endpoints: crate::auth_worker_probe::WorkerEndpoints,
+        endpoints: shaula_scaleset::validation::WorkerEndpoints,
     ) -> Self {
         self.auth_worker_endpoints = endpoints;
         self

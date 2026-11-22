@@ -4,16 +4,11 @@ use super::{rejected, Planned, TemplateCreateRequest, TemplateOutcomeError};
 mod pool;
 use serde_json::json;
 
-pub(super) fn admit(
+pub(super) fn admit_common_metadata(
     pod: &Planned<'_>,
     secret: &Planned<'_>,
-    image: &str,
     request: &TemplateCreateRequest,
-    backend: &str,
 ) -> Result<(), TemplateOutcomeError> {
-    if backend != "github" {
-        return pool::admit(pod, secret, image, request, backend);
-    }
     let identity = &request.input.generation;
     let namespace = super::super::binding(request, "namespace").map_err(|_| rejected())?;
     for resource in [pod, secret] {
@@ -31,10 +26,13 @@ pub(super) fn admit(
     }
     secret.exact("/immutable", &json!(false))?;
     secret.exact("/type", &json!("Opaque"))?;
-    secret.exact("/data", &json!({"jit_config":request.input.jit_config}))?;
     // Both attributes become API Secret data. A binary_data key would release
     // the same required-key gate just as surely as an ordinary data entry.
     secret.empty("/binary_data")?;
+    Ok(())
+}
+
+pub(super) fn admit_common_pod(pod: &Planned<'_>, image: &str) -> Result<(), TemplateOutcomeError> {
     pod.exact("/target_state", &json!(["Pending"]))?;
     pod.one("/spec")?;
     pod.exact("/spec/0/restart_policy", &json!("Never"))?;
@@ -42,13 +40,60 @@ pub(super) fn admit(
     pod.empty("/spec/0/init_container")?;
     pod.one("/spec/0/container")?;
     let runner = "/spec/0/container/0";
-    for (field, value) in [
-        ("name", json!("runner")),
-        ("image", json!(image)),
-        ("command", json!([super::super::LISTENER, "run"])),
-    ] {
-        pod.exact(&format!("{runner}/{field}"), &value)?;
+    pod.exact(&format!("{runner}/name"), &json!("runner"))?;
+    pod.exact(&format!("{runner}/image"), &json!(image))?;
+    Ok(())
+}
+
+pub(super) fn admit_secret_volume(
+    pod: &Planned<'_>,
+    volume: &str,
+    secret_name: &str,
+    key: &str,
+) -> Result<(), TemplateOutcomeError> {
+    pod.one(&format!("{volume}/secret"))?;
+    let source = format!("{volume}/secret/0");
+    pod.exact(&format!("{source}/secret_name"), &json!(secret_name))?;
+    pod.exact(&format!("{source}/optional"), &json!(false))?;
+    pod.one(&format!("{source}/items"))?;
+    pod.exact(&format!("{source}/items/0/key"), &json!(key))?;
+    pod.exact(&format!("{source}/items/0/path"), &json!(key))?;
+    only_volume_field(pod, volume, "secret")
+}
+
+// A single source is required; disallow an alternative volume kind that
+// happens to contain a matching field in a malformed/unknown plan.
+pub(super) fn only_volume_field(
+    pod: &Planned<'_>,
+    volume: &str,
+    kind: &str,
+) -> Result<(), TemplateOutcomeError> {
+    let fields = pod.value(volume)?.as_object().ok_or_else(rejected)?;
+    for key in fields.keys().filter(|key| *key != "name" && *key != kind) {
+        pod.empty(&format!("{volume}/{key}"))?;
     }
+    Ok(())
+}
+
+pub(super) fn admit(
+    pod: &Planned<'_>,
+    secret: &Planned<'_>,
+    image: &str,
+    request: &TemplateCreateRequest,
+    backend: &str,
+) -> Result<(), TemplateOutcomeError> {
+    if backend != "github" {
+        return pool::admit(pod, secret, image, request, backend);
+    }
+    let identity = &request.input.generation;
+    admit_common_metadata(pod, secret, request)?;
+    secret.exact("/data", &json!({"jit_config":request.input.jit_config}))?;
+    admit_common_pod(pod, image)?;
+    let runner = "/spec/0/container/0";
+    pod.exact(
+        &format!("{runner}/command"),
+        &json!([super::super::LISTENER, "run"]),
+    )?;
     for field in ["args", "env_from", "lifecycle", "volume_device"] {
         pod.empty(&format!("{runner}/{field}"))?;
     }
@@ -89,27 +134,10 @@ pub(super) fn admit(
         .ok_or_else(rejected)?;
     pod.one("/spec/0/volume")?;
     pod.exact("/spec/0/volume/0/name", &json!(volume_name))?;
-    pod.one("/spec/0/volume/0/secret")?;
-    let source = "/spec/0/volume/0/secret/0";
-    pod.exact(
-        &format!("{source}/secret_name"),
-        &json!(identity.generation_name),
-    )?;
-    pod.exact(&format!("{source}/optional"), &json!(false))?;
-    pod.one(&format!("{source}/items"))?;
-    pod.exact(&format!("{source}/items/0/key"), &json!(".setup_info"))?;
-    pod.exact(&format!("{source}/items/0/path"), &json!(".setup_info"))?;
-    // A single Secret source is required; disallow an alternative volume kind
-    // that happens to contain a matching field in a malformed/unknown plan.
-    let volume = pod
-        .value("/spec/0/volume/0")?
-        .as_object()
-        .ok_or_else(rejected)?;
-    for key in volume
-        .keys()
-        .filter(|key| !matches!(key.as_str(), "name" | "secret"))
-    {
-        pod.empty(&format!("/spec/0/volume/0/{key}"))?;
-    }
-    Ok(())
+    admit_secret_volume(
+        pod,
+        "/spec/0/volume/0",
+        &identity.generation_name,
+        ".setup_info",
+    )
 }

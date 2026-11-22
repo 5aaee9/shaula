@@ -24,8 +24,7 @@ impl SqliteStateBackend {
         kind: CompletionKind,
         now: i64,
     ) -> StateResult<CompletionReceipt> {
-        let id = access.claim.generation_id.to_string();
-        let tx = self.writer(&id).await?;
+        let tx = self.writer().await?;
         let worker = WorkerRow::load(&tx, access).await?;
         let receipt = complete_on(
             &tx,
@@ -44,7 +43,7 @@ impl SqliteStateBackend {
     /// The existing daemon removal path calls this at its terminal transition.
     /// Returning false selects the existing legacy/static-test persistence path.
     pub(crate) async fn complete_generation(&self, id: &str, now: i64) -> StateResult<bool> {
-        let tx = self.writer(id).await?;
+        let tx = self.writer().await?;
         let Some(worker) = WorkerRow::read(&tx, id).await? else {
             return Ok(false);
         };

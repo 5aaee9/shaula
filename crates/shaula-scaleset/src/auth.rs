@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use serde::Serialize;
+use shaula_core::github::GitHubTarget;
 use shaula_core::ports::Clock;
 use shaula_core::secret::SecretString;
 use tokio::sync::Mutex;
@@ -89,7 +90,7 @@ impl std::fmt::Debug for Credential {
 pub struct AdminTokenManager {
     credential: Credential,
     github_api_base: String,
-    config_url: String,
+    target: GitHubTarget,
     http: reqwest::Client,
     clock: Arc<dyn Clock>,
     state: Mutex<Option<AdminConnection>>,
@@ -101,21 +102,17 @@ pub struct AdminTokenManager {
 const REFRESH_MARGIN: i64 = 60;
 
 impl AdminTokenManager {
-    pub(crate) fn credential_kind(&self) -> shaula_core::auth::AuthKind {
-        shaula_core::auth::AuthKind::GithubApp
-    }
-
     pub fn new(
         credential: Credential,
         github_api_base: String,
-        config_url: String,
+        target: GitHubTarget,
         http: reqwest::Client,
         clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
             credential,
             github_api_base,
-            config_url,
+            target,
             http,
             clock,
             state: Mutex::new(None),
@@ -190,11 +187,14 @@ impl AdminTokenManager {
     }
 
     async fn fetch_registration_token(&self) -> Result<RegistrationToken, ScalesetError> {
-        let path = registration_token_path(&self.config_url).ok_or_else(|| {
-            ScalesetError::Configuration {
-                summary: "config url has no known registration path".into(),
+        let path = match &self.target {
+            GitHubTarget::Organization { owner } => {
+                format!("/orgs/{owner}/actions/runners/registration-token")
             }
-        })?;
+            GitHubTarget::Repository { owner, repository } => {
+                format!("/repos/{owner}/{repository}/actions/runners/registration-token")
+            }
+        };
         let url = format!("{}{path}", self.github_api_base.trim_end_matches('/'));
 
         let Credential::GitHubApp {
@@ -245,7 +245,7 @@ impl AdminTokenManager {
             self.github_api_base.trim_end_matches('/')
         );
         let body = serde_json::json!({
-            "url": self.config_url,
+            "url": self.target.config_url(),
             "runner_event": "register",
         });
         let response = self
@@ -290,18 +290,6 @@ pub(crate) fn transport_error(e: reqwest::Error) -> ScalesetError {
         ScalesetError::RequestUncertain {
             summary: format!("request failed: {e}"),
         }
-    }
-}
-
-fn registration_token_path(config_url: &str) -> Option<String> {
-    let rest = config_url.strip_prefix("https://github.com/")?;
-    let mut parts = rest.trim_matches('/').split('/');
-    let owner = parts.next()?;
-    match parts.next() {
-        None => Some(format!("/orgs/{owner}/actions/runners/registration-token")),
-        Some(repository) => Some(format!(
-            "/repos/{owner}/{repository}/actions/runners/registration-token"
-        )),
     }
 }
 

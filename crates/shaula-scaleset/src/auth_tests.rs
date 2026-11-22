@@ -19,27 +19,6 @@ fn jwt_claims_match_go_client_windows() {
 }
 
 #[test]
-fn registration_token_path_parsing() {
-    assert_eq!(
-        registration_token_path("https://github.com/example-org"),
-        Some("/orgs/example-org/actions/runners/registration-token".to_string())
-    );
-    assert_eq!(
-        registration_token_path("https://github.com/example-org/example-repo"),
-        Some("/repos/example-org/example-repo/actions/runners/registration-token".to_string())
-    );
-    assert_eq!(
-        registration_token_path("https://evil.example.com/org"),
-        None
-    );
-    assert_eq!(
-        registration_token_path("http://github.com/org"),
-        None,
-        "plain http is never accepted"
-    );
-}
-
-#[test]
 fn credential_debug_redacts() {
     let app = Credential::GitHubApp {
         client_id: "123".into(),

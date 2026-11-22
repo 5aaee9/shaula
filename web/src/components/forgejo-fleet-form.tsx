@@ -1,11 +1,13 @@
 import { useState, type ReactNode } from "react";
 import type { Resource } from "@/lib/api";
 import { forgejoFleetBody } from "@/lib/fleet-form-body";
+import { forgejoTargetName } from "@/lib/runner-backend";
 import { useTokenFleet } from "@/lib/use-token-fleet";
 import type { FleetResource, ForgejoFleetSpec } from "@/lib/types";
 import type { FleetFormProps } from "./fleet-form";
-import { ForgejoAuthSection } from "./forgejo-fleet-sections";
-import { TokenFleetFrame } from "./token-fleet-sections";
+import { TokenAuthStage, TokenFleetFrame } from "./token-fleet-sections";
+import { Input } from "./ui/input";
+import { Field } from "./status";
 
 export function ForgejoFleetForm({
   resource: current,
@@ -13,7 +15,6 @@ export function ForgejoFleetForm({
   scopes,
   onClose,
   onAccepted,
-  page = false,
 }: Omit<FleetFormProps, "resource"> & {
   resource?: Resource<FleetResource<ForgejoFleetSpec>>;
   backendSelector?: ReactNode;
@@ -26,8 +27,6 @@ export function ForgejoFleetForm({
     section,
     activeTarget: (state) => state?.forgejo?.target,
     scopes,
-    page,
-    onClose,
     onAccepted,
   });
   const [labels, setLabels] = useState(() => section?.labels.join(", ") || "");
@@ -36,24 +35,25 @@ export function ForgejoFleetForm({
       backend="forgejo"
       fleet={fleet}
       backendSelector={backendSelector}
-      page={page}
       onClose={onClose}
       placeholder="forgejo-linux"
       buildBody={() => forgejoFleetBody({ ...fleet, fleetKey: fleet.key, labels })}
     >
-      <ForgejoAuthSection
-        editing={fleet.editing}
-        fleetKey={fleet.key}
-        choices={fleet.choices}
-        canRead={fleet.canReadAuth}
-        auth={fleet.auth}
-        setAuth={fleet.setAuth}
-        target={fleet.target}
-        prefix={fleet.prefix}
-        setPrefix={fleet.setPrefix}
-        labels={labels}
-        setLabels={setLabels}
-      />
+      <TokenAuthStage
+        provider="Forgejo"
+        fleet={fleet}
+        targetLabel={fleet.target ? forgejoTargetName(fleet.target) : undefined}
+      >
+        <Field label="Labels">
+          <Input
+            required
+            disabled={fleet.editing}
+            value={labels}
+            onChange={(e) => setLabels(e.target.value)}
+            placeholder="linux:host"
+          />
+        </Field>
+      </TokenAuthStage>
     </TokenFleetFrame>
   );
 }

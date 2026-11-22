@@ -39,17 +39,6 @@ fn read_error(error: JobsReadError) -> Response {
     }
 }
 
-fn private_json<T: serde::Serialize>(body: T) -> Response {
-    (
-        [
-            (header::CACHE_CONTROL, "private, no-store"),
-            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
-        ],
-        Json(body),
-    )
-        .into_response()
-}
-
 pub(super) async fn list(
     State(state): State<AppState>,
     auth: Authenticated,
@@ -65,7 +54,7 @@ pub(super) async fn list(
         return unavailable();
     };
     match jobs.list_jobs(query).await {
-        Ok(page) => private_json(page),
+        Ok(page) => Json(page).into_response(),
         Err(error) => read_error(error),
     }
 }
@@ -82,7 +71,7 @@ pub(super) async fn detail(
         return unavailable();
     };
     match jobs.get_job(&id).await {
-        Ok(Some(detail)) => private_json(detail),
+        Ok(Some(detail)) => Json(detail).into_response(),
         Ok(None) => missing(),
         Err(error) => read_error(error),
     }
@@ -103,7 +92,7 @@ pub(super) async fn generations(
         return unavailable();
     };
     match jobs.list_generations(query).await {
-        Ok(page) => private_json(page),
+        Ok(page) => Json(page).into_response(),
         Err(error) => read_error(error),
     }
 }
@@ -120,7 +109,7 @@ pub(super) async fn generation(
         return unavailable();
     };
     match jobs.get_generation(&id).await {
-        Ok(Some(detail)) => private_json(detail),
+        Ok(Some(detail)) => Json(detail).into_response(),
         Ok(None) => missing(),
         Err(error) => read_error(error),
     }
@@ -191,7 +180,7 @@ pub(super) async fn invocations(
         Err(error) => return read_error(error),
     }
     match logs.list_invocations_page(&id, query).await {
-        Ok(page) => private_json(page),
+        Ok(page) => Json(page).into_response(),
         Err(error) if error.code == shaula_core::ReasonCode::SpecInvalid => read_error(
             JobsReadError::InvalidQuery("invalid invocation cursor or limit"),
         ),
@@ -240,7 +229,7 @@ pub(super) async fn logs(
         return unavailable();
     };
     match logs.read_page(&id, query).await {
-        Ok(page) => private_json(page),
+        Ok(page) => Json(page).into_response(),
         Err(error) if error.code == shaula_core::ReasonCode::TargetHiddenOrNotFound => missing(),
         Err(error) if error.code == shaula_core::ReasonCode::SpecInvalid => problem(
             StatusCode::BAD_REQUEST,

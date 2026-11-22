@@ -33,39 +33,12 @@ pub(crate) struct PoolRouting {
     pub pool_scope: Option<FleetPoolRef>,
 }
 
-/// Loads the routing context for one fleet revision: shared-pool member
-/// rows when the revision froze a pool reference, else inline rows.
-pub(crate) async fn load_routing(
+/// Loads shared-pool routing rows for a frozen `(pool_key, pool_revision)`.
+pub(crate) async fn load_shared_routing(
     tx: &DatabaseTransaction,
-    fleet_key: &str,
-    fleet_revision: i64,
-    inline_members: Vec<AdmitMember>,
-    inline_policy: PoolFailurePolicy,
+    pool_key: String,
+    pool_revision: i64,
 ) -> CoreResult<PoolRouting> {
-    let Some(row) = fleet_revisions::Entity::find()
-        .filter(fleet_revisions::Column::FleetKey.eq(fleet_key))
-        .filter(fleet_revisions::Column::Revision.eq(fleet_revision))
-        .one(tx)
-        .await
-        .map_err(|e| core_err(e.into()))?
-    else {
-        return Ok(PoolRouting {
-            members: inline_members,
-            failure_policy: inline_policy,
-            pool_scope: None,
-        });
-    };
-    let Some((pool_key, pool_revision)) = row
-        .template_pool_ref
-        .clone()
-        .zip(row.template_pool_revision)
-    else {
-        return Ok(PoolRouting {
-            members: inline_members,
-            failure_policy: inline_policy,
-            pool_scope: None,
-        });
-    };
     let members = template_pool_members::Entity::find()
         .filter(template_pool_members::Column::PoolKey.eq(&pool_key))
         .filter(template_pool_members::Column::PoolRevision.eq(pool_revision))

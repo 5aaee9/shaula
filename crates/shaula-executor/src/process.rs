@@ -100,9 +100,6 @@ impl Executor for ExecExecutor {
         // create_dir fails if a prior attempt left this exact containment. Its
         // absence from the in-memory map never makes a relaunch safe.
         std::fs::create_dir(&group).map_err(|_| StateError::Conflict)?;
-        if !group.join("cgroup.kill").is_file() {
-            return Err(StateError::Unavailable);
-        }
         let mut command = Command::new(&self.executable);
         command
             .arg("job")

@@ -1,6 +1,6 @@
 //! `TemplatePoolStore` port for shared TemplatePool resources (spec 0037).
 
-use super::mapping::{pool_failure_policy, pool_member_row};
+use super::mapping::{pool_failure_policy, pool_member_row, profile_change_row};
 use super::{core_err, SqliteControlPlane};
 use async_trait::async_trait;
 use shaula_core::error::CoreResult;
@@ -47,10 +47,29 @@ impl TemplatePoolStore for SqliteControlPlane {
         &self,
         key: &str,
     ) -> CoreResult<Option<shaula_core::template_pool::TemplatePoolHead>> {
-        self.template_pool_get_read(key).await
+        Ok(self
+            .store
+            .template_pool_get(key)
+            .await
+            .map_err(core_err)?
+            .map(|p| shaula_core::template_pool::TemplatePoolHead {
+                key: p.key,
+                incarnation: p.incarnation,
+                desired_revision: p.desired_revision,
+                phase: p.phase,
+                deletion_marker: p.deletion_marker,
+                tombstone: p.tombstone,
+            }))
     }
     async fn template_pool_list(&self) -> CoreResult<Vec<(String, i64, String)>> {
-        self.template_pool_list_read().await
+        Ok(self
+            .store
+            .template_pool_list()
+            .await
+            .map_err(core_err)?
+            .into_iter()
+            .map(|p| (p.key, p.desired_revision, p.incarnation))
+            .collect())
     }
     async fn template_pool_revision_latest(
         &self,
@@ -87,6 +106,12 @@ impl TemplatePoolStore for SqliteControlPlane {
     }
 
     async fn template_pool_change_get(&self, change_id: &str) -> CoreResult<Option<ChangeView>> {
-        self.template_pool_change_get_read(change_id).await
+        Ok(self
+            .store
+            .profile_change_get(change_id)
+            .await
+            .map_err(core_err)?
+            .filter(|c| c.resource_kind == "template_pool")
+            .map(profile_change_row))
     }
 }

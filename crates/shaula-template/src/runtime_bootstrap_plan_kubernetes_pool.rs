@@ -14,21 +14,7 @@ pub(super) fn admit(
 ) -> Result<(), TemplateOutcomeError> {
     let shape = pool_shape(request, backend).ok_or_else(rejected)?;
     let identity = &request.input.generation;
-    let namespace = super::super::super::binding(request, "namespace").map_err(|_| rejected())?;
-    for resource in [pod, secret] {
-        resource.one("/metadata")?;
-        resource.exact("/metadata/0/name", &json!(identity.generation_name))?;
-        resource.exact("/metadata/0/namespace", &json!(namespace))?;
-        resource.exact(
-            "/metadata/0/labels",
-            &json!({
-                "shaula.io/fleet":identity.fleet_key,
-                "shaula.io/generation-id":identity.id
-            }),
-        )?;
-    }
-    secret.exact("/immutable", &json!(false))?;
-    secret.exact("/type", &json!("Opaque"))?;
+    super::admit_common_metadata(pod, secret, request)?;
     // The required key is absent. Kubernetes 2.33.0 treats an empty data
     // map as computed; the bundled template uses a fixed nonsecret marker
     // instead. Known empty maps from retained templates remain safe.
@@ -36,14 +22,8 @@ pub(super) fn admit(
     if data != &json!({}) && data != &json!({"runner_backend":shape.backend}) {
         return Err(rejected());
     }
-    secret.empty("/binary_data")?;
 
-    pod.exact("/target_state", &json!(["Pending"]))?;
-    pod.one("/spec")?;
-    pod.exact("/spec/0/restart_policy", &json!("Never"))?;
-    pod.exact("/spec/0/automount_service_account_token", &json!(false))?;
-    pod.empty("/spec/0/init_container")?;
-    pod.one("/spec/0/container")?;
+    super::admit_common_pod(pod, image)?;
     for field in ["host_network", "host_pid", "host_ipc"] {
         let value = pod.known(&format!("/spec/0/{field}"))?;
         if !value.is_null() && value != false {
@@ -70,8 +50,6 @@ pub(super) fn admit(
     pod.one(&format!("{security}/capabilities"))?;
     pod.exact(&format!("{security}/capabilities/0/drop"), &json!(["ALL"]))?;
     pod.empty(&format!("{security}/capabilities/0/add"))?;
-    pod.exact(&format!("{runner}/name"), &json!("runner"))?;
-    pod.exact(&format!("{runner}/image"), &json!(image))?;
     pod.exact(&format!("{runner}/command"), &json!(shape.command))?;
     pod.exact(&format!("{runner}/args"), &json!(shape.args))?;
     if let Some(directory) = shape.working_dir {
@@ -118,7 +96,7 @@ pub(super) fn admit(
         let volume = format!("/spec/0/volume/{index}");
         let name = pod.known(&format!("{volume}/name"))?;
         if name == gate {
-            secret_volume(pod, &volume, &identity.generation_name, shape.key)?;
+            super::admit_secret_volume(pod, &volume, &identity.generation_name, shape.key)?;
         } else if scratch.is_some_and(|scratch| name == scratch) {
             empty_dir_volume(pod, &volume)?;
         } else {
@@ -135,22 +113,6 @@ fn count(pod: &Planned<'_>, pointer: &str) -> Result<usize, TemplateOutcomeError
         .ok_or_else(rejected)
 }
 
-fn secret_volume(
-    pod: &Planned<'_>,
-    volume: &str,
-    secret_name: &str,
-    key: &str,
-) -> Result<(), TemplateOutcomeError> {
-    pod.one(&format!("{volume}/secret"))?;
-    let source = format!("{volume}/secret/0");
-    pod.exact(&format!("{source}/secret_name"), &json!(secret_name))?;
-    pod.exact(&format!("{source}/optional"), &json!(false))?;
-    pod.one(&format!("{source}/items"))?;
-    pod.exact(&format!("{source}/items/0/key"), &json!(key))?;
-    pod.exact(&format!("{source}/items/0/path"), &json!(key))?;
-    only(pod, volume, "secret")
-}
-
 // A writable scratch directory only: node disk, never memory-backed.
 fn empty_dir_volume(pod: &Planned<'_>, volume: &str) -> Result<(), TemplateOutcomeError> {
     pod.one(&format!("{volume}/empty_dir"))?;
@@ -158,15 +120,5 @@ fn empty_dir_volume(pod: &Planned<'_>, volume: &str) -> Result<(), TemplateOutco
     if !medium.is_null() && medium != "" {
         return Err(rejected());
     }
-    only(pod, volume, "empty_dir")
-}
-
-// A single source is required; disallow an alternative volume kind that
-// happens to contain a matching field in a malformed/unknown plan.
-fn only(pod: &Planned<'_>, volume: &str, kind: &str) -> Result<(), TemplateOutcomeError> {
-    let fields = pod.value(volume)?.as_object().ok_or_else(rejected)?;
-    for key in fields.keys().filter(|key| *key != "name" && *key != kind) {
-        pod.empty(&format!("{volume}/{key}"))?;
-    }
-    Ok(())
+    super::only_volume_field(pod, volume, "empty_dir")
 }

@@ -8,7 +8,6 @@ export function Modal({
   children,
   open,
   onOpenChange,
-  inline = false,
   className,
 }: {
   title: string;
@@ -16,18 +15,8 @@ export function Modal({
   children: ReactNode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  inline?: boolean;
   className?: string;
 }) {
-  if (inline)
-    return (
-      <section
-        aria-label={title}
-        className="mx-auto w-full max-w-5xl rounded-lg border bg-card p-6 shadow-sm"
-      >
-        {children}
-      </section>
-    );
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent

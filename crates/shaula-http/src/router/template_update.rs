@@ -7,7 +7,7 @@ use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Deserializer};
 use shaula_core::registry::{Scope, TemplateProfileUpdate};
 
-use super::{accepted_response, idempotency_header, parse_if_match, require_scope, AppState};
+use super::{accepted_response, idempotency_header, require_if_match, require_scope, AppState};
 use crate::problem::{problem, registry_response};
 
 #[derive(Deserialize)]
@@ -55,16 +55,8 @@ pub(super) async fn update(
         )
         .into_response();
     };
-    let if_match = match parse_if_match(&headers) {
-        Ok(Some(expected)) => expected,
-        Ok(None) => {
-            return problem(
-                StatusCode::PRECONDITION_REQUIRED,
-                "PreconditionRequired",
-                "If-Match required for template update",
-            )
-            .into_response();
-        }
+    let if_match = match require_if_match(&headers, "If-Match required for template update") {
+        Ok(expected) => expected,
         Err(response) => return response,
     };
     if headers.contains_key("if-none-match") {

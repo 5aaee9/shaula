@@ -18,6 +18,24 @@ pub fn verify_loopback(host: &str) -> Result<(), String> {
     }
 }
 
+/// Validates an external provider instance base URL: `http(s)` with a non-empty
+/// host and no embedded credentials, query string, or fragment.
+pub(crate) fn validate_http_instance_url(raw: &str) -> Result<(), &'static str> {
+    let url = url::Url::parse(raw).map_err(|_| {
+        "instance_url must be an http(s) URL without credentials, query, or fragment"
+    })?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none_or(str::is_empty)
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err("instance_url must be an http(s) URL without credentials, query, or fragment");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

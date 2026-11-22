@@ -55,7 +55,7 @@ impl Store {
         &self,
         tx: &DatabaseTransaction,
         insert: shaula_core::fleet::FleetRevisionInsert,
-    ) -> StoreResult<()> {
+    ) -> StoreResult<i64> {
         // R9-03: the auth snapshot is re-resolved INSIDE the transaction.
         // A concurrent auth promotion (activation is monotonic per
         // profile) must never be rolled back by a capacity PUT that read
@@ -80,6 +80,29 @@ impl Store {
         };
         let key = &insert.key;
         let existing = fleets::Entity::find_by_id(key.to_string()).one(tx).await?;
+        // Mutation-fence CAS runs BEFORE inserting revisions: a lost head race
+        // returns `StoreError::Conflict` instead of tripping the unique index
+        // on `(fleet_key, revision)` and looking like a storage outage.
+        if let Some(current) = &existing {
+            if current.incarnation != insert.incarnation {
+                return Err(crate::store::StoreError::Conflict {
+                    resource: key.to_string(),
+                });
+            }
+            if current.deletion_marker {
+                return Err(crate::store::StoreError::Conflict {
+                    resource: format!("{key}:decommissioning"),
+                });
+            }
+            if current.desired_revision + 1 != insert.revision {
+                return Err(crate::store::StoreError::Conflict {
+                    resource: format!(
+                        "{key}:stale-desired-revision {} vs {}",
+                        current.desired_revision, insert.revision
+                    ),
+                });
+            }
+        }
         let (template_key, template_revision, artifact_digest, attestation_id) =
             match &insert.template {
                 Some(t) => (
@@ -205,29 +228,6 @@ impl Store {
                 fleets::Entity::insert(row).exec(tx).await?;
             }
             Some(current) => {
-                if current.incarnation != insert.incarnation {
-                    return Err(crate::store::StoreError::Conflict {
-                        resource: key.to_string(),
-                    });
-                }
-                // Mutation-fence CAS: the caller must have read this exact
-                // desired revision, and the fleet must not be
-                // decommissioning. The check re-runs inside the transaction
-                // so a concurrent DELETE between admission and commit cannot
-                // be overwritten.
-                if current.deletion_marker {
-                    return Err(crate::store::StoreError::Conflict {
-                        resource: format!("{key}:decommissioning"),
-                    });
-                }
-                if current.desired_revision + 1 != insert.revision {
-                    return Err(crate::store::StoreError::Conflict {
-                        resource: format!(
-                            "{key}:stale-desired-revision {} vs {}",
-                            current.desired_revision, insert.revision
-                        ),
-                    });
-                }
                 let next_fence = current.mutation_fence + 1;
                 let mut updated: fleets::ActiveModel = current.into();
                 updated.desired_revision = Set(insert.revision);
@@ -236,7 +236,7 @@ impl Store {
                 fleets::Entity::update(updated).exec(tx).await?;
             }
         }
-        Ok(())
+        Ok(auth_desired.1)
     }
 
     /// Marks a decommission request: deletion marker plus a fence bump in

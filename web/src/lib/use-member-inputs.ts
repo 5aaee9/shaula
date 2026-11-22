@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api, resourcePath } from "./api";
 import { checkInputContract, type InputContract } from "./input-contract";
 import type { TemplateResource } from "./types";
+
+const NO_TEMPLATE_READ = new Error("Template read permission is required to edit template inputs.");
 
 /**
  * Loads the Active revision's input contract for one weighted pool member's
@@ -10,46 +12,21 @@ import type { TemplateResource } from "./types";
  * The member's `template_inputs` stay owned by the parent form (they are part
  * of the submitted `template_pool.members[i]`); this hook only resolves which
  * contract applies so the same approved-value inputs used by single-template
- * fleets can render for each member. Returns the contract plus load state.
+ * fleets can render for each member.
  */
 export function useMemberContract(templateKey: string, canRead: boolean) {
-  const [contract, setContract] = useState<InputContract>();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<unknown>(null);
   const key = templateKey.trim();
-
-  useEffect(() => {
-    // The cleanup aborts this read before the next key's read starts, so an
-    // aborted signal is the only staleness check needed when it settles.
-    const controller = new AbortController();
-    setContract(undefined);
-    setError(null);
-    if (!key) {
-      setLoading(false);
-      return;
-    }
-    if (!canRead) {
-      setLoading(false);
-      setError(new Error("Template read permission is required to edit template inputs."));
-      return;
-    }
-    setLoading(true);
-    void loadMemberContract(key, controller.signal)
-      .then((next) => {
-        if (!controller.signal.aborted) setContract(next);
-      })
-      .catch((failure: unknown) => {
-        if (!controller.signal.aborted) setError(failure);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-    // The member's template key owns this contract read.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, canRead]);
-
-  return { contract, loading, error, canRead, ready: !!contract && !loading && !error };
+  const query = useQuery({
+    queryKey: ["member-input-contract", key],
+    enabled: !!key && canRead,
+    retry: false,
+    queryFn: ({ signal }) => loadMemberContract(key, signal),
+  });
+  return {
+    contract: key && canRead ? query.data : undefined,
+    loading: !!key && canRead && query.isPending,
+    error: !key ? null : !canRead ? NO_TEMPLATE_READ : query.error,
+  };
 }
 
 /** The Active revision's input contract for one template key. */
@@ -63,5 +40,3 @@ async function loadMemberContract(key: string, signal: AbortSignal): Promise<Inp
   );
   return checkInputContract(response.data, key, revision);
 }
-
-export type MemberContract = ReturnType<typeof useMemberContract>;

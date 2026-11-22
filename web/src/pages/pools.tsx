@@ -6,6 +6,7 @@ import { api, resourcePath } from "@/lib/api";
 import { useTemplatePools } from "@/lib/queries";
 import type { TemplatePoolResource } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/modal";
 import { Empty, ErrorNotice, Loading } from "@/components/status";
 import { PoolForm } from "@/components/pool-form";
 
@@ -49,7 +50,7 @@ function PoolInventory({
   if (pools.isPending) return <Loading />;
   if (!summaries.length) return <Empty title="No template pools yet" />;
   return (
-    <section className="resource-section" aria-label="Template pool inventory">
+    <section aria-label="Template pool inventory">
       <div className="section-heading">
         <h2>
           All pools <span className="count">{summaries.length}</span>
@@ -109,7 +110,20 @@ function PoolEditor({
         onAccepted={() => void client.invalidateQueries({ queryKey: ["template-pools"] })}
       />
     );
-  if (!editing || !detail.data) return null;
+  if (!editing) return null;
+  if (detail.error)
+    return (
+      <Modal
+        open
+        title={`Edit pool ${editing}`}
+        onOpenChange={(open) => {
+          if (!open) onClose();
+        }}
+      >
+        <ErrorNotice error={detail.error} retry={() => void detail.refetch()} />
+      </Modal>
+    );
+  if (!detail.data) return null;
   return (
     <PoolForm
       key={editing}

@@ -29,9 +29,7 @@ pub fn acquire_ownership_lock(data_dir: &Path) -> Result<OwnershipLock, String> 
     let lock: &'static mut fd_lock::RwLock<std::fs::File> =
         Box::leak(Box::new(fd_lock::RwLock::new(file)));
     match lock.try_write() {
-        Ok(guard) => Ok(OwnershipLock {
-            _guard: Some(guard),
-        }),
+        Ok(guard) => Ok(OwnershipLock { _guard: guard }),
         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
             Err("data directory is owned by another shaula daemon".to_string())
         }
@@ -44,7 +42,7 @@ pub fn acquire_ownership_lock(data_dir: &Path) -> Result<OwnershipLock, String> 
 pub struct OwnershipLock {
     // The guard IS the ownership: it stays with the acquiring process and
     // the kernel drops it if that process dies.
-    _guard: Option<fd_lock::RwLockWriteGuard<'static, std::fs::File>>,
+    _guard: fd_lock::RwLockWriteGuard<'static, std::fs::File>,
 }
 
 /// Periodic scan cadence for outbox/desired>observed/due-change sweeps.

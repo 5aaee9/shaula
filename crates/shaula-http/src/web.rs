@@ -25,13 +25,13 @@ pub(crate) async fn serve(method: Method, uri: Uri) -> Response {
             .into_response();
     }
     // An embedded file is served as itself; any other app path is the shell.
-    let asset_path = match WebAssets::get(path) {
-        Some(_) if !path.is_empty() => path,
-        _ if crate::oidc::document(uri.path()) => "index.html",
-        _ => return StatusCode::NOT_FOUND.into_response(),
-    };
-    let Some(asset) = WebAssets::get(asset_path) else {
-        return StatusCode::NOT_FOUND.into_response();
+    let (asset_path, asset) = match (!path.is_empty()).then(|| WebAssets::get(path)).flatten() {
+        Some(asset) => (path, asset),
+        None if crate::oidc::document(uri.path()) => match WebAssets::get("index.html") {
+            Some(asset) => ("index.html", asset),
+            None => return StatusCode::NOT_FOUND.into_response(),
+        },
+        None => return StatusCode::NOT_FOUND.into_response(),
     };
     let len = asset.data.len();
     let mime = mime_guess::from_path(asset_path).first_or_octet_stream();

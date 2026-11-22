@@ -2,16 +2,13 @@
 //! §4.1/§5.3), split from  to keep files within the
 //! 400-line budget (AGENTS.md).
 
-use shaula_core::auth_context::RepositorySelection;
-use shaula_core::auth_policy::AccountKind;
 use shaula_core::secret::SecretString;
 
 use crate::body::BoundedBody;
 use crate::client::{classify_response, github_request, retry_after_ms};
 use crate::error::ScalesetError;
 use crate::installation::{
-    AppInstallationResolver, InstallationLookup, InstallationProof, InstallationResponse,
-    MetadataReachability, RepoIdentity,
+    AppInstallationResolver, InstallationLookup, MetadataReachability, RepoIdentity,
 };
 
 impl AppInstallationResolver {
@@ -181,78 +178,30 @@ impl AppInstallationResolver {
     ) -> InstallationLookup {
         let path = format!("/app/installations/{installation_id}");
         let response = match self.app_request(app_id, private_key, &path).await {
-            Ok(Ok(response)) => response,
-            Ok(Err(ScalesetError::Status { status: 404, .. })) => {
-                return InstallationLookup::NotFound
+            Ok(response) => response,
+            Err(ScalesetError::Status { status: 404, .. }) => {
+                return InstallationLookup::NotFound;
             }
-            Ok(Err(ScalesetError::RateLimited {
+            Err(ScalesetError::RateLimited {
                 retry_after_secs, ..
-            })) => {
+            }) => {
                 return InstallationLookup::Transient {
                     retry_after_ms: retry_after_ms(retry_after_secs),
-                }
-            }
-            Ok(Err(_)) => {
-                return InstallationLookup::Transient {
-                    retry_after_ms: None,
-                }
+                };
             }
             Err(_) => {
                 return InstallationLookup::Transient {
                     retry_after_ms: None,
-                }
+                };
             }
         };
-        let parsed: InstallationResponse = match response.bounded_json().await {
-            Ok(parsed) => parsed,
-            Err(_) => {
-                return InstallationLookup::Transient {
-                    retry_after_ms: None,
-                }
-            }
-        };
-        if !crate::route_identity::valid_id(parsed.id)
-            || !crate::route_identity::valid_id(parsed.app_id)
-            || !crate::route_identity::valid_id(parsed.account.id)
-        {
-            return InstallationLookup::Transient {
-                retry_after_ms: None,
-            };
-        }
-        if parsed.id != installation_id {
-            return InstallationLookup::IdentityMismatch;
-        }
-        // Every route remains bound to the declared numeric App identity.
-        if parsed.app_id.to_string() != app_id {
-            return InstallationLookup::IdentityMismatch;
-        }
-        if parsed.suspended_at.is_some() {
-            return InstallationLookup::Suspended;
-        }
-        let (required_name, required_access) =
-            crate::installation::required_permission_for_target(target);
-        let has_required_permission = parsed
-            .permissions
-            .get(required_name)
-            .is_some_and(|granted| granted == required_access || granted == "admin");
-        if !has_required_permission {
-            return InstallationLookup::PermissionDenied;
-        }
-        InstallationLookup::Proven(InstallationProof {
-            installation_id: parsed.id,
-            app_id: parsed.app_id,
-            account_id: parsed.account.id,
-            account_kind: match parsed.account.account_type.as_str() {
-                "User" => AccountKind::User,
-                "Organization" => AccountKind::Organization,
-                _ => return InstallationLookup::IdentityMismatch,
-            },
-            login: parsed.account.login,
-            repository_selection: match parsed.repository_selection.as_deref() {
-                Some("selected") => RepositorySelection::Selected,
-                _ => RepositorySelection::All,
-            },
-            has_required_permission: true,
-        })
+        Self::classify_installation_response(
+            response,
+            app_id,
+            Some(installation_id),
+            None,
+            crate::installation::required_permission_for_target(target),
+        )
+        .await
     }
 }

@@ -9,86 +9,9 @@ fn err(msg: impl Into<String>) -> CoreError {
     CoreError::new(ReasonCode::Internal, msg)
 }
 
-/// Resolves and validates the workspace path for one generation under the
-/// configured work root. Rejects traversal and workspace aliasing.
-pub fn generation_workspace(
-    work_root: &Path,
-    fleet_key: &str,
-    generation_id: &str,
-) -> CoreResult<PathBuf> {
-    validate_segment(fleet_key)?;
-    validate_segment(generation_id)?;
-    Ok(work_root.join(fleet_key).join(generation_id))
-}
-
-/// Ensures a path stays inside its declared root after normalization.
-pub fn ensure_contained(root: &Path, candidate: &Path) -> CoreResult<()> {
-    let root_abs = root
-        .canonicalize()
-        .map_err(|e| err(format!("workspace root unreadable: {e}")))?;
-    let candidate_abs = candidate
-        .canonicalize()
-        .map_err(|e| err(format!("workspace path unreadable: {e}")))?;
-    if !candidate_abs.starts_with(&root_abs) {
-        return Err(err("workspace escapes configured root"));
-    }
-    Ok(())
-}
-
-fn validate_segment(segment: &str) -> CoreResult<()> {
-    if segment.is_empty()
-        || segment.len() > 128
-        || segment.contains("..")
-        || segment.contains('/')
-        || segment.contains('\\')
-        || segment.contains(':')
-    {
-        return Err(err("workspace path segment invalid"));
-    }
-    Ok(())
-}
-
 /// Creates the workspace directory tree for a generation.
 pub fn create_workspace(path: &Path) -> CoreResult<()> {
     std::fs::create_dir_all(path).map_err(|e| err(format!("cannot create workspace: {e}")))
-}
-
-/// Removes a workspace recursively; only called after terminal Destroy.
-pub fn remove_workspace(path: &Path) -> CoreResult<()> {
-    match std::fs::remove_dir_all(path) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(err(format!("cannot remove workspace: {e}"))),
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn traversal_segments_rejected() {
-        let root = Path::new("/work-root");
-        assert!(generation_workspace(root, "..", "gen").is_err());
-        assert!(generation_workspace(root, "fleet", "a/b").is_err());
-        assert!(generation_workspace(root, "fleet", "C:evil").is_err());
-        assert!(generation_workspace(root, "", "gen").is_err());
-    }
-
-    #[test]
-    fn containment_check_rejects_escape() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().join("root");
-        std::fs::create_dir_all(&root).unwrap();
-        let inside = root.join("gen");
-        std::fs::create_dir_all(&inside).unwrap();
-        let outside = tmp.path().join("outside");
-        std::fs::create_dir_all(&outside).unwrap();
-
-        ensure_contained(&root, &inside).unwrap();
-        assert!(ensure_contained(&root, &outside).is_err());
-    }
 }
 
 /// Read-only state identity pulled from the workspace backend: managed

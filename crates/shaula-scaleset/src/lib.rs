@@ -23,9 +23,4 @@ pub use client::ScalesetClient;
 pub use error::ScalesetError;
 pub use installation::{AppInstallationResolver, InstallationLookup};
 
-/// The pinned upstream oracle commit this adapter is written against.
-/// Upgrading requires reviewing the Go source diff and re-running the
-/// differential suites.
-pub const ORACLE_COMMIT: &str = "cb0405b2d874500e75ae34eff8d582ab75956b45";
-
 pub mod validation;

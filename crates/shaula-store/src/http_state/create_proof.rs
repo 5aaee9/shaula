@@ -111,7 +111,7 @@ impl SqliteStateBackend {
     /// authorized and started; otherwise the Generation keeps the unanchored
     /// path and is quarantined at Destroy.
     pub async fn anchor_failed_create(&self, id: &str) -> StateResult<bool> {
-        let tx = self.writer(id).await?;
+        let tx = self.writer().await?;
         let state = Row::load(&tx, id).await?;
         let fenced = WorkerRow::read(&tx, id)
             .await?

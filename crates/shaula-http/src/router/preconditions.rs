@@ -24,6 +24,21 @@ pub(crate) fn put_preconditions(headers: &HeaderMap) -> Result<PutPreconditions,
     Ok((create, if_match))
 }
 
+pub(crate) fn require_if_match(
+    headers: &HeaderMap,
+    missing_detail: &str,
+) -> Result<(String, i64), Response> {
+    match parse_if_match(headers)? {
+        Some(expected) => Ok(expected),
+        None => Err(problem(
+            StatusCode::PRECONDITION_REQUIRED,
+            "PreconditionRequired",
+            missing_detail,
+        )
+        .into_response()),
+    }
+}
+
 pub(crate) fn parse_if_match(headers: &HeaderMap) -> Result<Option<(String, i64)>, Response> {
     let Some(raw) = headers.get("if-match").and_then(|v| v.to_str().ok()) else {
         return Ok(None);

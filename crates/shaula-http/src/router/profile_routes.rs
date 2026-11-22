@@ -34,14 +34,6 @@ pub(crate) async fn template_artifact_put(
         )
         .into_response();
     }
-    if body.len() > state.body_limit {
-        return problem(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            "ArtifactTooLarge",
-            "artifact body exceeds limit",
-        )
-        .into_response();
-    }
     match state.artifact_publisher.publish(&body, &digest).await {
         Ok(size) => (
             StatusCode::CREATED,
@@ -231,14 +223,6 @@ pub(crate) fn build_auth_payload(dto: AuthProfilePutDto) -> Result<AuthProfilePu
             StatusCode::UNPROCESSABLE_ENTITY,
             "SpecInvalid",
             "github_app requires schema_version: 2; token kinds require their own target",
-        )
-        .into_response());
-    }
-    if dto.token.is_some() || dto.instance_url.is_some() || dto.scope.is_some() {
-        return Err(problem(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "SpecInvalid",
-            "token authentication fields are only valid for forgejo_token or gitlab_token",
         )
         .into_response());
     }

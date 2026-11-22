@@ -34,8 +34,7 @@ impl GitlabClient {
         Ok(result)
     }
 
-    pub(crate) async fn runner_count(&self) -> Result<u64, GitlabError> {
-        let scope_id = self.scope_id().await?;
+    pub(crate) async fn runner_count_for_scope(&self, scope_id: u64) -> Result<u64, GitlabError> {
         let count = self.list_summaries(scope_id).await?.len();
         Ok(u64::try_from(count).unwrap_or(u64::MAX))
     }

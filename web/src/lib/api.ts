@@ -26,9 +26,6 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<R
   const response = await authenticatedFetch(`/api/v1${path}`, {
     ...options,
     headers,
-    credentials: "same-origin",
-    cache: "no-store",
-    redirect: "error",
   });
   const contentType = response.headers.get("content-type") || "";
   if (

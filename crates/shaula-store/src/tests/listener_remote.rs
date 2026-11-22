@@ -27,11 +27,6 @@ impl Clock for TestClock {
 
 #[async_trait::async_trait]
 impl GitHubAccessPort for Remote {
-    async fn auth_context(&self) -> AuthContext {
-        AuthContext {
-            kind: shaula_core::auth::AuthKind::GithubApp,
-        }
-    }
     async fn resolve_runner_group(&self, _: &ScaleSetIdentity) -> Result<i64, AccessFailure> {
         Ok(7)
     }
@@ -122,9 +117,6 @@ impl GitHubAccessPort for Remote {
     }
     async fn list_runners(&self, _: i64) -> Result<Vec<RunnerRef>, AccessFailure> {
         Ok(Vec::new())
-    }
-    fn allows_target(&self, _: &GitHubTarget) -> bool {
-        true
     }
     async fn resolve_target_identity(
         &self,

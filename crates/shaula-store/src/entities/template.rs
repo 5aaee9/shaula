@@ -82,26 +82,6 @@ pub mod template_conformance_attestations {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-pub mod template_artifacts {
-    use sea_orm::entity::prelude::*;
-
-    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "template_artifacts")]
-    pub struct Model {
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub digest: String,
-        pub size_bytes: i64,
-        pub state: String,
-        pub reference_count: i64,
-        pub created_at: i64,
-    }
-
-    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
-
-    impl ActiveModelBehavior for ActiveModel {}
-}
-
 pub mod profile_changes {
     use sea_orm::entity::prelude::*;
 

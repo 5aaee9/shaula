@@ -52,21 +52,16 @@ async fn dispatch(app: &App, generation: &str, request: Request) -> StateResult<
     app.backend.authenticate(&access).await?;
     let method = request.method().as_str();
     let query = request.uri().query();
-    if !matches!(method, "GET" | "POST" | "LOCK" | "UNLOCK") {
-        return Ok((
-            StatusCode::METHOD_NOT_ALLOWED,
-            [(header::ALLOW, "GET, POST, LOCK, UNLOCK")],
-        )
-            .into_response());
-    }
-    if method != "POST" && query.is_some() {
-        return Err(StateError::Invalid);
-    }
     match method {
-        "GET" => match app.backend.read(&access).await? {
-            None => Ok(StatusCode::NOT_FOUND.into_response()),
-            Some(snapshot) => Ok(json_bytes(snapshot.document.bytes().to_vec())),
-        },
+        "GET" => {
+            if query.is_some() {
+                return Err(StateError::Invalid);
+            }
+            match app.backend.read(&access).await? {
+                None => Ok(StatusCode::NOT_FOUND.into_response()),
+                Some(snapshot) => Ok(json_bytes(snapshot.document.bytes().to_vec())),
+            }
+        }
         "POST" => {
             let id = update_id(query)?;
             let body = to_bytes(request.into_body(), MAX_STATE_BYTES)
@@ -77,6 +72,9 @@ async fn dispatch(app: &App, generation: &str, request: Request) -> StateResult<
             Ok(StatusCode::OK.into_response())
         }
         "LOCK" | "UNLOCK" => {
+            if query.is_some() {
+                return Err(StateError::Invalid);
+            }
             let locking = method == "LOCK";
             let body = to_bytes(request.into_body(), MAX_LOCK_BYTES)
                 .await
@@ -89,7 +87,11 @@ async fn dispatch(app: &App, generation: &str, request: Request) -> StateResult<
             }
             Ok(StatusCode::OK.into_response())
         }
-        _ => Err(StateError::Invalid),
+        _ => Ok((
+            StatusCode::METHOD_NOT_ALLOWED,
+            [(header::ALLOW, "GET, POST, LOCK, UNLOCK")],
+        )
+            .into_response()),
     }
 }
 

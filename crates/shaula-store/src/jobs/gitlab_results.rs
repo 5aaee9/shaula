@@ -1,6 +1,6 @@
 //! Optional exact job reads: scoped, bounded and incapable of changing Runner
 //! state or a recorded Verified association.
-use super::{decode, encode, gitlab::find, gitlab_projection, gitlab_scope};
+use super::{decimal_id, decode, encode, gitlab::find, gitlab_projection, gitlab_scope};
 use crate::entities::jobs::{
     gitlab_job_generations as links, gitlab_job_polls as polls, gitlab_workflow_jobs as jobs_table,
 };
@@ -82,8 +82,8 @@ impl Store {
                 .ok_or_else(|| StoreError::Corrupt("GitLab job metadata missing".into()))?;
             selected.push(GitlabJobLookup {
                 record_id: summary.id.clone(),
-                project_id: decimal_id(&state.project_id)?,
-                job_id: decimal_id(&state.job_id)?,
+                project_id: decimal_id(&state.project_id, "invalid GitLab job identity")?,
+                job_id: decimal_id(&state.job_id, "invalid GitLab job identity")?,
             });
             state.enrichment_attempted_at = Some(now);
             jobs_table::Entity::update_many()
@@ -167,12 +167,4 @@ impl Store {
         tx.commit().await?;
         Ok(true)
     }
-}
-
-fn decimal_id(value: &str) -> StoreResult<u64> {
-    value
-        .parse::<u64>()
-        .ok()
-        .filter(|id| *id > 0 && id.to_string() == value)
-        .ok_or_else(|| StoreError::Corrupt("invalid GitLab job identity".into()))
 }

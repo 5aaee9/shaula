@@ -9,9 +9,10 @@ use shaula_core::lifecycle::GenerationState as G;
 use shaula_core::ports::{OriginalStateIdentity, PlanProvenance, TemplateDestroyRequest};
 use shaula_core::registry::GenerationRecord;
 use shaula_core::template::{BindingsDigest, ManagedResourceRole, ProfileManifest};
-use shaula_observability::{MetricOperation, MetricResult, TelemetryHandle};
+use shaula_observability::MetricResult;
 
 use super::{DestroyOutcome, Registration, RemovalGate, RunnerOperation, RunnerRegistrations};
+use crate::iac_metrics::record_iac;
 
 /// Proof material a Runner Resource destroy re-verifies.
 pub(super) struct DestroyProof {
@@ -45,7 +46,14 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
         generation: &GenerationRecord,
         now: i64,
     ) -> CoreResult<DestroyOutcome> {
-        let mut diagnostic = self.capture(generation, now);
+        let mut diagnostic = crate::diagnostic_capture::generation_capture(
+            self.store,
+            self.diagnostic_guard,
+            generation,
+            Lane::Cleanup,
+            QuestionId::Cleanup,
+            now,
+        );
         if let Some(d) = &mut diagnostic.0 {
             d.observation.question.cleanup_mode = Some(CleanupMode::Ordinary);
         }
@@ -363,8 +371,4 @@ fn cannot_destroy(state: G) -> CoreError {
             state.as_str_repr()
         ),
     )
-}
-
-fn record_iac(result: MetricResult) {
-    TelemetryHandle::new().record(MetricOperation::IaC, result, 1);
 }

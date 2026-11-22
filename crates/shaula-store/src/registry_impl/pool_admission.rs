@@ -52,7 +52,7 @@ impl SqliteControlPlane {
         {
             record = map_generation(existing);
             let inputs = if let Some(key) = record.pool_member_key.as_deref() {
-                let inline = match fleet_revision_pool_members::Entity::find()
+                let inline = fleet_revision_pool_members::Entity::find()
                     .filter(fleet_revision_pool_members::Column::FleetKey.eq(&record.fleet_key))
                     .filter(
                         fleet_revision_pool_members::Column::FleetRevision
@@ -62,13 +62,11 @@ impl SqliteControlPlane {
                     .one(&tx)
                     .await
                     .map_err(|e| core_err(e.into()))?
-                {
-                    Some(member) => Some(
+                    .map(|member| {
                         super::mapping::template_inputs_from_json(&member.template_inputs_json)
-                            .map_err(core_err)?,
-                    ),
-                    None => None,
-                };
+                            .map_err(core_err)
+                    })
+                    .transpose()?;
                 super::lifecycle_pool_admit::replay_member_inputs(
                     &tx,
                     &record.fleet_key,
@@ -111,40 +109,48 @@ impl SqliteControlPlane {
             .template_pool
             .map(|pool| pool.failure_policy)
             .unwrap_or_default();
-        let inline_members = fleet_revision_pool_members::Entity::find()
-            .filter(fleet_revision_pool_members::Column::FleetKey.eq(&record.fleet_key))
-            .filter(fleet_revision_pool_members::Column::FleetRevision.eq(record.fleet_revision))
-            .all(&tx)
-            .await
-            .map_err(|e| core_err(e.into()))?;
+        let pool_scope = revision_row
+            .template_pool_ref
+            .clone()
+            .zip(revision_row.template_pool_revision);
         // Routing source: shared-pool member rows when the fleet revision
         // froze a pool reference, else the inline rows (spec 0037 §4).
-        let routing = super::lifecycle_pool_admit::load_routing(
-            &tx,
-            &record.fleet_key,
-            record.fleet_revision,
-            inline_members
-                .into_iter()
-                .map(|m| {
-                    Ok(super::lifecycle_pool_admit::AdmitMember {
-                        member_key: m.member_key,
-                        template_profile_key: m.template_profile_key,
-                        template_revision: m.template_revision,
-                        template_artifact_digest: m.template_artifact_digest,
-                        template_attestation_id: m.template_attestation_id,
-                        template_inputs: super::mapping::template_inputs_from_json(
-                            &m.template_inputs_json,
-                        )
-                        .map_err(core_err)?,
-                        inputs_digest: m.inputs_digest,
-                        weight: super::mapping::pool_member_weight(m.weight).map_err(core_err)?,
-                        max_runners: m.max_runners,
+        let routing = if let Some((pool_key, pool_revision)) = pool_scope {
+            super::lifecycle_pool_admit::load_shared_routing(&tx, pool_key, pool_revision).await?
+        } else {
+            let inline_members = fleet_revision_pool_members::Entity::find()
+                .filter(fleet_revision_pool_members::Column::FleetKey.eq(&record.fleet_key))
+                .filter(
+                    fleet_revision_pool_members::Column::FleetRevision.eq(record.fleet_revision),
+                )
+                .all(&tx)
+                .await
+                .map_err(|e| core_err(e.into()))?;
+            super::lifecycle_pool_admit::PoolRouting {
+                members: inline_members
+                    .into_iter()
+                    .map(|m| {
+                        Ok(super::lifecycle_pool_admit::AdmitMember {
+                            member_key: m.member_key,
+                            template_profile_key: m.template_profile_key,
+                            template_revision: m.template_revision,
+                            template_artifact_digest: m.template_artifact_digest,
+                            template_attestation_id: m.template_attestation_id,
+                            template_inputs: super::mapping::template_inputs_from_json(
+                                &m.template_inputs_json,
+                            )
+                            .map_err(core_err)?,
+                            inputs_digest: m.inputs_digest,
+                            weight: super::mapping::pool_member_weight(m.weight)
+                                .map_err(core_err)?,
+                            max_runners: m.max_runners,
+                        })
                     })
-                })
-                .collect::<CoreResult<Vec<_>>>()?,
-            inline_policy,
-        )
-        .await?;
+                    .collect::<CoreResult<Vec<_>>>()?,
+                failure_policy: inline_policy,
+                pool_scope: None,
+            }
+        };
         if let Some(ticket) = &mut diagnostic.0 {
             ticket.observation.question.pool = Some(DiagnosticPool {
                 mode: if routing.pool_scope.is_some() {

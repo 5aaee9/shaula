@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
-use shaula_core::fleet::{normalize_fleet, validate_fleet_spec, FleetProviderKind, FleetSpec};
+use shaula_core::fleet::{validate_fleet_spec, FleetProviderKind, FleetSpec};
 use shaula_core::registry::{FleetHead, MutationError, Scope};
 use shaula_core::template_pool::{FleetPoolRef, ResolvedTemplatePoolMember};
 
@@ -140,7 +140,7 @@ impl Resource for Fleet {
         {
             return Ok(Ok(Plan::NoOp));
         }
-        let normalized = normalize_fleet(&self.spec, plane.inputs_digest(&self.spec)?)?;
+        let inputs_digest = plane.inputs_digest(&self.spec)?;
         Ok(Ok(Plan::Revision {
             kind: if head.is_some() { "Replace" } else { "Create" },
             facts: Admitted {
@@ -148,7 +148,7 @@ impl Resource for Fleet {
                 members,
                 pool,
                 auth: (auth.profile_key.as_str().into(), auth.revision as i64),
-                inputs_digest: normalized.inputs_digest,
+                inputs_digest,
             },
         }))
     }

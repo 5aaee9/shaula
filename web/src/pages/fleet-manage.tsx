@@ -62,7 +62,6 @@ export function FleetManagePage({ scopes, mode }: { scopes: string[]; mode: "cre
           key={location.key}
           resource={editing ? query.data : undefined}
           scopes={scopes}
-          page
           onClose={() => navigate(backTo, { replace: true })}
           onAccepted={accepted}
         />

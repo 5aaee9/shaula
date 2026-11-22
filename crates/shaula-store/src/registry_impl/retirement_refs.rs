@@ -23,14 +23,6 @@ use sea_orm::{
     ColumnTrait, ConnectionTrait,
 };
 
-const OPEN_OPERATIONS: [&str; 6] = [
-    "Pending",
-    "Starting",
-    "ApplyStarting",
-    "BootstrapStarting",
-    "Running",
-    "Blocked",
-];
 const OPEN_CHANGES: [&str; 3] = ["Pending", "Running", "Blocked"];
 const OPEN_ACQUISITIONS: [&str; 3] = ["Pending", "AcquireStarting", "Uncertain"];
 
@@ -51,7 +43,7 @@ fn live_generation(now: i64) -> SimpleExpr {
         ))
         .and_where(
             col(operations::Column::State)
-                .is_in(OPEN_OPERATIONS)
+                .is_in(crate::lifecycle_repo::OPEN_OPERATION_STATES)
                 .or(leased(
                     operations::Column::LeaseOwner,
                     operations::Column::LeaseExpiresAt,

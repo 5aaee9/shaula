@@ -164,7 +164,7 @@ impl SqliteStateBackend {
     /// launch, even when no process is present in its in-memory child map.
     pub async fn worker_launch_pending(&self, access: &ControlAccess) -> StateResult<()> {
         let id = access.claim.generation_id.to_string();
-        let tx = self.writer(&id).await?;
+        let tx = self.writer().await?;
         let worker = WorkerRow::load(&tx, access).await?;
         if worker.phase != "admitted" {
             return Err(StateError::Conflict);
@@ -190,7 +190,7 @@ impl SqliteStateBackend {
         identity.validate()?;
         let identity = serde_json::to_string(identity).map_err(|_| StateError::Invalid)?;
         let id = access.claim.generation_id.to_string();
-        let tx = self.writer(&id).await?;
+        let tx = self.writer().await?;
         let worker = WorkerRow::load(&tx, access).await?;
         if worker.phase == "running" && worker.process_identity.as_deref() == Some(&identity) {
             return Ok(());

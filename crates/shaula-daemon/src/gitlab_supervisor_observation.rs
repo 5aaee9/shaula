@@ -44,7 +44,6 @@ impl GitlabPoolSupervisor {
                 report.unknown_runners = report.unknown_runners.saturating_add(1);
             }
         }
-        report.surplus_runners = report.owned_runners.saturating_sub(report.target);
         if report.unknown_runners > 0 {
             report.reason.get_or_insert(ReasonCode::UnknownRemoteRunner);
         }

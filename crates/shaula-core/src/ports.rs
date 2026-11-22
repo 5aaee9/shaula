@@ -6,7 +6,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::auth::AuthKind;
 use crate::github::GitHubTarget;
 use crate::github::Label;
 use crate::github::ScaleSetIdentity;
@@ -15,17 +14,8 @@ use crate::template::ShaulaInputEnvelope;
 use crate::template::ShaulaResultEnvelope;
 
 /// Deterministic clock port; production impl uses the system clock.
-#[async_trait]
 pub trait Clock: Send + Sync {
     fn now_unix_ms(&self) -> i64;
-    fn now(&self) -> chrono::DateTime<chrono::Utc> {
-        chrono::DateTime::from_timestamp_millis(self.now_unix_ms()).unwrap_or_default()
-    }
-}
-
-/// Deterministic identity port; production impl uses UUIDv4.
-pub trait IdGenerator: Send + Sync {
-    fn new_id(&self) -> String;
 }
 
 /// Typed GitHub access failure. `401`/`403`/access-filtered `404` are access
@@ -64,12 +54,6 @@ impl AccessFailure {
             AccessFailure::RequestUncertain { summary } => format!("uncertain: {summary}"),
         }
     }
-}
-
-/// Authenticated principal context for one port instance.
-#[derive(Debug, Clone)]
-pub struct AuthContext {
-    pub kind: AuthKind,
 }
 
 /// A scale set as observed through authenticated reads.
@@ -205,8 +189,6 @@ pub enum PollOutcome {
 /// never trigger auth-kind or revision fallback.
 #[async_trait]
 pub trait GitHubAccessPort: Send + Sync {
-    async fn auth_context(&self) -> AuthContext;
-
     /// Bounded authenticated read; resolves the runner group by name.
     async fn resolve_runner_group(&self, identity: &ScaleSetIdentity)
         -> Result<i64, AccessFailure>;
@@ -293,10 +275,6 @@ pub trait GitHubAccessPort: Send + Sync {
 
     /// Full inventory re-observation.
     async fn list_runners(&self, scale_set_id: i64) -> Result<Vec<RunnerRef>, AccessFailure>;
-
-    /// Validates the target allowlist for the credential; used by auth
-    /// candidate validation and handoff classification.
-    fn allows_target(&self, target: &GitHubTarget) -> bool;
 
     /// Verified numeric identity of a concrete Target (spec 0011 §4.2):
     /// organization id, or repository id + owner id. Powers the

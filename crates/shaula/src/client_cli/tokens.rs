@@ -51,15 +51,7 @@ async fn issue(
             if let Some(path) = &args.secret_out {
                 let _ = std::fs::remove_file(path);
             }
-            let uncertain = matches!(
-                e,
-                Error::Transport
-                    | Error::Protocol
-                    | Error::Http {
-                        status: 500..=599,
-                        ..
-                    }
-            );
+            let uncertain = super::is_uncertain(&e);
             let mut out = Outcome::error(e);
             if uncertain {
                 out.receipt = json!({"outcome":"uncertain","idempotency_key":key});
@@ -189,9 +181,7 @@ pub(super) async fn run(client: &Client, action: TokenAction) -> Result<Outcome,
             if let Some(secret) = secret {
                 let validation = client.with_credential(secret)?;
                 let result = async {
-                    if validation.session().await?.data.principal
-                        != client.session().await?.data.principal
-                    {
+                    if validation.session().await?.data.principal != session.principal {
                         return Err(Error::Invalid("new token principal differs"));
                     }
                     validation.access_tokens().current().await?;
@@ -221,17 +211,15 @@ pub(super) async fn auth(
         AuthAction::Login { credential_out } => {
             super::login::save(client, args, credential_out).await
         }
-        AuthAction::Logout { revoke } => {
-            if revoke {
-                client.access_tokens().revoke_current().await?;
-            }
+        AuthAction::Logout { .. } => {
+            client.access_tokens().revoke_current().await?;
             let context = super::config::context(args, config)?
                 .ok_or(Error::Invalid("logout requires a context"))?;
             std::fs::remove_file(&context.token_file).map_err(|_| {
                 Error::Invalid("remote revoke completed but local file removal failed")
             })?;
             Ok(Outcome::data(
-                json!({"local_credential_removed":true,"remote_revoked":revoke}),
+                json!({"local_credential_removed":true,"remote_revoked":true}),
             ))
         }
     }

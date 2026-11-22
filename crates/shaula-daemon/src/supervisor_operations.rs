@@ -4,12 +4,9 @@ use super::FleetSupervisor;
 use shaula_core::error::CoreResult;
 use shaula_core::lifecycle::GenerationState;
 use shaula_core::ports::{EffectOutcome, JitConfig};
-use shaula_observability::{MetricOperation, MetricResult, TelemetryHandle};
+use shaula_observability::MetricResult;
 
-/// One bounded GitHub runner operation completed with the given outcome.
-fn record_runner(result: MetricResult) {
-    TelemetryHandle::new().record(MetricOperation::Runner, result, 1);
-}
+use crate::iac_metrics::record_runner;
 
 impl FleetSupervisor {
     #[tracing::instrument(name = "shaula.github.jit_mint", skip_all, fields(fleet_key = %self.config.fleet_key, generation_id = %generation_id, scale_set_id = scale_set_id))]

@@ -13,14 +13,9 @@ impl FleetSupervisor {
     /// scale-set name (upstream `ensureLabels`).
     pub fn fallback_labels(&self) -> Vec<shaula_core::github::Label> {
         if self.config.labels.is_empty() {
-            return vec![
-                shaula_core::github::Label::system(self.identity.scale_set_name.clone()).unwrap_or(
-                    shaula_core::github::Label {
-                        name: self.identity.scale_set_name.clone(),
-                        label_type: "System".to_string(),
-                    },
-                ),
-            ];
+            return vec![shaula_core::github::Label::system(
+                self.identity.scale_set_name.clone(),
+            )];
         }
         self.config.labels.clone()
     }

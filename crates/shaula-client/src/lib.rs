@@ -209,12 +209,12 @@ impl Client {
     }
 }
 
-/// Bytes, identity, origin, method, path, key and precondition cannot change on retry.
+/// Bytes, identity, origin, method, url, key and precondition cannot change on retry.
 pub struct MutationAttempt {
     origin: String,
     identity: AttemptIdentity,
     method: Method,
-    path: Vec<String>,
+    url: Url,
     body: Secret,
     precondition: Option<WritePrecondition>,
     key: String,

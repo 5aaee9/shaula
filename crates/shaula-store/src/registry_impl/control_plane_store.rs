@@ -1,27 +1,84 @@
+use super::mapping::{
+    auth_handoff_row, fleet_change_row, fleet_head, fleet_pool_member_row, fleet_revision_row,
+    pool_member_row,
+};
 use super::{core_err, SqliteControlPlane};
 use async_trait::async_trait;
 use shaula_core::error::CoreResult;
 use shaula_core::registry::{
-    Actor, AdmissionSupportStore, ArtifactStore, AuthHandoffRow, CapacityStore, ChangeView,
-    FleetHead, FleetRevisionRow, FleetStore, HandoffStore, KeyPage, MutationError, MutationFacts,
+    Actor, AdmissionSupportStore, AuthHandoffRow, CapacityStore, ChangeView, FleetHead,
+    FleetRevisionRow, FleetStore, HandoffStore, IdempotencyLookup, KeyPage, MutationError,
+    MutationFacts,
 };
 
 #[async_trait]
 impl FleetStore for SqliteControlPlane {
     async fn fleet_get(&self, key: &str) -> CoreResult<Option<FleetHead>> {
-        self.fleet_get_read(key).await
+        Ok(self
+            .store
+            .fleet_get(key)
+            .await
+            .map_err(core_err)?
+            .map(fleet_head))
     }
     async fn fleet_list(&self, _: &Actor, page: KeyPage) -> CoreResult<Vec<(String, i64, String)>> {
-        self.fleet_list_read(&page).await
+        Ok(self
+            .store
+            .fleet_page(&page)
+            .await
+            .map_err(core_err)?
+            .into_iter()
+            .map(|f| (f.key, f.desired_revision, f.phase))
+            .collect())
     }
     async fn fleet_count(&self) -> CoreResult<usize> {
         Ok(self.store.fleet_list().await.map_err(core_err)?.len())
     }
     async fn fleet_revision_latest(&self, key: &str) -> CoreResult<Option<FleetRevisionRow>> {
-        self.fleet_revision_latest_read(key).await
+        let Some(row) = self
+            .store
+            .fleet_revision_latest(key)
+            .await
+            .map_err(core_err)?
+        else {
+            return Ok(None);
+        };
+        let mut mapped = fleet_revision_row(row.clone());
+        let pool_scope = row
+            .template_pool_ref
+            .clone()
+            .zip(row.template_pool_revision);
+        // Shared-pool fleets hydrate their members from the pool revision
+        // the fleet revision froze (spec 0037 §4); inline pools keep
+        // reading their own member rows.
+        mapped.template_pool = if let Some((pool_key, pool_revision)) = &pool_scope {
+            self.store
+                .template_pool_members(pool_key, *pool_revision)
+                .await
+                .map_err(core_err)?
+                .into_iter()
+                .map(pool_member_row)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(core_err)?
+        } else {
+            self.store
+                .fleet_revision_pool_members(key, row.revision)
+                .await
+                .map_err(core_err)?
+                .into_iter()
+                .map(fleet_pool_member_row)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(core_err)?
+        };
+        Ok(Some(mapped))
     }
     async fn fleet_change_get(&self, change_id: &str) -> CoreResult<Option<ChangeView>> {
-        self.fleet_change_get_read(change_id).await
+        Ok(self
+            .store
+            .change_get(change_id)
+            .await
+            .map_err(core_err)?
+            .map(fleet_change_row))
     }
     async fn commit_fleet_mutation(
         &self,
@@ -77,7 +134,12 @@ impl CapacityStore for SqliteControlPlane {
         &self,
         id: &str,
     ) -> CoreResult<Option<shaula_core::registry::GenerationRecord>> {
-        self.generation_lookup_read(id).await
+        Ok(self
+            .store
+            .generation_get(id)
+            .await
+            .map_err(core_err)?
+            .map(super::lifecycle_support::map_generation))
     }
     async fn commit_generation_finalize(
         &self,
@@ -102,7 +164,13 @@ impl CapacityStore for SqliteControlPlane {
 #[async_trait]
 impl HandoffStore for SqliteControlPlane {
     async fn handoff_get(&self, fleet_key: &str) -> CoreResult<Option<AuthHandoffRow>> {
-        self.handoff_get_read(fleet_key).await
+        self.store
+            .handoff_get(fleet_key)
+            .await
+            .map_err(core_err)?
+            .map(auth_handoff_row)
+            .transpose()
+            .map_err(core_err)
     }
     async fn handoff_acknowledge(
         &self,
@@ -156,31 +224,6 @@ impl HandoffStore for SqliteControlPlane {
 }
 
 #[async_trait]
-impl ArtifactStore for SqliteControlPlane {
-    async fn ensure_artifact_cached(&self, digest: &str) -> CoreResult<()> {
-        self.ensure_artifact_cached_read(digest).await
-    }
-    async fn artifact_manifest(&self, digest: &str) -> CoreResult<Option<String>> {
-        self.artifact_manifest_impl(digest).await
-    }
-    async fn artifact_bindings_schema(&self, digest: &str) -> CoreResult<Option<String>> {
-        self.artifact_bindings_schema_impl(digest).await
-    }
-    async fn artifact_parameter_schema(&self, digest: &str) -> CoreResult<String> {
-        self.artifact_parameter_schema_impl(digest).await
-    }
-    async fn artifact_shape_ok(&self, digest: &str) -> CoreResult<bool> {
-        self.artifact_shape_impl(digest).await
-    }
-    async fn artifact_lock_digest(&self, digest: &str) -> CoreResult<Option<String>> {
-        self.artifact_lock_digest_impl(digest).await
-    }
-    async fn artifact_lock_file(&self, digest: &str) -> CoreResult<Option<String>> {
-        self.artifact_lock_file_impl(digest).await
-    }
-}
-
-#[async_trait]
 impl AdmissionSupportStore for SqliteControlPlane {
     async fn idempotency_find(
         &self,
@@ -190,16 +233,37 @@ impl AdmissionSupportStore for SqliteControlPlane {
         resource_key: &str,
         idempotency_key: &str,
         request_hash: &str,
-    ) -> CoreResult<shaula_core::registry::IdempotencyLookup> {
-        self.idempotency_find_read(
-            principal,
-            operation,
-            resource_kind,
-            resource_key,
-            idempotency_key,
-            request_hash,
-        )
-        .await
+    ) -> CoreResult<IdempotencyLookup> {
+        if self
+            .store
+            .idempotency_find_by_key(None, None, resource_kind, resource_key, idempotency_key)
+            .await
+            .map_err(core_err)?
+            .is_some()
+        {
+            return Ok(IdempotencyLookup::LegacyConflict);
+        }
+        let Some(record) = self
+            .store
+            .idempotency_find_by_key(
+                Some(principal),
+                Some(operation),
+                resource_kind,
+                resource_key,
+                idempotency_key,
+            )
+            .await
+            .map_err(core_err)?
+        else {
+            return Ok(IdempotencyLookup::Miss);
+        };
+        if record.request_hash != request_hash {
+            return Ok(IdempotencyLookup::Conflict);
+        }
+        Ok(match record.response_body {
+            Some(body) => IdempotencyLookup::Replay(body),
+            None => IdempotencyLookup::Miss,
+        })
     }
     fn diagnostic_sink(
         &self,
@@ -213,7 +277,6 @@ impl AdmissionSupportStore for SqliteControlPlane {
         actor: &shaula_core::registry::Actor,
         now: i64,
     ) -> shaula_core::diagnostics::DiagnosticsResult {
-        use shaula_core::diagnostics::DiagnosticsReadPort;
         self.store.diagnostics(kind, key, actor, now).await
     }
 }

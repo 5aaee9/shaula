@@ -125,6 +125,7 @@ impl SupervisorWiring {
         let guard = FleetRuntimeGuard::from(&head);
         let fence = guard.mutation_fence;
         let mut execution_contexts = Vec::new();
+        let mut execution_context_map = std::collections::HashMap::new();
         for (profile, revision) in self.store.auth_execution_refs(key).await? {
             let context = self
                 .store
@@ -140,6 +141,9 @@ impl SupervisorWiring {
                         "execution context serialization failed",
                     )
                 })?;
+            if let Some(ctx) = context {
+                execution_context_map.insert((profile.clone(), revision), ctx);
+            }
             execution_contexts.push((profile, revision, json));
         }
         execution_contexts.sort();
@@ -175,31 +179,18 @@ impl SupervisorWiring {
                 .with_expected_context(observed_context.clone());
             let github: Arc<dyn GitHubAccessPort> = Arc::new(client);
             let mut revision_clients = std::collections::HashMap::new();
-            for (profile, revision, json) in &cache_key.execution_contexts {
+            for (profile, revision, _) in &cache_key.execution_contexts {
                 if profile == &exec_profile && *revision == exec_revision && execution_ready {
                     revision_clients.insert((profile.clone(), *revision), github.clone());
                     continue;
                 }
+                let context = execution_context_map.remove(&(profile.clone(), *revision));
                 let row = self.store.auth_revision_get(profile, *revision).await?;
                 if row.as_ref().is_none_or(|r| {
-                    r.schema_version != 2 || r.kind != "github_app" || json.is_none()
+                    r.schema_version != 2 || r.kind != "github_app" || context.is_none()
                 }) {
                     continue; // no authority: cleanup retains occupancy and retries
                 }
-                let context = json
-                    .as_ref()
-                    .map(|value| {
-                        serde_json::from_str::<shaula_core::auth_context::ResolvedAuthContext>(
-                            value,
-                        )
-                    })
-                    .transpose()
-                    .map_err(|_| {
-                        shaula_core::error::CoreError::new(
-                            shaula_core::error::ReasonCode::Internal,
-                            "retained execution context invalid",
-                        )
-                    })?;
                 if context.as_ref().is_none_or(|c| {
                     c.profile_key != *profile
                         || c.revision != *revision

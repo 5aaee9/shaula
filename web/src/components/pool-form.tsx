@@ -6,7 +6,7 @@ import type { Accepted, TemplatePoolMemberSpec, TemplatePoolResource } from "@/l
 import { Modal } from "./modal";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { initialPoolMember } from "@/lib/template-pool";
+import { initialPoolMember, poolMembersProblem } from "@/lib/template-pool";
 import { TemplatePoolEditor } from "./template-pool-editor";
 import { ErrorNotice, Field } from "./status";
 
@@ -43,19 +43,8 @@ export function PoolForm({
     event.preventDefault();
     setError(null);
     try {
-      if (members.length < 1 || members.length > 32)
-        throw new Error("Template pool must contain between 1 and 32 members.");
-      const keys = new Set<string>();
-      for (const member of members) {
-        if (!/^[a-z0-9][a-z0-9-]*$/.test(member.key))
-          throw new Error(`Invalid member key: ${member.key}`);
-        if (keys.has(member.key)) throw new Error(`Duplicate member key: ${member.key}`);
-        keys.add(member.key);
-        if (!Number.isInteger(member.weight) || member.weight < 1 || member.weight > 10000)
-          throw new Error(`Weight for ${member.key} must be an integer from 1 to 10000.`);
-        if (!member.template_profile_ref.trim())
-          throw new Error(`Choose a template for member ${member.key}.`);
-      }
+      const problem = poolMembersProblem(members, { requireTemplate: true });
+      if (problem) throw new Error(problem);
       const body = JSON.stringify({ members, failure_policy: failurePolicy });
       const path = resourcePath("template-pools", key);
       const headers = attempt.headers("PUT", path, body, resource?.etag || null, !resource);

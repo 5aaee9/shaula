@@ -35,19 +35,16 @@ fn failed() -> TemplateOutcomeError {
     }
 }
 
-/// The caller revalidates the frozen manifest and holds bootstrap admission.
+/// The caller validated the frozen manifest and holds bootstrap admission.
 /// Diagnostic retrieval is optional; identity and launch checks fail closed.
 pub(super) async fn launch(
     runtime: &TemplateRuntime,
+    manifest: &ProfileManifest,
     request: &TemplateCreateRequest,
     envelope: &ShaulaResultEnvelope,
 ) -> Result<(), TemplateOutcomeError> {
     let started = Instant::now();
-    let manifest = std::fs::read_to_string(request.artifact_dir.join("profile.yaml"))
-        .ok()
-        .and_then(|text| crate::manifest::parse_manifest(&text).ok())
-        .ok_or_else(failed)?;
-    let image = selected_image(&manifest, request)?;
+    let image = selected_image(manifest, request)?;
     let backend = manifest
         .runner_backend_for_bindings(&request.input.bindings)
         .map_err(|_| failed())?;

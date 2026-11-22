@@ -25,21 +25,16 @@ impl Store {
             detail_json,
             now,
         } = append;
-        let resource_kind = resource_kind.as_str();
-        let action = action.as_str();
-        let actor = actor.as_str();
-        let resource_key = resource_key.as_str();
-        let outcome = outcome.as_str();
         let row = audit_records::ActiveModel {
             seq: Default::default(),
             credential_kind: Set(authentication.kind().to_owned()),
             access_token_id: Set(authentication.token_id().map(str::to_owned)),
-            resource_kind: Set(resource_kind.to_string()),
-            action: Set(action.to_string()),
-            actor: Set(actor.to_string()),
-            resource_key: Set(resource_key.to_string()),
+            resource_kind: Set(resource_kind),
+            action: Set(action),
+            actor: Set(actor),
+            resource_key: Set(resource_key),
             revision: Set(revision),
-            outcome: Set(outcome.to_string()),
+            outcome: Set(outcome),
             detail_json: Set(detail_json),
             created_at: Set(now),
         };

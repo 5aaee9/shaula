@@ -28,8 +28,6 @@ pub struct GitlabReconcileReport {
     pub owned_runners: u64,
     pub idle_runners: u64,
     pub active_runners: u64,
-    pub missing_runners: u64,
-    pub surplus_runners: u64,
     pub created: u32,
     pub destroyed: u32,
     pub unknown_runners: u64,
@@ -236,11 +234,6 @@ impl GitlabPoolSupervisor {
                 }
             }
         }
-        report.missing_runners = report.target.saturating_sub(
-            report
-                .owned_runners
-                .saturating_add(u64::from(report.created)),
-        );
         self.observe_status(&report, deleting, now).await?;
         Ok(report)
     }

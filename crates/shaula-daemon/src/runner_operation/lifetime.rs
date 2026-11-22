@@ -47,7 +47,14 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
         generation: &GenerationRecord,
         now: i64,
     ) -> CoreResult<DestroyOutcome> {
-        let mut diagnostic = self.capture(generation, now);
+        let mut diagnostic = crate::diagnostic_capture::generation_capture(
+            self.store,
+            self.diagnostic_guard,
+            generation,
+            Lane::Cleanup,
+            QuestionId::Cleanup,
+            now,
+        );
         if let Some(d) = &mut diagnostic.0 {
             d.observation.question.cleanup_mode = Some(CleanupMode::HardLifetime);
         }

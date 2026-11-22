@@ -11,7 +11,7 @@ pub(crate) async fn validate_v2(
     clock: &Arc<dyn Clock>,
     key: &str,
     row: &AuthRevisionRow,
-    endpoints: &super::auth_worker_probe::WorkerEndpoints,
+    endpoints: &shaula_scaleset::validation::WorkerEndpoints,
 ) -> CoreResult<Verdict> {
     let adapter =
         shaula_scaleset::validation::GitHubValidation::new(endpoints.clone(), clock.clone())?;

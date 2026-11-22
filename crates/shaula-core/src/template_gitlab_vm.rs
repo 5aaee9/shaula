@@ -98,25 +98,12 @@ fn parse(config: &str) -> Option<GitlabBootstrapMaterial> {
 
 impl ProfileManifest {
     pub(super) fn validate_gitlab_vm_bootstrap(&self) -> CoreResult<()> {
-        let Some(contract) = self.gitlab_vm_bootstrap_contract.as_deref() else {
-            return Ok(());
-        };
-        if contract != GITLAB_VM_BOOTSTRAP_CONTRACT
-            || !matches!(
-                self.platform.as_str(),
-                "proxmox" | "aws" | "tencentcloud" | "alicloud"
-            )
-            || self.vm_image_contract.is_none()
-            || self.container_bootstrap_contract.is_some()
-            || self.input_contract_version != 1
-            || !self.supports_runner_backend("gitlab")
-        {
-            return Err(CoreError::new(
-                ReasonCode::TemplateInvalid,
-                "unsupported GitLab VM cloud-init bootstrap contract",
-            ));
-        }
-        Ok(())
+        self.validate_vm_bootstrap_contract(
+            self.gitlab_vm_bootstrap_contract.as_deref(),
+            GITLAB_VM_BOOTSTRAP_CONTRACT,
+            "gitlab",
+            "unsupported GitLab VM cloud-init bootstrap contract",
+        )
     }
 
     /// GitLab Create admission: VM artifacts through their cloud-init
@@ -126,8 +113,14 @@ impl ProfileManifest {
         if self.gitlab_vm_bootstrap_contract.is_none() {
             return self.validate_gitlab_target();
         }
-        self.validate_for_provider(crate::fleet::FleetProviderKind::Gitlab)?;
-        self.validate_gitlab_vm_bootstrap()
+        self.validate_for_provider(crate::fleet::FleetProviderKind::Gitlab)
+    }
+
+    pub(super) fn check_gitlab_generation_target(&self) -> CoreResult<()> {
+        if self.gitlab_vm_bootstrap_contract.is_none() {
+            return self.check_gitlab_target();
+        }
+        Ok(())
     }
 }
 

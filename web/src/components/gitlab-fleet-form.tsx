@@ -5,9 +5,7 @@ import { gitlabTargetName } from "@/lib/runner-backend";
 import { useTokenFleet } from "@/lib/use-token-fleet";
 import type { FleetResource, GitlabFleetSpec } from "@/lib/types";
 import type { FleetFormProps } from "./fleet-form";
-import { FleetStage } from "./fleet-form-parts";
-import { ProfileSelector } from "./profile-selector";
-import { TokenFleetFrame } from "./token-fleet-sections";
+import { TokenAuthStage, TokenFleetFrame } from "./token-fleet-sections";
 import { Input } from "./ui/input";
 import { Field } from "./status";
 
@@ -17,7 +15,6 @@ export function GitlabFleetForm({
   scopes,
   onClose,
   onAccepted,
-  page = false,
 }: Omit<FleetFormProps, "resource"> & {
   resource?: Resource<FleetResource<GitlabFleetSpec>>;
   backendSelector?: ReactNode;
@@ -30,8 +27,6 @@ export function GitlabFleetForm({
     section,
     activeTarget: (state) => state?.gitlab?.target,
     scopes,
-    page,
-    onClose,
     onAccepted,
   });
   const [tags, setTags] = useState(() => section?.tags.join(", ") || "");
@@ -42,35 +37,15 @@ export function GitlabFleetForm({
       backend="gitlab"
       fleet={fleet}
       backendSelector={backendSelector}
-      page={page}
       onClose={onClose}
       placeholder="gitlab-linux"
       buildBody={() => gitlabFleetBody({ ...fleet, fleetKey: key, tags, runUntagged })}
     >
-      <FleetStage title="Authentication">
-        <ProfileSelector
-          label="GitLab authentication profile"
-          query={fleet.choices}
-          value={fleet.auth}
-          canRead={fleet.canReadAuth}
-          permission="auth.read"
-          disabled={editing}
-          onChange={fleet.setAuth}
-        />
-        {target && (
-          <p className="break-all text-sm" aria-label="GitLab target">
-            {gitlabTargetName(target)}
-          </p>
-        )}
-        <Field label="Runner name prefix">
-          <Input
-            disabled={editing}
-            maxLength={100}
-            value={fleet.prefix}
-            onChange={(e) => fleet.setPrefix(e.target.value)}
-            placeholder={key ? `shaula-${key}-` : "Uses shaula-<fleet key>-"}
-          />
-        </Field>
+      <TokenAuthStage
+        provider="GitLab"
+        fleet={fleet}
+        targetLabel={target ? gitlabTargetName(target) : undefined}
+      >
         <Field label="Tags">
           <Input
             required={!runUntagged}
@@ -93,7 +68,7 @@ export function GitlabFleetForm({
           Jobs use the shell executor, so image: is ignored. Don't share tags with persistent
           runners; they may take the same jobs.
         </p>
-      </FleetStage>
+      </TokenAuthStage>
     </TokenFleetFrame>
   );
 }

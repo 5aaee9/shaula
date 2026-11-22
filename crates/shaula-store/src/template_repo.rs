@@ -5,8 +5,8 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter};
 
 use crate::entities::template::{
-    profile_changes, template_artifacts, template_conformance_attestations,
-    template_profile_revisions, template_profiles,
+    profile_changes, template_conformance_attestations, template_profile_revisions,
+    template_profiles,
 };
 use crate::store::{Store, StoreError, StoreResult};
 
@@ -181,34 +181,6 @@ impl Store {
         Ok(())
     }
 
-    /// Digest-idempotent artifact registration; returns whether this call
-    /// created the entry.
-    pub async fn template_artifact_register(
-        &self,
-        digest: &str,
-        size_bytes: i64,
-        now: i64,
-    ) -> StoreResult<bool> {
-        if template_artifacts::Entity::find_by_id(digest.to_string())
-            .one(self.connection())
-            .await?
-            .is_some()
-        {
-            return Ok(false);
-        }
-        let row = template_artifacts::ActiveModel {
-            digest: Set(digest.to_string()),
-            size_bytes: Set(size_bytes),
-            state: Set("Orphan".to_string()),
-            reference_count: Set(0),
-            created_at: Set(now),
-        };
-        template_artifacts::Entity::insert(row)
-            .exec(self.connection())
-            .await?;
-        Ok(true)
-    }
-
     pub(crate) async fn profile_change_insert(
         &self,
         tx: &DatabaseTransaction,
@@ -264,24 +236,5 @@ impl Store {
         Ok(profile_changes::Entity::find_by_id(id.to_string())
             .one(self.connection())
             .await?)
-    }
-}
-
-impl Store {
-    /// Applies the structured credential validation outcome for an Auth
-    /// Candidate: promote to Active (staged activation) or reject while
-    /// keeping the prior active revision untouched. Delegates to the full
-    /// v2-aware promotion in `auth_v2_repo`.
-    pub(crate) async fn auth_scan_apply(
-        &self,
-        key: &str,
-        revision: i64,
-        accepted: bool,
-        reason: Option<&str>,
-        now: i64,
-    ) -> StoreResult<()> {
-        self.auth_apply_full(key, revision, accepted, reason, now, None)
-            .await
-            .map(|_| ())
     }
 }

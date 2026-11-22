@@ -58,7 +58,7 @@ pub(super) struct State {
     pub sink: Option<Arc<dyn ApplyIntentSink>>,
     pub guard: Option<ApplyClaim>,
     pub bootstrap_guard: Option<ApplyClaim>,
-    pub replay: HashMap<Uuid, (String, Vec<u8>)>,
+    pub replay: HashMap<Uuid, String>,
 }
 
 impl State {

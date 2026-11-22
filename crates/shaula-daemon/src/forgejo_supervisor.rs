@@ -17,13 +17,10 @@ use crate::runner_operation::forgejo::is_owned_runner;
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ForgejoReconcileReport {
     pub waiting_jobs: u64,
-    pub running_jobs: u64,
     pub target: u64,
     pub owned_runners: u64,
     pub idle_runners: u64,
     pub active_runners: u64,
-    pub missing_runners: u64,
-    pub surplus_runners: u64,
     pub created: u32,
     pub destroyed: u32,
     pub unknown_runners: u64,
@@ -106,7 +103,7 @@ impl ForgejoPoolSupervisor {
             auth: deps.auth,
             capacity,
             runner_name_prefix: section.runner_name_prefix.clone(),
-            labels: normalized_labels(&section.labels)?,
+            labels: normalized_labels(&section.labels),
             bootstrap_labels: section.labels.clone(),
             instance_url: section.instance_url.clone(),
             store: deps.store,
@@ -219,11 +216,6 @@ impl ForgejoPoolSupervisor {
                     DemandKind::ForgejoWaitingJobs,
                     Some(now),
                 );
-                if let Some(d) = diagnostic {
-                    if let Some(cap) = &mut d.observation.question.capacity {
-                        cap.demand = Some(report.waiting_jobs.to_string());
-                    }
-                }
                 let creates = create_count(self.capacity, report.target, effective, occupancy);
                 for _ in 0..creates {
                     if self.create_one_generation(now).await? {
@@ -234,11 +226,6 @@ impl ForgejoPoolSupervisor {
                 }
             }
         }
-        report.missing_runners = report.target.saturating_sub(
-            report
-                .owned_runners
-                .saturating_add(u64::from(report.created)),
-        );
         self.observe_status(&report, deleting, now).await?;
         Ok(report)
     }
@@ -256,12 +243,11 @@ impl ForgejoPoolSupervisor {
     }
 }
 
-fn normalized_labels(labels: &[String]) -> CoreResult<Vec<String>> {
-    shaula_core::forgejo::validate_labels(labels)?;
-    Ok(labels
+fn normalized_labels(labels: &[String]) -> Vec<String> {
+    labels
         .iter()
         .map(|label| label.split(':').next().unwrap_or_default().to_string())
-        .collect())
+        .collect()
 }
 
 #[path = "forgejo_supervisor_destroy.rs"]

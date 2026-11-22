@@ -43,8 +43,14 @@ pub fn required_permission(selector: &TargetSelector) -> (&'static str, &'static
 }
 
 pub use shaula_core::auth_validation::{
-    AppVerification, InstallationLookup, InstallationProof, MetadataReachability, RepoIdentity,
+    InstallationLookup, InstallationProof, MetadataReachability, RepoIdentity,
 };
+
+/// The `/app` proof of the declared numeric App identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppVerification {
+    pub app_id: i64,
+}
 
 #[derive(Deserialize)]
 pub(crate) struct InstallationAccount {
@@ -115,10 +121,7 @@ impl AppInstallationResolver {
         app_id: &str,
         private_key: &SecretString,
     ) -> Result<AppVerification, ScalesetError> {
-        let response = match self.app_request(app_id, private_key, "/app").await? {
-            Ok(response) => response,
-            Err(status_error) => return Err(status_error),
-        };
+        let response = self.app_request(app_id, private_key, "/app").await?;
         let body: serde_json::Value =
             response
                 .bounded_json()
@@ -156,39 +159,55 @@ impl AppInstallationResolver {
             }
         };
         let response = match self.app_request(app_id, private_key, &path).await {
-            Ok(Ok(response)) => response,
-            Ok(Err(ScalesetError::Status { status: 404, .. })) => {
-                return InstallationLookup::NotFound
+            Ok(response) => response,
+            Err(ScalesetError::Status { status: 404, .. }) => {
+                return InstallationLookup::NotFound;
             }
-            Ok(Err(ScalesetError::RateLimited {
+            Err(ScalesetError::RateLimited {
                 retry_after_secs, ..
-            })) => {
+            }) => {
                 return InstallationLookup::Transient {
                     retry_after_ms: retry_after_ms(retry_after_secs),
-                }
+                };
             }
             // An ORDINARY 403 is a real permission denial: terminal, not
             // an endless transient (F8).
-            Ok(Err(ScalesetError::Status { status: 403, .. })) => {
-                return InstallationLookup::PermissionDenied
-            }
-            Ok(Err(_)) => {
-                return InstallationLookup::Transient {
-                    retry_after_ms: None,
-                }
+            Err(ScalesetError::Status { status: 403, .. }) => {
+                return InstallationLookup::PermissionDenied;
             }
             Err(_) => {
                 return InstallationLookup::Transient {
                     retry_after_ms: None,
-                }
+                };
             }
         };
+        let declared_kind = match selector {
+            TargetSelector::AccountRepositories { account_kind, .. } => Some(*account_kind),
+            _ => None,
+        };
+        Self::classify_installation_response(
+            response,
+            app_id,
+            None,
+            declared_kind,
+            required_permission(selector),
+        )
+        .await
+    }
+
+    pub(crate) async fn classify_installation_response(
+        response: reqwest::Response,
+        app_id: &str,
+        expected_installation_id: Option<i64>,
+        declared_kind: Option<AccountKind>,
+        (required_name, required_access): (&str, &str),
+    ) -> InstallationLookup {
         let parsed: InstallationResponse = match response.bounded_json().await {
             Ok(parsed) => parsed,
             Err(_) => {
                 return InstallationLookup::Transient {
                     retry_after_ms: None,
-                }
+                };
             }
         };
         if !crate::route_identity::valid_id(parsed.id)
@@ -199,9 +218,9 @@ impl AppInstallationResolver {
                 retry_after_ms: None,
             };
         }
-        if parsed.app_id.to_string() != app_id {
-            // The installation answers for a different App: never a
-            // fallback route (spec 0011 §4.2 step 2).
+        if expected_installation_id.is_some_and(|id| parsed.id != id)
+            || parsed.app_id.to_string() != app_id
+        {
             return InstallationLookup::IdentityMismatch;
         }
         let account_kind = match parsed.account.account_type.as_str() {
@@ -209,21 +228,12 @@ impl AppInstallationResolver {
             "Organization" => AccountKind::Organization,
             _ => return InstallationLookup::IdentityMismatch,
         };
-        // A selector's declared account kind must match GitHub's actual
-        // account type (spec 0011 §3: no kind mismatch).
-        if let TargetSelector::AccountRepositories {
-            account_kind: declared,
-            ..
-        } = selector
-        {
-            if *declared != account_kind {
-                return InstallationLookup::IdentityMismatch;
-            }
+        if declared_kind.is_some_and(|declared| declared != account_kind) {
+            return InstallationLookup::IdentityMismatch;
         }
         if parsed.suspended_at.is_some() {
             return InstallationLookup::Suspended;
         }
-        let (required_name, required_access) = required_permission(selector);
         let has_required_permission = parsed
             .permissions
             .get(required_name)
@@ -242,7 +252,7 @@ impl AppInstallationResolver {
             account_kind,
             login: parsed.account.login,
             repository_selection,
-            has_required_permission,
+            has_required_permission: true,
         })
     }
 
@@ -285,18 +295,16 @@ impl AppInstallationResolver {
         Ok(parsed.token)
     }
 
-    /// One App-JWT-authenticated GET. `Ok(Err(status))` reports the HTTP
-    /// failure for caller-side classification (rate-limited `403`/`429`
-    /// already classified as [`ScalesetError::RateLimited`]); `Err` is
-    /// transport. The fixed User-Agent is attached to EVERY request
-    /// (GitHub refuses unattributed clients), and redirects stay disabled
-    /// so a hostile origin can never capture the App JWT.
+    /// One App-JWT-authenticated GET. Rate-limited `403`/`429` are classified
+    /// as [`ScalesetError::RateLimited`]. The fixed User-Agent is attached to
+    /// EVERY request, and redirects stay disabled so a hostile origin can never
+    /// capture the App JWT.
     pub(crate) async fn app_request(
         &self,
         app_id: &str,
         private_key: &SecretString,
         path: &str,
-    ) -> Result<Result<reqwest::Response, ScalesetError>, ScalesetError> {
+    ) -> Result<reqwest::Response, ScalesetError> {
         let now = self.clock.now_unix_ms() / 1000;
         let jwt = app_jwt(app_id, private_key.expose(), now)?;
         let response = github_request(
@@ -306,6 +314,6 @@ impl AppInstallationResolver {
         .send()
         .await
         .map_err(transport_error)?;
-        Ok(classify_response(response, "app request failed"))
+        classify_response(response, "app request failed")
     }
 }

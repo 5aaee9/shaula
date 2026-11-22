@@ -39,7 +39,6 @@ pub enum ScalesetError {
     Service {
         exception: ActionsException,
         status: u16,
-        summary: String,
     },
     /// Plain status failure without a known exception body.
     Status { status: u16, summary: String },
@@ -60,9 +59,7 @@ impl ScalesetError {
         match self {
             ScalesetError::Authorization { failure } => failure.summary(),
             ScalesetError::RequestUncertain { summary } => summary.clone(),
-            ScalesetError::Service {
-                exception, status, ..
-            } => {
+            ScalesetError::Service { exception, status } => {
                 format!("service {exception:?} status={status}")
             }
             ScalesetError::Status { status, summary } => format!("status={status}: {summary}"),
@@ -168,16 +165,15 @@ mod tests {
     }
 
     #[test]
-    fn summaries_do_not_carry_body_content() {
+    fn summaries_stay_bounded() {
         let err = ScalesetError::Service {
             exception: ActionsException::JobStillRunning,
             status: 409,
-            summary: "internal-only".into(),
         };
         let mapped = err.to_access_failure().summary().to_string();
         assert!(
-            !mapped.contains("internal-only"),
-            "mapped access failures carry bounded summaries"
+            mapped.contains("JobStillRunning") && mapped.contains("409"),
+            "mapped access failures carry bounded summaries: {mapped}"
         );
     }
 }

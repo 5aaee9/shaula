@@ -20,7 +20,7 @@ pub struct FleetSpecDto {
     pub forgejo: Option<FleetForgejoSection>,
     #[serde(default)]
     pub gitlab: Option<shaula_core::fleet::FleetGitlabSection>,
-    pub capacity: shaula_core::fleet::CapacityPolicyDto,
+    pub capacity: shaula_core::fleet::CapacityPolicy,
     #[serde(default)]
     pub template_profile_ref: TemplateProfileRefDto,
     #[serde(default)]

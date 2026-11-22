@@ -17,7 +17,7 @@ pub fn parse_manifest(yaml: &str) -> CoreResult<ProfileManifest> {
 }
 
 /// Declared artifact shape every profile must carry.
-pub const REQUIRED_ARTIFACT_FILES: &[&str] = &[
+const REQUIRED_ARTIFACT_FILES: &[&str] = &[
     "profile.yaml",
     ".terraform.lock.hcl",
     "schemas/bindings.schema.json",

@@ -32,11 +32,6 @@ impl FailingGitHub {
 
 #[async_trait::async_trait]
 impl GitHubAccessPort for FailingGitHub {
-    async fn auth_context(&self) -> AuthContext {
-        AuthContext {
-            kind: shaula_core::auth::AuthKind::GithubApp,
-        }
-    }
     async fn ensure_route_proof(&self) -> Result<RouteProof, AccessFailure> {
         if matches!(self.stage, FailureStage::Route) {
             return Err(self.fail().await);
@@ -76,9 +71,6 @@ impl GitHubAccessPort for FailingGitHub {
             repository_id: None,
             repository_owner_id: None,
         })
-    }
-    fn allows_target(&self, _: &GitHubTarget) -> bool {
-        true
     }
     async fn create_scale_set(
         &self,

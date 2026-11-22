@@ -179,15 +179,7 @@ impl ScalesetClient {
             )
             .await;
         let installation = match lookup {
-            InstallationLookup::Proven(proof) => {
-                // The scope permission was re-checked against the
-                // FRESH response (F4): a revoked runner permission
-                // fails the proof.
-                if !proof.has_required_permission {
-                    return Err(AccessFailure::PermissionDenied);
-                }
-                proof
-            }
+            InstallationLookup::Proven(proof) => proof,
             InstallationLookup::NotFound | InstallationLookup::IdentityMismatch => {
                 return Err(AccessFailure::Unauthenticated);
             }

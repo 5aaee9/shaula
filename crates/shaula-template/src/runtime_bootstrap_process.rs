@@ -21,7 +21,8 @@ impl<'a> Commands<'a> {
         timeout: Duration,
     ) -> Result<Self, TemplateOutcomeError> {
         Ok(Self {
-            executable: resolve(executable)?,
+            executable: crate::docker_connection::resolve_executable(executable)
+                .map_err(|_| failed())?,
             workspace,
             prefix,
             environment: Vec::new(),
@@ -95,21 +96,4 @@ pub(super) fn optional_budget(remaining: Duration) -> Duration {
     remaining
         .saturating_sub(Duration::from_secs(30))
         .min(Duration::from_secs(5))
-}
-
-fn resolve(name: &str) -> Result<PathBuf, TemplateOutcomeError> {
-    // Names are internal constants; neither Fleet nor artifact selects argv or
-    // the executable. Resolve before env_clear so the child needs no PATH.
-    let paths = std::env::var_os("PATH").ok_or_else(failed)?;
-    #[cfg(windows)]
-    let executable_name = format!("{name}.exe");
-    #[cfg(windows)]
-    let name = executable_name.as_str();
-    for directory in std::env::split_paths(&paths).filter(|path| path.is_absolute()) {
-        let candidate = directory.join(name);
-        if candidate.is_file() {
-            return candidate.canonicalize().map_err(|_| failed());
-        }
-    }
-    Err(failed())
 }

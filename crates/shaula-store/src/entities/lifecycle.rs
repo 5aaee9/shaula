@@ -129,29 +129,6 @@ pub mod fleet_demand {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-pub mod job_observations {
-    use sea_orm::entity::prelude::*;
-
-    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "job_observations")]
-    pub struct Model {
-        #[sea_orm(primary_key)]
-        pub id: i64,
-        pub fleet_key: String,
-        pub message_id: i64,
-        pub observation_kind: String,
-        pub runner_request_id: i64,
-        pub job_id: String,
-        pub runner_name: Option<String>,
-        pub observed_at: i64,
-    }
-
-    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
-
-    impl ActiveModelBehavior for ActiveModel {}
-}
-
 pub mod scale_set_state {
     use sea_orm::entity::prelude::*;
 

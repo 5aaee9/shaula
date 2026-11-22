@@ -3,14 +3,10 @@
 
 use shaula_core::error::{CoreResult, ReasonCode};
 use shaula_core::ports::{AccessFailure, EffectOutcome, ScaleSetView};
-use shaula_observability::{MetricOperation, MetricResult, TelemetryHandle};
+use shaula_observability::MetricResult;
 
 use super::{fingerprint, FleetSupervisor, LookupOutcome, OwnershipOutcome};
-
-/// One bounded GitHub runner operation completed with the given outcome.
-fn record_runner(result: MetricResult) {
-    TelemetryHandle::new().record(MetricOperation::Runner, result, 1);
-}
+use crate::iac_metrics::record_runner;
 
 impl FleetSupervisor {
     /// Re-verifies the exact persisted binding on every tick. Identity drift
@@ -75,7 +71,10 @@ impl FleetSupervisor {
         attempt: Option<String>,
         now: i64,
     ) -> CoreResult<OwnershipOutcome> {
-        let (_, occupancy) = self.capacity_counters().await?;
+        let (_, occupancy) = self
+            .handoff
+            .capacity_counters(&self.config.fleet_key)
+            .await?;
         let (state, reason) = if occupancy > 0 {
             (
                 "ScaleSetMissingWithResources",

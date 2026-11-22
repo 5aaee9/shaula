@@ -105,9 +105,6 @@ export function useAccessTokenIssuance(refetchTokens: () => void) {
       const response = await authenticatedFetch(`/api/v1/access-tokens/${token.id}`, {
         method: "DELETE",
         headers: { "if-match": reviewed.etag },
-        credentials: "same-origin",
-        cache: "no-store",
-        redirect: "error",
       });
       if (!response.ok)
         throw new Error(

@@ -10,15 +10,11 @@ import type { Accepted, ChangeRef } from "./types";
 export function useFleetSubmit({
   fleetKey,
   resource,
-  page,
-  onClose,
   onAccepted,
 }: {
   fleetKey: string;
   /** The fleet being edited; absent when creating one. */
   resource?: Resource<unknown>;
-  page: boolean;
-  onClose: () => void;
   onAccepted: (change: ChangeRef) => void;
 }) {
   const client = useQueryClient();
@@ -39,7 +35,6 @@ export function useFleetSubmit({
       void client.invalidateQueries({ queryKey: ["fleets"] });
       void client.invalidateQueries({ queryKey: ["fleet", fleetKey] });
       void client.invalidateQueries({ queryKey: ["fleet-status", fleetKey] });
-      if (!page) onClose();
     } catch (error) {
       setError(error);
     } finally {

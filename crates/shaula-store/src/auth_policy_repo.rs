@@ -42,8 +42,8 @@ impl Store {
             .all(tx)
             .await?
             .iter()
-            .filter_map(binding_from_row)
-            .collect::<Vec<_>>();
+            .map(binding_from_row)
+            .collect::<StoreResult<Vec<_>>>()?;
         let target = serde_json::from_str::<serde_json::Value>(spec_json)
             .ok()
             .and_then(|spec| {
@@ -126,7 +126,7 @@ impl Store {
             .filter(github_auth_revision_bindings::Column::Revision.eq(revision))
             .all(self.connection())
             .await?;
-        Ok(rows.iter().filter_map(binding_from_row).collect())
+        rows.iter().map(binding_from_row).collect()
     }
 
     /// Writes the desired Resolved Auth Context inside the fleet mutation
@@ -165,18 +165,26 @@ impl Store {
 
 pub(crate) fn binding_from_row(
     row: &github_auth_revision_bindings::Model,
-) -> Option<shaula_core::auth_context::AccountBinding> {
+) -> StoreResult<shaula_core::auth_context::AccountBinding> {
     let account_kind = match row.account_kind.as_str() {
         "user" => shaula_core::auth_policy::AccountKind::User,
         "organization" => shaula_core::auth_policy::AccountKind::Organization,
-        _ => return None,
+        other => {
+            return Err(StoreError::Corrupt(format!(
+                "unknown auth binding account_kind {other:?}"
+            )))
+        }
     };
     let repository_selection = match row.repository_selection.as_str() {
         "all" => shaula_core::auth_context::RepositorySelection::All,
         "selected" => shaula_core::auth_context::RepositorySelection::Selected,
-        _ => return None,
+        other => {
+            return Err(StoreError::Corrupt(format!(
+                "unknown auth binding repository_selection {other:?}"
+            )))
+        }
     };
-    Some(shaula_core::auth_context::AccountBinding {
+    Ok(shaula_core::auth_context::AccountBinding {
         account_id: row.account_id,
         account_kind,
         login: row.login.clone(),

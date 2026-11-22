@@ -11,17 +11,6 @@ pub(crate) enum OwnershipOutcome {
 
 impl OwnershipOutcome {
     pub(super) fn access_failure(failure: &AccessFailure) -> Self {
-        let reason = match failure {
-            AccessFailure::Unauthenticated | AccessFailure::SessionExpired => {
-                ReasonCode::Unauthenticated
-            }
-            AccessFailure::PermissionDenied => ReasonCode::PermissionDenied,
-            AccessFailure::TargetHiddenOrNotFound => ReasonCode::TargetHiddenOrNotFound,
-            AccessFailure::RateLimited { .. } => ReasonCode::RateLimited,
-            AccessFailure::Unavailable { .. } | AccessFailure::RequestUncertain { .. } => {
-                ReasonCode::AccessVerificationFailed
-            }
-        };
-        Self::Blocked(reason)
+        Self::Blocked(crate::listener::access_reason(failure))
     }
 }

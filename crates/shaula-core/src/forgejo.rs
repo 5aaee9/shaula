@@ -4,19 +4,9 @@
 //! sets, runner groups, installation identity, or route proof.
 
 use serde::{Deserialize, Serialize};
-use url::Url;
 
 use crate::auth::validate_profile_key_for_fleet_ref;
 use crate::error::{CoreError, CoreResult, ReasonCode};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ForgejoScopeKind {
-    Instance,
-    Organization,
-    User,
-    Repository,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -28,15 +18,6 @@ pub enum ForgejoScope {
 }
 
 impl ForgejoScope {
-    pub fn kind(&self) -> ForgejoScopeKind {
-        match self {
-            Self::Instance => ForgejoScopeKind::Instance,
-            Self::Organization { .. } => ForgejoScopeKind::Organization,
-            Self::User => ForgejoScopeKind::User,
-            Self::Repository { .. } => ForgejoScopeKind::Repository,
-        }
-    }
-
     pub fn validate(&self) -> CoreResult<()> {
         match self {
             Self::Instance | Self::User => Ok(()),
@@ -68,24 +49,8 @@ pub struct ForgejoBootstrapIdentity {
 
 impl ForgejoTarget {
     pub fn validate(&self) -> CoreResult<()> {
-        let url = Url::parse(&self.instance_url).map_err(|error| {
-            CoreError::new(
-                ReasonCode::SpecInvalid,
-                format!("invalid Forgejo instance_url: {error}"),
-            )
-        })?;
-        if !matches!(url.scheme(), "http" | "https")
-            || url.host_str().is_none_or(|host| host.is_empty())
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.query().is_some()
-            || url.fragment().is_some()
-        {
-            return Err(CoreError::new(
-                ReasonCode::SpecInvalid,
-                "instance_url must be an http(s) URL without credentials, query, or fragment",
-            ));
-        }
+        crate::net::validate_http_instance_url(&self.instance_url)
+            .map_err(|msg| CoreError::new(ReasonCode::SpecInvalid, msg))?;
         self.scope.validate()
     }
 

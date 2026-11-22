@@ -2648,7 +2648,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
- "futures",
  "reqwest",
  "serde",
  "serde_json",
@@ -2664,7 +2663,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
- "futures",
  "reqwest",
  "serde",
  "serde_json",
@@ -2716,7 +2714,6 @@ name = "shaula-observability"
 version = "0.1.0"
 dependencies = [
  "serde_json",
- "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",

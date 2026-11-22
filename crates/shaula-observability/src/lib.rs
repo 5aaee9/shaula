@@ -17,7 +17,7 @@ pub mod prometheus;
 mod traces;
 
 static EXPORTER: OnceLock<Arc<OtlpExporter>> = OnceLock::new();
-static TRACE_CONTROL: OnceLock<mpsc::Sender<Message>> = OnceLock::new();
+static TRACE_INITIALIZED: OnceLock<()> = OnceLock::new();
 static DEGRADED_EXPORTS: AtomicU64 = AtomicU64::new(0);
 
 /// Keeps the telemetry pipeline open; dropping it signals the trace drain
@@ -78,7 +78,7 @@ pub fn init(service_name: &str, endpoint: Option<&str>) -> TelemetryGuard {
     if let Some(collector) = &collector {
         if let Ok(handle) = Handle::try_current() {
             let (tx, rx) = mpsc::channel(TRACE_BUFFER);
-            if TRACE_CONTROL.set(tx.clone()).is_ok() {
+            if TRACE_INITIALIZED.set(()).is_ok() {
                 handle.spawn(traces::drain(
                     service_name.to_owned(),
                     collector.clone(),
@@ -116,10 +116,6 @@ pub fn init(service_name: &str, endpoint: Option<&str>) -> TelemetryGuard {
         "telemetry initialized"
     );
     TelemetryGuard { trace_control }
-}
-
-pub fn init_local(service_name: &str) -> TelemetryGuard {
-    init(service_name, None)
 }
 
 /// OTLP export failures observed since startup. This in-process counter is

@@ -6,17 +6,15 @@ import type { FleetInputs } from "@/lib/use-fleet-inputs";
 import type { FleetPlacementDraft } from "@/lib/use-fleet-placement";
 import { FleetTemplateInputs } from "./fleet-template-inputs";
 import { FleetTemplateSelection } from "./fleet-template-selection";
-import { Modal } from "./modal";
 import { TemplatePoolEditor } from "./template-pool-editor";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { ErrorNotice, Field } from "./status";
 
-/** The dialog, disabled-while-busy fieldset and action bar shared by every fleet form. */
+/** The page section, disabled-while-busy fieldset and action bar shared by every fleet form. */
 export function FleetFormFrame({
   fleetKey,
   editing,
-  page,
   busy,
   error,
   canSubmit,
@@ -26,7 +24,6 @@ export function FleetFormFrame({
 }: {
   fleetKey: string;
   editing: boolean;
-  page: boolean;
   busy: boolean;
   error: unknown;
   canSubmit: boolean;
@@ -35,14 +32,9 @@ export function FleetFormFrame({
   children: ReactNode;
 }) {
   return (
-    <Modal
-      open
-      inline={page}
-      title={editing ? `Edit ${fleetKey}` : "Create fleet"}
-      className="sm:max-w-2xl"
-      onOpenChange={(open) => {
-        if (!open && !busy) onClose();
-      }}
+    <section
+      aria-label={editing ? `Edit ${fleetKey}` : "Create fleet"}
+      className="mx-auto w-full max-w-5xl rounded-lg border bg-card p-6 shadow-sm"
     >
       <form className="form-stack" onSubmit={onSubmit}>
         <fieldset disabled={busy} className="form-stack">
@@ -59,7 +51,7 @@ export function FleetFormFrame({
           </Button>
         </div>
       </form>
-    </Modal>
+    </section>
   );
 }
 

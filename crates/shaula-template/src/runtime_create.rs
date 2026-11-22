@@ -108,11 +108,7 @@ impl TemplateRuntime {
             artifact_digest: request.pinned_artifact_digest.clone(),
             template_material_digest: workspace_template_digest,
             protected_input_digest: input_digest,
-            state_lineage: if prior_state.is_empty() {
-                StateLineage::Empty
-            } else {
-                return Err(state_err("create.plan"));
-            },
+            state_lineage: StateLineage::Empty,
             generation_id: request.input.generation.id.clone(),
             attempt_id: shaula_core::auth::new_attempt_id(),
         };
@@ -207,7 +203,7 @@ impl TemplateRuntime {
                 .map_err(|_| exec_err("container.bootstrap"))?;
             tokio::time::timeout(
                 Duration::from_secs(60),
-                bootstrap::launch(self, &request, &envelope),
+                bootstrap::launch(self, &manifest, &request, &envelope),
             )
             .await
             .map_err(|_| exec_err("container.bootstrap"))??;

@@ -29,15 +29,7 @@ impl AdminTokenManager {
     }
 
     pub(super) async fn runner_token_scope(&self) -> Result<serde_json::Value, ScalesetError> {
-        let path = registration_token_path(&self.config_url).ok_or_else(|| {
-            ScalesetError::Configuration {
-                summary: "config url has no known registration path".into(),
-            }
-        })?;
-        let Some(repo_path) = path
-            .strip_prefix("/repos/")
-            .and_then(|p| p.strip_suffix("/actions/runners/registration-token"))
-        else {
+        let GitHubTarget::Repository { owner, repository } = &self.target else {
             return Ok(serde_json::json!({})); // Organization runner scope.
         };
         let mut id = self.repository_id.load(Ordering::Acquire);
@@ -45,21 +37,11 @@ impl AdminTokenManager {
             // A proof-only worker can enter the bootstrap chain before a
             // route proof exists. Discover identity using metadata-only
             // authority, then mint a separate runner token for that ID.
-            let (owner, repository) =
-                repo_path
-                    .split_once('/')
-                    .ok_or_else(|| ScalesetError::Configuration {
-                        summary: "invalid repository target".into(),
-                    })?;
-            let target = shaula_core::github::GitHubTarget::new_repository(owner, repository)
-                .map_err(|_| ScalesetError::Configuration {
-                    summary: "invalid repository target".into(),
-                })?;
             let token = self.installation_token().await?;
             let response = self
                 .http
                 .get(format!(
-                    "{}/repos/{repo_path}",
+                    "{}/repos/{owner}/{repository}",
                     self.github_api_base.trim_end_matches('/')
                 ))
                 .bearer_auth(token)
@@ -77,7 +59,7 @@ impl AdminTokenManager {
                     .map_err(|_| ScalesetError::MalformedResponse {
                         summary: "repository identity response invalid".into(),
                     })?;
-            id = crate::route_identity::parse_target_identity(&target, &body)
+            id = crate::route_identity::parse_target_identity(&self.target, &body)
                 .map_err(|failure| ScalesetError::Authorization { failure })?
                 .repository_id
                 .ok_or_else(|| ScalesetError::MalformedResponse {

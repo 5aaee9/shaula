@@ -143,7 +143,7 @@ async fn unlock_relock_and_write_cannot_split_the_ownership_check_from_commit() 
         .write(&f.access, old.id(), state(0, "lineage", true)?)
         .await?;
     // Hold the database writer while a stale write queues on another pool.
-    let tx = f.backend.writer(&f.claim.generation_id.to_string()).await?;
+    let tx = f.backend.writer().await?;
     let queued_backend = other.clone();
     let access = f.access.clone();
     let old_id = old.id().clone();

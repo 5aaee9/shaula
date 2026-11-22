@@ -36,7 +36,7 @@ impl Store {
             return Err(StoreError::Corrupt("acquisition before message ACK".into()));
         }
         let ids = self
-            .listener_message_view_tx(&tx, fleet, context.epoch, &row)
+            .listener_message_view_tx(&tx, fleet, context.epoch, row.message_id, true)
             .await?
             .pending_request_ids;
         acquisitions::Entity::update_many()

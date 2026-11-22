@@ -97,12 +97,12 @@ fn single(value: &Value) -> Result<&Value, TemplateOutcomeError> {
     values.first().ok_or_else(failed)
 }
 
-pub(super) fn validate(
-    info: &Value,
+pub(super) fn validate_common<'a>(
+    info: &'a Value,
     id: &str,
     image_id: &str,
     request: &TemplateCreateRequest,
-) -> Result<(), TemplateOutcomeError> {
+) -> Result<(&'a Value, &'a Vec<Value>, &'a str), TemplateOutcomeError> {
     let identity = &request.input.generation;
     let short: String = identity.id.chars().take(24).collect();
     let name = format!("/shaula-{}-{short}", identity.fleet_key);
@@ -110,10 +110,6 @@ pub(super) fn validate(
     let state = &info["State"];
     let host = &info["HostConfig"];
     let environment = config["Env"].as_array().ok_or_else(failed)?;
-    let jit = format!(
-        "ACTIONS_RUNNER_INPUT_JITCONFIG={}",
-        request.input.jit_config
-    );
     let user = config["User"]
         .as_str()
         .unwrap_or_default()
@@ -123,8 +119,6 @@ pub(super) fn validate(
     if info["Id"] != id
         || info["Name"] != name
         || info["Image"] != image_id
-        || config["Cmd"] != serde_json::json!([LISTENER, "run"])
-        || !config["Entrypoint"].is_null() && config["Entrypoint"] != serde_json::json!([])
         || config["Labels"]["shaula.fleet"] != identity.fleet_key
         || config["Labels"]["shaula.generation"] != identity.id
         || state["Status"] != "created"
@@ -137,7 +131,6 @@ pub(super) fn validate(
         || user.is_empty()
         || user == "root"
         || user.bytes().all(|byte| byte == b'0')
-        || !info["Mounts"].is_null() && info["Mounts"] != serde_json::json!([])
         || [
             "Binds",
             "VolumesFrom",
@@ -154,6 +147,26 @@ pub(super) fn validate(
                     .as_str()
                     .is_some_and(|value| value == "host" || value.starts_with("container:"))
             })
+    {
+        return Err(failed());
+    }
+    Ok((config, environment, user))
+}
+
+pub(super) fn validate(
+    info: &Value,
+    id: &str,
+    image_id: &str,
+    request: &TemplateCreateRequest,
+) -> Result<(), TemplateOutcomeError> {
+    let (config, environment, _user) = validate_common(info, id, image_id, request)?;
+    let jit = format!(
+        "ACTIONS_RUNNER_INPUT_JITCONFIG={}",
+        request.input.jit_config
+    );
+    if config["Cmd"] != serde_json::json!([LISTENER, "run"])
+        || !config["Entrypoint"].is_null() && config["Entrypoint"] != serde_json::json!([])
+        || !info["Mounts"].is_null() && info["Mounts"] != serde_json::json!([])
         || environment
             .iter()
             .filter(|entry| entry.as_str() == Some(&jit))

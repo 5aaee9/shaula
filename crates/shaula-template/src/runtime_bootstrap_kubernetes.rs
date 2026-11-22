@@ -37,8 +37,35 @@ pub(super) async fn launch(
 ) -> Result<(), TemplateOutcomeError> {
     if backend != "github" {
         let shape = pool_shape(request, backend).ok_or_else(failed)?;
-        return pool::launch(request, envelope, image, temporary, timeout, &shape).await;
+        return launch_with(
+            request,
+            envelope,
+            temporary,
+            timeout,
+            |pod| pool::validate_pod(pod, image, request, &shape),
+            |secret| pool::patch(secret, &shape),
+        )
+        .await;
     }
+    launch_with(
+        request,
+        envelope,
+        temporary,
+        timeout,
+        |pod| validate_pod(pod, image, request),
+        |secret| patch(secret, setup, request),
+    )
+    .await
+}
+
+async fn launch_with(
+    request: &TemplateCreateRequest,
+    envelope: &ShaulaResultEnvelope,
+    temporary: &Path,
+    timeout: Duration,
+    validate_pod_fn: impl FnOnce(&Value) -> Result<(), TemplateOutcomeError>,
+    build_patch_fn: impl FnOnce(&Value) -> Result<Value, TemplateOutcomeError>,
+) -> Result<(), TemplateOutcomeError> {
     let namespace = binding(request, "namespace")?;
     let name = &request.input.generation.generation_name;
     let runner = resource(envelope, "runner")?;
@@ -55,12 +82,12 @@ pub(super) async fn launch(
     )?;
     let pod = commands.json(&["get", "pod", name, "-o", "json"]).await?;
     validate_metadata(&pod, runner, request, "Pod")?;
-    validate_pod(&pod, image, request)?;
+    validate_pod_fn(&pod)?;
     let secret = commands
         .json(&["get", "secret", name, "-o", "json"])
         .await?;
     validate_metadata(&secret, bootstrap, request, "Secret")?;
-    let patch = patch(&secret, setup, request)?;
+    let patch = build_patch_fn(&secret)?;
     let file = protected_file(
         temporary,
         &serde_json::to_vec(&patch).map_err(|_| failed())?,
@@ -131,41 +158,25 @@ pub(super) fn validate_metadata(
     Ok(())
 }
 
-pub(super) fn validate_pod(
-    pod: &Value,
+pub(super) struct CommonPod<'a> {
+    pub spec: &'a Value,
+    pub runner: &'a Value,
+    pub mounts: &'a [Value],
+    pub volumes: &'a [Value],
+}
+
+pub(super) fn validate_common_pod<'a>(
+    pod: &'a Value,
     image: &str,
-    request: &TemplateCreateRequest,
-) -> Result<(), TemplateOutcomeError> {
+) -> Result<CommonPod<'a>, TemplateOutcomeError> {
     let spec = &pod["spec"];
     let containers = spec["containers"]
         .as_array()
         .filter(|values| values.len() == 1)
         .ok_or_else(failed)?;
     let runner = containers.first().ok_or_else(failed)?;
-    let environment = runner["env"].as_array().ok_or_else(failed)?;
-    let jit_entries: Vec<_> = environment
-        .iter()
-        .filter(|entry| {
-            entry["name"].as_str().is_some_and(|name| {
-                name.to_ascii_uppercase()
-                    .starts_with("ACTIONS_RUNNER_INPUT_")
-            })
-        })
-        .collect();
-    let jit = jit_entries.first().ok_or_else(failed)?;
-    let secret = &jit["valueFrom"]["secretKeyRef"];
     let mounts = runner["volumeMounts"].as_array().ok_or_else(failed)?;
-    let mount = mounts
-        .iter()
-        .find(|mount| mount["mountPath"] == "/home/runner/.setup_info")
-        .ok_or_else(failed)?;
     let volumes = spec["volumes"].as_array().ok_or_else(failed)?;
-    let volume = volumes
-        .iter()
-        .find(|volume| volume["name"] == mount["name"])
-        .ok_or_else(failed)?;
-    let source = &volume["secret"];
-    let name = &request.input.generation.generation_name;
     let previously_started =
         pod["status"]["containerStatuses"]
             .as_array()
@@ -190,7 +201,51 @@ pub(super) fn validate_pod(
         || !spec["initContainers"].is_null() && spec["initContainers"] != json!([])
         || runner["name"] != "runner"
         || runner["image"] != image
-        || runner["command"] != json!([LISTENER, "run"])
+    {
+        return Err(failed());
+    }
+    Ok(CommonPod {
+        spec,
+        runner,
+        mounts,
+        volumes,
+    })
+}
+
+pub(super) fn validate_pod(
+    pod: &Value,
+    image: &str,
+    request: &TemplateCreateRequest,
+) -> Result<(), TemplateOutcomeError> {
+    let CommonPod {
+        runner,
+        mounts,
+        volumes,
+        ..
+    } = validate_common_pod(pod, image)?;
+    let environment = runner["env"].as_array().ok_or_else(failed)?;
+    let jit_entries: Vec<_> = environment
+        .iter()
+        .filter(|entry| {
+            entry["name"].as_str().is_some_and(|name| {
+                name.to_ascii_uppercase()
+                    .starts_with("ACTIONS_RUNNER_INPUT_")
+            })
+        })
+        .collect();
+    let jit = jit_entries.first().ok_or_else(failed)?;
+    let secret = &jit["valueFrom"]["secretKeyRef"];
+    let mount = mounts
+        .iter()
+        .find(|mount| mount["mountPath"] == "/home/runner/.setup_info")
+        .ok_or_else(failed)?;
+    let volume = volumes
+        .iter()
+        .find(|volume| volume["name"] == mount["name"])
+        .ok_or_else(failed)?;
+    let source = &volume["secret"];
+    let name = &request.input.generation.generation_name;
+    if runner["command"] != json!([LISTENER, "run"])
         || !runner["args"].is_null() && runner["args"] != json!([])
         || jit_entries.len() != 1
         || jit["name"] != "ACTIONS_RUNNER_INPUT_JITCONFIG"

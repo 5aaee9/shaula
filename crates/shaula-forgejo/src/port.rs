@@ -112,12 +112,7 @@ impl ForgejoPoolPort for ForgejoClient {
         self.delete_runner(id)
             .await
             .map(map_removal)
-            .map_err(|error| match error {
-                ForgejoError::RequestUncertain(summary) => {
-                    AccessFailure::RequestUncertain { summary }
-                }
-                other => map_error(other),
-            })
+            .map_err(map_error)
     }
 
     async fn task_results(

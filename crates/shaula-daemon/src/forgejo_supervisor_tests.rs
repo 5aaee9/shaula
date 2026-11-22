@@ -2,18 +2,17 @@ use super::*;
 use shaula_core::ports::forgejo::ForgejoRunnerRef;
 
 #[test]
-fn backend_targets_are_not_runner_label_names() -> Result<(), shaula_core::error::CoreError> {
+fn backend_targets_are_not_runner_label_names() {
     let labels = normalized_labels(&[
         "linux:docker://alpine".to_string(),
         "x86_64:host".to_string(),
-    ])?;
+    ]);
     assert_eq!(labels, ["linux", "x86_64"]);
-    Ok(())
 }
 
 #[test]
 fn empty_backend_target_is_rejected() {
-    assert!(normalized_labels(&["linux:".to_string()]).is_err());
+    assert!(shaula_core::forgejo::validate_labels(&["linux:".to_string()]).is_err());
 }
 
 #[test]

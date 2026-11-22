@@ -155,33 +155,10 @@ impl ControlPlane {
         };
         if resolved_pool.is_empty() {
             if let Some(pool) = &spec.template_pool {
-                for member in &pool.members {
-                    let pin = match self
-                        .resolve_template_ref(&member.template_profile_ref)
-                        .await
-                    {
-                        Ok(pin) => pin,
-                        Err(e) => return Ok(Err(unprocessable(e.code, e.summary))),
-                    };
-                    let materials = self
-                        .load_template_inputs(&pin, InputContext::PoolMember)
-                        .await?;
-                    if let Err(e) = materials.validate(&member.template_inputs)? {
-                        return Ok(Err(unprocessable(e.code, e.summary)));
-                    }
-                    let inputs_digest = super::template_inputs_digest(&member.template_inputs)?;
-                    resolved_pool.push(shaula_core::template_pool::ResolvedTemplatePoolMember {
-                        key: member.key.clone(),
-                        template_profile_key: pin.0,
-                        template_revision: pin.1,
-                        template_artifact_digest: pin.2,
-                        template_attestation_id: pin.3,
-                        template_inputs: member.template_inputs.clone(),
-                        inputs_digest,
-                        weight: member.weight,
-                        max_runners: member.max_runners,
-                    });
-                }
+                resolved_pool = match self.resolve_pool_members(pool).await? {
+                    Ok(members) => members,
+                    Err(error) => return Ok(Err(error)),
+                };
             }
         }
         if let Err(error) = self.validate_pool_backends(&resolved_pool, spec).await {

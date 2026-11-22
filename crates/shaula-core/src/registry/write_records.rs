@@ -52,15 +52,3 @@ pub struct ProfileChangeInsert {
     pub kind: String,
     pub now: i64,
 }
-
-/// Parameter object for one idempotent job observation.
-#[derive(Debug, Clone)]
-pub struct JobObservationInsert {
-    pub fleet_key: String,
-    pub message_id: i64,
-    pub observation_kind: String,
-    pub runner_request_id: i64,
-    pub job_id: String,
-    pub runner_name: Option<String>,
-    pub now: i64,
-}

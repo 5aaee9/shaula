@@ -46,12 +46,12 @@ pub(crate) async fn load_predecessor(
                 "active app identity invalid",
             )
         })?;
-    let Some(json) = active.validation_snapshot_json.clone() else {
+    let Some(json) = active.validation_snapshot_json.as_deref() else {
         return Err(CoreError::internal(
             "active v2 revision lacks its validation snapshot",
         ));
     };
-    let snapshot: AuthValidationSnapshot = serde_json::from_str(&json)
+    let snapshot: AuthValidationSnapshot = serde_json::from_str(json)
         .map_err(|e| CoreError::internal(format!("validation snapshot unreadable: {e}")))?;
     Ok(Predecessor::V2 {
         app_id,

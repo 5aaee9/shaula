@@ -4,11 +4,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{CoreError, CoreResult, ReasonCode};
 
-/// GitHub names are normalized: strict identifier form, no path fragments.
-const NAME_PATTERN: &str = r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?$|^[A-Za-z0-9]$";
-/// Repository names allow dots additionally.
-const REPO_PATTERN: &str = r"^[A-Za-z0-9._-]{1,100}$";
-
 /// A Scale Set registration destination on `github.com`. Exactly one shape is
 /// accepted; callers never submit URLs or generic endpoints.
 ///
@@ -92,9 +87,15 @@ impl GitHubTarget {
 
 fn normalize_name(value: &str) -> CoreResult<String> {
     let value = value.trim();
-    let re = regex::Regex::new(NAME_PATTERN)
-        .map_err(|e| CoreError::new(ReasonCode::Internal, e.to_string()))?;
-    if re.is_match(value) && value.ne("enterprises") {
+    let bytes = value.as_bytes();
+    let valid = !bytes.is_empty()
+        && bytes.len() <= 40
+        && bytes[0].is_ascii_alphanumeric()
+        && bytes[bytes.len() - 1].is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric() || *b == b'-');
+    if valid && value != "enterprises" {
         Ok(value.to_string())
     } else {
         Err(CoreError::new(
@@ -106,9 +107,13 @@ fn normalize_name(value: &str) -> CoreResult<String> {
 
 fn normalize_repo(value: &str) -> CoreResult<String> {
     let value = value.trim();
-    let re = regex::Regex::new(REPO_PATTERN)
-        .map_err(|e| CoreError::new(ReasonCode::Internal, e.to_string()))?;
-    if re.is_match(value) && !value.starts_with('.') {
+    let valid = !value.is_empty()
+        && value.len() <= 100
+        && !value.starts_with('.')
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
+    if valid {
         Ok(value.to_string())
     } else {
         Err(CoreError::new(
@@ -136,11 +141,11 @@ pub struct Label {
 }
 
 impl Label {
-    pub fn system(name: impl Into<String>) -> CoreResult<Self> {
-        Ok(Self {
+    pub fn system(name: impl Into<String>) -> Self {
+        Self {
             name: name.into(),
             label_type: "System".to_string(),
-        })
+        }
     }
 }
 

@@ -4,15 +4,10 @@
 
 use shaula_core::error::{CoreError, CoreResult};
 use shaula_core::lifecycle::GenerationState;
-use shaula_observability::{MetricOperation, MetricResult, TelemetryHandle};
 
 use super::{fingerprint, FleetSupervisor};
+use crate::iac_metrics::record_iac;
 use create_stages::{resolve_pin, uses_template_pool, GenerationNames};
-
-/// One bounded IaC engine operation completed with the given outcome.
-fn record_iac(result: MetricResult) {
-    TelemetryHandle::new().record(MetricOperation::IaC, result, 1);
-}
 
 #[path = "supervisor_operations.rs"]
 mod operations;

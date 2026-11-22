@@ -67,7 +67,7 @@ impl SqliteStateBackend {
     }
 
     pub async fn activate(&self) -> StateResult<()> {
-        let tx = self.writer("").await?;
+        let tx = self.writer().await?;
         let unclassified = generations::Entity::find()
             .filter(legacy::unclassified())
             .count(&tx)
@@ -108,7 +108,7 @@ impl SqliteStateBackend {
         if !valid_digest(commitment) {
             return Err(StateError::Invalid);
         }
-        let tx = self.writer(&generation.id).await?;
+        let tx = self.writer().await?;
         let content = format!("sha256:{}", hex::encode(Sha256::digest(serde_json::to_vec(&serde_json::json!({"state": state.as_ref().map(|state| hex::encode(Sha256::digest(state.bytes()))), "input": protected_input.as_ref().map(|input| hex::encode(Sha256::digest(input))), "workspace": workspace})).map_err(|_| StateError::Invalid)?)));
         if let Some(saved) = imports::Entity::find_by_id(&generation.id)
             .one(&tx)

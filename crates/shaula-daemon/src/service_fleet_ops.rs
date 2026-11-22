@@ -27,8 +27,7 @@ impl ControlPlane {
             .as_ref()
             .and_then(|r| serde_json::from_str::<FleetSpec>(&r.spec_json).ok());
         let pool = spec.as_ref().is_some_and(|spec| spec.kind.is_pool());
-        let capacity_policy =
-            spec.map(|spec| shaula_core::capacity::CapacityPolicy::from(spec.capacity));
+        let capacity_policy = spec.map(|spec| spec.capacity);
 
         let assigned_demand = demand.unwrap_or(0);
         let capacity_target = match &capacity_policy {

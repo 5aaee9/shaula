@@ -19,11 +19,6 @@ pub struct HealthyGitHub {
 
 #[async_trait::async_trait]
 impl GitHubAccessPort for HealthyGitHub {
-    async fn auth_context(&self) -> shaula_core::ports::AuthContext {
-        shaula_core::ports::AuthContext {
-            kind: shaula_core::auth::AuthKind::GithubApp,
-        }
-    }
     async fn resolve_runner_group(
         &self,
         _i: &shaula_core::github::ScaleSetIdentity,
@@ -103,9 +98,6 @@ impl GitHubAccessPort for HealthyGitHub {
         _: i64,
     ) -> Result<Vec<shaula_core::ports::RunnerRef>, AccessFailure> {
         Ok(Vec::new())
-    }
-    fn allows_target(&self, _: &shaula_core::github::GitHubTarget) -> bool {
-        true
     }
     async fn ensure_route_proof(&self) -> Result<shaula_core::ports::RouteProof, AccessFailure> {
         self.proof_calls
@@ -200,11 +192,6 @@ async fn handoff_blocks_without_fallback() {
     struct DeniedGitHub;
     #[async_trait::async_trait]
     impl GitHubAccessPort for DeniedGitHub {
-        async fn auth_context(&self) -> shaula_core::ports::AuthContext {
-            shaula_core::ports::AuthContext {
-                kind: shaula_core::auth::AuthKind::GithubApp,
-            }
-        }
         async fn resolve_runner_group(
             &self,
             _identity: &shaula_core::github::ScaleSetIdentity,
@@ -284,9 +271,6 @@ async fn handoff_blocks_without_fallback() {
             _: i64,
         ) -> Result<Vec<shaula_core::ports::RunnerRef>, AccessFailure> {
             Ok(Vec::new())
-        }
-        fn allows_target(&self, _: &shaula_core::github::GitHubTarget) -> bool {
-            false
         }
         async fn ensure_route_proof(
             &self,

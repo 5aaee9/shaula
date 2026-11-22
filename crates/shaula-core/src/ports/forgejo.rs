@@ -30,15 +30,9 @@ impl ForgejoBootstrapMaterial {
     ) -> Result<Self, &'static str> {
         let instance_url = instance_url.into();
         let uuid = uuid.into();
-        let url = url::Url::parse(&instance_url)
+        crate::net::validate_http_instance_url(&instance_url)
             .map_err(|_| "Forgejo bootstrap instance URL is invalid")?;
-        if !matches!(url.scheme(), "http" | "https")
-            || url.host_str().is_none()
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.query().is_some()
-            || url.fragment().is_some()
-            || uuid.trim().is_empty()
+        if uuid.trim().is_empty()
             || uuid.len() > 128
             || uuid.chars().any(char::is_control)
             || token.expose().is_empty()
@@ -228,29 +222,7 @@ pub enum ForgejoTemplateEvidence {
     /// No task is held AND task acquisition is fenced until registration
     /// removal. A momentary idle process/metric/log snapshot is insufficient.
     ProcessIdle,
-    ProcessHoldsTask,
     Unknown,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ForgejoRemovalDecision {
-    AlreadyAbsent,
-    SafeToDelete,
-    DeferBusy,
-}
-
-pub fn classify_removal(
-    runner: Option<&ForgejoRunnerRef>,
-    evidence: ForgejoTemplateEvidence,
-) -> ForgejoRemovalDecision {
-    let Some(runner) = runner else {
-        return ForgejoRemovalDecision::AlreadyAbsent;
-    };
-    if runner.is_idle() && matches!(evidence, ForgejoTemplateEvidence::ProcessIdle) {
-        ForgejoRemovalDecision::SafeToDelete
-    } else {
-        ForgejoRemovalDecision::DeferBusy
-    }
 }
 
 #[async_trait]

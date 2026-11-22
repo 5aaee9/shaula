@@ -62,19 +62,11 @@ fn parse_constraint(constraint: &str) -> CoreResult<Vec<ConstraintElement>> {
         } else {
             return Err(err(format!("unsupported version constraint {raw:?}")));
         };
-        if bound.trim().is_empty() {
-            return Err(err(format!(
-                "version constraint {raw:?} has an empty bound"
-            )));
-        }
         let bound = parse_version(bound)?;
         elements.push(match op {
             ">=" => ConstraintElement::AtLeast(bound),
             _ => ConstraintElement::Below(bound),
         });
-    }
-    if elements.is_empty() {
-        return Err(err("version constraint is empty"));
     }
     Ok(elements)
 }

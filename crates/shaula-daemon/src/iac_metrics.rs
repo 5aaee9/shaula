@@ -7,6 +7,17 @@ use std::time::Instant;
 
 use shaula_core::ports::TemplateOutcomeError;
 use shaula_observability::prometheus::{count, observe, Family, Kind};
+use shaula_observability::{MetricOperation, MetricResult, TelemetryHandle};
+
+/// One bounded GitHub runner operation completed with the given outcome.
+pub(crate) fn record_runner(result: MetricResult) {
+    TelemetryHandle::new().record(MetricOperation::Runner, result, 1);
+}
+
+/// One bounded IaC engine operation completed with the given outcome.
+pub(crate) fn record_iac(result: MetricResult) {
+    TelemetryHandle::new().record(MetricOperation::IaC, result, 1);
+}
 
 static EFFECTS: Family = Family {
     name: "shaula_iac_operations_total",

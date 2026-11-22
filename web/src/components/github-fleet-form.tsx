@@ -37,14 +37,12 @@ export function GitHubFleetForm({
   scopes,
   onClose,
   onAccepted,
-  page = false,
 }: {
   resource?: Resource<FleetResource<GitHubFleetSpec>>;
   backendSelector?: React.ReactNode;
   scopes: string[];
   onClose: () => void;
   onAccepted: (change: ChangeRef) => void;
-  page?: boolean;
 }) {
   const [resource] = useState(currentResource);
   const original = resource?.data.spec;
@@ -58,8 +56,6 @@ export function GitHubFleetForm({
   const { busy, error, submit } = useFleetSubmit({
     fleetKey: key,
     resource,
-    page,
-    onClose,
     onAccepted,
   });
   const canReadAuth = scopes.includes("auth.read");
@@ -92,7 +88,6 @@ export function GitHubFleetForm({
     <FleetFormFrame
       fleetKey={key}
       editing={editing}
-      page={page}
       busy={busy}
       error={error}
       canSubmit={canSubmit}

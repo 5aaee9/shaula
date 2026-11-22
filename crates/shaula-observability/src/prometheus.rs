@@ -207,13 +207,7 @@ fn render_labels(labels: &Labels) -> String {
     }
     let rendered: Vec<String> = labels
         .iter()
-        .map(|(name, value)| {
-            let escaped = value
-                .replace('\\', "\\\\")
-                .replace('"', "\\\"")
-                .replace('\n', "\\n");
-            format!("{name}=\"{escaped}\"")
-        })
+        .map(|(name, value)| format!("{name}=\"{value}\""))
         .collect();
     format!("{{{}}}", rendered.join(","))
 }

@@ -171,9 +171,7 @@ fn scan_bytes(root: &Path) -> CoreResult<u64> {
     let mut used = 0u64;
     for dir in std::fs::read_dir(root).map_err(|_| unavailable())? {
         let dir = dir.map_err(|_| unavailable())?;
-        if !dir.file_type().map_err(|_| unavailable())?.is_dir()
-            || !dir.metadata().map_err(|_| unavailable())?.is_dir()
-        {
+        if !dir.file_type().map_err(|_| unavailable())?.is_dir() {
             return Err(unavailable());
         }
         for file in std::fs::read_dir(dir.path()).map_err(|_| unavailable())? {

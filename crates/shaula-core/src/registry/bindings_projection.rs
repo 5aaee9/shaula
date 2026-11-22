@@ -38,10 +38,7 @@ impl BindingsSchema {
         let mut sensitive = BTreeMap::new();
         if let Some(fields) = schema.get("properties").and_then(Value::as_object) {
             for key in fields.keys() {
-                sensitive.insert(
-                    key.clone(),
-                    inherited_sensitive(schema, key, 0)? || field_sensitive(schema, key, 0)?,
-                );
+                sensitive.insert(key.clone(), inherited_sensitive(schema, key, 0)?);
             }
         }
         Ok(Self {
@@ -137,21 +134,6 @@ fn is_presence_marker(value: &Value) -> bool {
     fields.len() == 2
         && fields.get("sensitive") == Some(&Value::Bool(true))
         && fields.get("set").is_some_and(Value::is_boolean)
-}
-
-/// Sensitivity of one declared top-level field: its own annotation (and
-/// any nested protected material) propagates up; the conservative
-/// default for an omitted annotation is sensitive.
-fn field_sensitive(schema: &Value, key: &str, depth: usize) -> CoreResult<bool> {
-    if depth > MAX_DEPTH {
-        return Err(invalid(
-            "bindings sensitivity schema exceeds the depth limit",
-        ));
-    }
-    let Some(field) = schema.get("properties").and_then(|p| p.get(key)) else {
-        return Ok(true);
-    };
-    sensitive_of(field, depth)
 }
 
 /// Port of the shaula-template discovery sensitivity rule: an explicit
@@ -318,8 +300,9 @@ fn validate_node(schema: &Value, value: &Value, depth: usize) -> CoreResult<()> 
             }
             Some(other) if other.is_object() => {
                 for (key, child) in fields {
-                    let rule = properties.and_then(|p| p.get(key)).unwrap_or(other);
-                    validate_node(rule, child, depth + 1)?;
+                    if !properties.is_some_and(|p| p.contains_key(key)) {
+                        validate_node(other, child, depth + 1)?;
+                    }
                 }
             }
             _ => {}

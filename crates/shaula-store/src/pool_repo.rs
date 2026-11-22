@@ -78,6 +78,20 @@ impl Store {
         insert: TemplatePoolRevisionInsert,
     ) -> StoreResult<()> {
         let key = &insert.key;
+        let existing = template_pools::Entity::find_by_id(key.to_string())
+            .one(tx)
+            .await?;
+        if let Some(current) = &existing {
+            if current.incarnation != insert.incarnation
+                || current.deletion_marker
+                || current.tombstone
+                || current.desired_revision + 1 != insert.revision
+            {
+                return Err(crate::store::StoreError::Conflict {
+                    resource: key.clone(),
+                });
+            }
+        }
         template_pool_revisions::Entity::insert(template_pool_revisions::ActiveModel {
             id: sea_orm::ActiveValue::NotSet,
             pool_key: Set(key.clone()),
@@ -108,10 +122,7 @@ impl Store {
             .exec(tx)
             .await?;
         }
-        match template_pools::Entity::find_by_id(key.to_string())
-            .one(tx)
-            .await?
-        {
+        match existing {
             None => {
                 template_pools::Entity::insert(template_pools::ActiveModel {
                     key: Set(key.clone()),
@@ -128,15 +139,6 @@ impl Store {
                 .await?;
             }
             Some(current) => {
-                if current.incarnation != insert.incarnation
-                    || current.deletion_marker
-                    || current.tombstone
-                    || current.desired_revision + 1 != insert.revision
-                {
-                    return Err(crate::store::StoreError::Conflict {
-                        resource: key.clone(),
-                    });
-                }
                 let mut updated: template_pools::ActiveModel = current.into();
                 updated.desired_revision = Set(insert.revision);
                 updated.updated_at = Set(insert.now);

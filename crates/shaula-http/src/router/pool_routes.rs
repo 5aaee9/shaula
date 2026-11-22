@@ -11,8 +11,9 @@ use shaula_core::registry::Scope;
 use shaula_core::template_pool::TemplatePoolSpec;
 
 use crate::problem::{problem, registry_response};
+use crate::router::fleet_routes::{change_response, resolved_pool_member_json};
 use crate::router::{
-    accepted_response, idempotency_header, parse_if_match, put_preconditions, require_scope,
+    accepted_response, idempotency_header, put_preconditions, require_if_match, require_scope,
     resource_version_headers, AppState,
 };
 
@@ -73,17 +74,11 @@ pub(crate) async fn template_pool_get(
                     "revision": resource.revision,
                 },
                 "resolved": {
-                    "members": resource.resolved_members.iter().map(|m| serde_json::json!({
-                        "key": m.key,
-                        "templateProfileKey": m.template_profile_key,
-                        "templateRevision": m.template_revision,
-                        "templateArtifactDigest": m.template_artifact_digest,
-                        "templateAttestationId": m.template_attestation_id,
-                        "templateInputs": m.template_inputs,
-                        "inputsDigest": m.inputs_digest,
-                        "weight": m.weight,
-                        "maxRunners": m.max_runners,
-                    })).collect::<Vec<_>>(),
+                    "members": resource
+                        .resolved_members
+                        .iter()
+                        .map(resolved_pool_member_json)
+                        .collect::<Vec<_>>(),
                 }
             });
             (resource_version_headers(&version), Json(body)).into_response()
@@ -101,18 +96,10 @@ pub(crate) async fn template_pool_delete(
     if let Err(response) = require_scope(&actor, Scope::TemplateRetire) {
         return response;
     }
-    let if_match = match parse_if_match(&headers) {
-        Ok(v) => v,
+    let if_match = match require_if_match(&headers, "If-Match required for pool deletion") {
+        Ok(v) => Some(v),
         Err(response) => return response,
     };
-    if if_match.is_none() {
-        return problem(
-            StatusCode::PRECONDITION_REQUIRED,
-            "PreconditionRequired",
-            "If-Match required for pool deletion",
-        )
-        .into_response();
-    }
     let idempotency_key = match idempotency_header(&headers) {
         Ok(v) => v,
         Err(response) => return response,
@@ -163,25 +150,10 @@ pub(crate) async fn template_pool_change_get(
     if let Err(response) = require_scope(&actor, Scope::TemplateRead) {
         return response;
     }
-    match state
-        .pools
-        .template_pool_change_get(&actor, &change_id)
-        .await
-    {
-        Ok(Some(change)) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "id": change.id,
-                "resourceKind": change.resource_kind,
-                "resourceKey": change.resource_key,
-                "revision": change.revision,
-                "kind": change.kind,
-                "state": change.state,
-                "reason": change.reason,
-            })),
-        )
-            .into_response(),
-        Ok(None) => problem(StatusCode::NOT_FOUND, "NotFound", "change not found").into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+    change_response(
+        state
+            .pools
+            .template_pool_change_get(&actor, &change_id)
+            .await,
+    )
 }

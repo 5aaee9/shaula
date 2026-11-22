@@ -5,8 +5,67 @@
 
 use std::path::Path;
 
+use async_trait::async_trait;
 use shaula_core::artifact_layout::artifact_dir;
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
+use shaula_core::registry::ArtifactStore;
+
+use super::SqliteControlPlane;
+
+#[async_trait]
+impl ArtifactStore for SqliteControlPlane {
+    async fn ensure_artifact_cached(&self, digest: &str) -> CoreResult<()> {
+        if !self.artifact_available(digest).await? {
+            return Err(CoreError::new(
+                ReasonCode::TemplateInvalid,
+                "artifact digest is not published",
+            ));
+        }
+        Ok(())
+    }
+
+    async fn artifact_manifest(&self, digest: &str) -> CoreResult<Option<String>> {
+        if !self.artifact_available(digest).await? {
+            return Ok(None);
+        }
+        manifest(&self.artifact_root, digest)
+    }
+
+    async fn artifact_bindings_schema(&self, digest: &str) -> CoreResult<Option<String>> {
+        if !self.artifact_available(digest).await? {
+            return Ok(None);
+        }
+        bindings_schema(&self.artifact_root, digest)
+    }
+
+    async fn artifact_parameter_schema(&self, digest: &str) -> CoreResult<String> {
+        self.ensure_artifact_cached(digest).await?;
+        parameter_schema(&self.artifact_root, digest)?.ok_or_else(|| {
+            CoreError::new(ReasonCode::StorageUnavailable, "artifact digest malformed")
+        })
+    }
+
+    async fn artifact_shape_ok(&self, digest: &str) -> CoreResult<bool> {
+        if !self.artifact_available(digest).await? {
+            return Ok(false);
+        }
+        Ok(shape_ok(&self.artifact_root, digest))
+    }
+
+    async fn artifact_lock_digest(&self, digest: &str) -> CoreResult<Option<String>> {
+        if !self.artifact_available(digest).await? {
+            return Ok(None);
+        }
+        lock_digest(&self.artifact_root, digest)
+    }
+
+    async fn artifact_lock_file(&self, digest: &str) -> CoreResult<Option<String>> {
+        if !self.artifact_available(digest).await? {
+            return Ok(None);
+        }
+        lock_file(&self.artifact_root, digest)
+    }
+}
 
 /// Reads one published file. `Ok(None)` means NOT PUBLISHED (absent
 /// file — admission classifies that as "digest is not published"); a

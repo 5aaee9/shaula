@@ -21,4 +21,3 @@ pub mod state_backend;
 mod web;
 
 pub use router::build_router;
-pub use server::{loopback_policy as verify_loopback, ServerConfig};

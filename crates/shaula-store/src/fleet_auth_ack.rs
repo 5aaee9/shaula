@@ -96,20 +96,12 @@ impl Store {
         {
             return Ok(FleetContextAck::Stale);
         }
-        // Fence CAS: the fleet's CURRENT mutation fence must still equal
-        // the fence captured with the desired intent — a concurrent fleet
-        // PUT moved the target under this acknowledgement.
-        let current_fence =
-            crate::entities::fleet::fleets::Entity::find_by_id(fleet_key.to_string())
-                .one(tx)
-                .await?
-                .map(|f| f.mutation_fence);
-        match (context_row.desired_fence, current_fence) {
-            (Some(captured), Some(current)) if captured != current => {
-                return Ok(FleetContextAck::Stale);
-            }
-            (None, _) | (_, None) => return Ok(FleetContextAck::Stale),
-            _ => {}
+        // Fence CAS: the fleet's CURRENT mutation fence (verified equal to
+        // expectation.mutation_fence above on this same transaction) must
+        // still equal the fence captured with the desired intent — a
+        // concurrent fleet PUT moved the target under this acknowledgement.
+        if context_row.desired_fence != Some(expectation.mutation_fence) {
+            return Ok(FleetContextAck::Stale);
         }
         let new_context: shaula_core::auth_context::ResolvedAuthContext =
             serde_json::from_str(context_json)
@@ -134,7 +126,9 @@ impl Store {
         }
         // Corrupt observed evidence is fail-closed, never silently
         // skipped.
-        if let Some(observed_json) = context_row.observed_context_json.as_deref() {
+        let prior_observed = if let Some(observed_json) =
+            context_row.observed_context_json.as_deref()
+        {
             let observed: shaula_core::auth_context::ResolvedAuthContext =
                 serde_json::from_str(observed_json)
                     .map_err(|e| StoreError::Corrupt(format!("observed context corrupt: {e}")))?;
@@ -175,18 +169,26 @@ impl Store {
             {
                 return Ok(FleetContextAck::IdentityDrift);
             }
-        }
+            Some(observed)
+        } else {
+            None
+        };
 
         // ---- WRITE PHASE: exact authority is retained for cleanup/recovery.
         self.auth_archive_context_tx(tx, fleet_key, &new_context)
             .await?;
-        if let Some(json) = &context_row.observed_context_json {
-            let observed = serde_json::from_str(json)
-                .map_err(|e| StoreError::Corrupt(format!("observed context corrupt: {e}")))?;
-            self.auth_archive_context_tx(tx, fleet_key, &observed)
+        if let Some(observed) = &prior_observed {
+            self.auth_archive_context_tx(tx, fleet_key, observed)
                 .await?;
         }
-        self.handoff_write_observed(tx, fleet_key, profile_key, revision)
+        let mut handoff_updated: fleet_auth_handoffs::ActiveModel = handoff.into();
+        handoff_updated.observed_profile_key = Set(Some(profile_key.to_string()));
+        handoff_updated.observed_revision = Set(Some(revision));
+        handoff_updated.state = Set("Observed".to_string());
+        handoff_updated.reason = Set(None);
+        handoff_updated.next_retry_at = Set(None);
+        fleet_auth_handoffs::Entity::update(handoff_updated)
+            .exec(tx)
             .await?;
         let mut context_updated: crate::entities::auth::fleet_auth_contexts::ActiveModel =
             context_row.into();
@@ -200,29 +202,5 @@ impl Store {
             .exec(tx)
             .await?;
         Ok(FleetContextAck::Acknowledged)
-    }
-
-    /// The shared handoff-row write of the acknowledge phase.
-    async fn handoff_write_observed(
-        &self,
-        tx: &DatabaseTransaction,
-        fleet_key: &str,
-        profile_key: &str,
-        revision: i64,
-    ) -> StoreResult<()> {
-        let row = fleet_auth_handoffs::Entity::find_by_id(fleet_key.to_string())
-            .one(tx)
-            .await?
-            .ok_or_else(|| StoreError::Corrupt(format!("handoff {fleet_key} missing")))?;
-        let mut updated: fleet_auth_handoffs::ActiveModel = row.into();
-        updated.observed_profile_key = Set(Some(profile_key.to_string()));
-        updated.observed_revision = Set(Some(revision));
-        updated.state = Set("Observed".to_string());
-        updated.reason = Set(None);
-        updated.next_retry_at = Set(None);
-        fleet_auth_handoffs::Entity::update(updated)
-            .exec(tx)
-            .await?;
-        Ok(())
     }
 }

@@ -1,21 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/api";
 import { effectiveOutcome, outcomes, type Question, type Report } from "@/lib/diagnostics";
+import { usePageVisible } from "@/lib/jobs";
 
 export type DiagnosticsKind = "fleet" | "generation" | "job";
 
 const summaryOrder = ["blocked", "unknown", "progressing", "satisfied", "not_applicable"];
-
-function usePageVisible() {
-  const [visible, setVisible] = useState(document.visibilityState === "visible");
-  useEffect(() => {
-    const update = () => setVisible(document.visibilityState === "visible");
-    document.addEventListener("visibilitychange", update);
-    return () => document.removeEventListener("visibilitychange", update);
-  }, []);
-  return visible;
-}
 
 function validateReport(
   data: Report,

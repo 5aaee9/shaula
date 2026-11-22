@@ -102,15 +102,11 @@ impl Client {
         &self,
         method: Method,
         path: &[&str],
-        body: &str,
+        body: String,
         options: Option<MutationOptions>,
         key: Option<String>,
     ) -> Result<MutationAttempt, Error> {
-        self.url(path)?;
-        if !body.is_empty() {
-            let _: types::Document = types::Document::parse(body.into())
-                .map_err(|_| Error::Invalid("invalid JSON body"))?;
-        }
+        let url = self.url(path)?;
         let identity = match self.session().await?.data.principal {
             Some(principal) => AttemptIdentity::Principal(principal),
             None if !self.credential.expose().starts_with("shaula_pat_") => {
@@ -132,8 +128,8 @@ impl Client {
             origin: self.origin.as_str().into(),
             identity,
             method,
-            path: path.iter().map(|s| s.to_string()).collect(),
-            body: Secret::new(body.into()),
+            url,
+            body: Secret::new(body),
             precondition,
             key,
             content_type: "application/json",
@@ -160,10 +156,9 @@ impl Client {
         if !same_identity {
             return Err(Error::Invalid("mutation origin or principal changed"));
         }
-        let path: Vec<_> = attempt.path.iter().map(String::as_str).collect();
         let mut request = self
             .http
-            .request(attempt.method.clone(), self.url(&path)?)
+            .request(attempt.method.clone(), attempt.url.clone())
             .bearer_auth(self.credential.expose())
             .header("idempotency-key", &attempt.key)
             .header("content-type", attempt.content_type)

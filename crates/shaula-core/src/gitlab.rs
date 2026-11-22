@@ -56,24 +56,8 @@ pub struct GitlabTarget {
 
 impl GitlabTarget {
     pub fn validate(&self) -> CoreResult<()> {
-        let url = Url::parse(&self.instance_url).map_err(|error| {
-            CoreError::new(
-                ReasonCode::SpecInvalid,
-                format!("invalid GitLab instance_url: {error}"),
-            )
-        })?;
-        if !matches!(url.scheme(), "http" | "https")
-            || url.host_str().is_none_or(|host| host.is_empty())
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.query().is_some()
-            || url.fragment().is_some()
-        {
-            return Err(CoreError::new(
-                ReasonCode::SpecInvalid,
-                "instance_url must be an http(s) URL without credentials, query, or fragment",
-            ));
-        }
+        crate::net::validate_http_instance_url(&self.instance_url)
+            .map_err(|msg| CoreError::new(ReasonCode::SpecInvalid, msg))?;
         self.scope.validate()
     }
 

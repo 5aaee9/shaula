@@ -27,11 +27,6 @@ pub struct GitHub {
 }
 #[async_trait::async_trait]
 impl GitHubAccessPort for GitHub {
-    async fn auth_context(&self) -> AuthContext {
-        AuthContext {
-            kind: shaula_core::auth::AuthKind::GithubApp,
-        }
-    }
     async fn resolve_runner_group(&self, _: &ScaleSetIdentity) -> Result<i64, AccessFailure> {
         if self.denied.load(Ordering::SeqCst) {
             Err(AccessFailure::PermissionDenied)
@@ -172,9 +167,6 @@ impl GitHubAccessPort for GitHub {
             1 => Ok(RunnerLookup::ExactlyOne(matches[0].clone())),
             _ => Ok(RunnerLookup::Multiple),
         }
-    }
-    fn allows_target(&self, _: &GitHubTarget) -> bool {
-        true
     }
     async fn resolve_target_identity(
         &self,

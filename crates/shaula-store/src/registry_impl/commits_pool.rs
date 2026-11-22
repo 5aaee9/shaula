@@ -84,8 +84,11 @@ impl SqliteControlPlane {
             )
             .await
         {
-            // A lost head race maps to the HTTP precondition contract.
-            return Ok(Err(fence_conflict(&facts, &e)));
+            if matches!(e, crate::store::StoreError::Conflict { .. }) {
+                // A lost head race maps to the HTTP precondition contract.
+                return Ok(Err(fence_conflict(&facts, &e)));
+            }
+            return Err(core_err(e));
         }
         self.pool_common_facts(&tx, &facts, "put").await?;
         tx.commit()
@@ -124,7 +127,10 @@ impl SqliteControlPlane {
             )
             .await
         {
-            return Ok(Err(fence_conflict(&facts, &e)));
+            if matches!(e, crate::store::StoreError::Conflict { .. }) {
+                return Ok(Err(fence_conflict(&facts, &e)));
+            }
+            return Err(core_err(e));
         }
         self.pool_common_facts(&tx, &facts, "delete").await?;
         tx.commit()

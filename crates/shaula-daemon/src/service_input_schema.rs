@@ -20,10 +20,7 @@ fn supported_dialect(value: &serde_json::Value) -> CoreResult<()> {
     let uri = value.as_str().ok_or_else(|| {
         CoreError::new(ReasonCode::SpecInvalid, "schema $schema must be a string")
     })?;
-    if uri.starts_with("http://json-schema.org/")
-        || uri.starts_with("https://json-schema.org/")
-        || uri.starts_with("https://json-schema.org/draft/")
-    {
+    if uri.starts_with("http://json-schema.org/") || uri.starts_with("https://json-schema.org/") {
         Ok(())
     } else {
         Err(CoreError::new(
@@ -154,7 +151,7 @@ pub(in crate::service) fn validate_value(
             ));
         }
     }
-    if value.is_object() {
+    if let Some(map) = value.as_object() {
         for key in obj
             .get("required")
             .and_then(|v| v.as_array())
@@ -162,7 +159,7 @@ pub(in crate::service) fn validate_value(
             .flatten()
         {
             let key = key.as_str().unwrap_or_default();
-            if !value.as_object().is_some_and(|v| v.contains_key(key)) {
+            if !map.contains_key(key) {
                 return Err(CoreError::new(
                     ReasonCode::SpecInvalid,
                     format!("required input {key:?} is missing"),
@@ -171,7 +168,7 @@ pub(in crate::service) fn validate_value(
         }
         let properties = obj.get("properties").and_then(|v| v.as_object());
         if obj.get("additionalProperties").and_then(|v| v.as_bool()) == Some(false) {
-            for key in value.as_object().map(|v| v.keys()).into_iter().flatten() {
+            for key in map.keys() {
                 if !properties.is_some_and(|p| p.contains_key(key.as_str())) {
                     return Err(CoreError::new(
                         ReasonCode::SpecInvalid,
@@ -181,7 +178,7 @@ pub(in crate::service) fn validate_value(
             }
         }
         for (key, subschema) in properties.into_iter().flatten() {
-            if let Some(inner) = value.get(key) {
+            if let Some(inner) = map.get(key) {
                 let nested = if path.is_empty() {
                     key.clone()
                 } else {

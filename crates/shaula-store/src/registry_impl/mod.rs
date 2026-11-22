@@ -122,7 +122,6 @@ fn worker_error(error: shaula_core::state_backend::StateError) -> CoreError {
     }
 }
 
-mod artifact_reads;
 #[path = "artifacts.rs"]
 mod artifacts;
 
@@ -140,11 +139,9 @@ mod commits_auth_policy;
 mod commits_decommission;
 #[path = "commits_fleet.rs"]
 mod commits_fleet;
-mod commits_fleet_noop;
 mod commits_generation;
 mod commits_noop;
 mod commits_pool;
-mod commits_pool_noop;
 mod retirement;
 mod retirement_refs;
 mod retirement_scan;
@@ -170,8 +167,5 @@ mod template_scan;
 pub use scan::ScanReport;
 
 mod auth_observations;
-
-mod control_reads;
-mod control_reads_more;
 
 mod pool_admission;

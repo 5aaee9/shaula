@@ -151,12 +151,12 @@ function subscribeVisibility(listener: () => void) {
   document.addEventListener("visibilitychange", listener);
   return () => document.removeEventListener("visibilitychange", listener);
 }
+export function usePageVisible() {
+  return useSyncExternalStore(subscribeVisibility, () => document.visibilityState === "visible");
+}
 export function useHistory<T>(path: string, enabled: boolean) {
   const backoff = useRef({ path, error: 0, success: 0, count: 0 });
-  const visible = useSyncExternalStore(
-    subscribeVisibility,
-    () => document.visibilityState === "visible",
-  );
+  const visible = usePageVisible();
   return useQuery({
     queryKey: ["history", path],
     queryFn: async ({ signal }) => (await api<T>(path, { signal })).data,
@@ -200,18 +200,21 @@ export function jobRepository(job: Job) {
   );
 }
 
-/** Only an http(s) link on the configured instance's origin is rendered. */
-export function gitlabJobUrl(job: Job): string | undefined {
+function safeInstanceUrl(
+  rawUrl: string,
+  instanceUrl: string,
+  requireSubpath: boolean,
+): string | undefined {
   try {
-    if (!job.gitlab) return undefined;
-    const url = new URL(job.gitlab.web_url);
-    const base = new URL(job.gitlab.target.instance_url);
+    const url = new URL(rawUrl);
+    const base = new URL(instanceUrl);
     return ["http:", "https:"].includes(url.protocol) &&
       url.origin === base.origin &&
       !url.username &&
       !url.password &&
       !url.search &&
-      !url.hash
+      !url.hash &&
+      (!requireSubpath || url.pathname.startsWith(`${base.pathname.replace(/\/$/, "")}/`))
       ? url.href
       : undefined;
   } catch {
@@ -219,23 +222,17 @@ export function gitlabJobUrl(job: Job): string | undefined {
   }
 }
 
+/** Only an http(s) link on the configured instance's origin is rendered. */
+export function gitlabJobUrl(job: Job): string | undefined {
+  return job.gitlab
+    ? safeInstanceUrl(job.gitlab.web_url, job.gitlab.target.instance_url, false)
+    : undefined;
+}
+
 export function forgejoRunUrl(job: Job): string | undefined {
-  try {
-    if (!job.forgejo?.result) return undefined;
-    const url = new URL(job.forgejo.result.run_url);
-    const base = new URL(job.forgejo.target.instance_url);
-    return ["http:", "https:"].includes(url.protocol) &&
-      url.origin === base.origin &&
-      !url.username &&
-      !url.password &&
-      !url.search &&
-      !url.hash &&
-      url.pathname.startsWith(`${base.pathname.replace(/\/$/, "")}/`)
-      ? url.href
-      : undefined;
-  } catch {
-    return undefined;
-  }
+  return job.forgejo?.result
+    ? safeInstanceUrl(job.forgejo.result.run_url, job.forgejo.target.instance_url, true)
+    : undefined;
 }
 
 export function snapshotFreshness(job: Job) {

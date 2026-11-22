@@ -54,12 +54,6 @@ pub enum MetadataReachability {
     Transient { retry_after_ms: Option<i64> },
 }
 
-/// The `/app` proof of the declared numeric App identity.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AppVerification {
-    pub app_id: i64,
-}
-
 /// Classified outcome of one repository identity lookup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RepoIdentity {

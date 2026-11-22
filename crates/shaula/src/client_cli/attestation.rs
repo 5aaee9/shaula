@@ -21,15 +21,7 @@ pub(super) async fn execute(
             "completed",
         ),
         Err(error) => {
-            let uncertain = matches!(
-                error,
-                Error::Transport
-                    | Error::Protocol
-                    | Error::Http {
-                        status: 500..=599,
-                        ..
-                    }
-            );
+            let uncertain = super::is_uncertain(&error);
             let out = Outcome::error(error);
             if !uncertain {
                 return out;

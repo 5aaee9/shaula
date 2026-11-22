@@ -1,5 +1,5 @@
 //! Optional history work is scoped, bounded and incapable of changing Runner state.
-use super::{decode, encode, forgejo_projection, forgejo_scope};
+use super::{decimal_id, decode, encode, forgejo_projection, forgejo_scope};
 use crate::entities::jobs::{forgejo_job_polls as polls, forgejo_workflow_jobs as jobs_table};
 use crate::query_ext::json_extract;
 use crate::{Store, StoreError, StoreResult};
@@ -73,7 +73,7 @@ impl Store {
                 .forgejo
                 .as_mut()
                 .ok_or_else(|| StoreError::Corrupt("Forgejo job metadata missing".into()))?;
-            let repository_id = decimal_id(&state.repository_id)?;
+            let repository_id = decimal_id(&state.repository_id, "invalid Forgejo task identity")?;
             if !repositories.contains(&repository_id) && repositories.len() >= 4 {
                 continue;
             }
@@ -81,7 +81,7 @@ impl Store {
             selected.push(ForgejoJobLookup {
                 record_id: summary.id.clone(),
                 repository_id,
-                task_id: decimal_id(&state.task_id)?,
+                task_id: decimal_id(&state.task_id, "invalid Forgejo task identity")?,
             });
             state.enrichment_attempted_at = Some(now);
             jobs_table::Entity::update_many()
@@ -202,12 +202,4 @@ impl Store {
         tx.commit().await?;
         Ok(true)
     }
-}
-
-fn decimal_id(value: &str) -> StoreResult<u64> {
-    value
-        .parse::<u64>()
-        .ok()
-        .filter(|id| *id > 0 && id.to_string() == value)
-        .ok_or_else(|| StoreError::Corrupt("invalid Forgejo task identity".into()))
 }

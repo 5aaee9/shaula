@@ -52,7 +52,7 @@ impl SqliteControlPlane {
         // the commit. The check is also re-run INSIDE the tx (R9-04):
         // any insertion after our write lock is impossible; anything
         // committed before it is counted.
-        if let Err(e) = self
+        let resolved_auth_revision = match self
             .store
             .fleet_commit_revision(
                 &tx,
@@ -72,10 +72,14 @@ impl SqliteControlPlane {
             )
             .await
         {
-            // Lost fence race: map the store conflict onto the HTTP status
-            // contract (412/410) instead of an internal error.
-            return Ok(Err(fence_conflict(&facts, &e)));
-        }
+            Ok(revision) => revision,
+            Err(e) if matches!(e, crate::store::StoreError::Conflict { .. }) => {
+                // Lost fence race: map the store conflict onto the HTTP status
+                // contract (412/410) instead of an internal error.
+                return Ok(Err(fence_conflict(&facts, &e)));
+            }
+            Err(e) => return Err(core_err(e)),
+        };
         {
             let previous = fleet_revisions::Entity::find()
                 .filter(fleet_revisions::Column::FleetKey.eq(&facts.resource_key))
@@ -247,21 +251,9 @@ impl SqliteControlPlane {
             }
         }
         if let Some((profile_key, _admission_revision)) = &facts.auth_desired {
-            // R9-03: the handoff retarget also uses the IN-TX resolved
-            // active revision — the revision row already carries it.
-            let resolved = fleet_revisions::Entity::find()
-                .filter(fleet_revisions::Column::FleetKey.eq(&facts.resource_key))
-                .order_by_desc(fleet_revisions::Column::Revision)
-                .one(&tx)
-                .await
-                .map_err(|e| core_err(crate::store::StoreError::from(e)))?
-                .map(|r| r.auth_desired_revision)
-                .ok_or_else(|| {
-                    core_err(crate::store::StoreError::Corrupt(format!(
-                        "fleet {} has no committed revision for auth handoff",
-                        facts.resource_key
-                    )))
-                })?;
+            // R9-03: the handoff retarget uses the IN-TX resolved active revision
+            // returned by `fleet_commit_revision`.
+            let resolved = resolved_auth_revision;
             // Pool Fleets have no handoff or installation context. Their exact
             // credential reference lives on the immutable Fleet revision.
             let is_forgejo = crate::spec_is_pool(&facts.spec_json);

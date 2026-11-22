@@ -1,11 +1,11 @@
 //! Session installation, invalidation and demand snapshots.
 
 use sea_orm::ActiveValue::Set;
-use sea_orm::{sea_query::OnConflict, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
+use sea_orm::{sea_query::OnConflict, ConnectionTrait, EntityTrait};
 use shaula_core::registry::{PersistedSession, SessionInstall};
 
 use crate::entities::auth::fleet_session_auth;
-use crate::entities::lifecycle::{fleet_demand, fleet_sessions, job_observations, scale_set_state};
+use crate::entities::lifecycle::{fleet_demand, fleet_sessions, scale_set_state};
 use crate::runtime_guards::session_active;
 use crate::store::{Store, StoreError, StoreResult};
 
@@ -254,39 +254,5 @@ impl Store {
         Ok(fleet_demand::Entity::find_by_id(fleet_key.to_string())
             .one(self.connection())
             .await?)
-    }
-
-    // ---- Job observations (idempotent) ----
-
-    pub async fn observation_insert(
-        &self,
-        insert: shaula_core::registry::JobObservationInsert,
-    ) -> StoreResult<bool> {
-        let now = insert.now;
-        // Duplicate (fleet, message, kind, request) tuples are ignored so
-        // redelivery stays idempotent.
-        let existing = job_observations::Entity::find()
-            .filter(job_observations::Column::FleetKey.eq(insert.fleet_key.as_str()))
-            .filter(job_observations::Column::MessageId.eq(insert.message_id))
-            .filter(job_observations::Column::ObservationKind.eq(insert.observation_kind.as_str()))
-            .filter(job_observations::Column::RunnerRequestId.eq(insert.runner_request_id))
-            .one(self.connection())
-            .await?;
-        if existing.is_some() {
-            return Ok(false);
-        }
-        job_observations::Entity::insert(job_observations::ActiveModel {
-            id: Default::default(),
-            fleet_key: Set(insert.fleet_key.clone()),
-            message_id: Set(insert.message_id),
-            observation_kind: Set(insert.observation_kind.clone()),
-            runner_request_id: Set(insert.runner_request_id),
-            job_id: Set(insert.job_id.clone()),
-            runner_name: Set(insert.runner_name.clone()),
-            observed_at: Set(now),
-        })
-        .exec(self.connection())
-        .await?;
-        Ok(true)
     }
 }

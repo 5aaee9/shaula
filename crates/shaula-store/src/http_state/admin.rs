@@ -31,7 +31,7 @@ impl SqliteStateBackend {
         {
             return Err(StateError::Invalid);
         }
-        let tx = self.writer(&record.id).await?;
+        let tx = self.writer().await?;
         let exists = generations::Entity::find_by_id(&record.id)
             .select_only()
             .column(generations::Column::Id)
@@ -83,7 +83,7 @@ impl SqliteStateBackend {
     /// Revoke network authority without changing state, lock, epoch or resource
     /// Occupancy. Revocation is NOT descendant fencing and permits no takeover.
     pub async fn revoke(&self, claim: &StateClaim) -> StateResult<()> {
-        let tx = self.writer(&claim.generation_id.to_string()).await?;
+        let tx = self.writer().await?;
         let row = Row::load(&tx, &claim.generation_id.to_string()).await?;
         row.check_claim(claim)?;
         let result = states::Entity::update_many()
@@ -101,7 +101,7 @@ impl SqliteStateBackend {
     /// first possible Create, then retain its Fleet gate through spawn handover.
     /// This fact alone never authorizes an apply, repeated or otherwise.
     pub async fn note_create_starting(&self, claim: &StateClaim) -> StateResult<()> {
-        let tx = self.writer(&claim.generation_id.to_string()).await?;
+        let tx = self.writer().await?;
         let row = Row::load(&tx, &claim.generation_id.to_string()).await?;
         row.check_claim(claim)?;
         row.writable()?;
@@ -127,7 +127,7 @@ impl SqliteStateBackend {
     /// transaction with its trusted GitHub/Destroy receipt, not infer cleanup
     /// from empty state. No worker/control HTTP route exposes this primitive.
     pub async fn seal(&self, claim: &StateClaim, expected_revision: i64) -> StateResult<()> {
-        let tx = self.writer(&claim.generation_id.to_string()).await?;
+        let tx = self.writer().await?;
         let row = Row::load(&tx, &claim.generation_id.to_string()).await?;
         row.check_claim(claim)?;
         if row.revoked || !row.create_started || row.revision != expected_revision {

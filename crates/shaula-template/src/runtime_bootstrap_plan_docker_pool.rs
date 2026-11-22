@@ -33,17 +33,7 @@ pub(super) fn admit(
         }
         _ => return Err(rejected()),
     };
-    let identity = &request.input.generation;
-    let short: String = identity.id.chars().take(24).collect();
-    runner.exact("/start", &json!(false))?;
-    runner.exact("/must_run", &json!(false))?;
-    runner.exact("/rm", &json!(false))?;
-    runner.exact("/restart", &json!("no"))?;
-    runner.exact("/wait", &json!(false))?;
-    runner.exact(
-        "/name",
-        &json!(format!("shaula-{}-{short}", identity.fleet_key)),
-    )?;
+    super::admit_common(runner, plan, image, request)?;
     runner.exact("/command", &json!(command))?;
     runner.exact("/entrypoint", &json!(["/usr/bin/dumb-init"]))?;
     runner.exact("/working_dir", &json!(working_dir))?;
@@ -57,30 +47,6 @@ pub(super) fn admit(
     // value so the saved plan proves the input instead of admitting unknowns.
     let env = runner.known("/env")?;
     if env != &json!([]) && env != &json!([format!("SHAULA_RUNNER_BACKEND={backend}")]) {
-        return Err(rejected());
-    }
-    for pointer in [
-        "/upload",
-        "/mounts",
-        "/volumes",
-        "/devices",
-        "/capabilities",
-    ] {
-        runner.empty(pointer)?;
-    }
-    let privileged = runner.known("/privileged")?;
-    if !privileged.is_null() && privileged != false {
-        return Err(rejected());
-    }
-    let labels = runner.known("/labels")?.as_array().ok_or_else(rejected)?;
-    if labels.len() != 2
-        || !labels.contains(&json!({"label":"shaula.fleet","value":identity.fleet_key}))
-        || !labels.contains(&json!({"label":"shaula.generation","value":identity.id}))
-    {
-        return Err(rejected());
-    }
-    let actual = runner.known("/image")?.as_str().ok_or_else(rejected)?;
-    if actual != image && !super::resolved_image(plan, image, actual)? {
         return Err(rejected());
     }
     Ok(())

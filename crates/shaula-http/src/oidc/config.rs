@@ -60,7 +60,7 @@ impl OidcConfig {
                 || grant.subject.len() > 256
                 || !principals.insert(grant.subject.clone())
                 || grant.scopes.len() > Scope::ALL.len()
-                || grant.scopes.iter().any(|s| parse_scope(s).is_none())
+                || grant.scopes.iter().any(|s| Scope::parse(s).is_none())
             {
                 return Err(AuthError::Configuration("authorization grants"));
             }
@@ -79,7 +79,7 @@ impl OidcConfig {
         self.grants
             .iter()
             .find(|g| g.subject == subject)
-            .map(|g| g.scopes.iter().filter_map(|s| parse_scope(s)).collect())
+            .map(|g| g.scopes.iter().filter_map(|s| Scope::parse(s)).collect())
             .unwrap_or_default()
     }
 }
@@ -99,8 +99,4 @@ pub(super) fn https_url(raw: &str) -> Result<Url, AuthError> {
         return Err(AuthError::Configuration("HTTPS URL"));
     }
     Ok(url)
-}
-
-fn parse_scope(raw: &str) -> Option<Scope> {
-    Scope::parse(raw)
 }

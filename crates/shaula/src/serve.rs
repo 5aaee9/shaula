@@ -19,12 +19,9 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
     // telemetry can initialize once with the CONFIGURED service name and
     // still precede every migration or remote effect (spec 0001 §13).
     let bootstrap = ValidatedBootstrap::load(std::path::Path::new(config_path))?;
-    if bootstrap.lifecycle.is_none() {
-        return Err(
-            "explicit lifecycle configuration is required; see production worker migration guide"
-                .into(),
-        );
-    }
+    let lifecycle_config = bootstrap.lifecycle.as_ref().ok_or(
+        "explicit lifecycle configuration is required; see production worker migration guide",
+    )?;
     let _telemetry =
         shaula_observability::init(&bootstrap.service_name, bootstrap.otlp_endpoint.as_deref());
     // Telemetry is live: the startup span covers recovery and listener
@@ -57,8 +54,13 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
     let diagnostics = diagnostics::Diagnostics::new(store.clone(), &bootstrap).await;
     let jobs = std::sync::Arc::new(store.clone());
     let logs = diagnostics.logs.clone();
-    let mut worker_lifecycle =
-        crate::lifecycle::Lifecycle::start(store.clone(), &bootstrap, logs.clone()).await?;
+    let mut worker_lifecycle = crate::lifecycle::Lifecycle::start(
+        store.clone(),
+        &bootstrap,
+        lifecycle_config,
+        logs.clone(),
+    )
+    .await?;
     let production_ready = !worker_lifecycle.migration_required;
 
     let clock: std::sync::Arc<dyn Clock> = std::sync::Arc::new(SystemClock);
@@ -122,16 +124,15 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
     )
     .await?;
 
-    // HTTP server (loopback-only; validated at config parse and bind).
     let (host, port) = bootstrap
         .listen
         .rsplit_once(':')
-        .map(|(h, p)| p.parse::<u16>().map(|port| (h.to_string(), port)))
-        .transpose()
-        .map_err(|e| format!("listen port invalid: {e}"))?
-        .unwrap_or_else(|| ("127.0.0.1".to_string(), 8080));
-    let http_config =
-        shaula_http::server::ServerConfig::new(host, port, bootstrap.request_body_limit)?;
+        .ok_or("listen address invalid")?;
+    let port: u16 = port
+        .parse()
+        .map_err(|e| format!("listen port invalid: {e}"))?;
+    shaula_core::net::verify_loopback(host)?;
+    let listen_addr = format!("{host}:{port}");
     let state = shaula_http::router::AppState {
         access_tokens: Some(std::sync::Arc::new({
             let (realm, grants) = oidc.token_context();
@@ -173,7 +174,7 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
             "MigrationRequired"
         },
     );
-    let management_listener = tokio::net::TcpListener::bind(http_config.listen_addr())
+    let management_listener = tokio::net::TcpListener::bind(&listen_addr)
         .await
         .map_err(|_| "management listener bind failed")?;
     let diagnostics_task = tokio::spawn(diagnostics.run(shutdown_tx.subscribe()));

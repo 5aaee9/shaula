@@ -20,8 +20,7 @@ impl Workers {
         token: &ControlCapability,
         request: LogRequest,
     ) -> StateResult<LogResponse> {
-        self.authenticate(generation, token).await?;
-        let session = self.session(generation).await?;
+        let session = self.authenticated_session(generation, token).await?;
         let mut state = session.logs.lock().await;
         let sink = self.logs.as_ref().ok_or(StateError::Unavailable)?;
         match request.message {

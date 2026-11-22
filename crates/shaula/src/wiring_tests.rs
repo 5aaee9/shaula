@@ -45,7 +45,7 @@ impl TemplateRuntimePort for NoRuntime {
 
 pub(crate) async fn wiring_with(
     control_plane: &Arc<SqliteControlPlane>,
-    endpoints: crate::auth_worker_probe::WorkerEndpoints,
+    endpoints: shaula_scaleset::validation::WorkerEndpoints,
 ) -> SupervisorWiring {
     let limits = shaula_daemon::supervisor::LifecycleLimits {
         create: Arc::new(tokio::sync::Semaphore::new(1)),
@@ -279,7 +279,7 @@ pub(crate) async fn corrupt_observed_context(db_path: &std::path::Path) {
 pub(crate) async fn execution_wiring(plane: &TestPlane) -> SupervisorWiring {
     wiring_with(
         &plane.control_plane,
-        crate::auth_worker_probe::WorkerEndpoints::production(),
+        shaula_scaleset::validation::WorkerEndpoints::production(),
     )
     .await
 }

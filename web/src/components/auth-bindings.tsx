@@ -21,12 +21,13 @@ function healthLabel(binding: AccountBinding, now: number) {
 
 export function AuthBindings({ revision }: { revision: AuthRevisionState }) {
   const [now, setNow] = useState(Date.now);
+  const bindings = revision.bindings ?? [];
   useEffect(() => {
+    if (!bindings.length) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
-  }, []);
-  if (!revision.bindings?.length)
-    return <p>No validated account bindings for r{revision.revision}.</p>;
+  }, [bindings.length]);
+  if (!bindings.length) return <p>No validated account bindings for r{revision.revision}.</p>;
   return (
     <section className="mt-4">
       <h3 className="mb-2 text-sm font-medium">Account bindings of r{revision.revision}</h3>
@@ -42,7 +43,7 @@ export function AuthBindings({ revision }: { revision: AuthRevisionState }) {
             </tr>
           </thead>
           <tbody>
-            {revision.bindings.map((binding) => {
+            {bindings.map((binding) => {
               const health = healthLabel(binding, now);
               return (
                 <tr key={`${binding.account_id}:${binding.installation_id}`}>

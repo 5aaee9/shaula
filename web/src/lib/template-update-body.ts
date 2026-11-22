@@ -1,4 +1,4 @@
-import { inputEntries } from "./input-values";
+import { inputEntries, inputsJson } from "./input-values";
 import type { TemplateSource } from "./template-variables";
 import { isSensitiveMarker, type TemplateRevision } from "./types";
 
@@ -73,7 +73,7 @@ function mergedBindings(bindings: string, revisionBindings: RevisionBindings) {
       out.set(key, "null");
     }
   }
-  return `{${[...out].map(([k, v]) => `${JSON.stringify(k)}:${v}`).join(",")}}`;
+  return inputsJson(out);
 }
 
 /** Raw JSON body so binding and policy values keep their exact number tokens. */

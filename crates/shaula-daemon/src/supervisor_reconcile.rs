@@ -306,7 +306,10 @@ impl FleetSupervisor {
             .demand_with_time(&self.config.fleet_key)
             .await?;
         let demand = demand_evidence.map(|(value, _)| value).unwrap_or(0);
-        let (effective, occupancy) = self.capacity_counters().await?;
+        let (effective, occupancy) = self
+            .handoff
+            .capacity_counters(&self.config.fleet_key)
+            .await?;
         let counters = CapacityCounters {
             effective_capacity: effective,
             resource_occupancy: occupancy,

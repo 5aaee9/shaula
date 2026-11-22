@@ -176,7 +176,7 @@ impl ScalesetClient {
         let admin = AdminTokenManager::new(
             credential,
             config.github_api_base.clone(),
-            config.config_url(),
+            config.target.clone(),
             http.clone(),
             clock.clone(),
         );

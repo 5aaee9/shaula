@@ -86,7 +86,7 @@ impl SqliteStateBackend {
         admissions: &WorkerAdmissions,
         preserve_evidence: bool,
     ) -> StateResult<()> {
-        let tx = self.writer(&record.generation_id).await?;
+        let tx = self.writer().await?;
         let state = Row::load(&tx, &record.generation_id).await?;
         state.check_claim(&record.claim()?)?;
         let worker = WorkerRow::read(&tx, &record.generation_id)

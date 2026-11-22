@@ -12,9 +12,8 @@ mod budget;
 mod ledger;
 mod worker;
 
-#[async_trait::async_trait]
-impl DiagnosticsReadPort for Store {
-    async fn diagnostics(
+impl Store {
+    pub async fn diagnostics(
         &self,
         kind: SubjectKind,
         key: &str,

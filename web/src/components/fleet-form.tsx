@@ -18,7 +18,6 @@ export interface FleetFormProps {
   scopes: string[];
   onClose: () => void;
   onAccepted: (change: ChangeRef) => void;
-  page?: boolean;
 }
 
 export function FleetForm(props: FleetFormProps) {

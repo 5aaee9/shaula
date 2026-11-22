@@ -58,10 +58,11 @@ pub(super) enum Admission {
 impl Sessions {
     pub(super) fn admission(&mut self, id: &str) -> Result<Admission, AuthError> {
         self.evict();
-        let session = self.sessions.get(id).ok_or(AuthError::Unauthorized)?;
+        let session = self.sessions.get_mut(id).ok_or(AuthError::Unauthorized)?;
         let now = Instant::now();
         if session.expires > now && session.idle > now {
-            return self.get(id).map(Admission::Fresh);
+            session.idle = now + Duration::from_secs(900);
+            return Ok(Admission::Fresh(session.identity.clone()));
         }
         let grant = session.refresh.as_ref().ok_or(AuthError::Unauthorized)?;
         match &session.renewal {

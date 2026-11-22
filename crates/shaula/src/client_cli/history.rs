@@ -30,13 +30,14 @@ pub(super) async fn run(
     client: &Client,
     kind: &str,
     action: HistoryAction,
+    output: Option<Output>,
 ) -> Result<Outcome, Error> {
     match action {
         HistoryAction::Explain {
             key,
             watch,
             timeout,
-        } => super::explain::run(client, kind, &key, watch, timeout, None).await,
+        } => super::explain::run(client, kind, &key, watch, timeout, output).await,
         HistoryAction::Get { id } => Ok(Outcome::data(match kind {
             "jobs" => client.job(&id).await?.data,
             "generations" => client.generation(&id).await?.data,
@@ -65,15 +66,7 @@ pub(super) async fn run(
                     Ok(out)
                 }
                 Err(e) => {
-                    let uncertain = matches!(
-                        e,
-                        Error::Transport
-                            | Error::Protocol
-                            | Error::Http {
-                                status: 500..=599,
-                                ..
-                            }
-                    );
+                    let uncertain = super::is_uncertain(&e);
                     let mut out = Outcome::error(e);
                     if uncertain {
                         out.receipt = json!({"outcome":"uncertain","idempotency_key":key});

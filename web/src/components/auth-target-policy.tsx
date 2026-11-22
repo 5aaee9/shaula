@@ -76,20 +76,18 @@ export function AuthTargetPolicy({
           {existing && addTarget}
         </div>
       </Field>
-      <AdvancedSettings open={advanced} onOpenChange={setAdvanced} summary={summary}>
-        {!existing && (
-          <>
-            {additional.length > 0 && (
-              <Field label="Additional targets">
-                <div className="form-stack">
-                  {additional.map((row, index) => targetFields(row, index + 1, true))}
-                </div>
-              </Field>
-            )}
-            {addTarget}
-          </>
-        )}
-      </AdvancedSettings>
+      {!existing && (
+        <AdvancedSettings open={advanced} onOpenChange={setAdvanced} summary={summary}>
+          {additional.length > 0 && (
+            <Field label="Additional targets">
+              <div className="form-stack">
+                {additional.map((row, index) => targetFields(row, index + 1, true))}
+              </div>
+            </Field>
+          )}
+          {addTarget}
+        </AdvancedSettings>
+      )}
     </>
   );
 }

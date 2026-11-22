@@ -39,9 +39,6 @@ impl Client {
             return Err(Error::Unsupported);
         }
         let mut result = resource.typed::<DiagnosticReportV1>()?;
-        if result.data.schema_version != 1 {
-            return Err(Error::Unsupported);
-        }
         if result.data.subject.kind != kind
             || result
                 .data

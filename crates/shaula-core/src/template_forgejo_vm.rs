@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use super::{CoreError, CoreResult, ProfileManifest, ReasonCode};
+use super::{CoreResult, ProfileManifest};
 use crate::{ports::forgejo::ForgejoBootstrapMaterial, secret::SecretString};
 
 /// Opt-in delivery of one ephemeral Runner token through VM cloud-init.
@@ -58,24 +58,11 @@ mod tests;
 
 impl ProfileManifest {
     pub(super) fn validate_forgejo_vm_bootstrap(&self) -> CoreResult<()> {
-        let Some(contract) = self.forgejo_vm_bootstrap_contract.as_deref() else {
-            return Ok(());
-        };
-        if contract != FORGEJO_VM_BOOTSTRAP_CONTRACT
-            || !matches!(
-                self.platform.as_str(),
-                "proxmox" | "aws" | "tencentcloud" | "alicloud"
-            )
-            || self.vm_image_contract.is_none()
-            || self.container_bootstrap_contract.is_some()
-            || self.input_contract_version != 1
-            || !self.supports_runner_backend("forgejo")
-        {
-            return Err(CoreError::new(
-                ReasonCode::TemplateInvalid,
-                "unsupported Forgejo VM cloud-init bootstrap contract",
-            ));
-        }
-        Ok(())
+        self.validate_vm_bootstrap_contract(
+            self.forgejo_vm_bootstrap_contract.as_deref(),
+            FORGEJO_VM_BOOTSTRAP_CONTRACT,
+            "forgejo",
+            "unsupported Forgejo VM cloud-init bootstrap contract",
+        )
     }
 }

@@ -2,7 +2,7 @@
 //! operation records (the fenced apply-start boundary).
 
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 
 use crate::entities::fleet::fleets;
 use crate::entities::lifecycle::{
@@ -226,12 +226,8 @@ impl Store {
         let Some(row) = self.generation_get(id).await? else {
             return Ok(None);
         };
-        let json = match row.shaula_result_json {
-            Some(json) => json,
-            None => match self.failed_create_identity(id).await? {
-                Some(json) => json,
-                None => return Ok(None),
-            },
+        let Some(json) = row.shaula_result_json.or(row.failed_create_identity_json) else {
+            return Ok(None);
         };
         let value: serde_json::Value = serde_json::from_str(&json)
             .map_err(|e| StoreError::Corrupt(format!("generation result unreadable: {e}")))?;
@@ -244,16 +240,6 @@ impl Store {
             (Some(lineage), Some(serial)) if !lineage.is_empty() => Some((lineage, serial)),
             _ => None,
         })
-    }
-
-    async fn failed_create_identity(&self, id: &str) -> StoreResult<Option<String>> {
-        Ok(runner_generations::Entity::find_by_id(id)
-            .select_only()
-            .column(runner_generations::Column::FailedCreateIdentityJson)
-            .into_tuple::<Option<String>>()
-            .one(self.connection())
-            .await?
-            .flatten())
     }
 
     /// Whether any Destroy operation row exists for this generation —

@@ -71,7 +71,7 @@ impl SupervisorWiring {
             ForgejoPoolSupervisor::new(
                 key,
                 section,
-                spec.capacity.into(),
+                spec.capacity,
                 ForgejoPoolSupervisorDeps {
                     guard: FleetRuntimeGuard::from(&head),
                     auth: (profile, auth_revision),

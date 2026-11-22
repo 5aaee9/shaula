@@ -1,5 +1,8 @@
 //! Template, Auth and cross-kind profile ports of the SQLite control plane.
 
+use super::mapping::{
+    auth_profile_head, auth_row, profile_change_row, template_row, tpl_profile_head,
+};
 use super::{core_err, SqliteControlPlane};
 use async_trait::async_trait;
 use shaula_core::error::CoreResult;
@@ -11,10 +14,18 @@ use shaula_core::registry::{
 #[async_trait]
 impl TemplateStore for SqliteControlPlane {
     async fn template_profile_get(&self, key: &str) -> CoreResult<Option<ProfileHead>> {
-        self.template_profile_get_read(key).await
+        Ok(self
+            .store
+            .template_profile_get(key)
+            .await
+            .map_err(core_err)?
+            .map(tpl_profile_head))
     }
     async fn template_profile_keys(&self, page: KeyPage) -> CoreResult<Vec<String>> {
-        self.template_profile_keys_read(&page).await
+        self.store
+            .template_profile_key_page(&page)
+            .await
+            .map_err(core_err)
     }
     async fn template_references_in_use(&self, key: &str, now: i64) -> CoreResult<Option<bool>> {
         super::retirement_refs::in_use(self.store.connection(), key, true, now)
@@ -33,14 +44,24 @@ impl TemplateStore for SqliteControlPlane {
         key: &str,
         revision: i64,
     ) -> CoreResult<Option<TemplateRevisionRow>> {
-        self.template_revision_get_read(key, revision).await
+        Ok(self
+            .store
+            .template_revision_get(key, revision)
+            .await
+            .map_err(core_err)?
+            .map(template_row))
     }
     async fn template_protected_bindings(
         &self,
         key: &str,
         revision: i64,
     ) -> CoreResult<Option<(String, String)>> {
-        self.template_protected_bindings_read(key, revision).await
+        Ok(self
+            .store
+            .template_revision_get(key, revision)
+            .await
+            .map_err(core_err)?
+            .and_then(|r| r.bindings_json.zip(r.bindings_digest)))
     }
     async fn commit_template_revision(
         &self,
@@ -68,20 +89,42 @@ impl TemplateStore for SqliteControlPlane {
 #[async_trait]
 impl AuthProfileStore for SqliteControlPlane {
     async fn auth_profile_get(&self, key: &str) -> CoreResult<Option<ProfileHead>> {
-        self.auth_profile_get_read(key).await
+        Ok(self
+            .store
+            .auth_profile_get(key)
+            .await
+            .map_err(core_err)?
+            .map(auth_profile_head))
     }
     async fn auth_profile_keys(&self) -> CoreResult<Vec<String>> {
-        self.auth_profile_keys_read().await
+        Ok(self
+            .store
+            .auth_profiles_list()
+            .await
+            .map_err(core_err)?
+            .into_iter()
+            .map(|p| p.key)
+            .collect())
     }
     async fn auth_revision_get(
         &self,
         key: &str,
         revision: i64,
     ) -> CoreResult<Option<AuthRevisionRow>> {
-        self.auth_revision_get_read(key, revision).await
+        Ok(self
+            .store
+            .auth_revision_get(key, revision)
+            .await
+            .map_err(core_err)?
+            .map(auth_row))
     }
     async fn auth_revision_active(&self, key: &str) -> CoreResult<Option<AuthRevisionRow>> {
-        self.auth_revision_active_read(key).await
+        Ok(self
+            .store
+            .auth_revision_active(key)
+            .await
+            .map_err(core_err)?
+            .map(auth_row))
     }
     async fn auth_bindings_get(
         &self,
@@ -114,7 +157,12 @@ impl AuthProfileStore for SqliteControlPlane {
             .map_err(core_err)
     }
     async fn auth_credential_bytes(&self, key: &str, revision: i64) -> CoreResult<Option<Vec<u8>>> {
-        self.auth_credential_bytes_read(key, revision).await
+        Ok(self
+            .store
+            .auth_revision_get(key, revision)
+            .await
+            .map_err(core_err)?
+            .map(|r| r.credential_bytes))
     }
     async fn commit_auth_revision(
         &self,
@@ -139,7 +187,12 @@ impl AuthProfileStore for SqliteControlPlane {
 #[async_trait]
 impl ProfileStore for SqliteControlPlane {
     async fn profile_change_get(&self, change_id: &str) -> CoreResult<Option<ChangeView>> {
-        self.profile_change_get_read(change_id).await
+        Ok(self
+            .store
+            .profile_change_get(change_id)
+            .await
+            .map_err(core_err)?
+            .map(profile_change_row))
     }
     async fn commit_profile_retirement(
         &self,

@@ -12,6 +12,7 @@ import {
   PlacementControls,
   RunnerCountField,
 } from "./fleet-form-parts";
+import { ProfileSelector } from "./profile-selector";
 import { Input } from "./ui/input";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select";
 import { ErrorNotice, Field } from "./status";
@@ -138,6 +139,51 @@ function TokenCapacitySection({
   );
 }
 
+/** Shared authentication stage for Forgejo and GitLab fleet forms. */
+export function TokenAuthStage({
+  provider,
+  fleet,
+  targetLabel,
+  children,
+}: {
+  provider: "Forgejo" | "GitLab";
+  fleet: Pick<
+    ReturnType<typeof useTokenFleet>,
+    "editing" | "key" | "choices" | "canReadAuth" | "auth" | "setAuth" | "prefix" | "setPrefix"
+  >;
+  targetLabel?: string;
+  children: ReactNode;
+}) {
+  return (
+    <FleetStage title="Authentication">
+      <ProfileSelector
+        label={`${provider} authentication profile`}
+        query={fleet.choices}
+        value={fleet.auth}
+        canRead={fleet.canReadAuth}
+        permission="auth.read"
+        disabled={fleet.editing}
+        onChange={fleet.setAuth}
+      />
+      {targetLabel && (
+        <p className="break-all text-sm" aria-label={`${provider} target`}>
+          {targetLabel}
+        </p>
+      )}
+      <Field label="Runner name prefix">
+        <Input
+          disabled={fleet.editing}
+          maxLength={100}
+          value={fleet.prefix}
+          onChange={(e) => fleet.setPrefix(e.target.value)}
+          placeholder={fleet.key ? `shaula-${fleet.key}-` : "Uses shaula-<fleet key>-"}
+        />
+      </Field>
+      {children}
+    </FleetStage>
+  );
+}
+
 /**
  * The token-backend fleet form: key, the provider's authentication section
  * (children), placement and capacity. `buildBody` validates and serializes.
@@ -146,7 +192,6 @@ export function TokenFleetFrame({
   backend,
   fleet,
   backendSelector,
-  page,
   onClose,
   placeholder,
   buildBody,
@@ -155,7 +200,6 @@ export function TokenFleetFrame({
   backend: Exclude<RunnerBackend, "github">;
   fleet: ReturnType<typeof useTokenFleet>;
   backendSelector?: ReactNode;
-  page: boolean;
   onClose: () => void;
   placeholder: string;
   buildBody: () => string;
@@ -166,7 +210,6 @@ export function TokenFleetFrame({
     <FleetFormFrame
       fleetKey={key}
       editing={editing}
-      page={page}
       busy={fleet.busy}
       error={fleet.error}
       canSubmit={fleet.allowed}

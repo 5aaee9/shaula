@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use shaula_core::github::Label;
-use shaula_core::ports::AuthContext;
 use shaula_core::ports::EffectOutcome;
 use shaula_core::ports::GitHubAccessPort;
 use shaula_core::ports::LookupOutcome;
@@ -15,7 +14,6 @@ use shaula_core::ports::SessionHandle;
 
 use crate::body::BoundedBody;
 use crate::client::ScalesetClient;
-use crate::error::ActionsException;
 use crate::error::ScalesetError;
 use crate::wire;
 
@@ -23,17 +21,6 @@ use crate::wire;
 pub(crate) const LONG_POLL_TIMEOUT: Duration = Duration::from_secs(70);
 
 impl ScalesetClient {
-    pub(crate) async fn auth_kind(&self) -> AuthContext {
-        AuthContext {
-            kind: self.auth_kind_inner().await,
-        }
-    }
-
-    async fn auth_kind_inner(&self) -> shaula_core::auth::AuthKind {
-        // The admin token manager owns the credential; expose only its kind.
-        self.admin.credential_kind()
-    }
-
     async fn parse_error(response: reqwest::Response) -> ScalesetError {
         if let Some(error) = crate::client::rate_limit_error(&response, "request rate limited") {
             return error;
@@ -52,8 +39,6 @@ impl ScalesetClient {
                     return ScalesetError::Service {
                         exception: crate::error::classify_exception(&exception.type_name),
                         status,
-                        summary: crate::error::classify_exception(&exception.type_name)
-                            .summary_fallback(status),
                     };
                 }
             }
@@ -72,18 +57,6 @@ impl ScalesetClient {
             Ok(response)
         } else {
             Err(Self::parse_error(response).await)
-        }
-    }
-}
-
-impl ActionsException {
-    fn summary_fallback(self, status: u16) -> String {
-        match self {
-            ActionsException::AgentExists => "runner already exists".into(),
-            ActionsException::AgentNotFound => "runner not found".into(),
-            ActionsException::JobStillRunning => "job still running".into(),
-            ActionsException::MessageQueueTokenExpired => "message queue token expired".into(),
-            ActionsException::Other => format!("service error status={status}"),
         }
     }
 }
@@ -116,10 +89,6 @@ where
 
 #[async_trait]
 impl GitHubAccessPort for ScalesetClient {
-    async fn auth_context(&self) -> AuthContext {
-        self.auth_kind().await
-    }
-
     async fn resolve_runner_group(
         &self,
         identity: &shaula_core::github::ScaleSetIdentity,
@@ -300,7 +269,6 @@ impl GitHubAccessPort for ScalesetClient {
         shaula_core::ports::EffectOutcome<shaula_core::ports::JitConfig>,
         shaula_core::ports::AccessFailure,
     > {
-        self.ensure_route_proof_impl().await?;
         self.generate_jit_impl(scale_set_id, runner_name).await
     }
 
@@ -343,10 +311,6 @@ impl GitHubAccessPort for ScalesetClient {
         message_id: i64,
     ) -> Result<(), shaula_core::ports::AccessFailure> {
         self.ack_message_impl(session, message_id).await
-    }
-
-    fn allows_target(&self, target: &shaula_core::github::GitHubTarget) -> bool {
-        self.config.target == *target
     }
 
     async fn ensure_route_proof(

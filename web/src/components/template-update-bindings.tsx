@@ -39,7 +39,9 @@ function SensitiveBindingEditor({
           required={false}
           placeholder="Leave blank to keep the stored secret"
           value={input.parsed?.text ?? ""}
-          onChange={(event) => onChange(event.target.value || undefined)}
+          onChange={(event) =>
+            onChange(event.target.value ? JSON.stringify(event.target.value) : undefined)
+          }
         />
       </Field>
       <VariableDescription variable={variable} />

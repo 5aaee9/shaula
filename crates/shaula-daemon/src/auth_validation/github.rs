@@ -300,7 +300,8 @@ async fn promote(
         .await?
     {
         shaula_core::registry::AuthPromotionOutcome::Promoted => Ok(Verdict::Accepted),
-        _ => Ok(Verdict::RetryNeeded {
+        shaula_core::registry::AuthPromotionOutcome::Rejected => Ok(Verdict::Rejected),
+        shaula_core::registry::AuthPromotionOutcome::Restaged => Ok(Verdict::RetryNeeded {
             retry_after_ms: None,
         }),
     }

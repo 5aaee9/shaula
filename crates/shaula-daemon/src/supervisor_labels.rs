@@ -2,14 +2,10 @@
 
 use shaula_core::error::{CoreResult, ReasonCode};
 use shaula_core::ports::{AccessFailure, EffectOutcome};
-use shaula_observability::{MetricOperation, MetricResult, TelemetryHandle};
+use shaula_observability::MetricResult;
 
 use super::{fingerprint, FleetSupervisor, LookupOutcome, OwnershipOutcome};
-
-/// One bounded GitHub runner operation completed with the given outcome.
-fn record_runner(result: MetricResult) {
-    TelemetryHandle::new().record(MetricOperation::Runner, result, 1);
-}
+use crate::iac_metrics::record_runner;
 
 impl FleetSupervisor {
     #[tracing::instrument(name = "shaula.github.scale_set_labels_update", skip_all, fields(fleet_key = %self.config.fleet_key))]

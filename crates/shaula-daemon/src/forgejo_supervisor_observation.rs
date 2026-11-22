@@ -60,7 +60,6 @@ impl ForgejoPoolSupervisor {
                         )
                         .await?;
                     report.waiting_jobs = snapshot.waiting_jobs;
-                    report.running_jobs = snapshot.running_jobs;
                 }
             }
             Err(failure) => {
@@ -134,7 +133,6 @@ impl ForgejoPoolSupervisor {
                 report.unknown_runners = report.unknown_runners.saturating_add(1);
             }
         }
-        report.surplus_runners = report.owned_runners.saturating_sub(report.target);
         if report.unknown_runners > 0 {
             report.reason.get_or_insert(ReasonCode::UnknownRemoteRunner);
         }

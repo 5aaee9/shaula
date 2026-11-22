@@ -356,9 +356,7 @@ pub use store_port::{
 pub use store_port::{FleetHead, FleetRevisionRow, ProfileHead, TemplateRevisionRow};
 
 mod write_records;
-pub use write_records::{
-    AuditAppend, IdempotencyInsert, JobObservationInsert, OperationInsert, ProfileChangeInsert,
-};
+pub use write_records::{AuditAppend, IdempotencyInsert, OperationInsert, ProfileChangeInsert};
 
 pub mod listener_message_port;
 pub use listener_message_port::{IngestedMessage, ListenerMessageStore, SessionEffectContext};

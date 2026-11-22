@@ -23,16 +23,6 @@ pub(crate) struct ExecutionDependency {
     pub context: Option<ResolvedAuthContext>,
 }
 
-/// Operation states that still hold a Destroyed Generation's auth reference.
-const ACTIVE_OPERATIONS: [&str; 6] = [
-    "Pending",
-    "Starting",
-    "ApplyStarting",
-    "BootstrapStarting",
-    "Running",
-    "Blocked",
-];
-
 /// `fleet_revisions` row a Fleet's desired head points at.
 fn desired_head() -> SimpleExpr {
     same(fleet_revisions::Column::FleetKey, fleets::Column::Key).and(same(
@@ -145,7 +135,9 @@ impl Store {
                 operations::Column::GenerationId,
                 generations::Column::Id,
             ))
-            .and_where(col(operations::Column::State).is_in(ACTIVE_OPERATIONS))
+            .and_where(
+                col(operations::Column::State).is_in(crate::lifecycle_repo::OPEN_OPERATION_STATES),
+            )
             .to_owned();
         let live = generations::Entity::find()
             .select_only()

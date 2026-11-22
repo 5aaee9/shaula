@@ -9,13 +9,19 @@
 
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::fleet::FleetSpec;
-use shaula_core::registry::{Actor, MutationError, Scope};
+use shaula_core::registry::{Actor, ChangeView, MutationError, MutationFacts, Scope};
 
 use super::ControlPlane;
 use shaula_core::diagnostics::*;
 
 #[path = "service_follow_pool.rs"]
 mod pool;
+
+struct FollowerTarget<'a> {
+    key: &'a str,
+    head: &'a shaula_core::registry::FleetHead,
+    latest: &'a shaula_core::registry::store_port::FleetRevisionRow,
+}
 
 impl ControlPlane {
     /// The cascade acts with the daemon's own service identity; its audit
@@ -91,6 +97,11 @@ impl ControlPlane {
         // single-template fleet. Member input validation already happened at pool
         // admission (re-resolved by the pool cascade), so there is no
         // input gate to re-run here.
+        let target = FollowerTarget {
+            key,
+            head: &head,
+            latest: &latest,
+        };
         if let Some(pool_key) = spec
             .template_pool_ref
             .as_deref()
@@ -98,7 +109,7 @@ impl ControlPlane {
             .filter(|value| !value.is_empty())
         {
             return self
-                .maybe_upgrade_pool_follower(key, &head, &latest, pool_key, now, &mut diagnostic)
+                .maybe_upgrade_pool_follower(&target, &spec, pool_key, now, &mut diagnostic)
                 .await;
         }
         // ARD-0029: every live fleet follows its profile's Active revision;
@@ -176,48 +187,13 @@ impl ControlPlane {
         // No occupancy gate (spec 0023 §3): live Generations keep their admitted
         // template pins and finish on them; the new revision is for new Creates.
         diagnostic.pass(StageId::Occupancy);
-        let draft = super::FleetMutationDraft {
-            authentication: Default::default(),
-            key: key.to_string(),
-            incarnation: head.incarnation.clone(),
-            revision: head.desired_revision + 1,
-            // The spec is verbatim: the bare key already encodes "follow".
-            spec_json: latest.spec_json.clone(),
-            template: Some(pin),
-            template_pool: Vec::new(),
-            template_pool_ref: None,
-            // Auth desired is untouched by a template upgrade; the auth
-            // handoff retarget on rotation is a separate cascade (spec
-            // 0023 §4) and the commit re-resolves it in-tx anyway (R9-03).
-            auth_desired: Some(latest.auth_desired.clone()),
-            inputs_digest: latest.inputs_digest.clone(),
-            actor: "shaula-daemon".to_string(),
-            kind: "Replace",
-            now,
-        };
-        let change_id = self.new_id();
-        let change = draft.change_view(&change_id);
-        // Serialize against in-flight admission claims exactly like an
-        // operator PUT (R6-02).
-        let effect_gate = self.effect_gates.acquire_exclusive(key).await;
         let committed = self
-            .store
-            .commit_fleet_mutation(draft.into_facts(change, None))
-            .await;
-        drop(effect_gate);
-        match committed? {
-            Ok(()) => {
-                tracing::info!(fleet = %key, revision = head.desired_revision, "follower upgraded to active template revision");
-                Ok(true)
-            }
-            // A lost fence race or a just-created generation defers to the
-            // next tick rather than failing the pass.
-            Err(fence) => {
-                diagnostic.reason(Code::RolloutCommitDeferred, StageId::CommitFence, true);
-                tracing::debug!(fleet = %key, reason = %fence_summary(&fence), "follow upgrade not committed");
-                Ok(false)
-            }
+            .commit_follow_replace(&target, Some(pin), None, now, &mut diagnostic)
+            .await?;
+        if committed {
+            tracing::info!(fleet = %key, revision = head.desired_revision, "follower upgraded to active template revision");
         }
+        Ok(committed)
     }
     /// Shared-pool fleet catch-up (spec 0037 §5 stage 2): re-mint the
     /// fleet revision onto the pool's CURRENT revision as soon as it lags,
@@ -225,9 +201,8 @@ impl ControlPlane {
     /// `(pool_key, pool_revision)` routing context moves.
     async fn maybe_upgrade_pool_follower(
         &self,
-        key: &str,
-        head: &shaula_core::registry::FleetHead,
-        latest: &shaula_core::registry::store_port::FleetRevisionRow,
+        target: &FollowerTarget<'_>,
+        spec: &FleetSpec,
         pool_key: &str,
         now: i64,
         diagnostic: &mut Capture,
@@ -247,14 +222,15 @@ impl ControlPlane {
         if pool_head.tombstone || pool_head.deletion_marker {
             return Ok(false);
         }
-        let frozen = latest
+        let frozen = target
+            .latest
             .template_pool_ref
             .clone()
             .unwrap_or_else(|| (pool_key.to_string(), 0));
         if let Some(d) = &mut diagnostic.0 {
             d.observation.question.rollout = Some(DiagnosticRollout {
-                desired_revision: head.desired_revision.to_string(),
-                observed_revision: head.observed_revision.to_string(),
+                desired_revision: target.head.desired_revision.to_string(),
+                observed_revision: target.head.observed_revision.to_string(),
                 previous_pin: Some(DiagnosticPin {
                     key: frozen.0.clone(),
                     revision: frozen.1.to_string(),
@@ -277,15 +253,13 @@ impl ControlPlane {
         if pool.revision != pool_head.desired_revision {
             return Ok(false);
         }
-        let spec: FleetSpec = serde_json::from_str(&latest.spec_json)
-            .map_err(|error| CoreError::new(ReasonCode::Internal, error.to_string()))?;
-        if let Err(error) = self.validate_pool_backends(&pool.members, &spec).await {
+        if let Err(error) = self.validate_pool_backends(&pool.members, spec).await {
             diagnostic.reason(
                 Code::RolloutBackendIncompatible,
                 StageId::InputCompatibility,
                 true,
             );
-            tracing::warn!(fleet = %key, summary = %error.summary, "pool follow upgrade skipped: incompatible runner backend");
+            tracing::warn!(fleet = %target.key, summary = %error.summary, "pool follow upgrade skipped: incompatible runner backend");
             return Ok(false);
         }
         // No occupancy gate (spec 0037 §5): live Generations keep the member
@@ -293,37 +267,69 @@ impl ControlPlane {
         // Generations draw from the current pool revision.
         diagnostic.pass(StageId::InputCompatibility);
         diagnostic.pass(StageId::Occupancy);
-        let draft = super::FleetMutationDraft {
-            authentication: Default::default(),
-            key: key.to_string(),
-            incarnation: head.incarnation.clone(),
-            revision: head.desired_revision + 1,
-            spec_json: latest.spec_json.clone(),
-            template: None,
-            template_pool: Vec::new(),
-            template_pool_ref: Some((pool_key.to_string(), pool_head.desired_revision)),
-            auth_desired: Some(latest.auth_desired.clone()),
-            inputs_digest: latest.inputs_digest.clone(),
-            actor: "shaula-daemon".to_string(),
-            kind: "Replace",
-            now,
-        };
-        let change_id = self.new_id();
-        let change = draft.change_view(&change_id);
-        let effect_gate = self.effect_gates.acquire_exclusive(key).await;
         let committed = self
-            .store
-            .commit_fleet_mutation(draft.into_facts(change, None))
-            .await;
+            .commit_follow_replace(
+                target,
+                None,
+                Some((pool_key.to_string(), pool_head.desired_revision)),
+                now,
+                diagnostic,
+            )
+            .await?;
+        if committed {
+            tracing::info!(fleet = %target.key, pool = %pool_key, pool_revision = pool_head.desired_revision, "pool follower upgraded to current pool revision");
+        }
+        Ok(committed)
+    }
+
+    async fn commit_follow_replace(
+        &self,
+        target: &FollowerTarget<'_>,
+        template: Option<(String, i64, String, String)>,
+        template_pool_ref: Option<shaula_core::template_pool::FleetPoolRef>,
+        now: i64,
+        diagnostic: &mut Capture,
+    ) -> CoreResult<bool> {
+        let revision = target.head.desired_revision + 1;
+        let change_id = self.new_id();
+        let change = ChangeView {
+            id: change_id.clone(),
+            resource_kind: "fleet".into(),
+            resource_key: target.key.to_string(),
+            revision,
+            kind: "Replace".into(),
+            state: "Pending".into(),
+            reason: None,
+        };
+        let facts = MutationFacts {
+            idempotency_operation: "v1:PUT",
+            authentication: Default::default(),
+            resource_kind: "fleet",
+            resource_key: target.key.to_string(),
+            incarnation: target.head.incarnation.clone(),
+            revision,
+            spec_json: target.latest.spec_json.clone(),
+            template,
+            template_pool: Vec::new(),
+            template_pool_ref,
+            auth_desired: Some(target.latest.auth_desired.clone()),
+            inputs_digest: target.latest.inputs_digest.clone(),
+            actor: "shaula-daemon".to_string(),
+            now,
+            change,
+            outbox_topic: "fleet.change".to_string(),
+            outbox_payload: format!("{{\"change\":\"{change_id}\"}}"),
+            idempotency: None,
+        };
+        // Serialize against in-flight admission claims exactly like an operator PUT (R6-02).
+        let effect_gate = self.effect_gates.acquire_exclusive(target.key).await;
+        let committed = self.store.commit_fleet_mutation(facts).await;
         drop(effect_gate);
         match committed? {
-            Ok(()) => {
-                tracing::info!(fleet = %key, pool = %pool_key, pool_revision = pool_head.desired_revision, "pool follower upgraded to current pool revision");
-                Ok(true)
-            }
+            Ok(()) => Ok(true),
             Err(fence) => {
                 diagnostic.reason(Code::RolloutCommitDeferred, StageId::CommitFence, true);
-                tracing::debug!(fleet = %key, reason = %fence_summary(&fence), "pool follow upgrade not committed");
+                tracing::debug!(fleet = %target.key, reason = %fence_summary(&fence), "follow upgrade not committed");
                 Ok(false)
             }
         }

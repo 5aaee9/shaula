@@ -12,7 +12,7 @@ use axum::{middleware, routing::any, Router};
 use shaula_core::state_backend::StateBackend;
 use tokio::{net::TcpListener, sync::Semaphore};
 
-pub const STATE_ROUTE: &str = "/internal/v1/generations/{generation_id}/state";
+const STATE_ROUTE: &str = "/internal/v1/generations/{generation_id}/state";
 const MAX_REQUESTS: usize = 16;
 // SQLite's writer budget is 60 seconds. Keep the HTTP deadline above it so
 // ordinary contention does not systematically turn committed writes uncertain.

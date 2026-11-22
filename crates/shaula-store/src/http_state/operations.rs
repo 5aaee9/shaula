@@ -25,7 +25,7 @@ impl StateBackend for SqliteStateBackend {
     }
 
     async fn lock(&self, access: &StateAccess, info: LockInfo) -> StateResult<()> {
-        let tx = self.writer(&access.generation_id.to_string()).await?;
+        let tx = self.writer().await?;
         let row = Row::load(&tx, &access.generation_id.to_string()).await?;
         row.authorize(access)?;
         row.writable()?;
@@ -53,7 +53,7 @@ impl StateBackend for SqliteStateBackend {
     }
 
     async fn unlock(&self, access: &StateAccess, id: &LockId) -> StateResult<()> {
-        let tx = self.writer(&access.generation_id.to_string()).await?;
+        let tx = self.writer().await?;
         let row = Row::load(&tx, &access.generation_id.to_string()).await?;
         row.authorize(access)?;
         row.writable()?;
@@ -87,7 +87,7 @@ impl StateBackend for SqliteStateBackend {
         id: &LockId,
         document: StateDocument,
     ) -> StateResult<i64> {
-        let tx = self.writer(&access.generation_id.to_string()).await?;
+        let tx = self.writer().await?;
         let row = Row::load(&tx, &access.generation_id.to_string()).await?;
         row.authorize(access)?;
         row.writable()?;

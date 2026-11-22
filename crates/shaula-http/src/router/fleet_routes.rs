@@ -13,9 +13,47 @@ use crate::dto::FleetSpecDto;
 use crate::problem::{problem, registry_response};
 use crate::router::key_page::{ListQuery, RequestPage};
 use crate::router::{
-    accepted_response, idempotency_header, parse_if_match, put_preconditions, require_scope,
+    accepted_response, idempotency_header, put_preconditions, require_if_match, require_scope,
     resource_version_headers, AppState,
 };
+
+pub(super) fn resolved_pool_member_json(
+    member: &shaula_core::template_pool::ResolvedTemplatePoolMember,
+) -> serde_json::Value {
+    serde_json::json!({
+        "key": member.key,
+        "templateProfileKey": member.template_profile_key,
+        "templateRevision": member.template_revision,
+        "templateArtifactDigest": member.template_artifact_digest,
+        "templateAttestationId": member.template_attestation_id,
+        "templateInputs": member.template_inputs,
+        "inputsDigest": member.inputs_digest,
+        "weight": member.weight,
+        "maxRunners": member.max_runners,
+    })
+}
+
+pub(super) fn change_response(
+    result: shaula_core::error::CoreResult<Option<shaula_core::registry::ChangeView>>,
+) -> Response {
+    match result {
+        Ok(Some(change)) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "id": change.id,
+                "resourceKind": change.resource_kind,
+                "resourceKey": change.resource_key,
+                "revision": change.revision,
+                "kind": change.kind,
+                "state": change.state,
+                "reason": change.reason,
+            })),
+        )
+            .into_response(),
+        Ok(None) => problem(StatusCode::NOT_FOUND, "NotFound", "change not found").into_response(),
+        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
+    }
+}
 
 pub(crate) async fn fleet_put(
     State(state): State<AppState>,
@@ -86,19 +124,7 @@ pub(crate) async fn fleet_get(
                 resource
                     .resolved_template_pool
                     .iter()
-                    .map(|m| {
-                        serde_json::json!({
-                            "key": m.key,
-                            "templateProfileKey": m.template_profile_key,
-                            "templateRevision": m.template_revision,
-                            "templateArtifactDigest": m.template_artifact_digest,
-                            "templateAttestationId": m.template_attestation_id,
-                            "templateInputs": m.template_inputs,
-                            "inputsDigest": m.inputs_digest,
-                            "weight": m.weight,
-                            "maxRunners": m.max_runners,
-                        })
-                    })
+                    .map(resolved_pool_member_json)
                     .collect::<Vec<_>>()
             });
             let body = serde_json::json!({
@@ -189,18 +215,10 @@ pub(crate) async fn fleet_delete(
     if let Err(response) = require_scope(&actor, Scope::FleetRetire) {
         return response;
     }
-    let if_match = match parse_if_match(&headers) {
-        Ok(v) => v,
+    let if_match = match require_if_match(&headers, "If-Match required for decommission") {
+        Ok(v) => Some(v),
         Err(response) => return response,
     };
-    if if_match.is_none() {
-        return problem(
-            StatusCode::PRECONDITION_REQUIRED,
-            "PreconditionRequired",
-            "If-Match required for decommission",
-        )
-        .into_response();
-    }
     let idempotency_key = match idempotency_header(&headers) {
         Ok(v) => v,
         Err(response) => return response,
@@ -223,23 +241,7 @@ pub(crate) async fn fleet_change_get(
     if let Err(response) = require_scope(&actor, Scope::FleetRead) {
         return response;
     }
-    match state.fleets.fleet_change_get(&actor, &change_id).await {
-        Ok(Some(change)) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "id": change.id,
-                "resourceKind": change.resource_kind,
-                "resourceKey": change.resource_key,
-                "revision": change.revision,
-                "kind": change.kind,
-                "state": change.state,
-                "reason": change.reason,
-            })),
-        )
-            .into_response(),
-        Ok(None) => problem(StatusCode::NOT_FOUND, "NotFound", "change not found").into_response(),
-        Err(e) => problem(StatusCode::INTERNAL_SERVER_ERROR, "Internal", e.summary).into_response(),
-    }
+    change_response(state.fleets.fleet_change_get(&actor, &change_id).await)
 }
 
 /// R10-05: the fleet LIST route — every active (non-tombstoned) fleet

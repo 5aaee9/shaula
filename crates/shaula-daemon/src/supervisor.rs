@@ -60,8 +60,6 @@ mod labels_impl;
 #[path = "supervisor_ownership.rs"]
 mod ownership_impl;
 
-#[path = "supervisor_cleanup.rs"]
-mod cleanup_impl;
 #[path = "supervisor_health.rs"]
 mod health_impl;
 

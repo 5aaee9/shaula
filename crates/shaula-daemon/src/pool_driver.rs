@@ -8,7 +8,6 @@ use std::time::Duration;
 use shaula_core::capacity::CapacityPolicy;
 use shaula_core::error::{CoreResult, ReasonCode};
 use shaula_core::lifecycle::GenerationState;
-use shaula_core::ports::AccessFailure;
 use shaula_core::registry::{
     ControlPlaneStore, FleetObservationPhase, FleetRuntimeGuard, GenerationRecord, LifecycleStore,
 };
@@ -37,15 +36,7 @@ pub(crate) fn create_count(
         .min(u64::try_from(capacity.max_runners.saturating_sub(occupancy)).unwrap_or(0))
 }
 
-pub(crate) fn access_reason(failure: &AccessFailure) -> ReasonCode {
-    match failure {
-        AccessFailure::Unauthenticated => ReasonCode::Unauthenticated,
-        AccessFailure::PermissionDenied => ReasonCode::PermissionDenied,
-        AccessFailure::TargetHiddenOrNotFound => ReasonCode::TargetHiddenOrNotFound,
-        AccessFailure::RateLimited { .. } => ReasonCode::RateLimited,
-        _ => ReasonCode::AccessVerificationFailed,
-    }
-}
+pub(crate) use crate::listener::access_reason;
 
 /// One pass's facts that decide the replacement status phase.
 pub(crate) struct PassFacts {

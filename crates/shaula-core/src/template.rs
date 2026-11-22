@@ -259,6 +259,31 @@ impl ProfileManifest {
     pub fn platform(&self) -> TemplatePlatform {
         TemplatePlatform::from_manifest_value(&self.platform)
     }
+
+    pub(super) fn validate_vm_bootstrap_contract(
+        &self,
+        declared: Option<&str>,
+        expected: &str,
+        backend: &str,
+        message: &str,
+    ) -> CoreResult<()> {
+        let Some(contract) = declared else {
+            return Ok(());
+        };
+        if contract != expected
+            || !matches!(
+                self.platform.as_str(),
+                "proxmox" | "aws" | "tencentcloud" | "alicloud"
+            )
+            || self.vm_image_contract.is_none()
+            || self.container_bootstrap_contract.is_some()
+            || self.input_contract_version != 1
+            || !self.supports_runner_backend(backend)
+        {
+            return Err(CoreError::new(ReasonCode::TemplateInvalid, message));
+        }
+        Ok(())
+    }
 }
 
 /// The opaque, server-issued commitment binding envelopes to an exact

@@ -28,22 +28,6 @@ impl fmt::Debug for SecretString {
     }
 }
 
-/// Bounded presence metadata; the only secret fact allowed on read surfaces.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CredentialPresence {
-    Present,
-    Absent,
-}
-
-impl CredentialPresence {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            CredentialPresence::Present => "present",
-            CredentialPresence::Absent => "absent",
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -26,7 +26,7 @@ impl AccessTokens<'_> {
             .prepare(
                 Method::POST,
                 &["api", "v1", "access-tokens"],
-                &body,
+                body,
                 None,
                 Some(key),
             )
@@ -55,7 +55,7 @@ impl AccessTokens<'_> {
             .prepare(
                 Method::DELETE,
                 &["api", "v1", "access-tokens", id],
-                "",
+                String::new(),
                 Some(MutationOptions::update(version)),
                 None,
             )
@@ -68,7 +68,7 @@ impl AccessTokens<'_> {
             .prepare(
                 Method::DELETE,
                 &["api", "v1", "access-tokens", "current"],
-                "",
+                String::new(),
                 None,
                 None,
             )

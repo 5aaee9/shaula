@@ -31,7 +31,6 @@ use crate::entities::http_state::{
     generation_http_state as states, lifecycle_deployment as deployment,
     lifecycle_fences as fences, lifecycle_workers as workers,
 };
-use crate::query_ext::col;
 use crate::Store;
 
 pub use admissions::WorkerAdmissions;
@@ -49,23 +48,11 @@ impl SqliteStateBackend {
         Self { store }
     }
 
-    /// SQLite deferred transactions must acquire the writer BEFORE any
-    /// ownership/version reads. This first write (even for a missing key)
-    /// reserves SQLite's single writer, like BEGIN IMMEDIATE. It works across
-    /// pools/Store handles and rolls back safely on cancellation; a Rust mutex
-    /// alone would not. No transaction is held across HTTP body reads.
-    async fn writer(&self, generation_id: &str) -> StateResult<DatabaseTransaction> {
-        let tx = self.store.begin().await.map_err(unavailable)?;
-        states::Entity::update_many()
-            .col_expr(
-                states::Column::Revision,
-                col(states::Column::Revision).into(),
-            )
-            .filter(states::Column::GenerationId.eq(generation_id))
-            .exec(&tx)
-            .await
-            .map_err(unavailable)?;
-        Ok(tx)
+    /// Acquires SQLite's database-wide single-writer lock via `Store::begin`
+    /// before any ownership/version reads. No transaction is held across HTTP
+    /// body reads.
+    async fn writer(&self) -> StateResult<DatabaseTransaction> {
+        self.store.begin().await.map_err(unavailable)
     }
 }
 

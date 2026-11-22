@@ -1,10 +1,9 @@
-use futures::StreamExt;
 use reqwest::Response;
 
 use crate::client::MAX_RESPONSE_BYTES;
 use crate::error::GitlabError;
 
-pub(crate) async fn read_body(response: Response) -> Result<Vec<u8>, GitlabError> {
+pub(crate) async fn read_body(mut response: Response) -> Result<Vec<u8>, GitlabError> {
     if response
         .content_length()
         .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
@@ -13,9 +12,11 @@ pub(crate) async fn read_body(response: Response) -> Result<Vec<u8>, GitlabError
     }
 
     let mut body = Vec::new();
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|error| GitlabError::InvalidResponse(error.to_string()))?;
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| GitlabError::InvalidResponse(error.to_string()))?
+    {
         if chunk.len() > MAX_RESPONSE_BYTES.saturating_sub(body.len()) {
             return Err(GitlabError::ResponseTooLarge);
         }

@@ -190,8 +190,6 @@ pub(crate) fn generation_resource_name(generation_id: &str) -> String {
     )
 }
 
-mod diagnostics;
-
 /// After a failed Create apply, before the Generation is handed to cleanup:
 /// anchor its bound state when it provably records the whole managed shape
 /// (spec 0010 §7). An unanchored Generation is quarantined at Destroy, so a

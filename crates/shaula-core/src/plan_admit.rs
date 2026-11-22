@@ -29,7 +29,7 @@ pub fn admit_create_plan(
             "create requires empty managed prior state (plan prior_state snapshot is not empty)",
         ));
     }
-    admit_managed(plan, manifest_shape, &["create".to_string()], "create")?;
+    admit_create_managed(plan, manifest_shape)?;
     admit_data_resources(plan)
 }
 
@@ -119,11 +119,9 @@ pub fn admit_destroy_plan(
     Ok(())
 }
 
-fn admit_managed(
+fn admit_create_managed(
     plan: &PlanAdmission,
     manifest_shape: &[ManagedResourceRole],
-    exact_actions: &[String],
-    kind: &str,
 ) -> CoreResult<()> {
     let mut per_role: Vec<(&ManagedResourceRole, usize)> =
         manifest_shape.iter().map(|r| (r, 0usize)).collect();
@@ -134,13 +132,13 @@ fn admit_managed(
         // Reject imports/deposed/moves/replacements unconditionally.
         if instance.deposed {
             return Err(err(format!(
-                "deposed instance in {kind} plan: {}",
+                "deposed instance in create plan: {}",
                 instance.address
             )));
         }
         if instance.previous_address.is_some() {
             return Err(err(format!(
-                "moved resource in {kind} plan: {}",
+                "moved resource in create plan: {}",
                 instance.address
             )));
         }
@@ -150,16 +148,16 @@ fn admit_managed(
             .any(|a| a == "import" || a == "move" || a == "forget")
         {
             return Err(err(format!(
-                "forbidden action in {kind} plan: {}",
+                "forbidden action in create plan: {}",
                 instance.address
             )));
         }
         // Replacement orderings ("create","delete") and ("delete","create")
         // are both rejected - only the exact single action is allowed.
-        if instance.actions.len() != 1 || instance.actions[0] != exact_actions[0] {
+        if instance.actions.len() != 1 || instance.actions[0] != "create" {
             return Err(err(format!(
-                "{kind} plan requires actions exactly [{:?}] but found {:?} at {}",
-                exact_actions[0], instance.actions, instance.address
+                "create plan requires actions exactly [\"create\"] but found {:?} at {}",
+                instance.actions, instance.address
             )));
         }
         // The resource type must be declared by the manifest.
@@ -168,7 +166,7 @@ fn admit_managed(
             .find(|(role, _)| role.terraform_type == instance.resource_type);
         let Some((_, count)) = matched else {
             return Err(err(format!(
-                "undeclared managed resource type in {kind} plan: {}",
+                "undeclared managed resource type in create plan: {}",
                 instance.resource_type
             )));
         };
@@ -177,7 +175,7 @@ fn admit_managed(
     for (role, count) in per_role {
         if count != role.exact_count as usize {
             return Err(err(format!(
-                "{kind} plan role '{}' expects exactly {} instance(s) of '{}', found {count}",
+                "create plan role '{}' expects exactly {} instance(s) of '{}', found {count}",
                 role.role, role.exact_count, role.terraform_type
             )));
         }

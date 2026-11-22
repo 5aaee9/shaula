@@ -30,15 +30,9 @@ impl GitlabBootstrapMaterial {
     ) -> Result<Self, &'static str> {
         let instance_url = instance_url.into();
         let runner_name = runner_name.into();
-        let url = url::Url::parse(&instance_url)
+        crate::net::validate_http_instance_url(&instance_url)
             .map_err(|_| "GitLab bootstrap instance URL is invalid")?;
-        if !matches!(url.scheme(), "http" | "https")
-            || url.host_str().is_none()
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.query().is_some()
-            || url.fragment().is_some()
-            || runner_id == 0
+        if runner_id == 0
             || runner_name.trim().is_empty()
             || runner_name.len() > 255
             || !toml_safe(&runner_name)

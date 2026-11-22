@@ -8,6 +8,10 @@ impl ProfileManifest {
     /// Docker socket access and container backend targets need a separate contract.
     pub fn validate_forgejo_targets(&self, labels: &[String]) -> CoreResult<()> {
         self.validate_for_provider(crate::fleet::FleetProviderKind::Forgejo)?;
+        self.check_forgejo_targets(labels)
+    }
+
+    pub(super) fn check_forgejo_targets(&self, labels: &[String]) -> CoreResult<()> {
         crate::forgejo::validate_labels(labels)?;
         let container = matches!(self.platform.as_str(), "docker" | "kubernetes")
             && self.container_bootstrap_contract.as_deref() == Some(CONTAINER_BOOTSTRAP_CONTRACT);
@@ -25,6 +29,10 @@ impl ProfileManifest {
     /// admitted yet.
     pub fn validate_gitlab_target(&self) -> CoreResult<()> {
         self.validate_for_provider(crate::fleet::FleetProviderKind::Gitlab)?;
+        self.check_gitlab_target()
+    }
+
+    pub(super) fn check_gitlab_target(&self) -> CoreResult<()> {
         if !matches!(self.platform.as_str(), "docker" | "kubernetes")
             || self.container_bootstrap_contract.as_deref() != Some(CONTAINER_BOOTSTRAP_CONTRACT)
         {

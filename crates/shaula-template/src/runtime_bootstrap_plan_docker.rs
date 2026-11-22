@@ -14,6 +14,26 @@ pub(super) fn admit(
     if matches!(backend, "forgejo" | "gitlab") {
         return pool::admit(runner, plan, image, request, backend);
     }
+    admit_common(runner, plan, image, request)?;
+    runner.exact("/command", &json!([super::super::LISTENER, "run"]))?;
+    runner.exact(
+        "/env",
+        &json!([format!(
+            "ACTIONS_RUNNER_INPUT_JITCONFIG={}",
+            request.input.jit_config
+        )]),
+    )?;
+    // entrypoint/user are inherited, computed fields in provider 3.0.2. Their
+    // live values are checked while start=false still prevents execution.
+    Ok(())
+}
+
+pub(super) fn admit_common(
+    runner: &Planned<'_>,
+    plan: &Value,
+    image: &str,
+    request: &TemplateCreateRequest,
+) -> Result<(), TemplateOutcomeError> {
     let identity = &request.input.generation;
     let short: String = identity.id.chars().take(24).collect();
     runner.exact("/start", &json!(false))?;
@@ -24,14 +44,6 @@ pub(super) fn admit(
     runner.exact(
         "/name",
         &json!(format!("shaula-{}-{short}", identity.fleet_key)),
-    )?;
-    runner.exact("/command", &json!([super::super::LISTENER, "run"]))?;
-    runner.exact(
-        "/env",
-        &json!([format!(
-            "ACTIONS_RUNNER_INPUT_JITCONFIG={}",
-            request.input.jit_config
-        )]),
     )?;
     for pointer in [
         "/upload",
@@ -57,8 +69,6 @@ pub(super) fn admit(
     if actual != image && !resolved_image(plan, image, actual)? {
         return Err(rejected());
     }
-    // entrypoint/user are inherited, computed fields in provider 3.0.2. Their
-    // live values are checked while start=false still prevents execution.
     Ok(())
 }
 

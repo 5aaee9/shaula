@@ -89,7 +89,7 @@ impl Store {
                     .await?;
             }
             let result = self
-                .listener_message_view_tx(&tx, fleet, context.epoch, &row)
+                .listener_message_view_tx(&tx, fleet, context.epoch, row.message_id, row.acked != 0)
                 .await?;
             tx.commit().await?;
             return Ok(Some(result));
@@ -156,12 +156,8 @@ impl Store {
             now,
         )
         .await?;
-        let row = self
-            .listener_message_tx(&tx, fleet, context, message.message_id)
-            .await?
-            .ok_or_else(|| StoreError::Corrupt("listener message insert missing".into()))?;
         let result = self
-            .listener_message_view_tx(&tx, fleet, context.epoch, &row)
+            .listener_message_view_tx(&tx, fleet, context.epoch, message.message_id, false)
             .await?;
         tx.commit().await?;
         Ok(Some(result))
@@ -202,18 +198,7 @@ impl Store {
             .one(tx)
             .await?;
         if let Some(row) = &row {
-            let saved: shaula_core::auth_context::ResolvedAuthContext =
-                serde_json::from_str(&row.context_json)
-                    .map_err(|_| StoreError::Corrupt("listener context corrupt".into()))?;
-            if row.incarnation != context.guard.incarnation
-                || row.fleet_revision != context.guard.desired_revision
-                || row.mutation_fence != context.guard.mutation_fence
-                || saved != context.auth_context
-            {
-                return Err(StoreError::Corrupt(
-                    "listener message authority mismatch".into(),
-                ));
-            }
+            verify_message_authority(row, context)?;
         }
         Ok(row)
     }
@@ -223,22 +208,23 @@ impl Store {
         tx: &DatabaseTransaction,
         fleet: &str,
         epoch: i64,
-        row: &messages::Model,
+        message_id: i64,
+        acked: bool,
     ) -> StoreResult<IngestedMessage> {
         let pending_request_ids = acquisitions::Entity::find()
             .select_only()
             .column(acquisitions::Column::RunnerRequestId)
             .filter(acquisitions::Column::FleetKey.eq(fleet))
             .filter(acquisitions::Column::Epoch.eq(epoch))
-            .filter(acquisitions::Column::MessageId.eq(row.message_id))
+            .filter(acquisitions::Column::MessageId.eq(message_id))
             .filter(acquisitions::Column::State.eq("Pending"))
             .order_by_asc(acquisitions::Column::RunnerRequestId)
             .into_tuple::<i64>()
             .all(tx)
             .await?;
         Ok(IngestedMessage {
-            message_id: row.message_id,
-            acked: row.acked != 0,
+            message_id,
+            acked,
             pending_request_ids,
         })
     }
@@ -276,11 +262,16 @@ impl Store {
             .await?;
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
-            self.listener_message_tx(&tx, fleet, context, row.message_id)
-                .await?;
+            verify_message_authority(&row, context)?;
             result.push(
-                self.listener_message_view_tx(&tx, fleet, context.epoch, &row)
-                    .await?,
+                self.listener_message_view_tx(
+                    &tx,
+                    fleet,
+                    context.epoch,
+                    row.message_id,
+                    row.acked != 0,
+                )
+                .await?,
             );
         }
         tx.commit().await?;
@@ -342,4 +333,23 @@ impl Store {
         tx.commit().await?;
         Ok(true)
     }
+}
+
+fn verify_message_authority(
+    row: &messages::Model,
+    context: &SessionEffectContext,
+) -> StoreResult<()> {
+    let saved: shaula_core::auth_context::ResolvedAuthContext =
+        serde_json::from_str(&row.context_json)
+            .map_err(|_| StoreError::Corrupt("listener context corrupt".into()))?;
+    if row.incarnation != context.guard.incarnation
+        || row.fleet_revision != context.guard.desired_revision
+        || row.mutation_fence != context.guard.mutation_fence
+        || saved != context.auth_context
+    {
+        return Err(StoreError::Corrupt(
+            "listener message authority mismatch".into(),
+        ));
+    }
+    Ok(())
 }

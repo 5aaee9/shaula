@@ -151,6 +151,18 @@ pub fn confirm(yes: bool, target: &str) -> Result<(), Error> {
         Err(Error::Invalid("operation cancelled before submission"))
     }
 }
+pub(super) fn is_uncertain(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::Transport
+            | Error::Protocol
+            | Error::Http {
+                status: 500..=599,
+                ..
+            }
+    )
+}
+
 pub async fn mutation(
     client: &Client,
     attempt: MutationAttempt,
@@ -162,15 +174,7 @@ pub async fn mutation(
     let idempotency_key = attempt.idempotency_key().to_owned();
     match client.execute_mutation(&attempt).await {
         Err(e) => {
-            let uncertain = matches!(
-                e,
-                Error::Transport
-                    | Error::Protocol
-                    | Error::Http {
-                        status: 500..=599,
-                        ..
-                    }
-            );
+            let uncertain = is_uncertain(&e);
             let mut out = Outcome::error(e);
             if uncertain {
                 out.receipt = json!({"outcome":"uncertain","idempotency_key":idempotency_key,"resource_key":key});
@@ -230,92 +234,77 @@ pub async fn run(args: ClientArgs, command: RemoteCommand) -> i32 {
 }
 async fn dispatch(args: &ClientArgs, command: RemoteCommand) -> Result<Outcome, Error> {
     let config = config::load(args)?;
-    if matches!(command, RemoteCommand::Contexts { .. }) {
-        return Ok(Outcome::data(config));
-    }
-    if let RemoteCommand::Auth {
-        action: AuthAction::Logout { revoke: false },
-    } = &command
-    {
-        let context =
-            config::context(args, &config)?.ok_or(Error::Invalid("logout requires a context"))?;
-        let _ = secure_file::read(&context.token_file)?;
-        std::fs::remove_file(&context.token_file)
-            .map_err(|_| Error::Invalid("cannot remove local credential"))?;
-        return Ok(Outcome::data(
-            json!({"local_credential_removed":true,"remote_revoked":false}),
-        ));
-    }
-    let client = if matches!(
-        command,
-        RemoteCommand::Auth {
-            action: AuthAction::Login { .. }
-        }
-    ) {
-        config::login_client(args, &config)?
-    } else {
-        config::client(args, &config)?
-    };
-    let explanation = match &command {
-        RemoteCommand::Fleets {
-            action:
-                ResourceAction::Explain {
-                    key,
-                    watch,
-                    timeout,
-                },
-        } => Some(("fleets", key, *watch, *timeout)),
-        RemoteCommand::Generations {
-            action:
-                HistoryAction::Explain {
-                    key,
-                    watch,
-                    timeout,
-                },
-        } => Some(("generations", key, *watch, *timeout)),
-        RemoteCommand::Jobs {
-            action:
-                HistoryAction::Explain {
-                    key,
-                    watch,
-                    timeout,
-                },
-        } => Some(("jobs", key, *watch, *timeout)),
-        _ => None,
-    };
-    if let Some((kind, key, watch, timeout)) = explanation {
-        return explain::run(&client, kind, key, watch, timeout, args.output).await;
-    }
     match command {
-        RemoteCommand::Fleets { action } => resources::run(&client, "fleets", action).await,
-        RemoteCommand::Templates { action } => resources::run(&client, "templates", action).await,
-        RemoteCommand::Pools { action } => resources::run(&client, "pools", action).await,
-        RemoteCommand::AuthProfiles { action } => {
-            resources::run(&client, "auth-profiles", action).await
+        RemoteCommand::Contexts { .. } => Ok(Outcome::data(config)),
+        RemoteCommand::Auth {
+            action: AuthAction::Logout { revoke: false },
+        } => {
+            let context = config::context(args, &config)?
+                .ok_or(Error::Invalid("logout requires a context"))?;
+            let _ = secure_file::read(&context.token_file)?;
+            std::fs::remove_file(&context.token_file)
+                .map_err(|_| Error::Invalid("cannot remove local credential"))?;
+            Ok(Outcome::data(
+                json!({"local_credential_removed":true,"remote_revoked":false}),
+            ))
         }
-        RemoteCommand::Jobs { action } => history::run(&client, "jobs", action).await,
-        RemoteCommand::Generations { action } => history::run(&client, "generations", action).await,
-        RemoteCommand::Invocations { action } => history::run(&client, "invocations", action).await,
-        RemoteCommand::Logs { action } => history::logs(&client, action).await,
-        RemoteCommand::Changes { action } => match action {
-            ChangeAction::Get { id, kind } => Ok(Outcome::data(
-                client.change(ChangeKind::parse(&kind)?, &id).await?.data,
-            )),
-            ChangeAction::Wait { id, kind, timeout } => Ok(Outcome::data(
-                client
-                    .wait(
-                        ChangeKind::parse(&kind)?,
-                        &id,
-                        std::time::Duration::from_secs(timeout),
-                    )
-                    .await?,
-            )),
-        },
-        RemoteCommand::Tokens { action } => tokens::run(&client, action).await,
-        RemoteCommand::Auth { action } => tokens::auth(&client, args, &config, action).await,
-        RemoteCommand::Health { kind } => Ok(Outcome::data(
-            json!({"healthy":if kind=="live" {client.live().await?} else {client.ready().await?}}),
-        )),
-        RemoteCommand::Contexts { .. } => Err(Error::Invalid("invalid command")),
+        command => {
+            let client = if matches!(
+                command,
+                RemoteCommand::Auth {
+                    action: AuthAction::Login { .. }
+                }
+            ) {
+                config::login_client(args, &config)?
+            } else {
+                config::client(args, &config)?
+            };
+            match command {
+                RemoteCommand::Fleets { action } => {
+                    resources::run(&client, "fleets", action, args.output).await
+                }
+                RemoteCommand::Templates { action } => {
+                    resources::run(&client, "templates", action, args.output).await
+                }
+                RemoteCommand::Pools { action } => {
+                    resources::run(&client, "pools", action, args.output).await
+                }
+                RemoteCommand::AuthProfiles { action } => {
+                    resources::run(&client, "auth-profiles", action, args.output).await
+                }
+                RemoteCommand::Jobs { action } => {
+                    history::run(&client, "jobs", action, args.output).await
+                }
+                RemoteCommand::Generations { action } => {
+                    history::run(&client, "generations", action, args.output).await
+                }
+                RemoteCommand::Invocations { action } => {
+                    history::run(&client, "invocations", action, args.output).await
+                }
+                RemoteCommand::Logs { action } => history::logs(&client, action).await,
+                RemoteCommand::Changes { action } => match action {
+                    ChangeAction::Get { id, kind } => Ok(Outcome::data(
+                        client.change(ChangeKind::parse(&kind)?, &id).await?.data,
+                    )),
+                    ChangeAction::Wait { id, kind, timeout } => Ok(Outcome::data(
+                        client
+                            .wait(
+                                ChangeKind::parse(&kind)?,
+                                &id,
+                                std::time::Duration::from_secs(timeout),
+                            )
+                            .await?,
+                    )),
+                },
+                RemoteCommand::Tokens { action } => tokens::run(&client, action).await,
+                RemoteCommand::Auth { action } => {
+                    tokens::auth(&client, args, &config, action).await
+                }
+                RemoteCommand::Health { kind } => Ok(Outcome::data(
+                    json!({"healthy":if kind=="live" {client.live().await?} else {client.ready().await?}}),
+                )),
+                RemoteCommand::Contexts { .. } => unreachable!(),
+            }
+        }
     }
 }

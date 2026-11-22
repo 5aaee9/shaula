@@ -12,7 +12,7 @@ fn base_spec() -> FleetSpec {
         },
         forgejo: None,
         gitlab: None,
-        capacity: CapacityPolicyDto {
+        capacity: CapacityPolicy {
             min_runners: 0,
             max_runners: 20,
         },
@@ -26,7 +26,7 @@ fn base_spec() -> FleetSpec {
 #[test]
 fn capacity_inversion_rejected() {
     let mut spec = base_spec();
-    spec.capacity = CapacityPolicyDto {
+    spec.capacity = CapacityPolicy {
         min_runners: 10,
         max_runners: 5,
     };

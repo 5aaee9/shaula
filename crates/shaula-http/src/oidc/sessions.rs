@@ -128,6 +128,7 @@ impl Sessions {
         Ok(id)
     }
 
+    #[cfg(test)]
     pub fn get(&mut self, id: &str) -> Result<Authenticated, AuthError> {
         self.evict();
         let session = self.sessions.get_mut(id).ok_or(AuthError::Unauthorized)?;

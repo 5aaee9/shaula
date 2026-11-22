@@ -30,7 +30,7 @@ fn view(labels: serde_json::Value) -> serde_json::Value {
 
 #[tokio::test]
 async fn put_only_replaces_labels_and_preserves_their_types() {
-    for labels in [desired(), vec![Label::system("shaula-x64").unwrap()]] {
+    for labels in [desired(), vec![Label::system("shaula-x64")]] {
         let expected = serde_json::json!({"labels": labels});
         let expected_view = view(serde_json::json!(labels
             .iter()

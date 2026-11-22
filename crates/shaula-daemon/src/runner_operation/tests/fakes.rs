@@ -10,7 +10,7 @@ use shaula_core::ports::forgejo::{
     ForgejoTemplateEvidence,
 };
 use shaula_core::ports::{
-    AccessFailure, AuthContext, DestroyClassification, EffectOutcome, GitHubAccessPort, JitConfig,
+    AccessFailure, DestroyClassification, EffectOutcome, GitHubAccessPort, JitConfig,
     LookupOutcome, PollOutcome, RemovalOutcome, RouteProof, RunnerLookup, RunnerRef, ScaleSetView,
     SessionHandle, TargetIdentity, TemplateCreateRequest, TemplateCreateResult,
     TemplateDestroyRequest, TemplateOutcomeError, TemplateRuntimePort,
@@ -55,11 +55,6 @@ impl Github {
 
 #[async_trait::async_trait]
 impl GitHubAccessPort for Github {
-    async fn auth_context(&self) -> AuthContext {
-        AuthContext {
-            kind: shaula_core::auth::AuthKind::GithubApp,
-        }
-    }
     async fn resolve_runner_group(&self, _: &ScaleSetIdentity) -> Result<i64, AccessFailure> {
         unavailable()
     }
@@ -136,9 +131,6 @@ impl GitHubAccessPort for Github {
     }
     async fn list_runners(&self, _: i64) -> Result<Vec<RunnerRef>, AccessFailure> {
         unavailable()
-    }
-    fn allows_target(&self, _: &GitHubTarget) -> bool {
-        true
     }
     async fn resolve_target_identity(
         &self,

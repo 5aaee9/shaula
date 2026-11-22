@@ -6,6 +6,7 @@ use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::registry::{
     AuthProfilePut, AuthRevisionRow, MutationAccepted, MutationError, ProfileHead, Scope,
 };
+use subtle::ConstantTimeEq;
 
 use super::request::{internal, Commit, Identity, Plan};
 use super::{ControlPlane, Outcome, Resource};
@@ -164,10 +165,7 @@ impl Auth {
             head.policy_json.as_deref().unwrap_or("null"),
         )
         .map_err(|error| CoreError::internal(format!("GitLab target is invalid: {error}")))?;
-        let submitted: shaula_core::gitlab::GitlabTarget =
-            serde_json::from_str(&format.target_json)
-                .map_err(|error| CoreError::internal(error.to_string()))?;
-        if target != submitted {
+        if target != format.target {
             return Ok(Err(MutationError::IdentityConflict));
         }
         Ok(Ok(()))
@@ -205,9 +203,8 @@ impl Resource for Auth {
             .auth_credential_bytes(key, accepted.change.revision)
             .await?
             .unwrap_or_default();
-        Ok(constant_time_eq(
-            &stored,
-            self.payload.secret.expose().as_bytes(),
+        Ok(bool::from(
+            stored.ct_eq(self.payload.secret.expose().as_bytes()),
         ))
     }
     async fn admit(
@@ -290,15 +287,4 @@ impl Resource for Auth {
             .commit_auth_revision(facts, row, self.payload.secret.expose().as_bytes())
             .await
     }
-}
-
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (left, right) in a.iter().zip(b.iter()) {
-        diff |= left ^ right;
-    }
-    diff == 0
 }

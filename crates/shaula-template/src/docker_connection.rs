@@ -86,7 +86,7 @@ impl DockerSsh {
         if secret.is_some_and(|secret| secret.contains(['\r', '\n'])) {
             return Err(invalid());
         }
-        let executable = resolve("ssh")?;
+        let executable = resolve_executable("ssh")?;
         let helper =
             crate::engine::engine_supervisor::supervisor_executable().map_err(|_| invalid())?;
         Self::materialize(bindings, key, secret, &executable, &helper).map(Some)
@@ -207,7 +207,7 @@ fn executable_name(name: &str) -> String {
     format!("{name}{}", std::env::consts::EXE_SUFFIX)
 }
 
-fn resolve(name: &str) -> std::io::Result<std::path::PathBuf> {
+pub(crate) fn resolve_executable(name: &str) -> std::io::Result<std::path::PathBuf> {
     let paths = std::env::var_os("PATH").ok_or_else(invalid)?;
     std::env::split_paths(&paths)
         .filter(|path| path.is_absolute())

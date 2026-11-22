@@ -20,8 +20,6 @@ export function useTokenFleet<T>({
   section,
   activeTarget,
   scopes,
-  page,
-  onClose,
   onAccepted,
 }: {
   backend: Exclude<RunnerBackend, "github">;
@@ -29,8 +27,6 @@ export function useTokenFleet<T>({
   section?: T & { auth_profile_ref: string; runner_name_prefix: string };
   activeTarget: (state?: AuthRevisionState) => T | undefined;
   scopes: string[];
-  page: boolean;
-  onClose: () => void;
   onAccepted: (change: ChangeRef) => void;
 }) {
   const original: FleetSpec | undefined = resource?.data.spec;
@@ -42,7 +38,7 @@ export function useTokenFleet<T>({
   const [capacity, setCapacity] = useState(
     original?.capacity || { min_runners: 0, max_runners: 10 },
   );
-  const submission = useFleetSubmit({ fleetKey: key, resource, page, onClose, onAccepted });
+  const submission = useFleetSubmit({ fleetKey: key, resource, onAccepted });
   const canReadAuth = scopes.includes("auth.read");
   const authQuery = useAuthProfiles(canReadAuth);
   const choices = authChoices(authQuery, backend);

@@ -234,7 +234,7 @@ async fn uncommitted_write_rolls_back_and_all_pool_connections_are_durable() -> 
     f.backend
         .write(&f.access, info.id(), state(0, "lineage", true)?)
         .await?;
-    let tx = f.backend.writer(&f.claim.generation_id.to_string()).await?;
+    let tx = f.backend.writer().await?;
     tx.execute(sql(
         "UPDATE generation_http_state SET state_bytes = ?, serial = 1, revision = 2",
         vec![state(1, "lineage", false)?.bytes().to_vec().into()],

@@ -56,7 +56,7 @@ impl WorkerJournal for SqliteWorkerJournal {
             return Err(StateError::TooLarge);
         }
         let id = access.claim.generation_id.to_string();
-        let tx = self.backend.writer(&id).await?;
+        let tx = self.backend.writer().await?;
         let worker = WorkerRow::load(&tx, access).await?;
         let state = super::row::Row::load(&tx, &id).await?;
         if worker.phase != "running" || worker.cleanup_only || state.create_started {
@@ -87,7 +87,7 @@ impl WorkerJournal for SqliteWorkerJournal {
     }
     async fn verify_cleanup(&self, access: &ControlAccess) -> StateResult<()> {
         let id = access.claim.generation_id.to_string();
-        let tx = self.backend.writer(&id).await?;
+        let tx = self.backend.writer().await?;
         let worker = WorkerRow::load(&tx, access).await?;
         if worker.phase != "running" || worker.handover.is_some() || worker.active_command.is_some()
         {
@@ -144,7 +144,7 @@ impl WorkerJournal for SqliteWorkerJournal {
     }
     async fn spawn_ack(&self, access: &ControlAccess, attempt: &str) -> StateResult<()> {
         let id = access.claim.generation_id.to_string();
-        let tx = self.backend.writer(&id).await?;
+        let tx = self.backend.writer().await?;
         let worker = WorkerRow::load(&tx, access).await?;
         if worker.phase != "running"
             || worker.active_command.as_deref() != Some(attempt)
@@ -157,7 +157,7 @@ impl WorkerJournal for SqliteWorkerJournal {
     }
     async fn command_ended(&self, access: &ControlAccess, attempt: &str) -> StateResult<()> {
         let id = access.claim.generation_id.to_string();
-        let tx = self.backend.writer(&id).await?;
+        let tx = self.backend.writer().await?;
         let worker = WorkerRow::load(&tx, access).await?;
         if worker.phase != "running"
             || worker.handover.is_some()
@@ -170,7 +170,7 @@ impl WorkerJournal for SqliteWorkerJournal {
     }
     async fn fenced(&self, access: &ControlAccess, identity: &ProcessIdentity) -> StateResult<()> {
         let id = access.claim.generation_id.to_string();
-        let tx = self.backend.writer(&id).await?;
+        let tx = self.backend.writer().await?;
         let worker = WorkerRow::load(&tx, access).await?;
         let saved: ProcessIdentity = serde_json::from_str(
             worker

@@ -1,6 +1,7 @@
 //! Production composition of the private listener, durable journal and exec.
 use shaula_daemon::{
     bootstrap::ValidatedBootstrap,
+    config::LifecycleConfig,
     workers::{WorkerConfig, Workers},
 };
 use shaula_store::{
@@ -21,11 +22,9 @@ impl Lifecycle {
     pub async fn start(
         store: Store,
         bootstrap: &ValidatedBootstrap,
+        config: &LifecycleConfig,
         logs: Option<Arc<shaula_store::operation_logs::OperationLogArchive>>,
     ) -> Result<Self, String> {
-        let config = bootstrap.lifecycle.as_ref().ok_or(
-            "lifecycle configuration with explicit max_workers and recovery_reserve is required",
-        )?;
         let executor = Arc::new(
             shaula_executor::ExecExecutor::new(
                 std::env::current_exe().map_err(|_| "exact executable unavailable")?,

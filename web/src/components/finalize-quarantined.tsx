@@ -75,7 +75,6 @@ export function FinalizeQuarantined({
           await api(`/generations/${encodeURIComponent(generation.id)}/finalize`, {
             method: "POST",
             headers: {
-              "content-type": "application/json",
               "idempotency-key": `${key}-${generation.id}`,
             },
             body: JSON.stringify({ reason: trimmed }),
@@ -127,6 +126,8 @@ export function FinalizeQuarantined({
           <fieldset disabled={busy} className="form-stack">
             {open && quarantined.isPending ? (
               <p className="text-sm text-muted-foreground">Loading quarantined runners…</p>
+            ) : quarantined.error ? (
+              <ErrorNotice error={quarantined.error} retry={() => void quarantined.refetch()} />
             ) : (
               <p className="text-sm">
                 {items.length} quarantined runner{items.length === 1 ? "" : "s"} will be marked

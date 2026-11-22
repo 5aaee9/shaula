@@ -18,7 +18,7 @@ pub struct Problem {
 impl IntoResponse for Problem {
     fn into_response(self) -> Response {
         let status = StatusCode::from_u16(self.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-        (status, Json(serde_json::json!(&self))).into_response()
+        (status, Json(self)).into_response()
     }
 }
 
@@ -94,14 +94,10 @@ pub fn mutation_problem(error: &MutationError) -> Problem {
         MutationError::Conflict { summary } => {
             problem(StatusCode::CONFLICT, "Conflict", summary.clone())
         }
-        MutationError::TooManyRequests { retry_after_secs } => {
-            let mut p = problem(
-                StatusCode::TOO_MANY_REQUESTS,
-                "RateLimited",
-                "admission limit reached",
-            );
-            p.detail = format!("retry after {retry_after_secs}s");
-            p
-        }
+        MutationError::TooManyRequests { retry_after_secs } => problem(
+            StatusCode::TOO_MANY_REQUESTS,
+            "RateLimited",
+            format!("retry after {retry_after_secs}s"),
+        ),
     }
 }

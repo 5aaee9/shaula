@@ -112,5 +112,13 @@ fn decode<T: DeserializeOwned>(json: &str) -> StoreResult<T> {
         .map_err(|_| StoreError::Corrupt("job metadata cannot be decoded".into()))
 }
 
+fn decimal_id(value: &str, err: &'static str) -> StoreResult<u64> {
+    value
+        .parse::<u64>()
+        .ok()
+        .filter(|id| *id > 0 && id.to_string() == value)
+        .ok_or_else(|| StoreError::Corrupt(err.into()))
+}
+
 #[cfg(test)]
 mod tests;

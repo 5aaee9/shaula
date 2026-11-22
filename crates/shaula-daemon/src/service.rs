@@ -10,9 +10,7 @@ use sha2::{Digest, Sha256};
 use shaula_core::auth::AuthRevisionRef;
 use shaula_core::error::{CoreError, CoreResult, ReasonCode};
 use shaula_core::fleet::{FleetSpec, TemplateProfileRefDto};
-use shaula_core::registry::{
-    ChangeView, ControlPlaneStore, FleetHead, MutationAccepted, MutationError, MutationFacts,
-};
+use shaula_core::registry::{ControlPlaneStore, FleetHead, MutationAccepted, MutationError};
 
 pub(crate) fn unprocessable(reason: ReasonCode, summary: impl Into<String>) -> MutationError {
     MutationError::Unprocessable {
@@ -229,70 +227,6 @@ pub(crate) fn template_referenced(spec: &FleetSpec) -> String {
     spec.template_profile_ref.key().to_string()
 }
 
-/// Shared assembly for every accepted (non-no-op) fleet mutation: the
-/// operator PUT and the follow cascade build identical ChangeView/
-/// MutationFacts material so audit and the change feed can never drift.
-pub(crate) struct FleetMutationDraft {
-    pub authentication: shaula_core::registry::AuthenticationContext,
-    pub key: String,
-    pub incarnation: String,
-    pub revision: i64,
-    pub spec_json: String,
-    pub template: Option<(String, i64, String, String)>,
-    pub template_pool: Vec<shaula_core::template_pool::ResolvedTemplatePoolMember>,
-    /// Shared-pool routing context (spec 0037 §4); None for inline pools.
-    pub template_pool_ref: Option<shaula_core::template_pool::FleetPoolRef>,
-    pub auth_desired: Option<(String, i64)>,
-    pub inputs_digest: String,
-    pub actor: String,
-    pub kind: &'static str,
-    pub now: i64,
-}
-
-impl FleetMutationDraft {
-    /// The pending ChangeView for this mutation; the caller owns the id.
-    pub(crate) fn change_view(&self, change_id: &str) -> ChangeView {
-        ChangeView {
-            id: change_id.to_string(),
-            resource_kind: "fleet".into(),
-            resource_key: self.key.clone(),
-            revision: self.revision,
-            kind: self.kind.to_string(),
-            state: "Pending".into(),
-            reason: None,
-        }
-    }
-
-    /// Complete durable facts for `commit_fleet_mutation`.
-    pub(crate) fn into_facts(
-        self,
-        change: ChangeView,
-        idempotency: Option<(String, String, i32, String)>,
-    ) -> MutationFacts {
-        let change_id = change.id.clone();
-        MutationFacts {
-            idempotency_operation: "v1:PUT",
-            authentication: self.authentication,
-            resource_kind: "fleet",
-            resource_key: self.key,
-            incarnation: self.incarnation,
-            revision: self.revision,
-            spec_json: self.spec_json,
-            template: self.template,
-            template_pool: self.template_pool,
-            template_pool_ref: self.template_pool_ref,
-            auth_desired: self.auth_desired,
-            inputs_digest: self.inputs_digest,
-            actor: self.actor,
-            now: self.now,
-            change,
-            outbox_topic: "fleet.change".to_string(),
-            outbox_payload: format!("{{\"change\":\"{change_id}\"}}"),
-            idempotency,
-        }
-    }
-}
-
 #[path = "conditional_put/mod.rs"]
 mod conditional_put;
 
@@ -341,7 +275,7 @@ mod profile_conditions;
 #[path = "service_profile_retirement.rs"]
 mod profile_retirement;
 #[path = "service_auth_view.rs"]
-pub mod service_auth_view;
+mod service_auth_view;
 
 impl ControlPlane {
     /// No-op detection: identical canonical spec AND identical resolved

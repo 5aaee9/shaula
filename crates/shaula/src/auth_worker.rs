@@ -10,7 +10,7 @@ use shaula_core::{
 use std::sync::Arc;
 
 pub(crate) struct Adapters {
-    pub endpoints: super::auth_worker_probe::WorkerEndpoints,
+    pub endpoints: shaula_scaleset::validation::WorkerEndpoints,
     pub clock: Arc<dyn Clock>,
 }
 #[async_trait::async_trait]

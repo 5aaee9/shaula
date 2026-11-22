@@ -118,7 +118,6 @@ pub async fn run_handoff(
             // switched.
             match resolve_exact_context(
                 github,
-                fleet_key,
                 &desired_key,
                 desired_revision,
                 expectation.desired_context_json.as_deref(),
@@ -248,7 +247,6 @@ async fn observed_context_settled(
 /// already verified that `(profile_key, revision)` is a GitHub App v2 row.
 async fn resolve_exact_context(
     github: &Arc<dyn GitHubAccessPort>,
-    _fleet_key: &str,
     profile_key: &str,
     revision: i64,
     desired_json: Option<&str>,

@@ -10,7 +10,7 @@ pub mod runtime;
 pub mod ssh_helper;
 pub mod variables;
 pub mod workspace;
-pub mod workspace_materialize;
+mod workspace_materialize;
 
 pub use artifact::ArtifactStore;
 pub mod artifact_cache;

@@ -92,8 +92,8 @@ pub async fn run(
                 if !created {
                     return Err(StateError::Conflict);
                 }
-                let material: DestroyMaterial = client.material(&reference).await?;
-                let protected_input = material.protected_input.clone();
+                let mut material: DestroyMaterial = client.material(&reference).await?;
+                let protected_input = material.protected_input.take().map(zeroize::Zeroizing::new);
                 let request = material.into_request(&launch, sink.clone())?;
                 let preparation = if launch.cleanup_only {
                     runtime

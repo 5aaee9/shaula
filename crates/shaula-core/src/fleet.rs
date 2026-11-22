@@ -3,15 +3,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::auth::AuthRevisionRef;
-use crate::capacity::CapacityPolicy;
+pub use crate::capacity::CapacityPolicy;
 use crate::error::{CoreError, CoreResult, ReasonCode};
 pub use crate::forgejo::FleetForgejoSection;
-use crate::forgejo::ForgejoTarget;
-use crate::github::{GitHubTarget, Label, ScaleSetIdentity};
+use crate::github::GitHubTarget;
 pub use crate::gitlab::FleetGitlabSection;
-use crate::gitlab::GitlabTarget;
-use crate::template::TemplateProfileKey;
 pub use crate::template_pool::{
     PoolFailurePolicy, ResolvedTemplatePoolMember, TemplatePoolMember, TemplatePoolSpec,
 };
@@ -31,7 +27,7 @@ pub struct FleetSpec {
     pub forgejo: Option<FleetForgejoSection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gitlab: Option<FleetGitlabSection>,
-    pub capacity: CapacityPolicyDto,
+    pub capacity: CapacityPolicy,
     #[serde(default)]
     pub template_profile_ref: TemplateProfileRefDto,
     /// Spec 0029 inline pool. Retained for fleets already admitted under it;
@@ -118,22 +114,6 @@ fn is_placeholder_github(section: &FleetGithubSection) -> bool {
     section == &FleetGithubSection::default()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CapacityPolicyDto {
-    pub min_runners: i64,
-    pub max_runners: i64,
-}
-
-impl From<CapacityPolicyDto> for CapacityPolicy {
-    fn from(dto: CapacityPolicyDto) -> Self {
-        CapacityPolicy {
-            min_runners: dto.min_runners,
-            max_runners: dto.max_runners,
-        }
-    }
-}
-
 /// Bare template profile key. Fleets always follow the profile's latest
 /// Active revision (spec 0023) — there is no pinned form. Legacy
 /// `{key, revision}` objects stored before ARD-0029 deserialize to their
@@ -178,33 +158,9 @@ impl<'de> Deserialize<'de> for TemplateProfileRefDto {
     }
 }
 
-/// Admission facts frozen into the immutable Fleet Revision. Resolved in the
-/// admission transaction; later profile promotions never change a Fleet.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FleetResolvedDependencies {
-    pub template_profile: TemplateProfileKey,
-    pub template_revision: u64,
-    pub template_artifact_digest: String,
-    pub template_attestation_id: String,
-    /// Admission-time resolved full auth tuple.
-    pub auth_desired: AuthRevisionRef,
-}
-
-/// Normalized immutable remote identity derived from the spec at admission.
-#[derive(Debug, Clone, PartialEq)]
-pub struct NormalizedFleet {
-    pub provider: FleetProviderKind,
-    pub identity: Option<ScaleSetIdentity>,
-    pub forgejo_target: Option<ForgejoTarget>,
-    pub gitlab_target: Option<GitlabTarget>,
-    pub labels: Vec<Label>,
-    pub capacity: CapacityPolicy,
-    pub inputs_digest: String,
-}
-
 #[path = "fleet_normalize.rs"]
 mod normalize;
-pub use normalize::{normalize_fleet, validate_fleet_spec};
+pub use normalize::validate_fleet_spec;
 
 /// Stable Fleet Key identifying one incarnation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

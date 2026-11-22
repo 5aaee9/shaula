@@ -6,6 +6,21 @@ use shaula_core::{
 };
 use uuid::Uuid;
 
+impl Workers {
+    pub(super) async fn authenticated_session(
+        &self,
+        generation: Uuid,
+        capability: &ControlCapability,
+    ) -> StateResult<Arc<Session>> {
+        let session = self.session(generation).await?;
+        if !capability.matches(&session.access.capability.verifier()) {
+            return Err(StateError::Unauthorized);
+        }
+        self.journal.authenticate(&session.access).await?;
+        Ok(session)
+    }
+}
+
 #[async_trait::async_trait]
 impl WorkerControl for Workers {
     async fn logs(
@@ -21,11 +36,9 @@ impl WorkerControl for Workers {
         generation: Uuid,
         capability: &ControlCapability,
     ) -> StateResult<()> {
-        let session = self.session(generation).await?;
-        if !capability.matches(&session.access.capability.verifier()) {
-            return Err(StateError::Unauthorized);
-        }
-        self.journal.authenticate(&session.access).await
+        self.authenticated_session(generation, capability)
+            .await
+            .map(|_| ())
     }
 
     async fn material(
@@ -34,8 +47,7 @@ impl WorkerControl for Workers {
         capability: &ControlCapability,
         id: Uuid,
     ) -> StateResult<Vec<u8>> {
-        self.authenticate(generation, capability).await?;
-        let session = self.session(generation).await?;
+        let session = self.authenticated_session(generation, capability).await?;
         let state = session.state.lock().await;
         let (saved, bytes) = state.material.as_ref().ok_or(StateError::Conflict)?;
         if id != *saved {
@@ -49,9 +61,9 @@ impl WorkerControl for Workers {
         capability: &ControlCapability,
         request: ControlRequest,
     ) -> StateResult<ControlResponse> {
-        self.authenticate(request.claim.generation_id, capability)
+        let session = self
+            .authenticated_session(request.claim.generation_id, capability)
             .await?;
-        let session = self.session(request.claim.generation_id).await?;
         if request.claim != session.access.claim {
             return Err(StateError::Unauthorized);
         }
@@ -61,11 +73,11 @@ impl WorkerControl for Workers {
         }
         let digest = hex::encode(Sha256::digest(&bytes));
         let mut state = session.state.lock().await;
-        if let Some((saved, response)) = state.replay.get(&request.request_id) {
+        if let Some(saved) = state.replay.get(&request.request_id) {
             if saved != &digest {
                 return Err(StateError::Conflict);
             }
-            return serde_json::from_slice(response).map_err(|_| StateError::Unavailable);
+            return Ok(ControlResponse::Ack);
         }
         if matches!(request.message, ControlMessage::Poll) {
             if let Some(receipt) = self.journal.receipt(&session.access).await? {
@@ -178,14 +190,7 @@ impl WorkerControl for Workers {
             }
             _ => return Err(StateError::Invalid),
         }
-        let response = ControlResponse::Ack;
-        state.replay.insert(
-            request.request_id,
-            (
-                digest,
-                serde_json::to_vec(&response).map_err(|_| StateError::Unavailable)?,
-            ),
-        );
-        Ok(response)
+        state.replay.insert(request.request_id, digest);
+        Ok(ControlResponse::Ack)
     }
 }

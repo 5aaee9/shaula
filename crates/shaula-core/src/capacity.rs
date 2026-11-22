@@ -3,6 +3,8 @@
 //! `TotalAssignedJobs` is the latest overwriting snapshot, never an
 //! accumulating counter. All functions here are pure and deterministic.
 
+use serde::{Deserialize, Serialize};
+
 /// Latest Assigned Demand snapshot for one fleet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct AssignedDemand {
@@ -10,7 +12,8 @@ pub struct AssignedDemand {
 }
 
 /// Capacity policy from the Fleet spec.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CapacityPolicy {
     pub min_runners: i64,
     pub max_runners: i64,
