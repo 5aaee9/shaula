@@ -117,6 +117,7 @@ pub(crate) async fn serve(config_path: &str, oidc: oidc_args::OidcArgs) -> Resul
         bootstrap.metrics_listen,
         jobs.as_ref().clone(),
         service.clone(),
+        Some(worker_lifecycle.admissions.limits()),
         shutdown_tx.subscribe(),
     )
     .await?;

@@ -73,19 +73,38 @@ impl SqliteControlPlane {
             }));
         }
 
-        if crate::http_state::SqliteStateBackend::operator_seal_on(
+        if let Err(error) = crate::http_state::SqliteStateBackend::operator_seal_on(
             &tx,
             generation_id,
             operation_id,
             now,
         )
         .await
-        .is_err()
         {
-            return Ok(Err(MutationError::Conflict {
-                summary: "lifecycle worker must be verifiably fenced before operator finalization"
-                    .into(),
-            }));
+            let _ = tx.rollback().await;
+            return match error {
+                shaula_core::state_backend::StateError::Conflict => {
+                    Ok(Err(MutationError::Conflict {
+                        summary:
+                            "lifecycle worker must be verifiably fenced before operator finalization"
+                                .into(),
+                    }))
+                }
+                shaula_core::state_backend::StateError::Locked(_) => {
+                    Ok(Err(MutationError::Conflict {
+                        summary: "lifecycle state lock is still held".into(),
+                    }))
+                }
+                shaula_core::state_backend::StateError::Sealed => {
+                    Ok(Err(MutationError::Conflict {
+                        summary: "lifecycle state is already sealed".into(),
+                    }))
+                }
+                _ => Err(shaula_core::error::CoreError::new(
+                    shaula_core::error::ReasonCode::StorageUnavailable,
+                    "authoritative lifecycle state unavailable during operator finalization",
+                )),
+            };
         }
         Store::operation_insert_on(
             &tx,
@@ -136,6 +155,9 @@ impl SqliteControlPlane {
         tx.commit()
             .await
             .map_err(|e| core_err(StoreError::from(e)))?;
+        if let Some(admissions) = &self.worker_admissions {
+            admissions.discard(generation_id);
+        }
         Ok(Ok(()))
     }
 }

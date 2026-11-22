@@ -16,7 +16,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
 use shaula_core::error::CoreResult;
-use shaula_core::ports::ledger_metrics::LedgerMetricsPort;
+use shaula_core::ports::ledger_metrics::{LedgerMetricsPort, WorkerAdmissionLimits};
 use shaula_core::registry::{Actor, FleetRegistryPort, FleetStatus, HealthPort, KeyPage, Scope};
 use shaula_observability::prometheus::{Exposition, Family, Kind};
 
@@ -72,6 +72,34 @@ static CONVERGED: Family = gauge(
     "shaula_fleet_converged",
     "1 while the fleet's Converged condition holds.",
 );
+static LIFECYCLE_WORKERS: Family = gauge(
+    "shaula_lifecycle_workers",
+    "Lifecycle worker rows grouped by phase.",
+);
+static WORKERS_OCCUPIED: Family = gauge(
+    "shaula_lifecycle_workers_occupied",
+    "Non-completed lifecycle workers currently consuming admission slots.",
+);
+static WORKERS_QUARANTINED: Family = gauge(
+    "shaula_lifecycle_workers_quarantined",
+    "Quarantined lifecycle workers currently consuming admission slots.",
+);
+static WORKER_MAX: Family = gauge(
+    "shaula_lifecycle_worker_max",
+    "Configured maximum lifecycle worker count.",
+);
+static WORKER_RECOVERY_RESERVE: Family = gauge(
+    "shaula_lifecycle_worker_recovery_reserve",
+    "Configured lifecycle worker recovery reserve.",
+);
+static WORKER_CREATE_LIMIT: Family = gauge(
+    "shaula_lifecycle_worker_create_limit",
+    "Maximum non-completed lifecycle workers permitted for new creations (max_workers - recovery_reserve).",
+);
+static WORKER_CREATE_HEADROOM: Family = gauge(
+    "shaula_lifecycle_worker_create_headroom",
+    "Remaining lifecycle worker admission slots before hitting create_limit.",
+);
 
 /// The read ports one scrape consults.
 pub struct Scrape {
@@ -80,6 +108,8 @@ pub struct Scrape {
     pub health: Arc<dyn HealthPort>,
     /// Daemon start, in Unix seconds.
     pub started_at: f64,
+    /// Configured lifecycle worker limits when the worker runtime is active.
+    pub worker_limits: Option<WorkerAdmissionLimits>,
 }
 
 impl Scrape {
@@ -121,6 +151,32 @@ impl Scrape {
                 .any(|c| c.condition_type == "Converged" && c.status);
             out.sample(&CONVERGED, &fleet, flag(converged));
         }
+        let mut occupied: i64 = 0;
+        let mut quarantined: i64 = 0;
+        for row in self.ledger.worker_phase_counts().await? {
+            let phase = worker_phase(&row.phase);
+            out.sample(&LIFECYCLE_WORKERS, &[("phase", phase)], row.count as f64);
+            if row.phase != "completed" {
+                occupied = occupied.saturating_add(row.count);
+            }
+            if row.phase == "quarantined" {
+                quarantined = quarantined.saturating_add(row.count);
+            }
+        }
+        out.sample(&WORKERS_OCCUPIED, &[], occupied as f64);
+        out.sample(&WORKERS_QUARANTINED, &[], quarantined as f64);
+        if let Some(limits) = self.worker_limits {
+            let create_limit = i64::try_from(limits.create_limit).unwrap_or(i64::MAX);
+            let headroom = create_limit.saturating_sub(occupied).max(0);
+            out.sample(&WORKER_MAX, &[], limits.max_workers as f64);
+            out.sample(
+                &WORKER_RECOVERY_RESERVE,
+                &[],
+                limits.recovery_reserve as f64,
+            );
+            out.sample(&WORKER_CREATE_LIMIT, &[], limits.create_limit as f64);
+            out.sample(&WORKER_CREATE_HEADROOM, &[], headroom as f64);
+        }
         Ok(out.finish())
     }
 
@@ -150,6 +206,18 @@ fn flag(value: bool) -> f64 {
         1.0
     } else {
         0.0
+    }
+}
+
+fn worker_phase(phase: &str) -> &'static str {
+    match phase {
+        "admitted" => "admitted",
+        "launch_pending" => "launch_pending",
+        "running" => "running",
+        "fenced" => "fenced",
+        "quarantined" => "quarantined",
+        "completed" => "completed",
+        _ => "other",
     }
 }
 

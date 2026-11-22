@@ -39,6 +39,8 @@ export const diagnosticMessages: Record<string, string> = {
   "worker.state_unavailable": "Authoritative lifecycle state is unavailable",
   "worker.cleanup_only": "Recovery permits cleanup only; Create cannot be repeated",
   "worker.receipt_committed": "State is sealed and the durable completion receipt can be replayed",
+  "worker.admission_limit_reached":
+    "Lifecycle worker admission limit reached; non-completed or quarantined workers consume all create slots",
   "rollout.no_active_revision": "No active dependency revision is available",
   "rollout.inputs_incompatible": "Retained inputs do not satisfy the new revision",
   "rollout.backend_incompatible": "The revision does not support this backend",

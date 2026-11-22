@@ -1,5 +1,5 @@
 use super::{
-    fences, row::Row, states, unavailable, worker::WorkerRow, workers, SqliteStateBackend,
+    fences, null, row::Row, states, unavailable, worker::WorkerRow, workers, SqliteStateBackend,
 };
 use sea_orm::{
     sea_query::Expr, ColumnTrait, DatabaseTransaction, EntityTrait, PaginatorTrait, QueryFilter,
@@ -56,7 +56,7 @@ impl SqliteStateBackend {
             kind: CompletionKind::OperatorAttested,
             completed_at: now,
         };
-        seal(tx, id).await?;
+        seal_fenced(tx, id).await?;
         let receipt = serde_json::to_string(&receipt).map_err(|_| StateError::Invalid)?;
         workers::Entity::update_many()
             .col_expr(workers::Column::Phase, Expr::value("completed"))
@@ -68,6 +68,27 @@ impl SqliteStateBackend {
             .map_err(unavailable)?;
         Ok(())
     }
+}
+
+/// Only used after the worker has been verifiably fenced (or was never
+/// launched) inside the audited operator Finalize transaction. Any residual
+/// Terraform state lock belongs to the dead executor and must be cleared
+/// atomically so the `sealed = 0 OR (revision > 0 AND lock_id IS NULL)`
+/// invariant holds.
+async fn seal_fenced(tx: &DatabaseTransaction, id: &str) -> StateResult<()> {
+    states::Entity::update_many()
+        .col_expr(states::Column::Sealed, Expr::value(true))
+        .col_expr(states::Column::Revoked, Expr::value(true))
+        .col_expr(states::Column::LockId, null())
+        .col_expr(
+            states::Column::LockInfo,
+            Expr::value(Option::<Vec<u8>>::None),
+        )
+        .filter(states::Column::GenerationId.eq(id))
+        .exec(tx)
+        .await
+        .map_err(unavailable)?;
+    Ok(())
 }
 
 async fn seal(tx: &DatabaseTransaction, id: &str) -> StateResult<()> {

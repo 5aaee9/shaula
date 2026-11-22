@@ -7,9 +7,12 @@ use sea_orm::{
     EntityTrait, QuerySelect,
 };
 use shaula_core::error::CoreResult;
-use shaula_core::ports::ledger_metrics::{GenerationCount, JobCount, LedgerMetricsPort};
+use shaula_core::ports::ledger_metrics::{
+    GenerationCount, JobCount, LedgerMetricsPort, WorkerPhaseCount,
+};
 
 use crate::entities::{
+    http_state::lifecycle_workers,
     jobs::{forgejo_workflow_jobs, gitlab_workflow_jobs, workflow_jobs},
     lifecycle::runner_generations as generations,
 };
@@ -78,5 +81,21 @@ impl LedgerMetricsPort for Store {
         counts.extend(job_counts!(db, forgejo_workflow_jobs, "forgejo"));
         counts.extend(job_counts!(db, gitlab_workflow_jobs, "gitlab"));
         Ok(counts)
+    }
+
+    async fn worker_phase_counts(&self) -> CoreResult<Vec<WorkerPhaseCount>> {
+        let rows: Vec<(String, i64)> = lifecycle_workers::Entity::find()
+            .select_only()
+            .column(lifecycle_workers::Column::Phase)
+            .expr(count_star())
+            .group_by(lifecycle_workers::Column::Phase)
+            .into_tuple()
+            .all(self.connection())
+            .await
+            .map_err(|e| core_err(e.into()))?;
+        Ok(rows
+            .into_iter()
+            .map(|(phase, count)| WorkerPhaseCount { phase, count })
+            .collect())
     }
 }

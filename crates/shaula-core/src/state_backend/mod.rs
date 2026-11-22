@@ -31,6 +31,16 @@ pub enum StateError {
     Locked(Box<LockInfo>),
     #[error("state is sealed")]
     Sealed,
+    #[error(
+        "lifecycle worker admission limit reached (occupancy={occupancy}, quarantined={quarantined}, create_limit={create_limit}, max_workers={max_workers}, recovery_reserve={recovery_reserve})"
+    )]
+    AdmissionLimitReached {
+        occupancy: u64,
+        quarantined: u64,
+        create_limit: usize,
+        max_workers: usize,
+        recovery_reserve: usize,
+    },
     #[error("authoritative state unavailable")]
     Unavailable,
 }

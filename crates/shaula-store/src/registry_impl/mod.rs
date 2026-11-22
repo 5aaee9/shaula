@@ -110,11 +110,16 @@ impl SqliteControlPlane {
     }
 }
 
-fn worker_error(_: shaula_core::state_backend::StateError) -> CoreError {
-    CoreError::new(
-        ReasonCode::StorageUnavailable,
-        "lifecycle worker admission unavailable",
-    )
+fn worker_error(error: shaula_core::state_backend::StateError) -> CoreError {
+    match error {
+        shaula_core::state_backend::StateError::AdmissionLimitReached { .. } => {
+            CoreError::new(ReasonCode::AdmissionLimitReached, error.to_string())
+        }
+        _ => CoreError::new(
+            ReasonCode::StorageUnavailable,
+            "lifecycle worker admission unavailable",
+        ),
+    }
 }
 
 mod artifact_reads;

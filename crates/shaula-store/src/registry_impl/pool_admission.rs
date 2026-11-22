@@ -288,7 +288,9 @@ impl SqliteControlPlane {
             .await
             .map_err(core_err)?;
         let template_inputs = selected.template_inputs;
-        let worker = self.admit_worker_on(&tx, &record.id).await?;
+        let worker = self
+            .admit_worker_for_diagnostic(&tx, &record.id, &mut diagnostic)
+            .await?;
         tx.commit().await.map_err(|e| core_err(e.into()))?;
         self.publish_worker(worker)?;
         if let Some(pool) = diagnostic
@@ -351,7 +353,9 @@ impl SqliteControlPlane {
         crate::Store::generation_insert_on(&tx, record)
             .await
             .map_err(core_err)?;
-        let worker = self.admit_worker_on(&tx, &id).await?;
+        let worker = self
+            .admit_worker_for_diagnostic(&tx, &id, &mut diagnostic)
+            .await?;
         tx.commit().await.map_err(|e| core_err(e.into()))?;
         self.publish_worker(worker)?;
         if let Some(pool) = diagnostic
@@ -364,5 +368,26 @@ impl SqliteControlPlane {
         diagnostic.pass(StageId::ExecutionAdmission);
         diagnostic.outcome(Outcome::Progressing);
         Ok(true)
+    }
+
+    async fn admit_worker_for_diagnostic(
+        &self,
+        tx: &sea_orm::DatabaseTransaction,
+        id: &str,
+        diagnostic: &mut Capture,
+    ) -> CoreResult<Option<shaula_core::worker::WorkerAdmission>> {
+        match self.admit_worker_on(tx, id).await {
+            Ok(worker) => Ok(worker),
+            Err(error) => {
+                if error.code == shaula_core::error::ReasonCode::AdmissionLimitReached {
+                    diagnostic.reason(
+                        Code::WorkerAdmissionLimitReached,
+                        StageId::ExecutionAdmission,
+                        true,
+                    );
+                }
+                Err(error)
+            }
+        }
     }
 }

@@ -172,7 +172,9 @@ fn failure(error: StateError) -> Response {
         StateError::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
         StateError::Invalid => StatusCode::BAD_REQUEST,
         StateError::Conflict | StateError::Locked(_) | StateError::Sealed => StatusCode::CONFLICT,
-        StateError::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+        StateError::Unavailable | StateError::AdmissionLimitReached { .. } => {
+            StatusCode::SERVICE_UNAVAILABLE
+        }
     };
     (status, "worker request rejected").into_response()
 }

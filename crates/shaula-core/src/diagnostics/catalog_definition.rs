@@ -38,6 +38,12 @@ impl Code {
                 Severity::Info,
                 "State is sealed and the durable completion receipt can be replayed",
             ),
+            Self::WorkerAdmissionLimitReached => (
+                "worker.admission_limit_reached",
+                StageId::ExecutionAdmission,
+                Severity::Warning,
+                "Lifecycle worker admission limit reached; non-completed or quarantined workers consume all create slots",
+            ),
             Self::ObservationMissing => (
                 "observation.missing",
                 StageId::Authority,

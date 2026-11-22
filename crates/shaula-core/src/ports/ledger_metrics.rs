@@ -23,8 +23,24 @@ pub struct JobCount {
     pub count: i64,
 }
 
+/// Lifecycle worker ledger rows grouped by phase.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkerPhaseCount {
+    pub phase: String,
+    pub count: i64,
+}
+
+/// Configured lifecycle worker admission limits exposed at scrape time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkerAdmissionLimits {
+    pub max_workers: usize,
+    pub recovery_reserve: usize,
+    pub create_limit: usize,
+}
+
 #[async_trait]
 pub trait LedgerMetricsPort: Send + Sync {
     async fn generation_counts(&self) -> CoreResult<Vec<GenerationCount>>;
     async fn job_counts(&self) -> CoreResult<Vec<JobCount>>;
+    async fn worker_phase_counts(&self) -> CoreResult<Vec<WorkerPhaseCount>>;
 }

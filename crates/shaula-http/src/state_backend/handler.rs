@@ -129,7 +129,9 @@ fn failure(error: StateError) -> Response {
         StateError::Invalid => StatusCode::BAD_REQUEST,
         StateError::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
         StateError::Conflict | StateError::Sealed => StatusCode::CONFLICT,
-        StateError::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+        StateError::Unavailable | StateError::AdmissionLimitReached { .. } => {
+            StatusCode::SERVICE_UNAVAILABLE
+        }
     };
     (status, error.to_string()).into_response()
 }

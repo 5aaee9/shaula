@@ -31,7 +31,20 @@ lifecycle:
 
 These worker counts are examples to size for the deployment, not tested capacity
 claims or defaults. Require `0 < recovery_reserve < max_workers <= 1024`.
-New Generation admission cannot consume the recovery reserve. Long-lived waiting
+New Generation admission is bounded by `create_limit = max_workers - recovery_reserve`
+and cannot consume the recovery reserve. Every non-completed lifecycle worker —
+including long-lived waiting workers and **quarantined** Generations awaiting
+explicit operator `finalize` — counts toward `create_limit`; `recovery_reserve`
+is reserved for restart recovery, not for quarantined workers. Size
+`max_workers` with headroom for expected quarantined backlog alongside active
+runners, and alert on `/metrics` before `shaula_lifecycle_worker_create_headroom`
+reaches zero (using `shaula_lifecycle_workers_occupied`,
+`shaula_lifecycle_workers_quarantined`, `shaula_lifecycle_worker_create_limit`,
+and `shaula_lifecycle_worker_create_headroom`). When `create_limit` is
+exhausted, new admissions fail with `AdmissionLimitReached` (and
+`worker.admission_limit_reached` in Fleet diagnostics) rather than
+`StorageUnavailable`, including the exact `occupancy`, `quarantined`,
+`create_limit`, `max_workers` and `recovery_reserve` counts. Long-lived waiting
 workers count toward this limit but do not hold Terraform mutation permits.
 The internal listener is separate from management OIDC/PAT routes, only binds
 loopback, and must not be exposed through a proxy. Control and state capabilities

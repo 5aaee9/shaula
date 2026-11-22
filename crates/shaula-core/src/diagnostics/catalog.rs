@@ -15,6 +15,8 @@ pub enum Code {
     WorkerCleanupOnly,
     #[serde(rename = "worker.receipt_committed")]
     WorkerReceiptCommitted,
+    #[serde(rename = "worker.admission_limit_reached")]
+    WorkerAdmissionLimitReached,
     #[serde(rename = "observation.missing")]
     ObservationMissing,
     #[serde(rename = "observation.stale")]
@@ -106,6 +108,7 @@ impl Code {
         Self::WorkerStateUnavailable,
         Self::WorkerCleanupOnly,
         Self::WorkerReceiptCommitted,
+        Self::WorkerAdmissionLimitReached,
         Self::ObservationMissing,
         Self::ObservationStale,
         Self::ObservationConflict,

@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use shaula_core::ports::ledger_metrics::WorkerAdmissionLimits;
 use shaula_daemon::service::ControlPlane;
 use shaula_http::metrics::Scrape;
 use shaula_store::Store;
@@ -15,6 +16,7 @@ pub(crate) async fn start(
     listen: Option<std::net::SocketAddr>,
     store: Store,
     control: Arc<ControlPlane>,
+    worker_limits: Option<WorkerAdmissionLimits>,
     shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Result<Option<Server>, String> {
     let Some(listen) = listen else {
@@ -33,6 +35,7 @@ pub(crate) async fn start(
         fleets: control.clone(),
         health: control,
         started_at,
+        worker_limits,
     });
     println!("shaula metrics listening on {listen}");
     Ok(Some(tokio::spawn(shaula_http::server::serve_bound(

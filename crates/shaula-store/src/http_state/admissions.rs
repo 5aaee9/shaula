@@ -5,6 +5,7 @@ use sea_orm::{
     ColumnTrait, DatabaseTransaction, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
 };
 use shaula_core::{
+    ports::ledger_metrics::WorkerAdmissionLimits,
     state_backend::{StateError, StateResult},
     worker::WorkerAdmission,
 };
@@ -14,6 +15,8 @@ use super::{deployment, unavailable, workers, SqliteStateBackend};
 
 pub struct WorkerAdmissions {
     pending: Mutex<HashMap<Uuid, WorkerAdmission>>,
+    max_workers: usize,
+    recovery_reserve: usize,
     create_limit: usize,
 }
 
@@ -21,6 +24,8 @@ impl Default for WorkerAdmissions {
     fn default() -> Self {
         Self {
             pending: Mutex::default(),
+            max_workers: 64,
+            recovery_reserve: 8,
             create_limit: 56,
         }
     }
@@ -38,8 +43,17 @@ impl WorkerAdmissions {
         }
         Ok(Self {
             pending: Mutex::default(),
+            max_workers,
+            recovery_reserve,
             create_limit: max_workers - recovery_reserve,
         })
+    }
+    pub fn limits(&self) -> WorkerAdmissionLimits {
+        WorkerAdmissionLimits {
+            max_workers: self.max_workers,
+            recovery_reserve: self.recovery_reserve,
+            create_limit: self.create_limit,
+        }
     }
     /// Removed exactly once. Missing credentials never authorize a relaunch;
     /// the durable pending launch must instead be classified by recovery.
@@ -76,7 +90,18 @@ impl WorkerAdmissions {
             .await
             .map_err(unavailable)?;
         if count >= self.create_limit as u64 {
-            return Err(StateError::Unavailable);
+            let quarantined = workers::Entity::find()
+                .filter(workers::Column::Phase.eq("quarantined"))
+                .count(tx)
+                .await
+                .map_err(unavailable)?;
+            return Err(StateError::AdmissionLimitReached {
+                occupancy: count,
+                quarantined,
+                create_limit: self.create_limit,
+                max_workers: self.max_workers,
+                recovery_reserve: self.recovery_reserve,
+            });
         }
         let admission = WorkerAdmission::new(Uuid::parse_str(id).map_err(|_| StateError::Invalid)?);
         SqliteStateBackend::admit_worker_on(tx, &admission).await?;

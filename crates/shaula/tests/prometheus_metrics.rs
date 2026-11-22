@@ -56,6 +56,7 @@ async fn scrape(f: &Fixture) -> TestResult<(String, String)> {
         fleets: control.clone(),
         health: control,
         started_at: 1_800_000_000.0,
+        worker_limits: None,
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let address = listener.local_addr()?;
