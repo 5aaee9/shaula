@@ -151,6 +151,12 @@ impl SqliteStateBackend {
                         anchorable,
                     )
                     .await?
+                    || (anchorable
+                        && super::create_proof::manifest_supports_reconcile(
+                            &tx,
+                            &record.generation_id,
+                        )
+                        .await?)
             }
             _ => false,
         };
@@ -268,6 +274,12 @@ impl SqliteStateBackend {
             .snapshot(self.store.connection())
             .await?
             .ok_or(StateError::Unavailable)?;
+        if row.create_started
+            && !super::create_proof::is_anchored(self.store.connection(), id, &snapshot.document)
+                .await?
+        {
+            return Ok(None);
+        }
         Ok(Some((
             snapshot.document.lineage().into(),
             u64::try_from(snapshot.document.serial()).map_err(|_| StateError::Invalid)?,

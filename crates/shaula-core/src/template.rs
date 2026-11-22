@@ -128,6 +128,9 @@ pub struct ProfileManifest {
     /// VM-only cloud-init delivery of one pre-registered GitLab Runner `config.toml`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gitlab_vm_bootstrap_contract: Option<String>,
+    /// Optional read-only remote discovery contract for failed Creates (ARD-0044).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reconcile: Option<ManifestReconcile>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -253,6 +256,9 @@ impl ProfileManifest {
                 ));
             }
         }
+        if let Some(reconcile) = &self.reconcile {
+            reconcile.validate()?;
+        }
         Ok(())
     }
 
@@ -368,6 +374,13 @@ mod tests;
 #[path = "template_insert.rs"]
 pub mod insert;
 pub use insert::TemplateRevisionInsert;
+
+#[path = "template_reconcile.rs"]
+pub mod reconcile;
+pub use reconcile::{
+    DiscoverOutput, DiscoverRoleResult, DiscoveredResource, ManifestReconcile,
+    DISCOVER_CONTRACT_VERSION, MAX_RECONCILE_SETTLE_DELAY_SECS,
+};
 
 #[path = "template_version.rs"]
 pub mod version;

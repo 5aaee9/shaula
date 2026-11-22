@@ -136,10 +136,27 @@ pub trait LifecycleStore:
     /// the Create never recorded one (corrupt; quarantine).
     async fn generation_state_identity(&self, id: &str) -> CoreResult<Option<(String, u64)>>;
     /// After a failed Create apply: anchors the bound state's identity when
-    /// it records the template's whole managed shape (spec 0010 §7), so
-    /// Destroy can settle the Generation. `false` leaves it unanchored and a
-    /// later Destroy quarantines it, as before.
-    async fn generation_anchor_failed_create(&self, _id: &str) -> CoreResult<bool> {
+    /// it records the template's whole managed shape (spec 0010 §7), returning
+    /// a structured reason when skipped (ARD-0044).
+    async fn generation_anchor_failed_create(
+        &self,
+        _id: &str,
+    ) -> CoreResult<crate::state_backend::AnchorOutcome> {
+        Ok(crate::state_backend::AnchorOutcome::Skipped(
+            crate::state_backend::AnchorSkipReason::ManifestUnavailable,
+        ))
+    }
+    /// Anchors a failed Create whose state coverage has been proven by the
+    /// template's read-only `discover` module (ARD-0044). When `empty` is true
+    /// and the authoritative state snapshot is empty, also records the terminal
+    /// cleanup revision so automatic completion can seal without a no-op apply.
+    async fn generation_anchor_reconciled_create(
+        &self,
+        _id: &str,
+        _lineage: &str,
+        _serial: u64,
+        _empty: bool,
+    ) -> CoreResult<bool> {
         Ok(false)
     }
     /// Whether any Destroy operation was ever recorded for this

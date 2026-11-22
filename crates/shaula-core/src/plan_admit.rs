@@ -200,6 +200,25 @@ fn admit_data_resources(plan: &PlanAdmission) -> CoreResult<()> {
     Ok(())
 }
 
+/// Admits a parsed plan from a read-only `discover` module (ARD-0044): zero
+/// managed instances, empty prior state, and data resources restricted strictly
+/// to `["read"]` / `["no-op"]`.
+pub fn admit_discover_plan(plan: &PlanAdmission) -> CoreResult<()> {
+    if plan
+        .prior_state_managed
+        .as_ref()
+        .is_some_and(|managed| !managed.is_empty())
+    {
+        return Err(err("discover plan requires empty prior state"));
+    }
+    if plan.instances.iter().any(|i| i.mode != "data") {
+        return Err(err(
+            "discover plan must not contain managed resource changes",
+        ));
+    }
+    admit_data_resources(plan)
+}
+
 /// Whether an already-empty bound state short-circuits destroy (success
 /// without apply).
 pub fn destroy_empty_state_short_circuit(state_addresses: &[String]) -> bool {

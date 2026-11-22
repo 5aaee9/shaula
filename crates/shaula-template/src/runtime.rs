@@ -13,8 +13,9 @@ use sha2::{Digest, Sha256};
 use shaula_core::error::{CoreResult, ReasonCode};
 use shaula_core::plan::{admit_create_plan, parse_plan};
 use shaula_core::ports::{
-    DestroyClassification, PlanProvenance, StateLineage, TemplateCreateRequest,
-    TemplateCreateResult, TemplateDestroyRequest, TemplateOutcomeError, TemplateRuntimePort,
+    DestroyClassification, PlanProvenance, ReconcileClassification, StateLineage,
+    TemplateCreateRequest, TemplateCreateResult, TemplateDestroyRequest, TemplateOutcomeError,
+    TemplateReconcileRequest, TemplateRuntimePort,
 };
 use shaula_core::template::ShaulaResultEnvelope;
 
@@ -109,6 +110,13 @@ impl TemplateRuntimePort for TemplateRuntime {
     ) -> Result<(), TemplateOutcomeError> {
         self.recover_workspace(request, input).await
     }
+    async fn prepare_reconcile_recovery(
+        &self,
+        request: &TemplateReconcileRequest,
+        input: &[u8],
+    ) -> Result<(), TemplateOutcomeError> {
+        self.recover_reconcile_workspace(request, input).await
+    }
     /// R9-07 (spec 0004 §6): materialize + LOCKED init before any remote
     /// effect — init is long, local and retryable; the JIT token minted
     /// afterwards is short-lived.
@@ -135,6 +143,12 @@ impl TemplateRuntimePort for TemplateRuntime {
     ) -> Result<DestroyClassification, TemplateOutcomeError> {
         self.log_destroy(request).await
     }
+    async fn reconcile(
+        &self,
+        request: TemplateReconcileRequest,
+    ) -> Result<ReconcileClassification, TemplateOutcomeError> {
+        self.log_reconcile(request).await
+    }
 }
 #[path = "runtime_apply.rs"]
 mod apply;
@@ -149,5 +163,7 @@ mod create_flow;
 mod destroy_flow;
 #[path = "runtime_logging.rs"]
 mod logging;
+#[path = "runtime_reconcile.rs"]
+mod reconcile_flow;
 #[path = "runtime_recovery.rs"]
 mod recovery;

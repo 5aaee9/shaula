@@ -47,6 +47,44 @@ pub enum StateError {
 
 pub type StateResult<T> = Result<T, StateError>;
 
+/// Structured outcome of attempting to anchor a failed Create's bound state
+/// (ARD-0044 Phase 1), replacing opaque booleans so logs and diagnostics
+/// distinguish lock contention, missing snapshots, and incomplete shapes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnchorOutcome {
+    Anchored,
+    Skipped(AnchorSkipReason),
+}
+
+impl AnchorOutcome {
+    pub fn is_anchored(self) -> bool {
+        matches!(self, Self::Anchored)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnchorSkipReason {
+    NotStarted,
+    RevokedOrSealed,
+    LockHeld,
+    NoSnapshot,
+    ManifestUnavailable,
+    ShapeIncomplete,
+}
+
+impl AnchorSkipReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotStarted => "not-started",
+            Self::RevokedOrSealed => "revoked-or-sealed",
+            Self::LockHeld => "lock-held",
+            Self::NoSnapshot => "no-snapshot",
+            Self::ManifestUnavailable => "manifest-unavailable",
+            Self::ShapeIncomplete => "shape-incomplete",
+        }
+    }
+}
+
 /// `None` is exclusively an admitted, never-initialized backend. An unknown
 /// Generation, lost row or corrupt document must never look like fresh state.
 #[derive(Debug)]

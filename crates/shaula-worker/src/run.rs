@@ -53,8 +53,11 @@ pub async fn run(
             return Err(StateError::Invalid);
         };
         // A re-delivered directive for material this worker already finished
-        // is idle polling, not a second Create/Destroy.
-        if let Directive::Create(reference) | Directive::Destroy(reference) = &directive {
+        // is idle polling, not a second Create/Destroy/Reconcile.
+        if let Directive::Create(reference)
+        | Directive::Destroy(reference)
+        | Directive::Reconcile(reference) = &directive
+        {
             if last_completed == Some(reference.id) {
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
@@ -114,6 +117,38 @@ pub async fn run(
                 };
                 client
                     .ack(ControlMessage::DestroyFinished {
+                        material_id: reference.id,
+                        result,
+                    })
+                    .await?;
+                last_completed = Some(reference.id);
+            }
+            Directive::Reconcile(reference) => {
+                if !created {
+                    return Err(StateError::Conflict);
+                }
+                let mut material: ReconcileMaterial = client.material(&reference).await?;
+                let protected_input = material.protected_input.take().map(zeroize::Zeroizing::new);
+                let request = material.into_request(&launch)?;
+                let preparation = if launch.cleanup_only {
+                    runtime
+                        .prepare_reconcile_recovery(
+                            &request,
+                            protected_input
+                                .as_deref()
+                                .ok_or(StateError::Unavailable)?
+                                .as_bytes(),
+                        )
+                        .await
+                } else {
+                    Ok(())
+                };
+                let result = match preparation {
+                    Ok(()) => runtime.reconcile(request).await,
+                    Err(error) => Err(error),
+                };
+                client
+                    .ack(ControlMessage::ReconcileFinished {
                         material_id: reference.id,
                         result,
                     })

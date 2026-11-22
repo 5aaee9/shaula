@@ -141,8 +141,12 @@ pub(super) fn package(
 ) -> CoreResult<(Vec<u8>, shaula_core::template::ProfileManifest)> {
     let manifest = std::fs::read_to_string(directory.join("profile.yaml")).map_err(storage)?;
     let manifest = shaula_template::manifest::parse_manifest(&manifest)?;
+    let discover_module = manifest
+        .reconcile
+        .as_ref()
+        .map(|reconcile| Path::new(reconcile.discover_module.as_str()));
     let mut files = Vec::new();
-    collect_files(directory, directory, &mut files)?;
+    collect_files(directory, directory, discover_module, &mut files)?;
     files.sort();
     let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     let mut builder = tar::Builder::new(encoder);
@@ -177,7 +181,12 @@ pub(super) fn package(
     Ok((bytes, manifest))
 }
 
-fn collect_files(directory: &Path, root: &Path, files: &mut Vec<PathBuf>) -> CoreResult<()> {
+fn collect_files(
+    directory: &Path,
+    root: &Path,
+    discover_module: Option<&Path>,
+    files: &mut Vec<PathBuf>,
+) -> CoreResult<()> {
     if directory
         .strip_prefix(root)
         .map_err(storage)?
@@ -194,7 +203,13 @@ fn collect_files(directory: &Path, root: &Path, files: &mut Vec<PathBuf>) -> Cor
         let name = entry.file_name().to_string_lossy().into_owned();
         let top = directory == root;
         let ty = entry.file_type().map_err(storage)?;
+        let in_discover_path =
+            discover_module.is_some_and(|dm| dm == relative || dm.starts_with(relative));
+        let is_discover_tf = discover_module.is_some_and(|dm| relative.parent() == Some(dm))
+            && name.ends_with(".tf");
         if !top
+            && !in_discover_path
+            && !is_discover_tf
             && relative != Path::new("schemas/bindings.schema.json")
             && relative != Path::new("schemas/parameters.schema.json")
         {
@@ -202,6 +217,7 @@ fn collect_files(directory: &Path, root: &Path, files: &mut Vec<PathBuf>) -> Cor
         }
         if top
             && name != "schemas"
+            && !in_discover_path
             && !(name.ends_with(".tf")
                 || name.ends_with(".tf.json")
                 || name.ends_with(".tftpl")
@@ -216,7 +232,7 @@ fn collect_files(directory: &Path, root: &Path, files: &mut Vec<PathBuf>) -> Cor
             return Err(invalid("template sources cannot contain symlinks"));
         }
         if ty.is_dir() {
-            collect_files(&path, root, files)?;
+            collect_files(&path, root, discover_module, files)?;
         } else if ty.is_file() {
             files.push(relative.to_owned());
             if files.len() > 10_000 {

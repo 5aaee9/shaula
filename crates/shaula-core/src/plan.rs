@@ -240,7 +240,9 @@ fn parse_plan_shape(plan_json: &Value) -> CoreResult<PlanAdmission> {
 
 #[path = "plan_admit.rs"]
 mod plan_admit;
-pub use plan_admit::{admit_create_plan, admit_destroy_plan, destroy_empty_state_short_circuit};
+pub use plan_admit::{
+    admit_create_plan, admit_destroy_plan, admit_discover_plan, destroy_empty_state_short_circuit,
+};
 
 #[path = "plan_checks.rs"]
 mod plan_checks;

@@ -20,3 +20,5 @@ managed_resource_shape:
     exact_count: 1
 runner_image_digests: []
 runtime_policy_digest: sha256:36b6d0e080795378f597e58658dd13ca17dcfadf8d4c8a4cabaa00bf18ccefad
+reconcile:
+  discover_module: reconcile

@@ -90,11 +90,32 @@ impl TerraformFlow {
         cwd: &Path,
         env: &[(String, String)],
     ) -> CoreResult<serde_json::Value> {
+        self.show_named_plan_json(cwd, env, "tfplan").await
+    }
+
+    pub async fn plan_discover(
+        &self,
+        cwd: &Path,
+        env: &[(String, String)],
+    ) -> CoreResult<ProcessOutput> {
         let args = vec![
-            "show".to_string(),
-            "-json".to_string(),
-            "tfplan".to_string(),
+            "plan".to_string(),
+            "-no-color".to_string(),
+            "-input=false".to_string(),
+            "-var-file=shaula.tfvars.json".to_string(),
+            "-out=discover.tfplan".to_string(),
         ];
+        let output = run_engine(&self.executable, cwd, &args, env, self.timeout).await?;
+        self.require_success(output, "discover")
+    }
+
+    pub async fn show_named_plan_json(
+        &self,
+        cwd: &Path,
+        env: &[(String, String)],
+        file: &str,
+    ) -> CoreResult<serde_json::Value> {
+        let args = vec!["show".to_string(), "-json".to_string(), file.to_string()];
         let output = run_engine(&self.executable, cwd, &args, env, self.timeout).await?;
         let output = self.require_success(output, "show")?;
         serde_json::from_str(&output.stdout).map_err(|e| {
@@ -103,6 +124,27 @@ impl TerraformFlow {
                 format!("plan JSON invalid: {e}"),
             )
         })
+    }
+
+    /// Targeted import of a single remote resource already proved owned by
+    /// this Generation via `discover` (ARD-0044).
+    pub async fn import_resource(
+        &self,
+        cwd: &Path,
+        env: &[(String, String)],
+        address: &str,
+        import_id: &str,
+    ) -> CoreResult<ProcessOutput> {
+        let args = vec![
+            "import".to_string(),
+            "-no-color".to_string(),
+            "-input=false".to_string(),
+            "-var-file=shaula.tfvars.json".to_string(),
+            address.to_string(),
+            import_id.to_string(),
+        ];
+        let output = run_engine(&self.executable, cwd, &args, env, self.timeout).await?;
+        self.require_success(output, "import")
     }
 
     pub async fn apply_saved_plan(

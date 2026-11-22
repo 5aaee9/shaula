@@ -106,6 +106,7 @@ fn validate_archive(bytes: &[u8], digest: &str, validate_variables: bool) -> Cor
         .map_err(|_| invalid("artifact missing or unreadable profile.yaml"))?;
     let manifest = shaula_template::manifest::parse_manifest(&manifest)?;
     shaula_template::manifest::verify_artifact_shape(temp.path())?;
+    shaula_template::manifest::verify_artifact_reconcile(temp.path(), &manifest)?;
     if validate_variables {
         // Legacy import and cache recovery retain original cleanup material.
         // Only a new upload/default source must adopt the current runner policy.

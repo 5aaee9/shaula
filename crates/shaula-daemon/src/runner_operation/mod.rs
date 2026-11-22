@@ -13,6 +13,7 @@ pub(crate) mod forgejo;
 pub(crate) mod github;
 pub(crate) mod gitlab;
 mod lifetime;
+mod reconcile;
 #[cfg(test)]
 mod tests;
 
@@ -192,21 +193,39 @@ pub(crate) fn generation_resource_name(generation_id: &str) -> String {
 
 /// After a failed Create apply, before the Generation is handed to cleanup:
 /// anchor its bound state when it provably records the whole managed shape
-/// (spec 0010 §7). An unanchored Generation is quarantined at Destroy, so a
-/// storage hiccup here only keeps the old, safe outcome.
-pub(crate) async fn anchor_failed_create(lifecycle: &dyn LifecycleStore, generation_id: &str) {
+/// (spec 0010 §7). Logs the structured skip reason (ARD-0044 Phase 1).
+pub(crate) async fn anchor_failed_create(
+    lifecycle: &dyn LifecycleStore,
+    generation_id: &str,
+) -> shaula_core::state_backend::AnchorOutcome {
     match lifecycle
         .generation_anchor_failed_create(generation_id)
         .await
     {
-        Ok(true) => {
-            tracing::info!(generation = %generation_id, "failed create state records the whole managed shape; cleanup can destroy it")
+        Ok(outcome @ shaula_core::state_backend::AnchorOutcome::Anchored) => {
+            tracing::info!(
+                generation = %generation_id,
+                "failed create state records the whole managed shape; cleanup can destroy it"
+            );
+            outcome
         }
-        Ok(false) => {
-            tracing::info!(generation = %generation_id, "failed create left unanchored: no started apply, or its state lacks part of the managed shape")
+        Ok(outcome @ shaula_core::state_backend::AnchorOutcome::Skipped(reason)) => {
+            tracing::info!(
+                generation = %generation_id,
+                reason = reason.as_str(),
+                "failed create left unanchored"
+            );
+            outcome
         }
         Err(error) => {
-            tracing::warn!(generation = %generation_id, code = error.code.as_str(), "failed create anchor unavailable")
+            tracing::warn!(
+                generation = %generation_id,
+                code = error.code.as_str(),
+                "failed create anchor unavailable"
+            );
+            shaula_core::state_backend::AnchorOutcome::Skipped(
+                shaula_core::state_backend::AnchorSkipReason::NoSnapshot,
+            )
         }
     }
 }

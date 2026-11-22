@@ -5,7 +5,7 @@
 //! validation → managed shape contract).
 
 use shaula_template::artifact::ArtifactStore;
-use shaula_template::manifest::{parse_manifest, verify_artifact_shape};
+use shaula_template::manifest::{parse_manifest, verify_artifact_reconcile, verify_artifact_shape};
 
 fn package_template(dir: &std::path::Path) -> (String, Vec<u8>) {
     let mut files: Vec<(String, Vec<u8>)> = Vec::new();
@@ -70,6 +70,8 @@ fn smoke_test_template(name: &str, expected_platform: &str) {
 
     // Required shape files exist in the extracted artifact.
     verify_artifact_shape(&published.final_path).expect("artifact shape must pass");
+    verify_artifact_reconcile(&published.final_path, &manifest)
+        .expect("optional reconcile module must validate");
 
     // The bindings digest binds this exact revision, keyed not plaintext.
     let digest_a = shaula_core::template::BindingsDigest::from_keyed_material(

@@ -88,6 +88,43 @@ pub struct TemplateDestroyRequest {
     pub apply_intent_sink: Option<std::sync::Arc<dyn ApplyIntentSink>>,
 }
 
+/// Request for read-only failed-Create reconciliation and targeted import
+/// (ARD-0044). Reuses the retained original Create provenance and input.
+#[derive(Clone)]
+pub struct TemplateReconcileRequest {
+    pub pinned_artifact_digest: String,
+    pub workspace_path: std::path::PathBuf,
+    pub artifact_dir: std::path::PathBuf,
+    pub expected_bindings_digest: BindingsDigest,
+    pub generation_id: String,
+    pub managed_shape: Vec<crate::template::ManagedResourceRole>,
+    pub discover_module: String,
+    pub environment: Vec<(String, String)>,
+    pub timeout: Duration,
+    pub original_provenance: PlanProvenance,
+}
+
+/// Classification of one read-only failed-Create reconciliation pass.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ReconcileClassification {
+    /// Discovery proved zero remote resources exist and bound state is empty.
+    Empty {
+        state_lineage: String,
+        state_serial: u64,
+    },
+    /// Every remote resource is now tracked in bound state (either already
+    /// recorded before reconcile or newly imported) and ready for Destroy.
+    Anchored {
+        state_lineage: String,
+        state_serial: u64,
+        adopted_count: usize,
+    },
+    /// Discovery found an untracked remote resource with no `import_id`;
+    /// fail closed to Quarantine without silently leaking it.
+    Unimportable { address: String },
+}
+
 /// Opaque admission claim returned by [`ApplyIntentSink`] (R5-02): the
 /// runtime holds it from the durable apply-start record only until the
 /// SPAWN HANDOVER (R6-03) — the moment the apply's process has been
@@ -169,6 +206,16 @@ pub trait TemplateRuntimePort: Send + Sync {
             phase: "recovery.unsupported".into(),
         })
     }
+    /// Rebuild workspace for read-only failed-Create reconciliation after fencing.
+    async fn prepare_reconcile_recovery(
+        &self,
+        _request: &TemplateReconcileRequest,
+        _protected_input: &[u8],
+    ) -> Result<(), TemplateOutcomeError> {
+        Err(TemplateOutcomeError::StateUnavailable {
+            phase: "recovery.unsupported".into(),
+        })
+    }
     /// Prepares the workspace BEFORE any remote effect (R9-07, spec 0004
     /// §6): materialize the pinned artifact and run the LOCKED init.
     /// `init` is long, local and retryable; the JIT token is short-lived,
@@ -202,6 +249,27 @@ pub trait TemplateRuntimePort: Send + Sync {
         &self,
         request: TemplateDestroyRequest,
     ) -> Result<DestroyClassification, TemplateOutcomeError>;
+    /// Read-only remote discovery and targeted import for an unanchored failed
+    /// Create (ARD-0044). Defaults to unsupported so mocks and legacy callers
+    /// preserve conservative Quarantine behavior.
+    async fn reconcile(
+        &self,
+        _request: TemplateReconcileRequest,
+    ) -> Result<ReconcileClassification, TemplateOutcomeError> {
+        Err(TemplateOutcomeError::PlanFailed {
+            phase: "reconcile.unsupported".into(),
+        })
+    }
+}
+
+impl std::fmt::Debug for TemplateReconcileRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TemplateReconcileRequest")
+            .field("workspace_path", &self.workspace_path)
+            .field("generation_id", &self.generation_id)
+            .field("discover_module", &self.discover_module)
+            .finish_non_exhaustive()
+    }
 }
 
 impl std::fmt::Debug for TemplateCreateRequest {

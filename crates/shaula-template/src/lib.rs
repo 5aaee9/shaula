@@ -5,6 +5,7 @@ pub mod cleanup;
 pub mod engine;
 pub mod http_backend;
 pub mod manifest;
+pub mod reconcile_validate;
 pub mod runtime;
 #[doc(hidden)]
 pub mod ssh_helper;

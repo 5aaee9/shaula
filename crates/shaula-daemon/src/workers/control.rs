@@ -89,6 +89,7 @@ impl WorkerControl for Workers {
                 match &state.desired {
                     Some(Directive::Create(value)) => Directive::Create(value.clone()),
                     Some(Directive::Destroy(value)) => Directive::Destroy(value.clone()),
+                    Some(Directive::Reconcile(value)) => Directive::Reconcile(value.clone()),
                     _ => Directive::Wait,
                 }
             };
@@ -184,6 +185,21 @@ impl WorkerControl for Workers {
                     self.journal.verify_cleanup(&session.access).await?;
                 }
                 let sender = state.destroyed_result.take().ok_or(StateError::Conflict)?;
+                state.desired = None;
+                state.material = None;
+                let _ = sender.send(result);
+            }
+            ControlMessage::ReconcileFinished {
+                material_id,
+                result,
+            } => {
+                if !matches!(&state.desired, Some(Directive::Reconcile(value)) if value.id == material_id)
+                    || state.guard.is_some()
+                    || state.bootstrap_guard.is_some()
+                {
+                    return Err(StateError::Conflict);
+                }
+                let sender = state.reconciled_result.take().ok_or(StateError::Conflict)?;
                 state.desired = None;
                 state.material = None;
                 let _ = sender.send(result);

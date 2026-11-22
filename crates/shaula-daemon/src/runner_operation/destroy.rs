@@ -16,12 +16,12 @@ use crate::iac_metrics::record_iac;
 
 /// Proof material a Runner Resource destroy re-verifies.
 pub(super) struct DestroyProof {
-    original_provenance: PlanProvenance,
-    lineage: String,
-    serial: u64,
-    bindings_digest: String,
-    artifact_dir: std::path::PathBuf,
-    managed_shape: Vec<ManagedResourceRole>,
+    pub(super) original_provenance: PlanProvenance,
+    pub(super) lineage: String,
+    pub(super) serial: u64,
+    pub(super) bindings_digest: String,
+    pub(super) artifact_dir: std::path::PathBuf,
+    pub(super) managed_shape: Vec<ManagedResourceRole>,
 }
 
 /// Outcome of one Runner Resource destroy effect, with its completion time.
@@ -63,7 +63,9 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
             // The resource-first Runner Maximum Lifetime path owns both checkpoints.
             return Ok(DestroyOutcome::Pending);
         }
-        if generation.state == G::DestroyPending && !self.destroy_backoff.due(id, now) {
+        if matches!(generation.state, G::DestroyPending | G::Destroying)
+            && !self.destroy_backoff.due(id, now)
+        {
             return Ok(DestroyOutcome::Pending);
         }
         let create_started = self.create_started(id).await?;
@@ -118,6 +120,11 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
             }
         }
         diagnostic.pass(StageId::SafeRemoval);
+        let entered_destroying_at = if state == G::Destroying {
+            generation.updated_at
+        } else {
+            now
+        };
         self.walk(id, state, G::Destroying, now).await?;
         if !create_started {
             self.lifecycle
@@ -133,12 +140,12 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
             }
             return Ok(DestroyOutcome::Destroyed);
         }
-        let proof = match self.destroy_proof(generation).await? {
-            Ok(proof) => proof,
-            Err(reason) => {
-                diagnostic.reason(Code::CleanupQuarantined, StageId::Completion, true);
-                return self.quarantine(id, now, reason).await;
-            }
+        let proof = match self
+            .resolve_destroy_or_reconcile(generation, entered_destroying_at, now, &mut diagnostic)
+            .await?
+        {
+            super::reconcile::ReconcileStep::ReadyForDestroy(proof) => *proof,
+            super::reconcile::ReconcileStep::Settled(outcome) => return Ok(outcome),
         };
         match self.destroy_resources(generation, proof, now).await? {
             ResourceDestroy::Destroyed { at } => {
@@ -219,7 +226,15 @@ impl<R: RunnerRegistrations> RunnerOperation<'_, R> {
         else {
             return Ok(Err("Create provenance missing for destroy"));
         };
-        let Some((lineage, serial)) = self.lifecycle.generation_state_identity(id).await? else {
+        let mut identity = self.lifecycle.generation_state_identity(id).await?;
+        if identity.is_none()
+            && super::anchor_failed_create(self.lifecycle, id)
+                .await
+                .is_anchored()
+        {
+            identity = self.lifecycle.generation_state_identity(id).await?;
+        }
+        let Some((lineage, serial)) = identity else {
             return Ok(Err("state identity missing for destroy"));
         };
         let Some((_, bindings_digest)) = self

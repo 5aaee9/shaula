@@ -63,6 +63,15 @@ pub fn verify_artifact_shape(dir: &std::path::Path) -> CoreResult<()> {
     Ok(())
 }
 
+/// Verifies the optional read-only `reconcile` discovery module declared by
+/// `manifest` (ARD-0044).
+pub fn verify_artifact_reconcile(
+    dir: &std::path::Path,
+    manifest: &ProfileManifest,
+) -> CoreResult<()> {
+    crate::reconcile_validate::verify_reconcile_module(dir, manifest)
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {

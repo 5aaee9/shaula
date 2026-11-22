@@ -9,8 +9,9 @@ mod supervision;
 use session::{Session, State};
 use shaula_core::{
     ports::{
-        DestroyClassification, TemplateCreateRequest, TemplateCreateResult, TemplateDestroyRequest,
-        TemplateOutcomeError, TemplateRuntimePort,
+        DestroyClassification, ReconcileClassification, TemplateCreateRequest,
+        TemplateCreateResult, TemplateDestroyRequest, TemplateOutcomeError,
+        TemplateReconcileRequest, TemplateRuntimePort,
     },
     state_backend::{StateError, StateResult},
     worker::{
@@ -183,7 +184,17 @@ impl TemplateRuntimePort for Workers {
             state.desired = Some(Directive::Create(reference));
         }
         match self.receive(&session, receiver, request.timeout).await {
-            Ok(result) => result,
+            Ok(result) => {
+                // Fence immediately on any post-plan Create failure so residual
+                // state locks cannot block anchor/reconcile and subsequent
+                // cleanup always runs on a fresh cleanup-only worker (ARD-0044).
+                if let Err(ref error) = result {
+                    if !matches!(error, TemplateOutcomeError::PlanFailed { .. }) {
+                        let _ = self.fence(&session).await;
+                    }
+                }
+                result
+            }
             _ => {
                 let _ = self.fence(&session).await;
                 Err(failed())
@@ -236,6 +247,60 @@ impl TemplateRuntimePort for Workers {
             state.sink = request.apply_intent_sink;
             state.destroyed_result = Some(result);
             state.desired = Some(Directive::Destroy(reference));
+        }
+        match self.receive(&session, receiver, request.timeout).await {
+            Ok(result) => result,
+            _ => {
+                let _ = self.fence(&session).await;
+                Err(failed())
+            }
+        }
+    }
+
+    async fn reconcile(
+        &self,
+        request: TemplateReconcileRequest,
+    ) -> Result<ReconcileClassification, TemplateOutcomeError> {
+        let id = Uuid::parse_str(&request.generation_id).map_err(|_| failed())?;
+        self.ensure_replacement(id).await.map_err(|_| failed())?;
+        if self.session(id).await.is_err() {
+            self.prepare(
+                &request.workspace_path,
+                &request.artifact_dir,
+                &request.pinned_artifact_digest,
+                request.timeout,
+            )
+            .await
+            .map_err(|_| failed())??;
+        }
+        let session = self.session(id).await.map_err(|_| failed())?;
+        session
+            .check_material(
+                &request.workspace_path,
+                &request.artifact_dir,
+                &request.pinned_artifact_digest,
+            )
+            .map_err(|_| failed())?;
+        let (result, receiver) = oneshot::channel();
+        {
+            let mut state = session.state.lock().await;
+            if state.desired.is_some() {
+                return Err(failed());
+            }
+            let mut material = ReconcileMaterial::from_request(&request);
+            material.protected_input = Some(
+                String::from_utf8(
+                    self.journal
+                        .protected_input(&session.access)
+                        .await
+                        .map_err(|_| failed())?
+                        .ok_or_else(failed)?,
+                )
+                .map_err(|_| failed())?,
+            );
+            let reference = state.material(&material).map_err(|_| failed())?;
+            state.reconciled_result = Some(result);
+            state.desired = Some(Directive::Reconcile(reference));
         }
         match self.receive(&session, receiver, request.timeout).await {
             Ok(result) => result,

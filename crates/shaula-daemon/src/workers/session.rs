@@ -1,8 +1,8 @@
 use sha2::{Digest, Sha256};
 use shaula_core::{
     ports::{
-        ApplyClaim, ApplyIntentSink, DestroyClassification, TemplateCreateResult,
-        TemplateOutcomeError,
+        ApplyClaim, ApplyIntentSink, DestroyClassification, ReconcileClassification,
+        TemplateCreateResult, TemplateOutcomeError,
     },
     state_backend::{StateError, StateResult, MAX_STATE_BYTES},
     worker::{
@@ -53,6 +53,8 @@ pub(super) struct State {
     pub created_result: Option<oneshot::Sender<Result<TemplateCreateResult, TemplateOutcomeError>>>,
     pub destroyed_result:
         Option<oneshot::Sender<Result<DestroyClassification, TemplateOutcomeError>>>,
+    pub reconciled_result:
+        Option<oneshot::Sender<Result<ReconcileClassification, TemplateOutcomeError>>>,
     pub desired: Option<Directive>,
     pub material: Option<(Uuid, Vec<u8>)>,
     pub sink: Option<Arc<dyn ApplyIntentSink>>,
@@ -69,6 +71,7 @@ impl State {
             created: false,
             created_result: None,
             destroyed_result: None,
+            reconciled_result: None,
             desired: None,
             material: None,
             sink: None,

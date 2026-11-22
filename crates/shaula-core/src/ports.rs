@@ -359,6 +359,6 @@ pub mod template_runtime;
 
 pub use template_runtime::{
     ApplyClaim, ApplyIntentSink, DestroyClassification, OriginalStateIdentity,
-    TemplateCreateRequest, TemplateCreateResult, TemplateDestroyRequest, TemplateOutcomeError,
-    TemplateRuntimePort,
+    ReconcileClassification, TemplateCreateRequest, TemplateCreateResult, TemplateDestroyRequest,
+    TemplateOutcomeError, TemplateReconcileRequest, TemplateRuntimePort,
 };

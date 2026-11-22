@@ -274,8 +274,22 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
         self.state_identity_impl(id).await
     }
 
-    async fn generation_anchor_failed_create(&self, id: &str) -> CoreResult<bool> {
+    async fn generation_anchor_failed_create(
+        &self,
+        id: &str,
+    ) -> CoreResult<shaula_core::state_backend::AnchorOutcome> {
         self.anchor_failed_create_impl(id).await
+    }
+
+    async fn generation_anchor_reconciled_create(
+        &self,
+        id: &str,
+        lineage: &str,
+        serial: u64,
+        empty: bool,
+    ) -> CoreResult<bool> {
+        self.anchor_reconciled_create_impl(id, lineage, serial, empty)
+            .await
     }
 
     async fn generation_destroy_attempted(&self, id: &str) -> CoreResult<bool> {
@@ -289,19 +303,7 @@ impl shaula_core::registry::LifecycleStore for SqliteControlPlane {
         &self,
         generation_id: &str,
     ) -> CoreResult<Option<shaula_core::ports::PlanProvenance>> {
-        self.store
-            .operation_provenance_get(generation_id, "Create")
-            .await
-            .map_err(core_err)?
-            .map(|json| {
-                serde_json::from_str(&json).map_err(|e| {
-                    shaula_core::error::CoreError::new(
-                        shaula_core::error::ReasonCode::StorageUnavailable,
-                        format!("stored provenance unreadable: {e}"),
-                    )
-                })
-            })
-            .transpose()
+        self.operation_original_provenance_impl(generation_id).await
     }
 
     async fn operation_update_state(&self, id: &str, state: &str, now: i64) -> CoreResult<()> {

@@ -9,7 +9,8 @@ use super::{CompletionReceipt, ControlCapability, PROTOCOL_VERSION};
 use crate::{
     ports::{
         ApplyIntentSink, DestroyClassification, OriginalStateIdentity, PlanProvenance,
-        TemplateCreateRequest, TemplateCreateResult, TemplateDestroyRequest, TemplateOutcomeError,
+        ReconcileClassification, TemplateCreateRequest, TemplateCreateResult,
+        TemplateDestroyRequest, TemplateOutcomeError, TemplateReconcileRequest,
     },
     secret::SecretString,
     state_backend::{StateClaim, StateError, StateResult},
@@ -72,6 +73,7 @@ pub enum Directive {
     Wait,
     Create(MaterialRef),
     Destroy(MaterialRef),
+    Reconcile(MaterialRef),
     Complete(CompletionReceipt),
     Quiesce,
 }
@@ -99,6 +101,10 @@ pub enum ControlMessage {
     DestroyFinished {
         material_id: Uuid,
         result: Result<DestroyClassification, TemplateOutcomeError>,
+    },
+    ReconcileFinished {
+        material_id: Uuid,
+        result: Result<ReconcileClassification, TemplateOutcomeError>,
     },
     ApplyStarting(PlanProvenance),
     Spawned(PlanProvenance),
@@ -317,6 +323,48 @@ impl DestroyMaterial {
             apply_intent_sink: Some(sink),
             original_provenance: self.original_provenance,
             original_state: self.original_state,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReconcileMaterial {
+    pub protected_input: Option<String>,
+    pub expected_bindings_digest: BindingsDigest,
+    pub managed_shape: Vec<ManagedResourceRole>,
+    pub discover_module: String,
+    pub environment: Vec<(String, String)>,
+    pub original_provenance: PlanProvenance,
+}
+
+impl ReconcileMaterial {
+    pub fn from_request(request: &TemplateReconcileRequest) -> Self {
+        Self {
+            protected_input: None,
+            expected_bindings_digest: request.expected_bindings_digest.clone(),
+            managed_shape: request.managed_shape.clone(),
+            discover_module: request.discover_module.clone(),
+            environment: request.environment.clone(),
+            original_provenance: request.original_provenance.clone(),
+        }
+    }
+
+    pub fn into_request(self, launch: &LaunchEnvelope) -> StateResult<TemplateReconcileRequest> {
+        if self.original_provenance.generation_id != launch.claim.generation_id.to_string() {
+            return Err(StateError::Invalid);
+        }
+        Ok(TemplateReconcileRequest {
+            workspace_path: launch.workspace.clone(),
+            artifact_dir: launch.artifact.clone(),
+            pinned_artifact_digest: launch.artifact_digest.clone(),
+            generation_id: launch.claim.generation_id.to_string(),
+            expected_bindings_digest: self.expected_bindings_digest,
+            managed_shape: self.managed_shape,
+            discover_module: self.discover_module,
+            environment: self.environment,
+            timeout: launch.operation_timeout,
+            original_provenance: self.original_provenance,
         })
     }
 }

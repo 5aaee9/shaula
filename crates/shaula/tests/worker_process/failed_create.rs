@@ -55,9 +55,17 @@ async fn failed_create_recording_the_whole_shape_is_anchored_and_destroyed() -> 
     let state = fixture.state().await?;
     assert_eq!(state.managed_counts().get("terraform_data"), Some(&1));
     assert_eq!(fixture.control.generation_state_identity(&id).await?, None);
-    assert!(fixture.control.generation_anchor_failed_create(&id).await?);
+    assert!(fixture
+        .control
+        .generation_anchor_failed_create(&id)
+        .await?
+        .is_anchored());
     assert!(
-        fixture.control.generation_anchor_failed_create(&id).await?,
+        fixture
+            .control
+            .generation_anchor_failed_create(&id)
+            .await?
+            .is_anchored(),
         "a repeated anchor verifies the same identity"
     );
     let identity = destroy_anchored(&fixture).await?;
@@ -88,7 +96,11 @@ async fn failed_create_recording_part_of_the_shape_stays_unanchored() -> TestRes
         Some(&1),
         "the refused second runner never reached the state: {error}"
     );
-    assert!(!fixture.control.generation_anchor_failed_create(&id).await?);
+    assert!(!fixture
+        .control
+        .generation_anchor_failed_create(&id)
+        .await?
+        .is_anchored());
     assert_eq!(fixture.control.generation_state_identity(&id).await?, None);
     assert!(!state.managed_empty(), "nothing is destroyed on a guess");
     evidence(

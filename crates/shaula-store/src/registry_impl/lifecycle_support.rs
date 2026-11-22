@@ -171,10 +171,42 @@ impl super::SqliteControlPlane {
     pub(super) async fn anchor_failed_create_impl(
         &self,
         id: &str,
-    ) -> shaula_core::error::CoreResult<bool> {
+    ) -> shaula_core::error::CoreResult<shaula_core::state_backend::AnchorOutcome> {
         crate::http_state::SqliteStateBackend::new(self.store.clone())
             .anchor_failed_create(id)
             .await
             .map_err(super::worker_error)
+    }
+
+    pub(super) async fn anchor_reconciled_create_impl(
+        &self,
+        id: &str,
+        lineage: &str,
+        serial: u64,
+        empty: bool,
+    ) -> shaula_core::error::CoreResult<bool> {
+        crate::http_state::SqliteStateBackend::new(self.store.clone())
+            .anchor_reconciled(id, lineage, serial, empty)
+            .await
+            .map_err(super::worker_error)
+    }
+
+    pub(super) async fn operation_original_provenance_impl(
+        &self,
+        generation_id: &str,
+    ) -> shaula_core::error::CoreResult<Option<shaula_core::ports::PlanProvenance>> {
+        self.store
+            .operation_provenance_get(generation_id, "Create")
+            .await
+            .map_err(super::core_err)?
+            .map(|json| {
+                serde_json::from_str(&json).map_err(|e| {
+                    shaula_core::error::CoreError::new(
+                        shaula_core::error::ReasonCode::StorageUnavailable,
+                        format!("stored provenance unreadable: {e}"),
+                    )
+                })
+            })
+            .transpose()
     }
 }

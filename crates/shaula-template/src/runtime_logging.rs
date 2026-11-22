@@ -3,8 +3,9 @@ use crate::{operation_capture::InvocationGuard, operation_sanitize::SensitiveVal
 use shaula_core::{
     operation_log::OperationLogSink,
     ports::{
-        DestroyClassification, TemplateCreateRequest, TemplateCreateResult, TemplateDestroyRequest,
-        TemplateOutcomeError,
+        DestroyClassification, ReconcileClassification, TemplateCreateRequest,
+        TemplateCreateResult, TemplateDestroyRequest, TemplateOutcomeError,
+        TemplateReconcileRequest,
     },
 };
 use std::{path::Path, sync::Arc, time::Duration};
@@ -147,6 +148,39 @@ impl TemplateRuntime {
                 result
             }
             None => self.destroy_flow(request).await,
+        }
+    }
+
+    pub(super) async fn log_reconcile(
+        &self,
+        mut request: TemplateReconcileRequest,
+    ) -> Result<ReconcileClassification, TemplateOutcomeError> {
+        self.configure_environment(&request.generation_id, &mut request.environment)?;
+        let input = redaction_input(&request.workspace_path).await;
+        let values = match input {
+            Some(input) => SensitiveValues::from_input(&input, &request.environment),
+            None => SensitiveValues::withhold_all(),
+        };
+        let guard = InvocationGuard::begin(
+            self.operation_logs.clone(),
+            &self.capture_tasks,
+            &request.generation_id,
+            "Destroy",
+            values,
+        )
+        .await;
+        match guard {
+            Some(guard) => {
+                let result = guard.scope(self.reconcile_flow(request)).await;
+                let outcome = match &result {
+                    Ok(ReconcileClassification::Empty { .. }) => "skipped",
+                    Ok(ReconcileClassification::Anchored { .. }) => "succeeded",
+                    Ok(ReconcileClassification::Unimportable { .. }) | Err(_) => "failed",
+                };
+                guard.finish(outcome).await;
+                result
+            }
+            None => self.reconcile_flow(request).await,
         }
     }
 }

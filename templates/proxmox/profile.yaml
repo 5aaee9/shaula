@@ -23,3 +23,6 @@ managed_resource_shape:
     exact_count: 1
 runner_image_digests: []
 runtime_policy_digest: sha256:b54d1d18025738dc86d38e331e9b454b011775dd62d7a7ad0ee5e0f505ae42db
+reconcile:
+  discover_module: reconcile
+  settle_delay_secs: 65
