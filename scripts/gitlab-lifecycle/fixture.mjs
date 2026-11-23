@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import { mkdtemp, writeFile, readFile, open, rm } from "node:fs/promises";
 import { tmpdir, release } from "node:os";
 import { join, resolve } from "node:path";
@@ -168,7 +168,10 @@ export class GitlabFixture {
 
   async publish() {
     const archive = join(this.directory, `${this.platform}.tar.gz`);
-    await command("tar", ["-czf", archive, "-C", resolve(`templates/${this.platform}`), "profile.yaml", "main.tf", ".terraform.lock.hcl", "runtime-policy.md", "schemas"]);
+    const source = resolve(`templates/${this.platform}`);
+    const entries = ["profile.yaml", "main.tf", ".terraform.lock.hcl", "runtime-policy.md", "schemas"];
+    if (existsSync(join(source, "reconcile"))) entries.push("reconcile");
+    await command("tar", ["-czf", archive, "-C", source, ...entries]);
     const bytes = await readFile(archive);
     this.digest = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
     const response = await fetch(`${this.url}/api/v1/template-artifacts/${this.digest}`, { method: "PUT",

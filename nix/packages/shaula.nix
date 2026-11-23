@@ -66,6 +66,9 @@ rustPlatform.buildRustPackage {
       if test -f "templates/$name/runtime-policy.md"; then
         cp "templates/$name/runtime-policy.md" "$destination/"
       fi
+      if test -d "templates/$name/reconcile"; then
+        cp -R "templates/$name/reconcile" "$destination/"
+      fi
     done
   '';
   # Local-server test constructors deliberately do not exist in release

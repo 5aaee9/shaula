@@ -30,6 +30,7 @@ fn artifact() -> TestResult<(String, Vec<u8>)> {
         "runtime-policy.md",
         "schemas/bindings.schema.json",
         "schemas/parameters.schema.json",
+        "reconcile/main.tf",
     ] {
         builder.append_path_with_name(root.join(name), name)?;
     }
