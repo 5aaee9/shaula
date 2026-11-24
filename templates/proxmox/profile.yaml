@@ -22,7 +22,7 @@ managed_resource_shape:
     terraform_type: proxmox_qemu_vm
     exact_count: 1
 runner_image_digests: []
-runtime_policy_digest: sha256:b54d1d18025738dc86d38e331e9b454b011775dd62d7a7ad0ee5e0f505ae42db
+runtime_policy_digest: sha256:3138b24d9fb6aae6beea7c0aa89d764287d3dbd02b4e5a885166762d6bf03b8b
 reconcile:
   discover_module: reconcile
   settle_delay_secs: 65
